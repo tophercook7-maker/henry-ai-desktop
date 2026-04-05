@@ -23,12 +23,13 @@ export default function App() {
 
   async function initApp() {
     try {
-      // Load settings
-      const settings = await window.henryAPI.getSettings();
-      const settingsMap = settings.reduce((acc: any, s: any) => {
-        acc[s.key] = s.value;
-        return acc;
-      }, {});
+      // Load settings — backend returns Record<string, string>
+      const settingsMap = (await window.henryAPI.getSettings()) as Record<string, string>;
+
+      // Load all settings into the store
+      Object.entries(settingsMap).forEach(([key, value]) => {
+        useStore.getState().updateSetting(key, value);
+      });
 
       // Check if setup is complete
       if (settingsMap.setup_complete === 'true') {
@@ -40,7 +41,15 @@ export default function App() {
           window.henryAPI.getProviders(),
         ]);
         setConversations(convos);
-        setProviders(providers);
+        setProviders(
+          providers.map((p: any) => ({
+            id: p.id,
+            name: p.name,
+            apiKey: p.api_key || p.apiKey || '',
+            enabled: Boolean(p.enabled),
+            models: typeof p.models === 'string' ? JSON.parse(p.models || '[]') : (p.models || []),
+          }))
+        );
       }
     } catch (err) {
       console.error('Failed to init app:', err);
