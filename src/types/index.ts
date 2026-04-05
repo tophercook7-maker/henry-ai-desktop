@@ -15,6 +15,7 @@ export interface AIModel {
   inputPricePer1M: number;
   outputPricePer1M: number;
   contextWindow: number;
+  capabilities?: string[];
   recommended?: 'companion' | 'worker' | 'both';
   local?: boolean;
 }
