@@ -3,7 +3,7 @@ import path from 'path';
 
 let db: Database.Database;
 
-export function initDatabase(dataDir: string) {
+export function initDatabase(dataDir: string): Database.Database {
   const dbPath = path.join(dataDir, 'henry.db');
   db = new Database(dbPath);
 
@@ -65,7 +65,11 @@ export function initDatabase(dataDir: string) {
       priority INTEGER NOT NULL DEFAULT 5,
       payload TEXT DEFAULT '{}',
       result TEXT,
+      error TEXT,
       engine TEXT DEFAULT 'worker',
+      source_engine TEXT,
+      conversation_id TEXT,
+      cost REAL DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now')),
       started_at TEXT,
       completed_at TEXT
@@ -84,6 +88,38 @@ export function initDatabase(dataDir: string) {
       created_at TEXT DEFAULT (datetime('now'))
     );
 
+    -- Memory Facts
+    CREATE TABLE IF NOT EXISTS memory_facts (
+      id TEXT PRIMARY KEY,
+      conversation_id TEXT,
+      fact TEXT NOT NULL,
+      category TEXT DEFAULT 'general',
+      importance INTEGER DEFAULT 1,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (conversation_id) REFERENCES conversations(id)
+    );
+
+    -- Conversation Summaries
+    CREATE TABLE IF NOT EXISTS conversation_summaries (
+      id TEXT PRIMARY KEY,
+      conversation_id TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      message_count INTEGER DEFAULT 0,
+      token_count INTEGER DEFAULT 0,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (conversation_id) REFERENCES conversations(id)
+    );
+
+    -- Workspace File Index
+    CREATE TABLE IF NOT EXISTS workspace_index (
+      id TEXT PRIMARY KEY,
+      file_path TEXT NOT NULL UNIQUE,
+      file_type TEXT,
+      summary TEXT,
+      last_indexed TEXT NOT NULL,
+      size_bytes INTEGER DEFAULT 0
+    );
+
     -- Initialize default settings if empty
     INSERT OR IGNORE INTO settings (key, value) VALUES
       ('setup_complete', 'false'),
@@ -100,5 +136,6 @@ export function initDatabase(dataDir: string) {
 }
 
 export function getDb(): Database.Database {
+  if (!db) throw new Error('Database not initialized. Call initDatabase() first.');
   return db;
 }
