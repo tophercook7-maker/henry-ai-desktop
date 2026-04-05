@@ -42,8 +42,8 @@ export default function TitleBar() {
               {workerStatus.status === 'idle'
                 ? 'ready'
                 : workerStatus.status}
-              {workerStatus.queueLength > 0 &&
-                ` (${workerStatus.queueLength} queued)`}
+              {(workerStatus as any).queueLength > 0 &&
+                ` (${(workerStatus as any).queueLength} queued)`}
             </span>
           </span>
         </div>
