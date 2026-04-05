@@ -62,6 +62,9 @@ interface HenryAPI {
   }>;
   killTerminal: (execId: string) => Promise<{ killed: boolean }>;
 
+  // Cost Tracking
+  getCostLog: (period?: string) => Promise<any[]>;
+
   // Events
   onTaskUpdate: (cb: (data: any) => void) => () => void;
   onTaskResult: (cb: (data: any) => void) => () => void;
