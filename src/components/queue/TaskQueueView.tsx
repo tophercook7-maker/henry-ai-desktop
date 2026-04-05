@@ -1,54 +1,147 @@
-import { useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useStore } from '../../store';
-import type { Task } from '../../types';
+import type { Task, TaskStatus } from '../../types';
+
+const STATUS_CONFIG: Record<TaskStatus, { icon: string; label: string; color: string }> = {
+  pending: { icon: '⏳', label: 'Pending', color: 'text-henry-text-muted' },
+  queued: { icon: '📥', label: 'Queued', color: 'text-yellow-400' },
+  running: { icon: '⚡', label: 'Running', color: 'text-henry-worker' },
+  completed: { icon: '✅', label: 'Done', color: 'text-henry-success' },
+  failed: { icon: '❌', label: 'Failed', color: 'text-henry-error' },
+  cancelled: { icon: '🚫', label: 'Cancelled', color: 'text-henry-text-muted' },
+};
 
 export default function TaskQueueView() {
-  const { tasks, setTasks } = useStore();
+  const { tasks, setTasks, updateTask } = useStore();
+  const [filter, setFilter] = useState<TaskStatus | 'all'>('all');
+  const [stats, setStats] = useState<any>(null);
+  const [expandedTask, setExpandedTask] = useState<string | null>(null);
 
   useEffect(() => {
     loadTasks();
+    loadStats();
+
+    // Listen for real-time task updates
+    const unsub = window.henryAPI.onTaskUpdate((data) => {
+      updateTask(data.id, data);
+      loadStats();
+    });
+
+    return unsub;
   }, []);
 
   async function loadTasks() {
     try {
-      const tasks = await window.henryAPI.getTasks();
-      setTasks(tasks);
+      const allTasks = await window.henryAPI.getTasks();
+      setTasks(allTasks);
     } catch (err) {
       console.error('Failed to load tasks:', err);
     }
   }
 
-  const pending = tasks.filter((t) => t.status === 'pending' || t.status === 'queued');
-  const running = tasks.filter((t) => t.status === 'running');
-  const completed = tasks.filter((t) => t.status === 'completed' || t.status === 'failed');
+  async function loadStats() {
+    try {
+      const s = await window.henryAPI.getTaskStats();
+      setStats(s);
+    } catch (err) {
+      console.error('Failed to load task stats:', err);
+    }
+  }
+
+  async function cancelTask(id: string) {
+    try {
+      await window.henryAPI.cancelTask(id);
+      await loadTasks();
+    } catch (err) {
+      console.error('Failed to cancel task:', err);
+    }
+  }
+
+  async function retryTask(id: string) {
+    try {
+      await window.henryAPI.retryTask(id);
+      await loadTasks();
+    } catch (err) {
+      console.error('Failed to retry task:', err);
+    }
+  }
+
+  const filteredTasks = filter === 'all'
+    ? tasks
+    : tasks.filter((t) => t.status === filter);
+
+  const statusCounts = tasks.reduce<Record<string, number>>((acc, t) => {
+    acc[t.status] = (acc[t.status] || 0) + 1;
+    return acc;
+  }, {});
 
   return (
     <div className="h-full flex flex-col">
+      {/* Header */}
       <div className="shrink-0 px-6 py-4 border-b border-henry-border/50">
-        <h1 className="text-lg font-semibold text-henry-text">Task Queue</h1>
-        <p className="text-xs text-henry-text-dim mt-1">
-          Background tasks handled by the Worker engine
-        </p>
+        <div className="flex items-center justify-between mb-3">
+          <h1 className="text-lg font-semibold text-henry-text">Task Queue</h1>
+          <div className="flex items-center gap-2">
+            {stats?.activeCount > 0 && (
+              <span className="flex items-center gap-1.5 px-3 py-1 bg-henry-worker/10 text-henry-worker text-xs rounded-full">
+                <span className="w-1.5 h-1.5 rounded-full bg-henry-worker animate-pulse" />
+                {stats.activeCount} active
+              </span>
+            )}
+            {stats?.totalCost > 0 && (
+              <span className="text-xs text-henry-text-muted">
+                Total: ${stats.totalCost.toFixed(4)}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Filter tabs */}
+        <div className="flex gap-1">
+          {(['all', 'queued', 'running', 'completed', 'failed'] as const).map((f) => (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              className={`px-3 py-1.5 text-xs rounded-lg transition-colors ${
+                filter === f
+                  ? 'bg-henry-accent/10 text-henry-accent font-medium'
+                  : 'text-henry-text-dim hover:text-henry-text hover:bg-henry-hover/50'
+              }`}
+            >
+              {f === 'all' ? 'All' : STATUS_CONFIG[f]?.label || f}
+              {f === 'all' ? ` (${tasks.length})` : statusCounts[f] ? ` (${statusCounts[f]})` : ''}
+            </button>
+          ))}
+        </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6">
-        {tasks.length === 0 ? (
-          <EmptyQueue />
+      {/* Task list */}
+      <div className="flex-1 overflow-y-auto p-4">
+        {filteredTasks.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full text-center">
+            <div className="text-4xl mb-4">📋</div>
+            <h3 className="text-sm font-medium text-henry-text mb-1">
+              {filter === 'all' ? 'No tasks yet' : `No ${filter} tasks`}
+            </h3>
+            <p className="text-xs text-henry-text-muted max-w-xs">
+              Tasks appear here when you ask Henry's Worker engine to do heavy lifting —
+              code generation, research, file operations, and more.
+            </p>
+          </div>
         ) : (
-          <div className="max-w-3xl mx-auto space-y-6">
-            {running.length > 0 && (
-              <TaskSection title="Running" tasks={running} color="warning" />
-            )}
-            {pending.length > 0 && (
-              <TaskSection title="Queued" tasks={pending} color="accent" />
-            )}
-            {completed.length > 0 && (
-              <TaskSection
-                title="Completed"
-                tasks={completed.slice(0, 20)}
-                color="text-dim"
+          <div className="space-y-2 max-w-3xl mx-auto">
+            {filteredTasks.map((task) => (
+              <TaskCard
+                key={task.id}
+                task={task}
+                expanded={expandedTask === task.id}
+                onToggle={() =>
+                  setExpandedTask(expandedTask === task.id ? null : task.id)
+                }
+                onCancel={() => cancelTask(task.id)}
+                onRetry={() => retryTask(task.id)}
               />
-            )}
+            ))}
           </div>
         )}
       </div>
@@ -56,87 +149,167 @@ export default function TaskQueueView() {
   );
 }
 
-function TaskSection({
-  title,
-  tasks,
-  color,
+function TaskCard({
+  task,
+  expanded,
+  onToggle,
+  onCancel,
+  onRetry,
 }: {
-  title: string;
-  tasks: Task[];
-  color: string;
+  task: Task;
+  expanded: boolean;
+  onToggle: () => void;
+  onCancel: () => void;
+  onRetry: () => void;
 }) {
-  return (
-    <div>
-      <h2 className="text-xs font-medium text-henry-text-muted uppercase tracking-wider mb-3">
-        {title} ({tasks.length})
-      </h2>
-      <div className="space-y-2">
-        {tasks.map((task) => (
-          <TaskCard key={task.id} task={task} />
-        ))}
-      </div>
-    </div>
-  );
-}
+  const config = STATUS_CONFIG[task.status] || STATUS_CONFIG.pending;
 
-function TaskCard({ task }: { task: Task }) {
-  const statusColors: Record<string, string> = {
-    pending: 'bg-henry-text-muted/20 text-henry-text-muted',
-    queued: 'bg-henry-accent/20 text-henry-accent',
-    running: 'bg-henry-warning/20 text-henry-warning',
-    completed: 'bg-henry-success/20 text-henry-success',
-    failed: 'bg-henry-error/20 text-henry-error',
-    cancelled: 'bg-henry-text-muted/20 text-henry-text-muted',
-  };
+  function formatTime(dateStr: string): string {
+    const date = new Date(dateStr);
+    return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function getDuration(): string | null {
+    if (!task.started_at) return null;
+    const start = new Date(task.started_at).getTime();
+    const end = task.completed_at
+      ? new Date(task.completed_at).getTime()
+      : Date.now();
+    const seconds = Math.round((end - start) / 1000);
+
+    if (seconds < 60) return `${seconds}s`;
+    const minutes = Math.floor(seconds / 60);
+    const remainder = seconds % 60;
+    return `${minutes}m ${remainder}s`;
+  }
 
   return (
-    <div className="flex items-center gap-4 p-4 rounded-xl bg-henry-surface/50 border border-henry-border/30">
-      {/* Status */}
-      <div
-        className={`shrink-0 px-2 py-1 rounded-full text-[10px] font-medium ${
-          statusColors[task.status] || ''
-        }`}
+    <div
+      className={`rounded-xl border transition-all ${
+        task.status === 'running'
+          ? 'bg-henry-worker/5 border-henry-worker/20'
+          : task.status === 'failed'
+          ? 'bg-henry-error/5 border-henry-error/20'
+          : 'bg-henry-surface/30 border-henry-border/20'
+      }`}
+    >
+      {/* Header row */}
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center gap-3 p-4 text-left"
       >
-        {task.status}
-      </div>
+        <span className="text-lg">{config.icon}</span>
 
-      {/* Content */}
-      <div className="flex-1 min-w-0">
-        <div className="text-sm text-henry-text truncate">
-          {task.description}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-henry-text truncate">
+              {task.description}
+            </span>
+            <span className="shrink-0 text-[10px] px-2 py-0.5 rounded-full bg-henry-bg/50 text-henry-text-muted">
+              {task.type.replace('_', ' ')}
+            </span>
+          </div>
+          <div className="flex items-center gap-3 mt-1">
+            <span className={`text-[10px] ${config.color}`}>
+              {config.label}
+            </span>
+            {task.created_at && (
+              <span className="text-[10px] text-henry-text-muted">
+                {formatTime(task.created_at)}
+              </span>
+            )}
+            {getDuration() && (
+              <span className="text-[10px] text-henry-text-muted">
+                ⏱ {getDuration()}
+              </span>
+            )}
+            {task.cost && task.cost > 0 && (
+              <span className="text-[10px] text-henry-text-muted">
+                ${task.cost.toFixed(4)}
+              </span>
+            )}
+          </div>
         </div>
-        <div className="text-[10px] text-henry-text-muted mt-0.5">
-          {task.type} · Priority {task.priority}
-          {task.started_at &&
-            ` · Started ${new Date(task.started_at).toLocaleTimeString()}`}
-        </div>
-      </div>
 
-      {/* Running indicator */}
-      {task.status === 'running' && (
-        <div className="flex gap-1">
-          <div className="typing-dot" />
-          <div className="typing-dot" />
-          <div className="typing-dot" />
+        {/* Actions */}
+        <div className="flex items-center gap-1">
+          {task.status === 'running' && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onCancel();
+              }}
+              className="px-2 py-1 text-[10px] bg-henry-error/10 text-henry-error rounded hover:bg-henry-error/20 transition-colors"
+            >
+              Cancel
+            </button>
+          )}
+          {(task.status === 'failed' || task.status === 'cancelled') && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onRetry();
+              }}
+              className="px-2 py-1 text-[10px] bg-henry-accent/10 text-henry-accent rounded hover:bg-henry-accent/20 transition-colors"
+            >
+              Retry
+            </button>
+          )}
+          <svg
+            className={`w-3 h-3 text-henry-text-muted transition-transform ${
+              expanded ? 'rotate-180' : ''
+            }`}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <polyline points="6,9 12,15 18,9" />
+          </svg>
+        </div>
+      </button>
+
+      {/* Expanded details */}
+      {expanded && (
+        <div className="px-4 pb-4 animate-fade-in">
+          <div className="border-t border-henry-border/20 pt-3 space-y-2">
+            {task.result && (
+              <div>
+                <span className="text-[10px] text-henry-text-muted block mb-1">
+                  Result
+                </span>
+                <pre className="text-xs text-henry-text bg-henry-bg/50 rounded-lg p-3 overflow-auto max-h-60">
+                  {typeof task.result === 'string'
+                    ? task.result
+                    : JSON.stringify(task.result, null, 2)}
+                </pre>
+              </div>
+            )}
+            {task.error && (
+              <div>
+                <span className="text-[10px] text-henry-error block mb-1">
+                  Error
+                </span>
+                <pre className="text-xs text-henry-error/80 bg-henry-error/5 rounded-lg p-3">
+                  {task.error}
+                </pre>
+              </div>
+            )}
+            <div className="flex gap-4 text-[10px] text-henry-text-muted">
+              <span>ID: {task.id.slice(0, 8)}...</span>
+              <span>Priority: {task.priority}</span>
+              {task.source_engine && <span>From: {task.source_engine}</span>}
+            </div>
+          </div>
         </div>
       )}
-    </div>
-  );
-}
 
-function EmptyQueue() {
-  return (
-    <div className="h-full flex items-center justify-center">
-      <div className="text-center">
-        <div className="text-4xl mb-4">📋</div>
-        <h2 className="text-lg font-semibold text-henry-text mb-2">
-          No tasks in queue
-        </h2>
-        <p className="text-sm text-henry-text-dim max-w-sm">
-          When you give Henry complex tasks using the Worker engine, they'll
-          appear here with real-time status updates.
-        </p>
-      </div>
+      {/* Running progress bar */}
+      {task.status === 'running' && (
+        <div className="h-0.5 bg-henry-bg/30 rounded-b-xl overflow-hidden">
+          <div className="h-full bg-henry-worker animate-pulse rounded-full" style={{ width: '60%' }} />
+        </div>
+      )}
     </div>
   );
 }

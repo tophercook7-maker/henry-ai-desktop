@@ -1,69 +1,51 @@
-import { useState, useEffect, useRef } from 'react';
+import { useRef, useEffect } from 'react';
 import { useStore } from '../../store';
-import MessageBubble from './MessageBubble';
 import ChatInput from './ChatInput';
 import EngineSelector from './EngineSelector';
-import type { Message } from '../../types';
-import { getModel, estimateCost } from '../../providers/models';
+import MessageBubble from './MessageBubble';
 
 export default function ChatView() {
   const {
-    activeConversationId,
     messages,
-    providers,
-    settings,
-    isStreaming,
-    streamingContent,
+    activeConversationId,
+    setActiveConversation,
     addMessage,
+    updateMessage,
     setMessages,
+    isStreaming,
     setIsStreaming,
+    streamingContent,
     setStreamingContent,
     appendStreamingContent,
-    setActiveConversation,
-    setConversations,
-    updateMessage,
+    companionStatus,
     setCompanionStatus,
+    setWorkerStatus,
+    settings,
   } = useStore();
 
-  const [selectedEngine, setSelectedEngine] = useState<'companion' | 'worker'>('companion');
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const streamCancelRef = useRef<(() => void) | null>(null);
+  const streamRef = useRef<any>(null);
 
-  // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, streamingContent]);
 
-  // Get the active provider/model for selected engine
-  function getEngineConfig() {
-    const providerKey = selectedEngine === 'companion' ? 'companion_provider' : 'worker_provider';
-    const modelKey = selectedEngine === 'companion' ? 'companion_model' : 'worker_model';
-    const providerId = settings[providerKey];
-    const modelId = settings[modelKey];
-    const provider = providers.find((p) => p.id === providerId);
-    return { providerId, modelId, apiKey: provider?.apiKey || '' };
-  }
+  async function handleSend(content: string, engine: 'companion' | 'worker') {
+    if (!content.trim() || isStreaming) return;
 
-  async function handleSend(content: string) {
-    if (isStreaming) return;
-
-    const config = getEngineConfig();
-    if (!config.providerId || !config.modelId || !config.apiKey) {
-      // Show error or redirect to settings
-      return;
-    }
-
-    // Create conversation if needed
-    let convoId = activeConversationId;
-    if (!convoId) {
+    // Ensure we have a conversation
+    let convId = activeConversationId;
+    if (!convId) {
       try {
         const convo = await window.henryAPI.createConversation(
           content.slice(0, 50) + (content.length > 50 ? '...' : '')
         );
-        convoId = convo.id;
-        setActiveConversation(convoId);
+        convId = convo.id;
+        setActiveConversation(convId);
+
+        // Refresh conversations list
         const convos = await window.henryAPI.getConversations();
-        setConversations(convos);
+        useStore.getState().setConversations(convos);
       } catch (err) {
         console.error('Failed to create conversation:', err);
         return;
@@ -71,276 +53,360 @@ export default function ChatView() {
     }
 
     // Add user message
-    const userMsg: Message = {
+    const userMsg = {
       id: crypto.randomUUID(),
-      conversation_id: convoId,
-      role: 'user',
+      conversation_id: convId,
+      role: 'user' as const,
       content,
+      engine,
       created_at: new Date().toISOString(),
     };
     addMessage(userMsg);
 
-    // Save user message
+    // Save user message to DB
     try {
-      await window.henryAPI.saveMessage({
-        id: userMsg.id,
-        conversationId: convoId,
-        role: 'user',
-        content,
-      });
+      await window.henryAPI.saveMessage(userMsg);
     } catch (err) {
       console.error('Failed to save message:', err);
     }
 
-    // Prepare assistant message placeholder
-    const assistantMsgId = crypto.randomUUID();
-    const assistantMsg: Message = {
-      id: assistantMsgId,
-      conversation_id: convoId,
-      role: 'assistant',
-      content: '',
-      model: config.modelId,
-      provider: config.providerId,
-      engine: selectedEngine,
-      created_at: new Date().toISOString(),
-      isStreaming: true,
-    };
-    addMessage(assistantMsg);
+    // Route based on engine
+    if (engine === 'worker') {
+      // Worker tasks go through the task queue
+      await handleWorkerRequest(content, convId);
+    } else {
+      // Companion uses streaming directly
+      await handleCompanionStream(content, convId);
+    }
+  }
 
-    // Build message history for API
-    const apiMessages = [
-      {
-        role: 'system',
-        content: getSystemPrompt(selectedEngine),
-      },
-      ...messages
-        .filter((m) => m.role !== 'system')
-        .map((m) => ({ role: m.role, content: m.content })),
-      { role: 'user', content },
-    ];
-
-    // Start streaming
+  async function handleCompanionStream(content: string, convId: string) {
     setIsStreaming(true);
     setStreamingContent('');
     setCompanionStatus({ status: 'thinking' });
 
+    // Build context from memory
+    let memoryContext = '';
     try {
+      const ctx = await window.henryAPI.buildContext({
+        conversationId: convId,
+        query: content,
+      });
+      memoryContext = ctx.context;
+    } catch {
+      // Memory context is optional
+    }
+
+    // Build message history for API call
+    const history = messages
+      .filter((m) => m.conversation_id === convId)
+      .slice(-20) // Last 20 messages for context
+      .map((m) => ({
+        role: m.role,
+        content: m.content,
+      }));
+
+    // Get companion engine settings
+    const providers = await window.henryAPI.getProviders();
+    const companionProvider = useStore.getState().settings.companion_provider;
+    const companionModel = useStore.getState().settings.companion_model;
+    const provider = providers.find((p: any) => p.id === companionProvider);
+
+    if (!provider || !companionModel) {
+      addMessage({
+        id: crypto.randomUUID(),
+        conversation_id: convId,
+        role: 'assistant',
+        content: '⚠️ Companion engine not configured. Please set up your AI provider in Settings.',
+        engine: 'companion',
+        created_at: new Date().toISOString(),
+      });
+      setIsStreaming(false);
+      setCompanionStatus({ status: 'idle' });
+      return;
+    }
+
+    // Prepare the streaming call
+    const systemPrompt = `You are Henry AI — a calm, capable, focused AI assistant. You are the Companion engine: always available, conversational, and helpful. You handle everyday tasks, answer questions, and manage the user's workflow.
+
+${memoryContext ? `Here's what you know:\n${memoryContext}\n` : ''}
+When the user needs heavy work (code generation, long research, file operations), suggest delegating to the Worker engine.
+
+Be concise but thorough. Use markdown for formatting. Be direct, not flowery.`;
+
+    const messagesPayload = [
+      { role: 'system', content: systemPrompt },
+      ...history,
+    ];
+
+    try {
+      setCompanionStatus({ status: 'streaming' });
+
       const stream = window.henryAPI.streamMessage({
-        provider: config.providerId,
-        model: config.modelId,
-        apiKey: config.apiKey,
-        messages: apiMessages,
-        temperature: parseFloat(settings.default_temperature) || 0.7,
+        provider: companionProvider,
+        model: companionModel,
+        apiKey: provider.api_key,
+        messages: messagesPayload,
+        temperature: 0.7,
       });
 
-      streamCancelRef.current = stream.cancel;
+      streamRef.current = stream;
 
       stream.onChunk((chunk: string) => {
         appendStreamingContent(chunk);
       });
 
       stream.onDone(async (fullText: string, usage?: any) => {
-        // Calculate cost
-        const cost = usage
-          ? estimateCost(config.modelId, usage.input || 0, usage.output || 0)
-          : 0;
-
-        // Update message in state
-        updateMessage(assistantMsgId, {
+        // Save assistant message
+        const assistantMsg = {
+          id: crypto.randomUUID(),
+          conversation_id: convId,
+          role: 'assistant' as const,
           content: fullText,
-          tokens_used: usage ? (usage.input || 0) + (usage.output || 0) : 0,
-          cost,
-          isStreaming: false,
-        });
+          engine: 'companion' as const,
+          model: companionModel,
+          provider: companionProvider,
+          tokens_used: usage?.total_tokens,
+          cost: usage?.cost,
+          created_at: new Date().toISOString(),
+        };
 
-        // Save to database
+        addMessage(assistantMsg);
+        setStreamingContent('');
+        setIsStreaming(false);
+        setCompanionStatus({ status: 'idle' });
+
         try {
-          await window.henryAPI.saveMessage({
-            id: assistantMsgId,
-            conversationId: convoId!,
-            role: 'assistant',
-            content: fullText,
-            model: config.modelId,
-            provider: config.providerId,
-            tokensUsed: usage ? (usage.input || 0) + (usage.output || 0) : 0,
-            cost,
-            engine: selectedEngine,
-          });
+          await window.henryAPI.saveMessage(assistantMsg);
         } catch (err) {
           console.error('Failed to save assistant message:', err);
         }
 
-        setIsStreaming(false);
-        setStreamingContent('');
-        setCompanionStatus({ status: 'idle' });
-        streamCancelRef.current = null;
+        // Try to extract and save any facts from the conversation
+        try {
+          // Simple fact extraction — save key user preferences mentioned
+          if (content.length > 30) {
+            await window.henryAPI.saveFact({
+              conversationId: convId,
+              fact: content.slice(0, 200),
+              category: 'conversation',
+              importance: 1,
+            });
+          }
+        } catch {
+          // Fact extraction is optional
+        }
       });
 
       stream.onError((error: string) => {
-        updateMessage(assistantMsgId, {
-          content: `⚠️ Error: ${error}`,
-          isStreaming: false,
+        addMessage({
+          id: crypto.randomUUID(),
+          conversation_id: convId,
+          role: 'assistant',
+          content: `❌ Error: ${error}`,
+          engine: 'companion',
+          created_at: new Date().toISOString(),
         });
-        setIsStreaming(false);
         setStreamingContent('');
-        setCompanionStatus({ status: 'error' });
-        streamCancelRef.current = null;
+        setIsStreaming(false);
+        setCompanionStatus({ status: 'error', message: error });
+
+        // Reset to idle after 3 seconds
+        setTimeout(() => setCompanionStatus({ status: 'idle' }), 3000);
       });
     } catch (err: any) {
-      updateMessage(assistantMsgId, {
-        content: `⚠️ Error: ${err.message}`,
-        isStreaming: false,
+      addMessage({
+        id: crypto.randomUUID(),
+        conversation_id: convId,
+        role: 'assistant',
+        content: `❌ Failed to start stream: ${err.message}`,
+        engine: 'companion',
+        created_at: new Date().toISOString(),
       });
       setIsStreaming(false);
-      setStreamingContent('');
-      setCompanionStatus({ status: 'error' });
+      setCompanionStatus({ status: 'idle' });
     }
   }
 
-  function handleCancel() {
-    streamCancelRef.current?.();
-    setIsStreaming(false);
+  async function handleWorkerRequest(content: string, convId: string) {
+    // Determine task type from content
+    const taskType = detectTaskType(content);
+
+    // Add a "queued" indicator message
+    addMessage({
+      id: crypto.randomUUID(),
+      conversation_id: convId,
+      role: 'assistant',
+      content: `⚡ Queuing task for Worker engine...\n\n> ${content.slice(0, 100)}${content.length > 100 ? '...' : ''}\n\nType: \`${taskType}\` — Check the Tasks tab for progress.`,
+      engine: 'worker',
+      created_at: new Date().toISOString(),
+    });
+
+    // Submit to task queue
+    try {
+      const result = await window.henryAPI.submitTask({
+        description: content.slice(0, 200),
+        type: taskType,
+        payload: JSON.stringify({
+          prompt: content,
+          conversationId: convId,
+        }),
+        sourceEngine: 'companion',
+        conversationId: convId,
+      });
+
+      setWorkerStatus({
+        status: 'working',
+        taskId: result.id,
+        taskDescription: content.slice(0, 100),
+      });
+    } catch (err: any) {
+      addMessage({
+        id: crypto.randomUUID(),
+        conversation_id: convId,
+        role: 'assistant',
+        content: `❌ Failed to queue task: ${err.message}`,
+        engine: 'worker',
+        created_at: new Date().toISOString(),
+      });
+    }
+  }
+
+  function detectTaskType(content: string): string {
+    const lower = content.toLowerCase();
+    if (lower.includes('code') || lower.includes('function') || lower.includes('implement') || lower.includes('build') || lower.includes('create a')) {
+      return 'code_generate';
+    }
+    if (lower.includes('research') || lower.includes('find') || lower.includes('compare') || lower.includes('analyze')) {
+      return 'research';
+    }
+    if (lower.includes('file') || lower.includes('read') || lower.includes('write') || lower.includes('save')) {
+      return 'file_operation';
+    }
+    return 'ai_generate';
+  }
+
+  function cancelStream() {
+    if (streamRef.current) {
+      streamRef.current.cancel();
+      streamRef.current = null;
+    }
     setStreamingContent('');
+    setIsStreaming(false);
     setCompanionStatus({ status: 'idle' });
   }
 
-  const config = getEngineConfig();
-  const hasConfig = config.providerId && config.modelId && config.apiKey;
-
   return (
     <div className="h-full flex flex-col">
-      {/* Engine selector bar */}
-      <EngineSelector
-        selectedEngine={selectedEngine}
-        onSelect={setSelectedEngine}
-      />
-
       {/* Messages area */}
-      <div className="flex-1 overflow-y-auto px-4 py-6">
-        {messages.length === 0 && !activeConversationId ? (
-          <EmptyState onNewChat={() => {}} />
+      <div className="flex-1 overflow-y-auto px-6 py-4">
+        {messages.length === 0 && !isStreaming ? (
+          <EmptyChat />
         ) : (
-          <div className="max-w-3xl mx-auto space-y-1">
+          <div className="max-w-3xl mx-auto space-y-4">
             {messages.map((msg) => (
-              <MessageBubble
-                key={msg.id}
-                message={msg}
-                isStreaming={msg.isStreaming}
-                streamingContent={
-                  msg.isStreaming ? streamingContent : undefined
-                }
-              />
+              <MessageBubble key={msg.id} message={msg} />
             ))}
+
+            {/* Streaming indicator */}
+            {isStreaming && streamingContent && (
+              <MessageBubble
+                message={{
+                  id: 'streaming',
+                  conversation_id: '',
+                  role: 'assistant',
+                  content: streamingContent,
+                  engine: 'companion',
+                  created_at: new Date().toISOString(),
+                  isStreaming: true,
+                }}
+              />
+            )}
+
             <div ref={messagesEndRef} />
           </div>
         )}
       </div>
 
       {/* Input area */}
-      <div className="shrink-0 border-t border-henry-border/50 bg-henry-surface/30">
-        <div className="max-w-3xl mx-auto p-4">
-          {!hasConfig ? (
-            <div className="text-center py-3">
-              <p className="text-henry-text-dim text-sm">
-                Configure your AI provider in{' '}
-                <button
-                  onClick={() => useStore.getState().setCurrentView('settings')}
-                  className="text-henry-accent hover:text-henry-accent-hover underline"
-                >
-                  Settings
-                </button>{' '}
-                to start chatting.
-              </p>
+      <div className="shrink-0 border-t border-henry-border/30 bg-henry-surface/20 px-6 py-4">
+        <div className="max-w-3xl mx-auto">
+          <div className="flex items-end gap-3">
+            <EngineSelector />
+            <div className="flex-1">
+              <ChatInput
+                onSend={handleSend}
+                disabled={isStreaming}
+                onCancel={isStreaming ? cancelStream : undefined}
+              />
             </div>
-          ) : (
-            <ChatInput
-              onSend={handleSend}
-              onCancel={handleCancel}
-              isStreaming={isStreaming}
-              placeholder={
-                selectedEngine === 'companion'
-                  ? 'Chat with Henry...'
-                  : 'Describe a task for the Worker...'
-              }
-            />
-          )}
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-function EmptyState({ onNewChat }: { onNewChat: () => void }) {
+function EmptyChat() {
   return (
-    <div className="h-full flex items-center justify-center animate-fade-in">
-      <div className="text-center max-w-md">
-        <div className="text-5xl mb-6">🧠</div>
-        <h2 className="text-2xl font-semibold text-henry-text mb-3">
-          Hey. I'm Henry.
+    <div className="h-full flex items-center justify-center">
+      <div className="text-center max-w-md animate-fade-in">
+        <div className="text-6xl mb-6">🧠</div>
+        <h2 className="text-2xl font-bold text-henry-text mb-3">
+          Henry AI
         </h2>
         <p className="text-henry-text-dim mb-6 leading-relaxed">
-          Your local AI operating system. I run on your machine, your data stays
-          with you. Ask me anything or give me a task.
+          Your personal AI operating system. Switch between
+          <span className="text-henry-companion font-medium"> Companion </span>
+          for quick chat and
+          <span className="text-henry-worker font-medium"> Worker </span>
+          for heavy tasks.
         </p>
-        <div className="grid grid-cols-2 gap-3 text-left">
-          {[
-            { icon: '💬', label: 'Chat', desc: 'Ask anything, get instant answers' },
-            { icon: '⚡', label: 'Execute', desc: 'Run tasks in the background' },
-            { icon: '📁', label: 'Organize', desc: 'Manage your workspace & files' },
-            { icon: '🔒', label: 'Private', desc: 'Everything stays on your machine' },
-          ].map((item) => (
-            <div
-              key={item.label}
-              className="p-3 rounded-lg bg-henry-surface/50 border border-henry-border/30"
-            >
-              <div className="text-lg mb-1">{item.icon}</div>
-              <div className="text-sm font-medium text-henry-text">
-                {item.label}
-              </div>
-              <div className="text-xs text-henry-text-muted">{item.desc}</div>
-            </div>
-          ))}
+        <div className="grid grid-cols-2 gap-3 text-xs">
+          <SuggestionCard
+            icon="🧠"
+            label="Companion"
+            text="What should I work on today?"
+          />
+          <SuggestionCard
+            icon="⚡"
+            label="Worker"
+            text="Generate a REST API for my app"
+          />
+          <SuggestionCard
+            icon="🧠"
+            label="Companion"
+            text="Summarize my meeting notes"
+          />
+          <SuggestionCard
+            icon="⚡"
+            label="Worker"
+            text="Research the best tech stack for a SaaS"
+          />
         </div>
       </div>
     </div>
   );
 }
 
-function getSystemPrompt(engine: 'companion' | 'worker'): string {
-  if (engine === 'companion') {
-    return `You are Henry, a calm, capable, and focused AI assistant. You are the Companion engine — always available, quick to respond, and conversational.
-
-Your personality:
-- Professional but approachable. Like a trusted business partner.
-- Direct and clear. No fluff, no corporate speak.
-- You acknowledge what you don't know rather than guessing.
-- You're proactive — suggest next steps, anticipate needs.
-
-You help with:
-- Quick questions and conversation
-- Planning and brainstorming
-- Checking on background task status
-- Organizing and prioritizing work
-- Summarizing and explaining
-
-Keep responses focused and useful. Format with markdown when helpful.`;
-  }
-
-  return `You are Henry, operating as the Worker engine. You handle complex, resource-intensive tasks with thorough, detailed output.
-
-Your approach:
-- Methodical and comprehensive
-- Include full code blocks with proper formatting
-- Explain your reasoning step by step
-- Produce production-quality output
-- Handle multi-step tasks end to end
-
-You excel at:
-- Writing and debugging code
-- Creating documents and reports
-- Research and deep analysis
-- File operations and organization
-- Complex multi-step workflows
-
-Produce the highest quality output. Take your time to be thorough.`;
+function SuggestionCard({
+  icon,
+  label,
+  text,
+}: {
+  icon: string;
+  label: string;
+  text: string;
+}) {
+  return (
+    <button className="text-left p-3 rounded-xl bg-henry-surface/30 border border-henry-border/20 hover:border-henry-border/40 transition-all group">
+      <div className="flex items-center gap-1.5 mb-1">
+        <span className="text-xs">{icon}</span>
+        <span className="text-[10px] text-henry-text-muted">{label}</span>
+      </div>
+      <span className="text-henry-text-dim group-hover:text-henry-text transition-colors">
+        {text}
+      </span>
+    </button>
+  );
 }

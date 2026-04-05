@@ -1,32 +1,32 @@
-// Provider & Model types
+// ── AI Provider Types ─────────────────────────────────────────
+
 export interface AIProvider {
   id: string;
   name: string;
   apiKey: string;
   enabled: boolean;
-  models: AIModel[];
+  models: string[];
 }
 
 export interface AIModel {
   id: string;
   name: string;
   provider: string;
-  contextWindow: number;
   inputPricePer1M: number;
   outputPricePer1M: number;
-  capabilities: ('chat' | 'code' | 'reasoning' | 'vision')[];
+  contextWindow: number;
   recommended?: 'companion' | 'worker' | 'both';
   local?: boolean;
 }
 
-// Conversation types
+// ── Conversation Types ────────────────────────────────────────
+
 export interface Conversation {
   id: string;
   title: string;
-  model?: string;
-  provider?: string;
   created_at: string;
   updated_at: string;
+  message_count?: number;
 }
 
 export interface Message {
@@ -36,115 +36,162 @@ export interface Message {
   content: string;
   model?: string;
   provider?: string;
+  engine?: 'companion' | 'worker';
   tokens_used?: number;
   cost?: number;
-  engine?: 'companion' | 'worker';
   created_at: string;
   isStreaming?: boolean;
 }
 
-// Task Queue types
+// ── Task Types ────────────────────────────────────────────────
+
+export type TaskStatus = 'pending' | 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+export type TaskType = 'ai_generate' | 'file_operation' | 'code_generate' | 'research' | 'custom';
+
 export interface Task {
   id: string;
-  type: string;
   description: string;
-  status: 'pending' | 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+  type: TaskType;
+  status: TaskStatus;
   priority: number;
-  payload: string;
+  payload?: string;
   result?: string;
-  engine: 'companion' | 'worker';
-  created_at: string;
+  error?: string;
+  source_engine?: string;
+  conversation_id?: string;
+  cost?: number;
   started_at?: string;
   completed_at?: string;
+  created_at: string;
 }
 
-// Engine types
+export interface TaskSubmission {
+  description: string;
+  type: TaskType;
+  priority?: number;
+  payload?: any;
+  sourceEngine?: string;
+  conversationId?: string;
+}
+
+// ── Engine Types ──────────────────────────────────────────────
+
+export interface EngineStatus {
+  status: 'idle' | 'thinking' | 'working' | 'streaming' | 'error';
+  taskId?: string;
+  taskDescription?: string;
+  message?: string;
+}
+
 export interface EngineConfig {
   provider: string;
   model: string;
   apiKey: string;
-  temperature: number;
-  systemPrompt: string;
+  temperature?: number;
 }
 
-export interface EngineStatus {
-  engine: 'companion' | 'worker';
-  status: 'idle' | 'thinking' | 'working' | 'error';
-  currentTask?: string;
-  queueLength: number;
+// ── Memory Types ──────────────────────────────────────────────
+
+export interface MemoryFact {
+  id: string;
+  conversation_id?: string;
+  fact: string;
+  category: string;
+  importance: number;
+  created_at: string;
 }
 
-// Settings
-export interface Settings {
-  setup_complete: string;
-  theme: string;
-  companion_model: string;
-  companion_provider: string;
-  worker_model: string;
-  worker_provider: string;
-  default_temperature: string;
-  workspace_path: string;
-  [key: string]: string;
+export interface ConversationSummary {
+  id: string;
+  conversation_id: string;
+  summary: string;
+  message_count: number;
+  token_count: number;
+  created_at: string;
 }
 
-// File system
+export interface WorkspaceFile {
+  id: string;
+  file_path: string;
+  file_type: string;
+  summary: string;
+  last_indexed: string;
+  size_bytes: number;
+}
+
+export interface MemoryContext {
+  context: string;
+  estimatedTokens: number;
+  factCount: number;
+}
+
+// ── File System Types ─────────────────────────────────────────
+
 export interface FileEntry {
   name: string;
   path: string;
-  type: 'file' | 'directory';
+  isDirectory: boolean;
   size?: number;
   modified?: string;
-  extension?: string;
 }
 
-// Preload API
-export interface HenryAPI {
-  getPaths: () => Promise<{
-    data: string;
-    workspace: string;
-    home: string;
-    documents: string;
-  }>;
-  minimize: () => Promise<void>;
-  maximize: () => Promise<void>;
-  close: () => Promise<void>;
-  getSettings: () => Promise<Settings>;
-  saveSetting: (key: string, value: string) => Promise<boolean>;
-  getProviders: () => Promise<any[]>;
-  saveProvider: (provider: {
-    id: string;
-    name: string;
-    apiKey: string;
-    enabled: boolean;
-    models: string;
-  }) => Promise<boolean>;
-  deleteProvider: (id: string) => Promise<boolean>;
-  getConversations: () => Promise<Conversation[]>;
-  getConversation: (id: string) => Promise<Conversation>;
-  createConversation: (title: string) => Promise<{ id: string; title: string }>;
-  deleteConversation: (id: string) => Promise<boolean>;
-  getMessages: (conversationId: string) => Promise<Message[]>;
-  saveMessage: (message: any) => Promise<boolean>;
-  sendMessage: (params: any) => Promise<{ content: string; usage?: any }>;
-  streamMessage: (params: any) => {
-    streamId: string;
-    onChunk: (callback: (chunk: string) => void) => void;
-    onDone: (callback: (fullText: string, usage?: any) => void) => void;
-    onError: (callback: (error: string) => void) => void;
-    cancel: () => void;
-  };
-  getTasks: () => Promise<Task[]>;
-  createTask: (task: any) => Promise<boolean>;
-  updateTask: (id: string, status: string, result?: string) => Promise<boolean>;
-  readWorkspace: (subpath?: string) => Promise<FileEntry[]>;
-  readFile: (filepath: string) => Promise<string>;
-  writeFile: (filepath: string, content: string) => Promise<boolean>;
-  openFolder: () => Promise<string | null>;
-  onWorkerStatus: (callback: (status: any) => void) => () => void;
+export interface DirectoryResult {
+  path: string;
+  entries: FileEntry[];
 }
 
-declare global {
-  interface Window {
-    henryAPI: HenryAPI;
-  }
+// ── Store Types ───────────────────────────────────────────────
+
+export type ViewType = 'chat' | 'tasks' | 'files' | 'workspace' | 'settings';
+
+export interface AppSettings {
+  [key: string]: string;
+}
+
+export interface AppState {
+  // UI
+  currentView: ViewType;
+  setupComplete: boolean;
+
+  // Conversations
+  conversations: Conversation[];
+  activeConversationId: string | null;
+  messages: Message[];
+
+  // AI
+  providers: AIProvider[];
+  settings: AppSettings;
+  isStreaming: boolean;
+  streamingContent: string;
+
+  // Engines
+  companionStatus: EngineStatus;
+  workerStatus: EngineStatus;
+
+  // Tasks
+  tasks: Task[];
+
+  // Memory
+  facts: MemoryFact[];
+
+  // Actions
+  setCurrentView: (view: ViewType) => void;
+  setSetupComplete: (complete: boolean) => void;
+  setConversations: (convos: Conversation[]) => void;
+  setActiveConversation: (id: string | null) => void;
+  setMessages: (messages: Message[]) => void;
+  addMessage: (message: Message) => void;
+  updateMessage: (id: string, updates: Partial<Message>) => void;
+  setProviders: (providers: AIProvider[]) => void;
+  updateSetting: (key: string, value: string) => void;
+  setIsStreaming: (streaming: boolean) => void;
+  setStreamingContent: (content: string) => void;
+  appendStreamingContent: (chunk: string) => void;
+  setCompanionStatus: (status: Partial<EngineStatus>) => void;
+  setWorkerStatus: (status: Partial<EngineStatus>) => void;
+  setTasks: (tasks: Task[]) => void;
+  addTask: (task: Task) => void;
+  updateTask: (id: string, updates: Partial<Task>) => void;
+  setFacts: (facts: MemoryFact[]) => void;
+  addFact: (fact: MemoryFact) => void;
 }

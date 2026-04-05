@@ -1,50 +1,16 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useStore } from '../../store';
+import type { Conversation } from '../../types';
 
-// Simple SVG icons (avoiding dependency issues)
-function ChatIcon({ className = '' }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-    </svg>
-  );
-}
+type ViewType = 'chat' | 'tasks' | 'files' | 'workspace' | 'settings';
 
-function TaskIcon({ className = '' }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="3" width="18" height="18" rx="2" />
-      <path d="m9 12 2 2 4-4" />
-    </svg>
-  );
-}
-
-function SettingsIcon({ className = '' }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="3" />
-      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-    </svg>
-  );
-}
-
-function PlusIcon({ className = '' }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <line x1="12" y1="5" x2="12" y2="19" />
-      <line x1="5" y1="12" x2="19" y2="12" />
-    </svg>
-  );
-}
-
-function TrashIcon({ className = '' }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="3 6 5 6 21 6" />
-      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-    </svg>
-  );
-}
+const NAV_ITEMS: { id: ViewType; label: string; icon: string }[] = [
+  { id: 'chat', label: 'Chat', icon: '💬' },
+  { id: 'tasks', label: 'Tasks', icon: '📋' },
+  { id: 'files', label: 'Files', icon: '📁' },
+  { id: 'workspace', label: 'Workspace', icon: '🗂️' },
+  { id: 'settings', label: 'Settings', icon: '⚙️' },
+];
 
 export default function Sidebar() {
   const {
@@ -53,150 +19,257 @@ export default function Sidebar() {
     conversations,
     activeConversationId,
     setActiveConversation,
-    setMessages,
     setConversations,
+    setMessages,
     workerStatus,
+    companionStatus,
   } = useStore();
-  const [hoveredConvo, setHoveredConvo] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState('');
 
-  const navItems = [
-    { id: 'chat' as const, label: 'Chat', icon: ChatIcon },
-    { id: 'tasks' as const, label: 'Tasks', icon: TaskIcon, badge: workerStatus.queueLength || undefined },
-    { id: 'settings' as const, label: 'Settings', icon: SettingsIcon },
-  ];
+  useEffect(() => {
+    loadConversations();
+  }, []);
 
-  async function handleNewChat() {
+  async function loadConversations() {
     try {
-      const convo = await window.henryAPI.createConversation('New Chat');
       const convos = await window.henryAPI.getConversations();
       setConversations(convos);
-      setActiveConversation(convo.id);
-      setMessages([]);
-      setCurrentView('chat');
     } catch (err) {
-      console.error('Failed to create conversation:', err);
+      console.error('Failed to load conversations:', err);
     }
   }
 
-  async function handleSelectConvo(id: string) {
+  async function selectConversation(id: string) {
     setActiveConversation(id);
     setCurrentView('chat');
     try {
-      const messages = await window.henryAPI.getMessages(id);
-      setMessages(messages);
+      const msgs = await window.henryAPI.getMessages(id);
+      setMessages(msgs);
     } catch (err) {
       console.error('Failed to load messages:', err);
     }
   }
 
-  async function handleDeleteConvo(id: string) {
+  function newConversation() {
+    setActiveConversation(null);
+    setMessages([]);
+    setCurrentView('chat');
+  }
+
+  async function deleteConversation(id: string) {
     try {
       await window.henryAPI.deleteConversation(id);
-      const convos = await window.henryAPI.getConversations();
-      setConversations(convos);
       if (activeConversationId === id) {
         setActiveConversation(null);
         setMessages([]);
       }
+      const convos = await window.henryAPI.getConversations();
+      setConversations(convos);
     } catch (err) {
       console.error('Failed to delete conversation:', err);
     }
   }
 
+  async function renameConversation(id: string) {
+    if (!editTitle.trim()) {
+      setEditingId(null);
+      return;
+    }
+    try {
+      await window.henryAPI.updateConversation(id, editTitle.trim());
+      const convos = await window.henryAPI.getConversations();
+      setConversations(convos);
+    } catch (err) {
+      console.error('Failed to rename:', err);
+    }
+    setEditingId(null);
+  }
+
+  // Get task counts for badge
+  const taskStore = useStore.getState();
+
   return (
-    <div className="w-64 h-full flex flex-col bg-henry-surface/30 border-r border-henry-border/50 shrink-0">
+    <div className="w-56 shrink-0 bg-henry-surface/50 border-r border-henry-border/50 flex flex-col">
+      {/* New chat button */}
+      <div className="p-3">
+        <button
+          onClick={newConversation}
+          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-henry-accent/10 text-henry-accent rounded-xl text-xs font-medium hover:bg-henry-accent/20 transition-colors border border-henry-accent/20"
+        >
+          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+          New Chat
+        </button>
+      </div>
+
       {/* Navigation */}
-      <nav className="p-3 space-y-1">
-        {navItems.map((item) => (
+      <nav className="px-2 space-y-0.5">
+        {NAV_ITEMS.map((item) => (
           <button
             key={item.id}
             onClick={() => setCurrentView(item.id)}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all ${
+            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs transition-all ${
               currentView === item.id
-                ? 'bg-henry-accent/10 text-henry-accent'
+                ? 'bg-henry-accent/10 text-henry-accent font-medium'
                 : 'text-henry-text-dim hover:text-henry-text hover:bg-henry-hover/50'
             }`}
           >
-            <item.icon className="w-4 h-4" />
-            <span className="flex-1 text-left">{item.label}</span>
-            {item.badge && (
-              <span className="px-1.5 py-0.5 text-[10px] font-medium bg-henry-worker/20 text-henry-worker rounded-full">
-                {item.badge}
-              </span>
+            <span className="text-sm">{item.icon}</span>
+            <span>{item.label}</span>
+            {/* Task queue badge */}
+            {item.id === 'tasks' && workerStatus.status === 'working' && (
+              <span className="ml-auto w-2 h-2 rounded-full bg-henry-worker animate-pulse" />
             )}
           </button>
         ))}
       </nav>
 
-      <div className="h-px bg-henry-border/50 mx-3" />
+      {/* Divider */}
+      <div className="mx-3 my-3 border-t border-henry-border/30" />
 
-      {/* Conversations */}
-      <div className="flex-1 flex flex-col min-h-0">
-        <div className="flex items-center justify-between px-4 py-3">
-          <span className="text-xs font-medium text-henry-text-muted uppercase tracking-wider">
-            Conversations
+      {/* Conversations list */}
+      <div className="flex-1 overflow-y-auto px-2">
+        <div className="flex items-center justify-between px-3 mb-2">
+          <span className="text-[10px] font-medium text-henry-text-muted uppercase tracking-wider">
+            Recent Chats
           </span>
-          <button
-            onClick={handleNewChat}
-            className="p-1 rounded-md hover:bg-henry-hover text-henry-text-dim hover:text-henry-text transition-colors"
-            title="New Chat"
-          >
-            <PlusIcon className="w-4 h-4" />
-          </button>
+          <span className="text-[10px] text-henry-text-muted">
+            {conversations.length}
+          </span>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-2 pb-3 space-y-0.5">
-          {conversations.length === 0 ? (
-            <p className="text-xs text-henry-text-muted px-3 py-2">
-              No conversations yet
-            </p>
-          ) : (
-            conversations.map((convo) => (
-              <div
-                key={convo.id}
-                onMouseEnter={() => setHoveredConvo(convo.id)}
-                onMouseLeave={() => setHoveredConvo(null)}
-                className={`group flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-all ${
-                  activeConversationId === convo.id
-                    ? 'bg-henry-hover text-henry-text'
-                    : 'text-henry-text-dim hover:bg-henry-hover/50 hover:text-henry-text'
-                }`}
-              >
-                <button
-                  onClick={() => handleSelectConvo(convo.id)}
-                  className="flex-1 text-left text-sm truncate"
-                >
-                  {convo.title}
-                </button>
-                {hoveredConvo === convo.id && (
+        <div className="space-y-0.5">
+          {conversations.map((convo: Conversation) => (
+            <div
+              key={convo.id}
+              className={`group relative flex items-center rounded-lg transition-all ${
+                activeConversationId === convo.id
+                  ? 'bg-henry-accent/10'
+                  : 'hover:bg-henry-hover/50'
+              }`}
+            >
+              {editingId === convo.id ? (
+                <input
+                  autoFocus
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  onBlur={() => renameConversation(convo.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') renameConversation(convo.id);
+                    if (e.key === 'Escape') setEditingId(null);
+                  }}
+                  className="flex-1 bg-henry-bg border border-henry-accent/30 rounded px-2 py-1.5 text-xs text-henry-text outline-none mx-1 my-0.5"
+                />
+              ) : (
+                <>
                   <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeleteConvo(convo.id);
-                    }}
-                    className="p-1 rounded hover:bg-henry-error/20 text-henry-text-muted hover:text-henry-error transition-colors"
+                    onClick={() => selectConversation(convo.id)}
+                    className={`flex-1 text-left px-3 py-2 text-xs truncate ${
+                      activeConversationId === convo.id
+                        ? 'text-henry-accent'
+                        : 'text-henry-text-dim'
+                    }`}
                   >
-                    <TrashIcon className="w-3 h-3" />
+                    {convo.title || 'New Chat'}
                   </button>
-                )}
-              </div>
-            ))
-          )}
+
+                  {/* Actions (visible on hover) */}
+                  <div className="hidden group-hover:flex items-center gap-0.5 pr-1">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingId(convo.id);
+                        setEditTitle(convo.title || '');
+                      }}
+                      className="p-1 rounded text-henry-text-muted hover:text-henry-text transition-colors"
+                      title="Rename"
+                    >
+                      <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
+                        <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (confirm('Delete this conversation?')) {
+                          deleteConversation(convo.id);
+                        }
+                      }}
+                      className="p-1 rounded text-henry-text-muted hover:text-henry-error transition-colors"
+                      title="Delete"
+                    >
+                      <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <polyline points="3,6 5,6 21,6" />
+                        <path d="M19,6v14a2,2,0,0,1-2,2H7a2,2,0,0,1-2-2V6m3,0V4a2,2,0,0,1,2-2h4a2,2,0,0,1,2,2V6" />
+                      </svg>
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          ))}
         </div>
       </div>
 
-      {/* Engine Status Footer */}
-      <div className="p-3 border-t border-henry-border/50">
-        <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-henry-bg/50">
-          <div className="text-xs">🧠</div>
-          <div className="flex-1 min-w-0">
-            <div className="text-[11px] font-medium text-henry-text truncate">
-              Henry AI
-            </div>
-            <div className="text-[10px] text-henry-text-muted">v0.1.0</div>
-          </div>
+      {/* Engine status footer */}
+      <div className="shrink-0 p-3 border-t border-henry-border/30">
+        <div className="space-y-2">
+          <EngineStatusBadge
+            icon="🧠"
+            label="Companion"
+            status={companionStatus.status}
+            color="companion"
+          />
+          <EngineStatusBadge
+            icon="⚡"
+            label="Worker"
+            status={workerStatus.status}
+            color="worker"
+          />
         </div>
       </div>
+    </div>
+  );
+}
+
+function EngineStatusBadge({
+  icon,
+  label,
+  status,
+  color,
+}: {
+  icon: string;
+  label: string;
+  status: string;
+  color: 'companion' | 'worker';
+}) {
+  const statusLabels: Record<string, string> = {
+    idle: 'Ready',
+    thinking: 'Thinking...',
+    working: 'Working...',
+    streaming: 'Streaming...',
+    error: 'Error',
+  };
+
+  const dotColor =
+    status === 'idle'
+      ? 'bg-henry-success'
+      : status === 'error'
+      ? 'bg-henry-error'
+      : `bg-henry-${color} animate-pulse`;
+
+  return (
+    <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-henry-bg/30">
+      <span className="text-xs">{icon}</span>
+      <span className="text-[10px] text-henry-text-dim flex-1">{label}</span>
+      <div className={`w-1.5 h-1.5 rounded-full ${dotColor}`} />
+      <span className="text-[10px] text-henry-text-muted">
+        {statusLabels[status] || status}
+      </span>
     </div>
   );
 }

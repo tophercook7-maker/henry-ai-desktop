@@ -1,140 +1,104 @@
 import { create } from 'zustand';
 import type {
+  AppState,
+  ViewType,
   Conversation,
   Message,
-  Task,
-  Settings,
-  EngineStatus,
   AIProvider,
+  EngineStatus,
+  Task,
+  MemoryFact,
 } from '../types';
 
-interface HenryStore {
-  // App state
-  initialized: boolean;
-  setupComplete: boolean;
-  currentView: 'chat' | 'files' | 'tasks' | 'settings' | 'wizard';
-
-  // Settings
-  settings: Settings;
-
-  // Providers
-  providers: AIProvider[];
+export const useStore = create<AppState>((set, get) => ({
+  // UI
+  currentView: 'chat',
+  setupComplete: false,
 
   // Conversations
-  conversations: Conversation[];
-  activeConversationId: string | null;
-  messages: Message[];
-
-  // Engine status
-  companionStatus: EngineStatus;
-  workerStatus: EngineStatus;
-
-  // Tasks
-  tasks: Task[];
-
-  // Streaming state
-  isStreaming: boolean;
-  streamingContent: string;
-
-  // Actions
-  setInitialized: (v: boolean) => void;
-  setSetupComplete: (v: boolean) => void;
-  setCurrentView: (view: HenryStore['currentView']) => void;
-  setSettings: (settings: Settings) => void;
-  updateSetting: (key: string, value: string) => void;
-  setProviders: (providers: AIProvider[]) => void;
-  setConversations: (conversations: Conversation[]) => void;
-  setActiveConversation: (id: string | null) => void;
-  setMessages: (messages: Message[]) => void;
-  addMessage: (message: Message) => void;
-  updateMessage: (id: string, updates: Partial<Message>) => void;
-  setCompanionStatus: (status: Partial<EngineStatus>) => void;
-  setWorkerStatus: (status: Partial<EngineStatus>) => void;
-  setTasks: (tasks: Task[]) => void;
-  addTask: (task: Task) => void;
-  updateTask: (id: string, updates: Partial<Task>) => void;
-  setIsStreaming: (v: boolean) => void;
-  setStreamingContent: (content: string) => void;
-  appendStreamingContent: (chunk: string) => void;
-}
-
-export const useStore = create<HenryStore>((set) => ({
-  // Initial state
-  initialized: false,
-  setupComplete: false,
-  currentView: 'chat',
-  settings: {
-    setup_complete: 'false',
-    theme: 'dark',
-    companion_model: '',
-    companion_provider: '',
-    worker_model: '',
-    worker_provider: '',
-    default_temperature: '0.7',
-    workspace_path: '',
-  },
-  providers: [],
   conversations: [],
   activeConversationId: null,
   messages: [],
-  companionStatus: {
-    engine: 'companion',
-    status: 'idle',
-    queueLength: 0,
-  },
-  workerStatus: {
-    engine: 'worker',
-    status: 'idle',
-    queueLength: 0,
-  },
-  tasks: [],
+
+  // AI
+  providers: [],
+  settings: {},
   isStreaming: false,
   streamingContent: '',
 
-  // Actions
-  setInitialized: (v) => set({ initialized: v }),
-  setSetupComplete: (v) => set({ setupComplete: v }),
-  setCurrentView: (view) => set({ currentView: view }),
-  setSettings: (settings) =>
-    set({
-      settings,
-      setupComplete: settings.setup_complete === 'true',
-    }),
-  updateSetting: (key, value) =>
-    set((state) => ({
-      settings: { ...state.settings, [key]: value },
-      ...(key === 'setup_complete' ? { setupComplete: value === 'true' } : {}),
-    })),
-  setProviders: (providers) => set({ providers }),
-  setConversations: (conversations) => set({ conversations }),
-  setActiveConversation: (id) => set({ activeConversationId: id }),
-  setMessages: (messages) => set({ messages }),
-  addMessage: (message) =>
+  // Engines
+  companionStatus: { status: 'idle' },
+  workerStatus: { status: 'idle' },
+
+  // Tasks
+  tasks: [],
+
+  // Memory
+  facts: [],
+
+  // ── Actions ──────────────────────────────────────────────
+
+  setCurrentView: (view: ViewType) => set({ currentView: view }),
+
+  setSetupComplete: (complete: boolean) => set({ setupComplete: complete }),
+
+  setConversations: (conversations: Conversation[]) => set({ conversations }),
+
+  setActiveConversation: (id: string | null) =>
+    set({ activeConversationId: id }),
+
+  setMessages: (messages: Message[]) => set({ messages }),
+
+  addMessage: (message: Message) =>
     set((state) => ({ messages: [...state.messages, message] })),
-  updateMessage: (id, updates) =>
+
+  updateMessage: (id: string, updates: Partial<Message>) =>
     set((state) => ({
       messages: state.messages.map((m) =>
         m.id === id ? { ...m, ...updates } : m
       ),
     })),
-  setCompanionStatus: (status) =>
+
+  setProviders: (providers: AIProvider[]) => set({ providers }),
+
+  updateSetting: (key: string, value: string) =>
     set((state) => ({
-      companionStatus: { ...state.companionStatus, ...status },
+      settings: { ...state.settings, [key]: value },
     })),
-  setWorkerStatus: (status) =>
-    set((state) => ({
-      workerStatus: { ...state.workerStatus, ...status },
-    })),
-  setTasks: (tasks) => set({ tasks }),
-  addTask: (task) => set((state) => ({ tasks: [...state.tasks, task] })),
-  updateTask: (id, updates) =>
-    set((state) => ({
-      tasks: state.tasks.map((t) => (t.id === id ? { ...t, ...updates } : t)),
-    })),
-  setIsStreaming: (v) => set({ isStreaming: v }),
-  setStreamingContent: (content) => set({ streamingContent: content }),
-  appendStreamingContent: (chunk) =>
+
+  setIsStreaming: (isStreaming: boolean) => set({ isStreaming }),
+
+  setStreamingContent: (streamingContent: string) => set({ streamingContent }),
+
+  appendStreamingContent: (chunk: string) =>
     set((state) => ({
       streamingContent: state.streamingContent + chunk,
     })),
+
+  setCompanionStatus: (status: Partial<EngineStatus>) =>
+    set((state) => ({
+      companionStatus: { ...state.companionStatus, ...status },
+    })),
+
+  setWorkerStatus: (status: Partial<EngineStatus>) =>
+    set((state) => ({
+      workerStatus: { ...state.workerStatus, ...status },
+    })),
+
+  setTasks: (tasks: Task[]) => set({ tasks }),
+
+  addTask: (task: Task) =>
+    set((state) => ({ tasks: [task, ...state.tasks] })),
+
+  updateTask: (id: string, updates: Partial<Task>) =>
+    set((state) => ({
+      tasks: state.tasks.map((t) =>
+        t.id === id ? { ...t, ...updates } : t
+      ),
+    })),
+
+  setFacts: (facts: MemoryFact[]) => set({ facts }),
+
+  addFact: (fact: MemoryFact) =>
+    set((state) => ({ facts: [fact, ...state.facts] })),
 }));
