@@ -1,11 +1,20 @@
+/**
+ * Settings — Handles all settings, provider, conversation, and message CRUD.
+ *
+ * IPC channels match what preload.ts exposes to the renderer:
+ *   settings:getAll, settings:save, providers:getAll, providers:save,
+ *   conversations:getAll, conversations:create, conversations:update,
+ *   conversations:delete, messages:getAll, messages:save
+ */
+
 import { ipcMain } from 'electron';
-import { getDb } from './database';
+import type Database from 'better-sqlite3';
 
-export function registerSettingsHandlers() {
-  const db = getDb();
+export function registerSettingsHandlers(db: Database.Database) {
+  // ── Settings ────────────────────────────────────────────────
 
-  // Get all settings
-  ipcMain.handle('settings-get', () => {
+  // Returns a Record<string, string>
+  ipcMain.handle('settings:getAll', () => {
     const rows = db.prepare('SELECT key, value FROM settings').all() as Array<{
       key: string;
       value: string;
@@ -17,23 +26,23 @@ export function registerSettingsHandlers() {
     return settings;
   });
 
-  // Save a setting
-  ipcMain.handle('settings-save', (_, key: string, value: string) => {
+  // preload sends { key, value }
+  ipcMain.handle('settings:save', (_, data: { key: string; value: string }) => {
     db.prepare(
       `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`
-    ).run(key, value);
+    ).run(data.key, data.value);
     return true;
   });
 
-  // Get all providers
-  ipcMain.handle('settings-get-providers', () => {
+  // ── Providers ───────────────────────────────────────────────
+
+  ipcMain.handle('providers:getAll', () => {
     return db.prepare('SELECT * FROM providers ORDER BY name').all();
   });
 
-  // Save/update a provider
   ipcMain.handle(
-    'settings-save-provider',
+    'providers:save',
     (
       _,
       provider: {
@@ -64,38 +73,43 @@ export function registerSettingsHandlers() {
     }
   );
 
-  // Delete a provider
-  ipcMain.handle('settings-delete-provider', (_, id: string) => {
+  ipcMain.handle('providers:delete', (_, id: string) => {
     db.prepare('DELETE FROM providers WHERE id = ?').run(id);
     return true;
   });
 
-  // Conversations
-  ipcMain.handle('conversations-list', () => {
+  // ── Conversations ───────────────────────────────────────────
+
+  ipcMain.handle('conversations:getAll', () => {
     return db
       .prepare('SELECT * FROM conversations ORDER BY updated_at DESC')
       .all();
   });
 
-  ipcMain.handle('conversation-get', (_, id: string) => {
-    return db.prepare('SELECT * FROM conversations WHERE id = ?').get(id);
-  });
-
-  ipcMain.handle('conversation-create', (_, title: string) => {
+  ipcMain.handle('conversations:create', (_, title: string) => {
     const id = crypto.randomUUID();
     db.prepare(
       'INSERT INTO conversations (id, title) VALUES (?, ?)'
     ).run(id, title);
-    return { id, title };
+    return { id, title, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
   });
 
-  ipcMain.handle('conversation-delete', (_, id: string) => {
+  ipcMain.handle('conversations:update', (_, data: { id: string; title: string }) => {
+    db.prepare(
+      "UPDATE conversations SET title = ?, updated_at = datetime('now') WHERE id = ?"
+    ).run(data.title, data.id);
+    return true;
+  });
+
+  ipcMain.handle('conversations:delete', (_, id: string) => {
+    db.prepare('DELETE FROM messages WHERE conversation_id = ?').run(id);
     db.prepare('DELETE FROM conversations WHERE id = ?').run(id);
     return true;
   });
 
-  // Messages
-  ipcMain.handle('messages-get', (_, conversationId: string) => {
+  // ── Messages ────────────────────────────────────────────────
+
+  ipcMain.handle('messages:getAll', (_, conversationId: string) => {
     return db
       .prepare(
         'SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC'
@@ -104,17 +118,17 @@ export function registerSettingsHandlers() {
   });
 
   ipcMain.handle(
-    'message-save',
+    'messages:save',
     (
       _,
       message: {
         id: string;
-        conversationId: string;
+        conversation_id: string;
         role: string;
         content: string;
         model?: string;
         provider?: string;
-        tokensUsed?: number;
+        tokens_used?: number;
         cost?: number;
         engine?: string;
       }
@@ -124,12 +138,12 @@ export function registerSettingsHandlers() {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(
         message.id,
-        message.conversationId,
+        message.conversation_id,
         message.role,
         message.content,
         message.model || null,
         message.provider || null,
-        message.tokensUsed || 0,
+        message.tokens_used || 0,
         message.cost || 0,
         message.engine || null
       );
@@ -137,71 +151,22 @@ export function registerSettingsHandlers() {
       // Update conversation timestamp
       db.prepare(
         "UPDATE conversations SET updated_at = datetime('now') WHERE id = ?"
-      ).run(message.conversationId);
+      ).run(message.conversation_id);
 
       // Log cost if applicable
       if (message.cost && message.cost > 0) {
         db.prepare(
-          `INSERT INTO cost_log (provider, model, tokens_output, cost, conversation_id)
-         VALUES (?, ?, ?, ?, ?)`
+          `INSERT INTO cost_log (provider, model, tokens_input, tokens_output, cost, conversation_id)
+         VALUES (?, ?, 0, ?, ?, ?)`
         ).run(
           message.provider || '',
           message.model || '',
-          message.tokensUsed || 0,
+          message.tokens_used || 0,
           message.cost,
-          message.conversationId
+          message.conversation_id
         );
       }
 
-      return true;
-    }
-  );
-
-  // Tasks
-  ipcMain.handle('tasks-list', () => {
-    return db.prepare('SELECT * FROM tasks ORDER BY priority DESC, created_at ASC').all();
-  });
-
-  ipcMain.handle(
-    'task-create',
-    (
-      _,
-      task: {
-        id: string;
-        type: string;
-        description: string;
-        priority: number;
-        payload: string;
-      }
-    ) => {
-      db.prepare(
-        'INSERT INTO tasks (id, type, description, priority, payload) VALUES (?, ?, ?, ?, ?)'
-      ).run(task.id, task.type, task.description, task.priority, task.payload);
-      return true;
-    }
-  );
-
-  ipcMain.handle(
-    'task-update',
-    (_, id: string, status: string, result?: string) => {
-      const updates: string[] = ['status = ?'];
-      const params: any[] = [status];
-
-      if (status === 'running') {
-        updates.push("started_at = datetime('now')");
-      }
-      if (status === 'completed' || status === 'failed') {
-        updates.push("completed_at = datetime('now')");
-      }
-      if (result !== undefined) {
-        updates.push('result = ?');
-        params.push(result);
-      }
-
-      params.push(id);
-      db.prepare(`UPDATE tasks SET ${updates.join(', ')} WHERE id = ?`).run(
-        ...params
-      );
       return true;
     }
   );
