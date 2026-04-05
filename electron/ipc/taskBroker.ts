@@ -8,6 +8,7 @@
 
 import { ipcMain, BrowserWindow } from 'electron';
 import type Database from 'better-sqlite3';
+import { callAI } from './ai';
 
 interface TaskExecution {
   taskId: string;
@@ -293,7 +294,7 @@ async function executeAITask(task: any, payload: any, signal: AbortSignal): Prom
   ];
 
   // Make AI call (non-streaming for background tasks)
-  const { callAI } = require('./ai');
+  // callAI is imported at top of file
   const result = await callAI({
     provider: workerProvider.value,
     model: workerModel.value,
@@ -369,7 +370,7 @@ ${payload.context ? `Context:\n${payload.context}` : ''}`,
     },
   ];
 
-  const { callAI } = require('./ai');
+  // callAI is imported at top of file
   const result = await callAI({
     provider: workerProvider.value,
     model: workerModel.value,

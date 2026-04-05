@@ -7,7 +7,7 @@ interface StreamHandle {
 
 interface HenryAPI {
   // Settings
-  getSettings: () => Promise<any[]>;
+  getSettings: () => Promise<Record<string, string>>;
   saveSetting: (key: string, value: string) => Promise<void>;
 
   // Providers

@@ -13,43 +13,9 @@ import type Database from 'better-sqlite3';
 
 let db: Database.Database;
 
-// Additional tables for memory
-const MEMORY_SCHEMA = `
-  CREATE TABLE IF NOT EXISTS memory_facts (
-    id TEXT PRIMARY KEY,
-    conversation_id TEXT,
-    fact TEXT NOT NULL,
-    category TEXT DEFAULT 'general',
-    importance INTEGER DEFAULT 1,
-    created_at TEXT NOT NULL,
-    FOREIGN KEY (conversation_id) REFERENCES conversations(id)
-  );
-
-  CREATE TABLE IF NOT EXISTS conversation_summaries (
-    id TEXT PRIMARY KEY,
-    conversation_id TEXT NOT NULL,
-    summary TEXT NOT NULL,
-    message_count INTEGER DEFAULT 0,
-    token_count INTEGER DEFAULT 0,
-    created_at TEXT NOT NULL,
-    FOREIGN KEY (conversation_id) REFERENCES conversations(id)
-  );
-
-  CREATE TABLE IF NOT EXISTS workspace_index (
-    id TEXT PRIMARY KEY,
-    file_path TEXT NOT NULL UNIQUE,
-    file_type TEXT,
-    summary TEXT,
-    last_indexed TEXT NOT NULL,
-    size_bytes INTEGER DEFAULT 0
-  );
-`;
-
 export function registerMemoryHandlers(database: Database.Database) {
   db = database;
-
-  // Initialize memory tables
-  db.exec(MEMORY_SCHEMA);
+  // Tables are created in database.ts → initDatabase()
 
   // Save a fact extracted from conversation
   ipcMain.handle('memory:saveFact', async (_event, fact: {
