@@ -5,6 +5,8 @@ import TaskQueueView from '../queue/TaskQueueView';
 import SettingsView from '../settings/SettingsView';
 import FileBrowser from '../files/FileBrowser';
 import WorkspaceView from '../workspace/WorkspaceView';
+import TerminalView from '../terminal/TerminalView';
+import CostDashboard from '../costs/CostDashboard';
 import { useStore } from '../../store';
 
 export default function Layout() {
@@ -20,6 +22,8 @@ export default function Layout() {
           {currentView === 'tasks' && <TaskQueueView />}
           {currentView === 'files' && <FileBrowser />}
           {currentView === 'workspace' && <WorkspaceView />}
+          {currentView === 'terminal' && <TerminalView />}
+          {currentView === 'costs' && <CostDashboard />}
           {currentView === 'settings' && <SettingsView />}
         </main>
       </div>

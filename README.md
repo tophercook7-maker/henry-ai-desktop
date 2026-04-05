@@ -1,152 +1,130 @@
 # 🧠 Henry AI Desktop
 
-**Local-first AI operating system with dual-engine architecture.**
+Your personal AI operating system — local-first, multi-provider, dual-engine.
 
-Henry AI runs on your machine, connects to the AI providers you choose, and keeps your data entirely local. It features a unique dual-engine architecture: a **Companion** that's always available for conversation, and a **Worker** that handles heavy tasks in the background.
+**Henry AI** is an installable desktop application that combines the best of ChatGPT (reasoning), Cursor (code generation), and Viktor (structured workflows) into a single, privacy-first tool that runs on your machine.
 
 ## ✨ Features
 
-- **Dual-Engine Architecture** — Companion (always-on chat) + Worker (background tasks)
-- **Multi-Provider AI** — OpenAI, Anthropic, Google AI, or local models via Ollama
-- **Transparent Pricing** — See per-model costs before you choose
-- **Local-First** — All data stored on your machine in SQLite
-- **Beautiful Dark UI** — Professional, focused, distraction-free
-- **Setup Wizard** — Guided configuration with clear pricing for every option
+### Dual-Engine Architecture
+- **🧠 Companion** — Always-on, fast, conversational. Handles chat, quick answers, and workflow management.
+- **⚡ Worker** — Powerful, focused. Handles code generation, research, file operations, and heavy tasks through a managed task queue.
+
+### Multi-Provider AI
+- **OpenAI** — GPT-4o, GPT-4o Mini, o1, o3-mini
+- **Anthropic** — Claude Sonnet 4, Claude Haiku, Opus
+- **Google** — Gemini 2.5 Pro, Flash, Ultra
+- **Ollama** — Run local models free (Llama 3.1, Codestral, Mistral, etc.)
+- Transparent per-token pricing with cost tracking
+
+### Full Desktop Experience
+- 📁 **File Browser** — Navigate, view, and edit workspace files
+- 💻 **Terminal** — Execute shell commands with safety guards
+- 🗂️ **Workspace** — 5-folder business structure (Product, Business, Marketing, Operations, Meetings)
+- 📋 **Task Queue** — Submit, track, cancel, and retry Worker tasks
+- 💰 **Cost Dashboard** — Monitor spending across providers and engines
+- 🧠 **Memory** — Facts, summaries, and context that persist across conversations
+
+### Setup Wizard
+Guided 4-step setup with model selection, transparent pricing, and cost estimation before you spend a cent.
 
 ## 🚀 Quick Start
 
-### Prerequisites
-
-- [Node.js](https://nodejs.org/) 18+ 
-- npm or yarn
-
-### Install & Run
-
 ```bash
-# Clone the repo
 git clone https://github.com/tophercook7-maker/henry-ai-desktop.git
 cd henry-ai-desktop
-
-# Install dependencies
 npm install
-
-# Run in development mode
 npm run dev
 ```
 
-### Build Installers
+**Requirements:**
+- Node.js 18+
+- macOS, Windows, or Linux
 
-```bash
-# macOS
-npm run build:mac
-
-# Windows
-npm run build:win
-
-# Linux
-npm run build:linux
-```
+**For local models:**
+- Install [Ollama](https://ollama.ai)
+- Pull a model: `ollama pull llama3.1:70b`
 
 ## 🏗️ Architecture
 
 ```
-┌──────────────────────────────────────────┐
-│              HENRY AI                     │
-├──────────────────────────────────────────┤
-│                                           │
-│  ┌─────────────┐   ┌──────────────────┐ │
-│  │  COMPANION   │◄─►│     WORKER       │ │
-│  │  Always On   │   │  Heavy Lifting   │ │
-│  │  Fast Model  │   │  Powerful Model  │ │
-│  └──────┬──────┘   └────────┬─────────┘ │
-│         └──────────┬────────┘            │
-│         ┌──────────┴──────────┐          │
-│         │    TASK QUEUE       │          │
-│         └──────────┬──────────┘          │
-│         ┌──────────┴──────────┐          │
-│         │   LOCAL STORAGE     │          │
-│         │  SQLite + Files     │          │
-│         └─────────────────────┘          │
-└──────────────────────────────────────────┘
+┌──────────────────────────────────────────────┐
+│                  React UI                      │
+│  Chat │ Tasks │ Files │ Workspace │ Terminal   │
+├──────────────────────────────────────────────┤
+│              Zustand Store                     │
+├──────────────────────────────────────────────┤
+│          contextBridge (preload.ts)            │
+├──────────────────────────────────────────────┤
+│            Electron Main Process               │
+│  ┌──────────┐  ┌──────────┐  ┌────────────┐  │
+│  │ Companion │  │  Worker   │  │ Task Broker│  │
+│  │  Engine   │←→│  Engine   │←→│   Queue    │  │
+│  └──────────┘  └──────────┘  └────────────┘  │
+│  ┌──────────┐  ┌──────────┐  ┌────────────┐  │
+│  │  Memory   │  │  Ollama  │  │  Terminal   │  │
+│  │  System   │  │  Local   │  │  Executor   │  │
+│  └──────────┘  └──────────┘  └────────────┘  │
+├──────────────────────────────────────────────┤
+│  SQLite DB  │  Local Filesystem  │  Ollama    │
+└──────────────────────────────────────────────┘
 ```
 
-### Tech Stack
+## 🔧 Tech Stack
 
-- **Framework**: Electron + React + TypeScript
-- **Build**: Vite + electron-builder
-- **Styling**: Tailwind CSS
-- **State**: Zustand
-- **Database**: SQLite (better-sqlite3)
-- **AI SDKs**: OpenAI, Anthropic, Google AI, Ollama
+- **Framework:** Electron + React + TypeScript
+- **Build:** Vite + electron-builder
+- **Styling:** Tailwind CSS (dark theme)
+- **State:** Zustand
+- **Database:** better-sqlite3
+- **AI SDKs:** OpenAI, Anthropic, Google AI, Ollama (REST)
 
-## 📁 Project Structure
+## 📦 Building Installers
+
+```bash
+npm run build
+npx electron-builder --mac     # macOS .dmg (arm64 + x64)
+npx electron-builder --win     # Windows .exe (NSIS)
+npx electron-builder --linux   # Linux .AppImage + .deb
+```
+
+## 📂 Project Structure
 
 ```
 henry-ai-desktop/
-├── electron/              # Electron main process
-│   ├── main.ts           # App entry, window management
-│   ├── preload.ts        # Secure IPC bridge
-│   └── ipc/              # IPC handlers
-│       ├── ai.ts         # AI provider communication
-│       ├── database.ts   # SQLite initialization
-│       ├── filesystem.ts # File system operations
-│       └── settings.ts   # Settings & data management
-├── src/                   # React frontend
-│   ├── App.tsx           # Root component
-│   ├── main.tsx          # Entry point
-│   ├── components/
-│   │   ├── chat/         # Chat interface
-│   │   ├── layout/       # Sidebar, title bar
-│   │   ├── queue/        # Task queue view
-│   │   ├── settings/     # Settings panel
-│   │   └── wizard/       # Setup wizard
-│   ├── providers/        # AI model definitions & pricing
-│   ├── store/            # Zustand state management
-│   ├── styles/           # Global styles
-│   └── types/            # TypeScript types
-├── resources/            # App icons
+├── electron/
+│   ├── main.ts              # App lifecycle, window management
+│   ├── preload.ts           # Secure IPC bridge
+│   └── ipc/
+│       ├── ai.ts            # Multi-provider AI with streaming
+│       ├── database.ts      # SQLite schema & init
+│       ├── filesystem.ts    # Workspace file operations
+│       ├── memory.ts        # Facts, summaries, context builder
+│       ├── ollama.ts        # Local model management
+│       ├── settings.ts      # CRUD for all settings
+│       ├── taskBroker.ts    # Task queue & Worker execution
+│       └── terminal.ts      # Shell command execution
+├── src/
+│   ├── App.tsx              # Init, routing, event wiring
+│   ├── store/index.ts       # Zustand global state
+│   ├── types/               # TypeScript types
+│   ├── providers/models.ts  # All models with pricing
+│   └── components/
+│       ├── chat/            # Chat UI, streaming, engine selector
+│       ├── costs/           # Cost tracking dashboard
+│       ├── files/           # File browser + code editor
+│       ├── layout/          # Shell, sidebar, title bar
+│       ├── queue/           # Task queue management
+│       ├── settings/        # Provider & engine settings
+│       ├── terminal/        # Built-in terminal
+│       ├── wizard/          # 4-step setup wizard
+│       └── workspace/       # 5-folder workspace manager
+├── electron-builder.config.js
 ├── package.json
 ├── vite.config.ts
-├── tailwind.config.js
-└── tsconfig.json
+└── tailwind.config.js
 ```
 
-## 🔌 Supported AI Providers
-
-| Provider | Models | Pricing |
-|----------|--------|---------|
-| **OpenAI** | GPT-4o, GPT-4o Mini, o1, o1 Mini | $0.15 - $60/M tokens |
-| **Anthropic** | Claude Sonnet 4, Haiku 3.5, Opus 4 | $0.25 - $75/M tokens |
-| **Google AI** | Gemini 2.0 Flash, 1.5 Pro, 1.5 Flash | $0.075 - $5/M tokens |
-| **Ollama** | Llama 3.1, CodeLlama, Mistral | **Free** (local) |
-
-## 🎯 Roadmap
-
-### Phase 1 ✅ Foundation
-- [x] Electron + React + TypeScript scaffold
-- [x] Setup wizard with provider selection
-- [x] Chat interface with streaming
-- [x] Dual-engine selector
-- [x] SQLite local storage
-- [x] Multi-provider AI support
-
-### Phase 2 🔄 Intelligence
-- [ ] Full dual-engine with task queue
-- [ ] File system browser & code editor
-- [ ] Workspace management
-- [ ] Conversation memory & context
-
-### Phase 3 📋 Power
-- [ ] Ollama local model integration
-- [ ] Terminal execution
-- [ ] Document generation with versioning
-- [ ] Cross-platform installers
-- [ ] Cost tracking dashboard
-
-## 📄 License
+## 📜 License
 
 MIT
-
----
-
-*Henry AI — Your machine. Your data. Your AI.*

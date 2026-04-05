@@ -2,13 +2,15 @@ import { useState, useEffect } from 'react';
 import { useStore } from '../../store';
 import type { Conversation } from '../../types';
 
-type ViewType = 'chat' | 'tasks' | 'files' | 'workspace' | 'settings';
+type ViewType = 'chat' | 'tasks' | 'files' | 'workspace' | 'terminal' | 'costs' | 'settings';
 
 const NAV_ITEMS: { id: ViewType; label: string; icon: string }[] = [
   { id: 'chat', label: 'Chat', icon: '💬' },
   { id: 'tasks', label: 'Tasks', icon: '📋' },
   { id: 'files', label: 'Files', icon: '📁' },
   { id: 'workspace', label: 'Workspace', icon: '🗂️' },
+  { id: 'terminal', label: 'Terminal', icon: '💻' },
+  { id: 'costs', label: 'Costs', icon: '💰' },
   { id: 'settings', label: 'Settings', icon: '⚙️' },
 ];
 
@@ -86,9 +88,6 @@ export default function Sidebar() {
     setEditingId(null);
   }
 
-  // Get task counts for badge
-  const taskStore = useStore.getState();
-
   return (
     <div className="w-56 shrink-0 bg-henry-surface/50 border-r border-henry-border/50 flex flex-col">
       {/* New chat button */}
@@ -119,7 +118,6 @@ export default function Sidebar() {
           >
             <span className="text-sm">{item.icon}</span>
             <span>{item.label}</span>
-            {/* Task queue badge */}
             {item.id === 'tasks' && workerStatus.status === 'working' && (
               <span className="ml-auto w-2 h-2 rounded-full bg-henry-worker animate-pulse" />
             )}
@@ -176,7 +174,6 @@ export default function Sidebar() {
                     {convo.title || 'New Chat'}
                   </button>
 
-                  {/* Actions (visible on hover) */}
                   <div className="hidden group-hover:flex items-center gap-0.5 pr-1">
                     <button
                       onClick={(e) => {
@@ -218,58 +215,31 @@ export default function Sidebar() {
       {/* Engine status footer */}
       <div className="shrink-0 p-3 border-t border-henry-border/30">
         <div className="space-y-2">
-          <EngineStatusBadge
-            icon="🧠"
-            label="Companion"
-            status={companionStatus.status}
-            color="companion"
-          />
-          <EngineStatusBadge
-            icon="⚡"
-            label="Worker"
-            status={workerStatus.status}
-            color="worker"
-          />
+          <EngineStatusBadge icon="🧠" label="Companion" status={companionStatus.status} color="companion" />
+          <EngineStatusBadge icon="⚡" label="Worker" status={workerStatus.status} color="worker" />
         </div>
       </div>
     </div>
   );
 }
 
-function EngineStatusBadge({
-  icon,
-  label,
-  status,
-  color,
-}: {
-  icon: string;
-  label: string;
-  status: string;
-  color: 'companion' | 'worker';
+function EngineStatusBadge({ icon, label, status, color }: {
+  icon: string; label: string; status: string; color: 'companion' | 'worker';
 }) {
   const statusLabels: Record<string, string> = {
-    idle: 'Ready',
-    thinking: 'Thinking...',
-    working: 'Working...',
-    streaming: 'Streaming...',
-    error: 'Error',
+    idle: 'Ready', thinking: 'Thinking...', working: 'Working...',
+    streaming: 'Streaming...', error: 'Error',
   };
-
-  const dotColor =
-    status === 'idle'
-      ? 'bg-henry-success'
-      : status === 'error'
-      ? 'bg-henry-error'
-      : `bg-henry-${color} animate-pulse`;
+  const dotColor = status === 'idle' ? 'bg-henry-success'
+    : status === 'error' ? 'bg-henry-error'
+    : `bg-henry-${color} animate-pulse`;
 
   return (
     <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-henry-bg/30">
       <span className="text-xs">{icon}</span>
       <span className="text-[10px] text-henry-text-dim flex-1">{label}</span>
       <div className={`w-1.5 h-1.5 rounded-full ${dotColor}`} />
-      <span className="text-[10px] text-henry-text-muted">
-        {statusLabels[status] || status}
-      </span>
+      <span className="text-[10px] text-henry-text-muted">{statusLabels[status] || status}</span>
     </div>
   );
 }

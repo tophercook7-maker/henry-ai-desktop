@@ -6,6 +6,8 @@ import { registerAIHandlers } from './ipc/ai';
 import { registerFilesystemHandlers } from './ipc/filesystem';
 import { registerTaskBrokerHandlers } from './ipc/taskBroker';
 import { registerMemoryHandlers } from './ipc/memory';
+import { registerOllamaHandlers } from './ipc/ollama';
+import { registerTerminalHandlers } from './ipc/terminal';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -26,7 +28,6 @@ function createWindow() {
     },
   });
 
-  // Load the app
   if (process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
     mainWindow.webContents.openDevTools({ mode: 'detach' });
@@ -34,19 +35,15 @@ function createWindow() {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
 
-  // Open external links in browser
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: 'deny' };
   });
 
-  mainWindow.on('closed', () => {
-    mainWindow = null;
-  });
+  mainWindow.on('closed', () => { mainWindow = null; });
 }
 
 app.whenReady().then(() => {
-  // Ensure Henry data directories exist
   const fs = require('fs');
   const userDataPath = app.getPath('userData');
   const henryDir = path.join(userDataPath, 'henry-workspace');
@@ -54,10 +51,7 @@ app.whenReady().then(() => {
     fs.mkdirSync(henryDir, { recursive: true });
   }
 
-  // Initialize database
   const db = initDatabase();
-
-  // Create the window
   createWindow();
 
   // Register all IPC handlers
@@ -66,16 +60,14 @@ app.whenReady().then(() => {
   registerFilesystemHandlers(henryDir);
   registerTaskBrokerHandlers(db, mainWindow!);
   registerMemoryHandlers(db);
+  registerOllamaHandlers(mainWindow!);
+  registerTerminalHandlers(mainWindow!, henryDir);
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    }
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  if (process.platform !== 'darwin') app.quit();
 });
