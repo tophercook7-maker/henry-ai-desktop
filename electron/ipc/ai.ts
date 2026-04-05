@@ -11,6 +11,16 @@
 
 import { ipcMain, BrowserWindow } from 'electron';
 
+type WindowGetter = () => BrowserWindow | null;
+
+/** Safely send to renderer — skips if window is destroyed (Vite HMR). */
+function safeSend(getWin: WindowGetter, channel: string, data: any) {
+  const win = getWin();
+  if (win && !win.isDestroyed()) {
+    win.webContents.send(channel, data);
+  }
+}
+
 // ── Types ─────────────────────────────────────────────────────
 
 interface AiMessage {
@@ -384,7 +394,7 @@ const activeStreams = new Map<string, AbortController>();
 
 // ── Register IPC Handlers ─────────────────────────────────────
 
-export function registerAIHandlers(db: any, win: BrowserWindow) {
+export function registerAIHandlers(db: any, getWindow: WindowGetter) {
   // Non-streaming request
   ipcMain.handle('ai:send', async (_, params: AiRequest) => {
     return callAI(params);
@@ -396,11 +406,11 @@ export function registerAIHandlers(db: any, win: BrowserWindow) {
     const { channelId } = params;
 
     const onChunk = (text: string) => {
-      win?.webContents.send('ai:stream:chunk', { channelId, chunk: text });
+      safeSend(getWindow, 'ai:stream:chunk', { channelId, chunk: text });
     };
     const onDone = (fullText: string, usage?: any) => {
       const cost = usage ? calculateCost(params.model, usage.input || 0, usage.output || 0) : 0;
-      win?.webContents.send('ai:stream:done', {
+      safeSend(getWindow, 'ai:stream:done', {
         channelId,
         fullText,
         usage: {
@@ -413,7 +423,7 @@ export function registerAIHandlers(db: any, win: BrowserWindow) {
       activeStreams.delete(channelId);
     };
     const onError = (error: string) => {
-      win?.webContents.send('ai:stream:error', { channelId, error });
+      safeSend(getWindow, 'ai:stream:error', { channelId, error });
       activeStreams.delete(channelId);
     };
 
