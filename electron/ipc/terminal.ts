@@ -10,7 +10,17 @@ import { ipcMain, BrowserWindow } from 'electron';
 import { spawn, ChildProcess } from 'child_process';
 import path from 'path';
 
-let mainWindow: BrowserWindow | null = null;
+type WindowGetter = () => BrowserWindow | null;
+
+/** Safely send to renderer — skips if window is destroyed (Vite HMR). */
+function safeSend(getWin: WindowGetter, channel: string, data: any) {
+  const win = getWin();
+  if (win && !win.isDestroyed()) {
+    win.webContents.send(channel, data);
+  }
+}
+
+let getWindow: WindowGetter;
 const activeProcesses: Map<string, ChildProcess> = new Map();
 
 // Commands that are always blocked for safety
@@ -25,8 +35,8 @@ const BLOCKED_COMMANDS = [
   'halt',
 ];
 
-export function registerTerminalHandlers(win: BrowserWindow, workspacePath: string) {
-  mainWindow = win;
+export function registerTerminalHandlers(winGetter: WindowGetter, workspacePath: string) {
+  getWindow = winGetter;
 
   // Execute a command
   ipcMain.handle('terminal:exec', async (_event, params: {
@@ -69,7 +79,7 @@ export function registerTerminalHandlers(win: BrowserWindow, workspacePath: stri
         stdout += chunk;
         // Stream output to renderer if channelId provided
         if (params.channelId) {
-          mainWindow?.webContents.send('terminal:output', {
+          safeSend(getWindow, 'terminal:output', {
             channelId: params.channelId,
             execId,
             type: 'stdout',
@@ -82,7 +92,7 @@ export function registerTerminalHandlers(win: BrowserWindow, workspacePath: stri
         const chunk = data.toString();
         stderr += chunk;
         if (params.channelId) {
-          mainWindow?.webContents.send('terminal:output', {
+          safeSend(getWindow, 'terminal:output', {
             channelId: params.channelId,
             execId,
             type: 'stderr',
@@ -94,7 +104,7 @@ export function registerTerminalHandlers(win: BrowserWindow, workspacePath: stri
       child.on('close', (code) => {
         activeProcesses.delete(execId);
         if (params.channelId) {
-          mainWindow?.webContents.send('terminal:done', {
+          safeSend(getWindow, 'terminal:done', {
             channelId: params.channelId,
             execId,
             exitCode: code,
