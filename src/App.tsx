@@ -112,8 +112,9 @@ export default function App() {
     );
   }
 
+  // SetupWizard handles completion internally via the store
   if (!setupComplete) {
-    return <SetupWizard onComplete={() => setSetupComplete(true)} />;
+    return <SetupWizard />;
   }
 
   return <Layout />;

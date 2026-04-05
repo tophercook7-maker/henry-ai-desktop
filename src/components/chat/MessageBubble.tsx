@@ -9,11 +9,15 @@ interface MessageBubbleProps {
 
 export default function MessageBubble({
   message,
-  isStreaming,
+  isStreaming: isStreamingProp,
   streamingContent,
 }: MessageBubbleProps) {
   const isUser = message.role === 'user';
-  const content = isStreaming ? streamingContent || '' : message.content;
+  // Support both the explicit prop and the message flag
+  const isStreaming = isStreamingProp || message.isStreaming;
+  const content = isStreaming
+    ? (streamingContent || message.content || '')
+    : message.content;
 
   return (
     <div

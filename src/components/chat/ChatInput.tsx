@@ -2,15 +2,15 @@ import { useState, useRef, useEffect } from 'react';
 
 interface ChatInputProps {
   onSend: (content: string) => void;
-  onCancel: () => void;
   isStreaming: boolean;
+  onCancel?: () => void;
   placeholder?: string;
 }
 
 export default function ChatInput({
   onSend,
-  onCancel,
   isStreaming,
+  onCancel,
   placeholder = 'Message Henry...',
 }: ChatInputProps) {
   const [input, setInput] = useState('');
@@ -65,7 +65,8 @@ export default function ChatInput({
         {isStreaming ? (
           <button
             onClick={onCancel}
-            className="shrink-0 p-2 rounded-lg bg-henry-error/10 text-henry-error hover:bg-henry-error/20 transition-colors"
+            disabled={!onCancel}
+            className="shrink-0 p-2 rounded-lg bg-henry-error/10 text-henry-error hover:bg-henry-error/20 transition-colors disabled:opacity-50"
             title="Stop generating"
           >
             <svg

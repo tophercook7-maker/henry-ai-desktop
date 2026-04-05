@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useStore } from '../../store';
 import ChatInput from './ChatInput';
 import EngineSelector from './EngineSelector';
@@ -23,6 +23,7 @@ export default function ChatView() {
     settings,
   } = useStore();
 
+  const [selectedEngine, setSelectedEngine] = useState<'companion' | 'worker'>('companion');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const streamRef = useRef<any>(null);
 
@@ -30,8 +31,10 @@ export default function ChatView() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, streamingContent]);
 
-  async function handleSend(content: string, engine: 'companion' | 'worker') {
+  async function handleSend(content: string) {
     if (!content.trim() || isStreaming) return;
+
+    const engine = selectedEngine;
 
     // Ensure we have a conversation
     let convId = activeConversationId;
@@ -318,8 +321,9 @@ Be concise but thorough. Use markdown for formatting. Be direct, not flowery.`;
                   content: streamingContent,
                   engine: 'companion',
                   created_at: new Date().toISOString(),
-                  isStreaming: true,
                 }}
+                isStreaming={true}
+                streamingContent={streamingContent}
               />
             )}
 
@@ -332,11 +336,14 @@ Be concise but thorough. Use markdown for formatting. Be direct, not flowery.`;
       <div className="shrink-0 border-t border-henry-border/30 bg-henry-surface/20 px-6 py-4">
         <div className="max-w-3xl mx-auto">
           <div className="flex items-end gap-3">
-            <EngineSelector />
+            <EngineSelector
+              selectedEngine={selectedEngine}
+              onSelect={setSelectedEngine}
+            />
             <div className="flex-1">
               <ChatInput
                 onSend={handleSend}
-                disabled={isStreaming}
+                isStreaming={isStreaming}
                 onCancel={isStreaming ? cancelStream : undefined}
               />
             </div>

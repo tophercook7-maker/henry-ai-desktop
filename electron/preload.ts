@@ -86,6 +86,9 @@ contextBridge.exposeInMainWorld('henryAPI', {
   execTerminal: (params: any) => ipcRenderer.invoke('terminal:exec', params),
   killTerminal: (execId: string) => ipcRenderer.invoke('terminal:kill', execId),
 
+  // ── Cost Tracking ─────────────────────────────────────────
+  getCostLog: (period?: string) => ipcRenderer.invoke('cost:getAll', period),
+
   // ── Events ────────────────────────────────────────────────
   onTaskUpdate: (cb: (data: any) => void) => {
     const handler = (_: any, data: any) => cb(data);

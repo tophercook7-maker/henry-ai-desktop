@@ -1,10 +1,11 @@
 /**
- * Settings — Handles all settings, provider, conversation, and message CRUD.
+ * Settings — Handles all settings, provider, conversation, message, and cost CRUD.
  *
  * IPC channels match what preload.ts exposes to the renderer:
  *   settings:getAll, settings:save, providers:getAll, providers:save,
  *   conversations:getAll, conversations:create, conversations:update,
- *   conversations:delete, messages:getAll, messages:save
+ *   conversations:delete, messages:getAll, messages:save,
+ *   cost:getAll
  */
 
 import { ipcMain } from 'electron';
@@ -170,4 +171,19 @@ export function registerSettingsHandlers(db: Database.Database) {
       return true;
     }
   );
+
+  // ── Cost Tracking ───────────────────────────────────────────
+
+  ipcMain.handle('cost:getAll', (_, period?: string) => {
+    let query = 'SELECT * FROM cost_log';
+
+    if (period === '7d') {
+      query += " WHERE created_at > datetime('now', '-7 days')";
+    } else if (period === '30d') {
+      query += " WHERE created_at > datetime('now', '-30 days')";
+    }
+
+    query += ' ORDER BY created_at DESC';
+    return db.prepare(query).all();
+  });
 }

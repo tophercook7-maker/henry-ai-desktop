@@ -26,6 +26,7 @@ interface AiRequest {
   temperature?: number;
   maxTokens?: number;
   channelId?: string;
+  signal?: AbortSignal;
 }
 
 // ── Pricing ───────────────────────────────────────────────────
@@ -76,6 +77,7 @@ async function callOpenAI(params: AiRequest): Promise<{
       temperature: params.temperature ?? 0.7,
       max_tokens: params.maxTokens ?? 4096,
     }),
+    signal: params.signal,
   });
 
   if (!response.ok) {
@@ -110,6 +112,7 @@ async function callAnthropic(params: AiRequest): Promise<{
       system: params.messages.find((m) => m.role === 'system')?.content,
       temperature: params.temperature ?? 0.7,
     }),
+    signal: params.signal,
   });
 
   if (!response.ok) {
@@ -149,6 +152,7 @@ async function callGoogle(params: AiRequest): Promise<{
         maxOutputTokens: params.maxTokens ?? 4096,
       },
     }),
+    signal: params.signal,
   });
 
   if (!response.ok) {
@@ -181,6 +185,7 @@ async function callOllamaProvider(params: AiRequest): Promise<{
         num_predict: params.maxTokens ?? 4096,
       },
     }),
+    signal: params.signal,
   });
 
   if (!response.ok) {
@@ -199,6 +204,7 @@ async function callOllamaProvider(params: AiRequest): Promise<{
 /**
  * Non-streaming AI call for any provider. Returns content + usage + cost.
  * Used by the Worker engine in taskBroker for background tasks.
+ * Accepts an optional AbortSignal for task cancellation.
  */
 export async function callAI(params: {
   provider: string;
@@ -207,6 +213,7 @@ export async function callAI(params: {
   messages: AiMessage[];
   temperature?: number;
   maxTokens?: number;
+  signal?: AbortSignal;
 }): Promise<{ content: string; usage?: { input: number; output: number }; cost: number }> {
   let result;
   switch (params.provider) {
