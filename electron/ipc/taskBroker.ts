@@ -10,6 +10,16 @@ import { ipcMain, BrowserWindow } from 'electron';
 import type Database from 'better-sqlite3';
 import { callAI } from './ai';
 
+type WindowGetter = () => BrowserWindow | null;
+
+/** Safely send to renderer — skips if window is destroyed (Vite HMR). */
+function safeSend(getWin: WindowGetter, channel: string, data: any) {
+  const win = getWin();
+  if (win && !win.isDestroyed()) {
+    win.webContents.send(channel, data);
+  }
+}
+
 interface TaskExecution {
   taskId: string;
   abortController?: AbortController;
@@ -17,11 +27,11 @@ interface TaskExecution {
 
 let db: Database.Database;
 let activeExecutions: Map<string, TaskExecution> = new Map();
-let mainWindow: BrowserWindow | null = null;
+let getWindow: WindowGetter;
 
-export function registerTaskBrokerHandlers(database: Database.Database, win: BrowserWindow) {
+export function registerTaskBrokerHandlers(database: Database.Database, winGetter: WindowGetter) {
   db = database;
-  mainWindow = win;
+  getWindow = winGetter;
 
   // Submit a new task to the queue
   ipcMain.handle('task:submit', async (_event, task: {
@@ -50,7 +60,7 @@ export function registerTaskBrokerHandlers(database: Database.Database, win: Bro
     );
 
     // Notify renderer about new task
-    mainWindow?.webContents.send('task:update', {
+    safeSend(getWindow, 'task:update', {
       id,
       status: 'queued',
       description: task.description,
@@ -109,7 +119,7 @@ export function registerTaskBrokerHandlers(database: Database.Database, win: Bro
       UPDATE tasks SET status = 'cancelled', completed_at = ? WHERE id = ?
     `).run(new Date().toISOString(), taskId);
 
-    mainWindow?.webContents.send('task:update', { id: taskId, status: 'cancelled' });
+    safeSend(getWindow, 'task:update', { id: taskId, status: 'cancelled' });
 
     return { id: taskId, status: 'cancelled' };
   });
@@ -126,7 +136,7 @@ export function registerTaskBrokerHandlers(database: Database.Database, win: Bro
       WHERE id = ?
     `).run(taskId);
 
-    mainWindow?.webContents.send('task:update', { id: taskId, status: 'queued' });
+    safeSend(getWindow, 'task:update', { id: taskId, status: 'queued' });
 
     processNextTask();
 
@@ -174,14 +184,14 @@ async function processNextTask() {
     UPDATE tasks SET status = 'running', started_at = ? WHERE id = ?
   `).run(now, nextTask.id);
 
-  mainWindow?.webContents.send('task:update', {
+  safeSend(getWindow, 'task:update', {
     id: nextTask.id,
     status: 'running',
     description: nextTask.description,
   });
 
   // Also update the worker status in renderer
-  mainWindow?.webContents.send('engine:status', {
+  safeSend(getWindow, 'engine:status', {
     engine: 'worker',
     status: 'working',
     taskId: nextTask.id,
@@ -204,7 +214,7 @@ async function processNextTask() {
       WHERE id = ?
     `).run(new Date().toISOString(), JSON.stringify(result), nextTask.id);
 
-    mainWindow?.webContents.send('task:update', {
+    safeSend(getWindow, 'task:update', {
       id: nextTask.id,
       status: 'completed',
       result,
@@ -212,7 +222,7 @@ async function processNextTask() {
 
     // Send result back to conversation if there is one
     if (nextTask.conversation_id) {
-      mainWindow?.webContents.send('task:result', {
+      safeSend(getWindow, 'task:result', {
         taskId: nextTask.id,
         conversationId: nextTask.conversation_id,
         result,
@@ -229,7 +239,7 @@ async function processNextTask() {
       WHERE id = ?
     `).run(new Date().toISOString(), error.message, nextTask.id);
 
-    mainWindow?.webContents.send('task:update', {
+    safeSend(getWindow, 'task:update', {
       id: nextTask.id,
       status: 'failed',
       error: error.message,
@@ -237,7 +247,7 @@ async function processNextTask() {
   } finally {
     activeExecutions.delete(nextTask.id);
 
-    mainWindow?.webContents.send('engine:status', {
+    safeSend(getWindow, 'engine:status', {
       engine: 'worker',
       status: 'idle',
     });
