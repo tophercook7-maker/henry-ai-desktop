@@ -51,7 +51,9 @@ app.whenReady().then(() => {
     fs.mkdirSync(henryDir, { recursive: true });
   }
 
-  const db = initDatabase();
+  // Initialize database with the workspace directory
+  const db = initDatabase(henryDir);
+
   createWindow();
 
   // Register all IPC handlers
