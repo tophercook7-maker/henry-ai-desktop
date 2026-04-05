@@ -8,7 +8,17 @@
 
 import { ipcMain, BrowserWindow } from 'electron';
 
-let mainWindow: BrowserWindow | null = null;
+type WindowGetter = () => BrowserWindow | null;
+
+/** Safely send to renderer — skips if window is destroyed (Vite HMR). */
+function safeSend(getWin: WindowGetter, channel: string, data: any) {
+  const win = getWin();
+  if (win && !win.isDestroyed()) {
+    win.webContents.send(channel, data);
+  }
+}
+
+let getWindow: WindowGetter;
 
 const DEFAULT_OLLAMA_URL = 'http://localhost:11434';
 
@@ -24,8 +34,8 @@ interface OllamaModel {
   };
 }
 
-export function registerOllamaHandlers(win: BrowserWindow) {
-  mainWindow = win;
+export function registerOllamaHandlers(winGetter: WindowGetter) {
+  getWindow = winGetter;
 
   // Check if Ollama is running
   ipcMain.handle('ollama:status', async (_event, baseUrl?: string) => {
@@ -92,7 +102,7 @@ export function registerOllamaHandlers(win: BrowserWindow) {
         for (const line of lines) {
           try {
             const data = JSON.parse(line);
-            mainWindow?.webContents.send('ollama:pull:progress', {
+            safeSend(getWindow, 'ollama:pull:progress', {
               model: modelName,
               status: data.status,
               completed: data.completed,
@@ -168,14 +178,14 @@ export function registerOllamaHandlers(win: BrowserWindow) {
             const data = JSON.parse(line);
             if (data.message?.content) {
               fullText += data.message.content;
-              mainWindow?.webContents.send('ai:stream:chunk', {
+              safeSend(getWindow, 'ai:stream:chunk', {
                 channelId: params.channelId,
                 chunk: data.message.content,
               });
             }
 
             if (data.done) {
-              mainWindow?.webContents.send('ai:stream:done', {
+              safeSend(getWindow, 'ai:stream:done', {
                 channelId: params.channelId,
                 fullText,
                 usage: {
@@ -194,7 +204,7 @@ export function registerOllamaHandlers(win: BrowserWindow) {
 
       return { success: true };
     } catch (err: any) {
-      mainWindow?.webContents.send('ai:stream:error', {
+      safeSend(getWindow, 'ai:stream:error', {
         channelId: params.channelId,
         error: err.message,
       });
