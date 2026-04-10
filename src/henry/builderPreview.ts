@@ -18,6 +18,38 @@ export function extractHtmlFromMessage(content: string): string | null {
 }
 
 /**
+ * Try to extract a partial/in-progress HTML document from streaming content.
+ * Returns partial HTML as soon as we see a <!DOCTYPE or <html tag opening.
+ * The partial HTML may be incomplete but browsers render it gracefully.
+ */
+export function extractPartialHtmlFromStream(streamingContent: string): string | null {
+  const lower = streamingContent.toLowerCase();
+
+  const codeBlockStart = lower.indexOf('```html');
+  if (codeBlockStart !== -1) {
+    const htmlStart = streamingContent.indexOf('\n', codeBlockStart) + 1;
+    if (htmlStart > 0) {
+      const partial = streamingContent.slice(htmlStart);
+      if (partial.length > 50) return partial;
+    }
+  }
+
+  const doctypeIdx = lower.indexOf('<!doctype');
+  if (doctypeIdx !== -1) {
+    const partial = streamingContent.slice(doctypeIdx);
+    if (partial.length > 50) return partial;
+  }
+
+  const htmlIdx = lower.indexOf('<html');
+  if (htmlIdx !== -1) {
+    const partial = streamingContent.slice(htmlIdx);
+    if (partial.length > 50) return partial;
+  }
+
+  return null;
+}
+
+/**
  * Download an HTML string as a .html file.
  */
 export function downloadHtml(html: string, filename = 'app.html'): void {

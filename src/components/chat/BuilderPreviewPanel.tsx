@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { downloadHtml } from '../../henry/builderPreview';
+import { downloadHtml, extractPartialHtmlFromStream } from '../../henry/builderPreview';
 
 type Viewport = 'mobile' | 'tablet' | 'desktop';
 
@@ -26,7 +26,8 @@ export default function BuilderPreviewPanel({ html, isStreaming, streamingHtml, 
   }, [html]);
 
   const vp = VIEWPORTS.find((v) => v.id === viewport)!;
-  const displayHtml = html ?? (isStreaming ? streamingHtml : null);
+  const partialStreamHtml = isStreaming ? extractPartialHtmlFromStream(streamingHtml) : null;
+  const displayHtml = html ?? partialStreamHtml;
 
   function openInTab() {
     if (!displayHtml) return;

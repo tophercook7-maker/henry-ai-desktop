@@ -1,0 +1,178 @@
+/**
+ * Henry Rich Memory — structured persistent memory for projects, goals, and people.
+ * Stored in localStorage. Surfaces in system prompts for deeper presence.
+ */
+
+export interface HenryProject {
+  id: string;
+  name: string;
+  description: string;
+  status: 'active' | 'paused' | 'done';
+  nextStep: string;
+  tags: string[];
+  updatedAt: string;
+  createdAt: string;
+}
+
+export interface HenryGoal {
+  id: string;
+  title: string;
+  description: string;
+  timeframe: string;
+  progress: number;
+  milestones: string[];
+  updatedAt: string;
+  createdAt: string;
+}
+
+export interface HenryPerson {
+  id: string;
+  name: string;
+  relationship: string;
+  context: string;
+  lastNote: string;
+  updatedAt: string;
+}
+
+const PROJECTS_KEY = 'henry:rich_memory:projects';
+const GOALS_KEY = 'henry:rich_memory:goals';
+const PEOPLE_KEY = 'henry:rich_memory:people';
+
+function load<T>(key: string): T[] {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function save<T>(key: string, items: T[]): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(items));
+  } catch { /* storage full */ }
+}
+
+// ── Projects ──────────────────────────────────────────────────────────────────
+
+export function loadProjects(): HenryProject[] {
+  return load<HenryProject>(PROJECTS_KEY);
+}
+
+export function saveProject(project: HenryProject): void {
+  const all = loadProjects();
+  const idx = all.findIndex((p) => p.id === project.id);
+  if (idx >= 0) all[idx] = project;
+  else all.unshift(project);
+  save(PROJECTS_KEY, all);
+}
+
+export function deleteProject(id: string): void {
+  save(PROJECTS_KEY, loadProjects().filter((p) => p.id !== id));
+}
+
+export function newProject(): HenryProject {
+  return {
+    id: crypto.randomUUID(),
+    name: '',
+    description: '',
+    status: 'active',
+    nextStep: '',
+    tags: [],
+    updatedAt: new Date().toISOString(),
+    createdAt: new Date().toISOString(),
+  };
+}
+
+// ── Goals ─────────────────────────────────────────────────────────────────────
+
+export function loadGoals(): HenryGoal[] {
+  return load<HenryGoal>(GOALS_KEY);
+}
+
+export function saveGoal(goal: HenryGoal): void {
+  const all = loadGoals();
+  const idx = all.findIndex((g) => g.id === goal.id);
+  if (idx >= 0) all[idx] = goal;
+  else all.unshift(goal);
+  save(GOALS_KEY, all);
+}
+
+export function deleteGoal(id: string): void {
+  save(GOALS_KEY, loadGoals().filter((g) => g.id !== id));
+}
+
+export function newGoal(): HenryGoal {
+  return {
+    id: crypto.randomUUID(),
+    title: '',
+    description: '',
+    timeframe: '',
+    progress: 0,
+    milestones: [],
+    updatedAt: new Date().toISOString(),
+    createdAt: new Date().toISOString(),
+  };
+}
+
+// ── People (internal to rich memory, distinct from contacts) ──────────────────
+
+export function loadPeople(): HenryPerson[] {
+  return load<HenryPerson>(PEOPLE_KEY);
+}
+
+// ── System prompt block ───────────────────────────────────────────────────────
+
+export function buildRichMemoryBlock(): string {
+  const projects = loadProjects().filter((p) => p.status === 'active').slice(0, 6);
+  const goals = loadGoals().slice(0, 4);
+
+  const lines: string[] = [];
+
+  if (projects.length > 0) {
+    lines.push('**Active projects Topher is working on:**');
+    for (const p of projects) {
+      lines.push(`- **${p.name}**: ${p.description}${p.nextStep ? ` → Next: ${p.nextStep}` : ''}`);
+    }
+    lines.push('');
+  }
+
+  if (goals.length > 0) {
+    lines.push("**Topher's current goals:**");
+    for (const g of goals) {
+      const pct = g.progress > 0 ? ` (${g.progress}% complete)` : '';
+      lines.push(`- **${g.title}**${pct}${g.timeframe ? ` — ${g.timeframe}` : ''}: ${g.description}`);
+    }
+    lines.push('');
+  }
+
+  return lines.join('\n').trim();
+}
+
+export function buildContactsContextBlock(): string {
+  try {
+    const raw = localStorage.getItem('henry_contacts');
+    if (!raw) return '';
+    const contacts = JSON.parse(raw) as Array<{
+      name: string;
+      role?: string;
+      company?: string;
+      notes?: string;
+      lastInteraction?: string;
+    }>;
+    if (!contacts.length) return '';
+    const lines = ['**People in Topher\'s network (use for context when mentioned):**'];
+    for (const c of contacts.slice(0, 12)) {
+      const parts = [c.name];
+      if (c.role) parts.push(c.role);
+      if (c.company) parts.push(`at ${c.company}`);
+      const base = parts.join(' — ');
+      const notes = c.notes ? ` | ${c.notes.slice(0, 120)}` : '';
+      const last = c.lastInteraction ? ` | Last: ${c.lastInteraction}` : '';
+      lines.push(`- ${base}${notes}${last}`);
+    }
+    return lines.join('\n');
+  } catch {
+    return '';
+  }
+}

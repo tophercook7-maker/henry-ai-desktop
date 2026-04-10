@@ -90,7 +90,15 @@ import {
 } from '@/henry/sessionResume';
 import { parseUserCommandLine, type HenryCommand } from '@/henry/commandLayer';
 import { resolveHenryCommand } from '@/henry/commandActions';
-import { webSearch, formatSearchResultsForHenry } from '@/henry/webSearch';
+import {
+  webSearch,
+  formatSearchResultsForHenry,
+  fetchPageContent,
+  formatPageContentForHenry,
+  autoShouldSearch,
+  extractUrlsFromText,
+  getSearchApiKeys,
+} from '@/henry/webSearch';
 import { logAction } from '@/henry/auditLog';
 import { extractHtmlFromMessage } from '@/henry/builderPreview';
 import BuilderPreviewPanel from './BuilderPreviewPanel';
@@ -321,11 +329,22 @@ export default function ChatView() {
         setChatInject({ id: Date.now(), text: detail.prompt });
       }
     }
+    function handleNewChat() {
+      clearSavedSessionResume();
+      clearRecoveryBannerDismissedThisSession();
+      setActiveConversation(null);
+      setMessages([]);
+      setOperatingMode('companion');
+      setRecoveryBannerOpen(false);
+      setRecoverySnapshot(null);
+    }
     window.addEventListener('henry_secretary_prompt', handleSecretaryPrompt);
     window.addEventListener('henry_mode_launch', handleModeLaunch);
+    window.addEventListener('henry_new_chat', handleNewChat);
     return () => {
       window.removeEventListener('henry_secretary_prompt', handleSecretaryPrompt);
       window.removeEventListener('henry_mode_launch', handleModeLaunch);
+      window.removeEventListener('henry_new_chat', handleNewChat);
     };
   }, []);
 
@@ -783,6 +802,37 @@ export default function ChatView() {
       return;
     }
 
+    // URL browse shortcut: if the message is purely a URL (or starts with one), browse it
+    const trimmed = content.trim();
+    const urlsInMessage = extractUrlsFromText(trimmed);
+    const isPureUrl = urlsInMessage.length > 0 && (trimmed === urlsInMessage[0] || trimmed.startsWith('http://') || trimmed.startsWith('https://'));
+    if (isPureUrl && urlsInMessage[0]) {
+      const question = trimmed !== urlsInMessage[0] ? trimmed.replace(urlsInMessage[0], '').trim() : undefined;
+      await handleBrowseUrl(urlsInMessage[0], question || `Summarize the content at ${urlsInMessage[0]}`);
+      return;
+    }
+
+    // Auto-search: if the message sounds like it needs live data, fetch first
+    if (autoShouldSearch(content) && !isSearching) {
+      setIsSearching(true);
+      try {
+        const apiKeys = getSearchApiKeys();
+        const sr = await webSearch(content.slice(0, 120), apiKeys);
+        if (sr.results.length > 0 || sr.abstract) {
+          const formatted = formatSearchResultsForHenry(sr);
+          const enriched = `${formatted}\n\n---\nMy question: ${content}`;
+          // Send the enriched message directly to companion stream
+          setIsSearching(false);
+          await handleSendEnriched(enriched, content);
+          return;
+        }
+      } catch {
+        // Fall through to normal send if search fails
+      } finally {
+        setIsSearching(false);
+      }
+    }
+
     const engine = selectedEngine;
 
     // Auto-detect mode from message content (only for companion/chat engine)
@@ -844,6 +894,45 @@ export default function ChatView() {
       // even before React re-renders with the new operatingMode state
       await handleCompanionStream(content, convId, detectedMode);
     }
+  }
+
+  // Like handleSend but shows original user message in chat while sending enriched content to Henry
+  async function handleSendEnriched(enrichedContent: string, displayContent: string) {
+    const engine = selectedEngine;
+    let detectedMode = operatingMode;
+    if (engine !== 'worker') {
+      detectedMode = detectModeFromMessage(displayContent, operatingMode);
+      if (detectedMode !== operatingMode) {
+        setOperatingMode(detectedMode);
+        setAutoSwitchNotice(MODE_HUMAN_LABELS[detectedMode]);
+        if (autoSwitchTimerRef.current) clearTimeout(autoSwitchTimerRef.current);
+        autoSwitchTimerRef.current = setTimeout(() => setAutoSwitchNotice(null), 4000);
+      }
+    }
+    let convId = activeConversationId;
+    if (!convId) {
+      try {
+        const convo = await window.henryAPI.createConversation(displayContent.slice(0, 50) + (displayContent.length > 50 ? '...' : ''));
+        convId = convo.id;
+        setActiveConversation(convId);
+        const convos = await window.henryAPI.getConversations();
+        useStore.getState().setConversations(convos);
+      } catch (err) {
+        console.error('Failed to create conversation:', err);
+        return;
+      }
+    }
+    const userMsg = {
+      id: crypto.randomUUID(),
+      conversation_id: convId,
+      role: 'user' as const,
+      content: displayContent,
+      engine,
+      created_at: new Date().toISOString(),
+    };
+    addMessage(userMsg);
+    try { await window.henryAPI.saveMessage(userMsg); } catch { /* optional */ }
+    await handleCompanionStream(enrichedContent, convId, detectedMode);
   }
 
   async function handleCompanionStream(content: string, convId: string, modeOverride?: HenryOperatingMode) {
@@ -1251,7 +1340,8 @@ export default function ChatView() {
     setIsSearching(true);
     logAction({ type: 'search', description: `Web search: ${query}`, input: query, success: true });
     try {
-      const sr = await webSearch(query);
+      const apiKeys = getSearchApiKeys();
+      const sr = await webSearch(query, apiKeys);
       const formatted = formatSearchResultsForHenry(sr);
       const injected = `${formatted}\n\n---\nMy question: ${query}`;
       setChatInject({ id: Date.now(), text: injected });
@@ -1261,6 +1351,23 @@ export default function ChatView() {
         id: Date.now(),
         text: `Search failed for: ${query}\n\nMy question: ${query}`,
       });
+    } finally {
+      setIsSearching(false);
+    }
+  }
+
+  async function handleBrowseUrl(url: string, userQuestion?: string) {
+    if (isSearching || isStreaming) return;
+    setIsSearching(true);
+    logAction({ type: 'search', description: `Browse URL: ${url}`, input: url, success: true });
+    try {
+      const page = await fetchPageContent(url);
+      const formatted = formatPageContentForHenry(page);
+      const suffix = userQuestion ? `\n\n---\nMy question: ${userQuestion}` : '';
+      setChatInject({ id: Date.now(), text: `${formatted}${suffix}` });
+    } catch (err) {
+      console.error('[Henry] URL browse failed:', err);
+      setChatInject({ id: Date.now(), text: `Failed to browse ${url}. Error: ${err instanceof Error ? err.message : String(err)}` });
     } finally {
       setIsSearching(false);
     }
@@ -1504,6 +1611,15 @@ export default function ChatView() {
               >
                 Create export pack
               </button>
+            </div>
+          )}
+          {isSearching && (
+            <div className="flex items-center gap-2 mb-2 px-3 py-1.5 rounded-lg bg-henry-accent/8 border border-henry-accent/15 text-xs text-henry-accent/80 animate-fade-in">
+              <svg className="w-3.5 h-3.5 animate-spin shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
+                <path d="M12 2a10 10 0 0 1 10 10" />
+              </svg>
+              <span>Searching the web for current information…</span>
             </div>
           )}
           {autoSwitchNotice && (

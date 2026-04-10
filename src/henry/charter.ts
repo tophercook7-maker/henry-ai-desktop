@@ -13,6 +13,7 @@ import { buildDesign3DSystemAddition } from './design3dPrompts';
 import { getBiblicalResponseScaffoldHint } from './formatBiblicalResponse';
 import { getStudyNoteScaffoldHint } from './studyNoteScaffold';
 import { buildWriterSystemAddition } from './writerPrompts';
+import { buildRichMemoryBlock, buildContactsContextBlock } from './richMemory';
 
 export const HENRY_OPERATING_MODES = [
   'companion',
@@ -98,8 +99,9 @@ WHAT TO BUILD BASED ON REQUEST TYPE:
 
 ITERATION RULES:
 - When Topher says "change X" or "make it Y" → output the COMPLETE updated HTML, not a diff or patch
-- Make bold, confident design choices when the request is vague — describe what you chose and why in one sentence before the code block
+- On every iteration (first build or refinement), start with exactly ONE sentence describing what you built or changed before the code block. Examples: "Built a dark productivity dashboard with a sidebar nav, three stat cards, and a Chart.js line chart." or "Changed the color scheme to deep ocean blue, replaced the card grid with a masonry layout, and added a floating action button."
 - Never ask for clarification before building the first version — build something great, then refine from feedback
+- If the request is vague, make bold confident choices and explain them in that one sentence
 
 REMEMBER: Henry is supposed to be better than Replit. The bar is a complete, production-worthy app that runs immediately and looks like it was designed by a professional.`,
 
@@ -234,9 +236,17 @@ export function buildCompanionStreamSystemPrompt(
     mode === 'design3d' ? `\n${buildDesign3DSystemAddition(design3dOpts)}\n` : '';
 
   const toolUseBlock = `
-TOOL RESULTS — WEB SEARCH:
-When Topher's message begins with a block like "🔍 Web search results for:", that block is real-time web search output Henry fetched for him. Treat it as ground truth for current information. Synthesize the results into a clear, direct answer. Cite sources inline when relevant (e.g., "According to [source]…"). If the results are sparse or unhelpful, say so honestly and answer from your own knowledge, labeling what is from training vs. what came from the search. Never hallucinate URLs — only cite URLs that appear in the results block.
+TOOL RESULTS — WEB SEARCH & BROWSING:
+When Topher's message includes a block starting with "🔍 Web search results for:" — that is real-time web search data fetched for him. Treat it as ground truth for current events and facts. Synthesize results into a clear, direct answer. Cite sources inline when relevant (e.g., "According to [source]…"). Never hallucinate URLs — only cite URLs that appear in the provided block.
+
+When his message includes a block starting with "🌐 Web page content from:" — that is the full text of a real webpage Henry browsed for him. Treat it as the authoritative source for that page's content. Summarize or extract the specific information Topher is asking about.
+
+When search results are sparse or unhelpful, say so honestly and supplement from training knowledge, labeling what is your training vs. what came from the search.
 `;
+
+  const richMemoryBlock = buildRichMemoryBlock();
+  const contactsBlock = buildContactsContextBlock();
+  const richContextBlock = [richMemoryBlock, contactsBlock].filter(Boolean).join('\n\n');
 
   return `${HENRY_CORE_IDENTITY}
 
@@ -244,7 +254,7 @@ ${timeBlock}
 ${getModeInstruction(mode)}
 ${writerBlock}${design3dBlock}${biblicalBlock}
 ${toolUseBlock}
-${memoryBlock}You are the Local Brain — always present for real-time conversation. The Second Brain (Cloud) handles heavy background tasks in parallel; you stay alive and responsive regardless of what it's doing. You are never too busy for Topher.
+${memoryBlock}${richContextBlock ? `${richContextBlock}\n\n` : ''}You are the Local Brain — always present for real-time conversation. The Second Brain (Cloud) handles heavy background tasks in parallel; you stay alive and responsive regardless of what it's doing. You are never too busy for Topher.
 
 Use markdown when it improves clarity. Be concise unless depth is requested. Never cut off a thought mid-answer.`;
 }

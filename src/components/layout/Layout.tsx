@@ -1,3 +1,4 @@
+import { useState, useEffect, useCallback } from 'react';
 import TitleBar from './TitleBar';
 import Sidebar from './Sidebar';
 import ChatView from '../chat/ChatView';
@@ -12,10 +13,43 @@ import PrinterPanel from '../computer/PrinterPanel';
 import SecretaryPanel from '../secretary/SecretaryPanel';
 import TodayPanel from '../today/TodayPanel';
 import ContactsPanel from '../contacts/ContactsPanel';
+import CommandPalette from '../chat/CommandPalette';
 import { useStore } from '../../store';
+import { isHenryOperatingMode, type HenryOperatingMode } from '../../henry/charter';
 
 export default function Layout() {
   const currentView = useStore((s) => s.currentView);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  const handlePaletteSetMode = useCallback((mode: HenryOperatingMode) => {
+    try { localStorage.setItem('henry_operating_mode', mode); } catch { /* ignore */ }
+    window.dispatchEvent(new CustomEvent('henry_mode_launch', { detail: { mode, prompt: '' } }));
+    useStore.getState().setCurrentView('chat');
+  }, []);
+
+  const handlePaletteNewChat = useCallback(() => {
+    window.dispatchEvent(new CustomEvent('henry_new_chat', {}));
+    useStore.getState().setCurrentView('chat');
+  }, []);
+
+  const handlePaletteInject = useCallback((mode: HenryOperatingMode, text: string) => {
+    if (isHenryOperatingMode(mode)) {
+      try { localStorage.setItem('henry_operating_mode', mode); } catch { /* ignore */ }
+    }
+    window.dispatchEvent(new CustomEvent('henry_mode_launch', { detail: { mode, prompt: text } }));
+    useStore.getState().setCurrentView('chat');
+  }, []);
 
   return (
     <div className="h-screen w-screen flex flex-col bg-henry-bg overflow-hidden">
@@ -37,6 +71,13 @@ export default function Layout() {
           {currentView === 'settings' && <SettingsView />}
         </main>
       </div>
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        onSetMode={handlePaletteSetMode}
+        onNewChat={handlePaletteNewChat}
+        onInjectPrompt={handlePaletteInject}
+      />
     </div>
   );
 }

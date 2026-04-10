@@ -543,6 +543,71 @@ function GeneralTab() {
         />
       </div>
 
+      <div className="rounded-xl border border-henry-border/50 bg-henry-surface/30 p-5 space-y-4">
+        <div>
+          <h3 className="font-medium text-henry-text mb-1">Web Search &amp; Browse</h3>
+          <p className="text-xs text-henry-text-dim leading-relaxed mb-4">
+            Henry can search the web and read any URL automatically. Without API keys he uses DuckDuckGo (limited results).
+            For richer search — like Grok or ChatGPT — add a Google or Brave key.
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-[10px] font-semibold text-henry-text-muted uppercase tracking-wide mb-1">
+            Google Custom Search API Key
+          </label>
+          <p className="text-[10px] text-henry-text-muted mb-2">
+            Free tier: 100 searches/day. Get at console.cloud.google.com → Custom Search JSON API.
+          </p>
+          <input
+            type="password"
+            value={settings.search_google_api_key || ''}
+            onChange={(e) => void updateSetting('search_google_api_key', e.target.value)}
+            placeholder="AIzaSy..."
+            className="w-full bg-henry-bg border border-henry-border rounded-lg px-3 py-2 text-sm text-henry-text outline-none focus:border-henry-accent/50 font-mono"
+          />
+        </div>
+
+        <div>
+          <label className="block text-[10px] font-semibold text-henry-text-muted uppercase tracking-wide mb-1">
+            Google CSE ID (cx)
+          </label>
+          <p className="text-[10px] text-henry-text-muted mb-2">
+            Create a Custom Search Engine at programmablesearchengine.google.com. Set it to search the whole web.
+          </p>
+          <input
+            type="text"
+            value={settings.search_google_cx || ''}
+            onChange={(e) => void updateSetting('search_google_cx', e.target.value)}
+            placeholder="e.g. 017576662512468239146:omuauf..."
+            className="w-full bg-henry-bg border border-henry-border rounded-lg px-3 py-2 text-sm text-henry-text outline-none focus:border-henry-accent/50 font-mono"
+          />
+        </div>
+
+        <div>
+          <label className="block text-[10px] font-semibold text-henry-text-muted uppercase tracking-wide mb-1">
+            Brave Search API Key
+          </label>
+          <p className="text-[10px] text-henry-text-muted mb-2">
+            Free tier: 2,000 queries/month. Get at api.search.brave.com.
+          </p>
+          <input
+            type="password"
+            value={settings.search_brave_api_key || ''}
+            onChange={(e) => void updateSetting('search_brave_api_key', e.target.value)}
+            placeholder="BSA..."
+            className="w-full bg-henry-bg border border-henry-border rounded-lg px-3 py-2 text-sm text-henry-text outline-none focus:border-henry-accent/50 font-mono"
+          />
+        </div>
+
+        <div className="rounded-lg bg-henry-accent/5 border border-henry-accent/15 px-4 py-3">
+          <p className="text-[10px] text-henry-accent/80 font-medium mb-1">URL browsing is always on</p>
+          <p className="text-[10px] text-henry-text-muted">
+            Paste any URL in chat and Henry will read the full page — no API key needed. Powered by r.jina.ai.
+          </p>
+        </div>
+      </div>
+
       <div className="rounded-xl border border-henry-border/50 bg-henry-surface/30 p-5">
         <h3 className="font-medium text-henry-text mb-2">About</h3>
         <div className="space-y-1.5 text-xs text-henry-text-dim">

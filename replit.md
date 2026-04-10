@@ -4,13 +4,18 @@
 
 Henry AI is Topher's personal AI presence — a local-first AI OS with a dual-engine architecture (Local Brain / Ollama + Second Brain / Cloud). He has warmth, memory, and a can-do philosophy: he always finds a way to help, never dead-ends a request.
 
-Supports OpenAI, Anthropic, Google Gemini, and Ollama. 7 modes — all auto-detected from message content:
-- **Companion** (chat) · **Writer** · **Developer** (code) · **Biblical** (Ethiopian Orthodox aware) · **3D/Design** · **Secretary** (email, scheduling, tasks) · **Computer** (Mac automation)
+Supports OpenAI, Anthropic, Google Gemini, and Ollama. 8 modes — all auto-detected from message content:
+- **Companion** (chat) · **Writer** · **Developer** (code) · **Builder** (app builder) · **Biblical** (Ethiopian Orthodox aware) · **3D/Design** · **Secretary** (email, scheduling, tasks) · **Computer** (Mac automation)
 
 ### Features
-- **Today panel** — home screen with greeting, 7-mode launcher, recent conversations, quick asks
+- **Full web access** — auto-searches when needed (keywords like "latest", "today", "price of"), fetches any URL (via r.jina.ai), supports Google CSE + Brave Search APIs (Settings → General → Web Search)
+- **⌘K Command Palette** — fuzzy search across all modes, quick actions, recent conversations, navigation. Press ⌘K or Ctrl+K anywhere
+- **Rich memory** — structured projects + goals injected into Henry's system prompt (`henry:rich_memory:projects`, `henry:rich_memory:goals` in localStorage)
+- **Contacts with interaction history** — log meetings/calls/emails per contact; "Brief me" button launches Henry secretary chat
+- **Builder mode live preview** — streaming partial HTML rendered live as Henry generates the app; viewport toggle (mobile/tablet/desktop); download HTML
+- **Builder diff-awareness** — every iteration starts with one sentence describing what changed
+- **Today panel** — home screen with greeting, 8-mode launcher, recent conversations, quick asks
 - **Secretary panel** — quick-action hub: daily briefing, email drafts, scheduling, task review, meeting prep, follow-ups
-- **Contacts panel** — lightweight CRM stored locally; Henry uses contact context in conversation
 - **Voice input** — mic button in chat (Web Speech API, Chrome/Edge); speaks into the input
 - **Text-to-speech** — 🔊 toggle in chat bar; Henry reads his responses aloud with markdown stripped
 - **Computer panel** — Mac shell/AppleScript/app control (Electron desktop build only)
