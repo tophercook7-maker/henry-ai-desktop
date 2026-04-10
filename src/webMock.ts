@@ -426,6 +426,22 @@ const henryAPI: Window['henryAPI'] = {
         } else if (provider === 'ollama') {
           const settings = getStore<Record<string, string>>('henry:settings', {});
           const baseUrl = (settings.ollama_base_url || 'http://localhost:11434').replace(/\/$/, '');
+
+          // Detect HTTPS→HTTP mixed-content block (web preview on Replit can't reach local Ollama)
+          const isHttpOllama = baseUrl.startsWith('http://');
+          const isHttpsPage = typeof window !== 'undefined' && window.location.protocol === 'https:';
+          if (isHttpOllama && isHttpsPage) {
+            errorCb?.(
+              `Can't reach Ollama from the web browser.\n\n` +
+              `This page is served over HTTPS, but Ollama is at ${baseUrl} (HTTP) — browsers block that mix.\n\n` +
+              `Options:\n` +
+              `• Switch to a cloud provider (Anthropic/OpenAI) in Settings → AI Providers\n` +
+              `• Use the Mac desktop app where Ollama works natively\n` +
+              `• Or expose Ollama over HTTPS with a tunnel (e.g. cloudflared)`
+            );
+            return;
+          }
+
           const res = await fetch(`${baseUrl}/api/chat`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
