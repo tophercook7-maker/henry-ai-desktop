@@ -1,20 +1,29 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import Layout from './components/layout/Layout';
 import SetupWizard from './components/wizard/SetupWizard';
 import { useStore } from './store';
 import type { Task } from './types';
 
+const HENRY_FIRST_MESSAGE = `Hey. I'm up and running.
+
+Before we dive in — what's the most important thing on your plate right now? It could be a project you're working on, something you want to write, a question you've been turning over, or honestly anything. Just tell me and we'll start there.
+
+If you want to explore what I can do first, try saying something like "show me what you can do" — or just talk to me like you would a smart colleague who's always around.`;
+
 export default function App() {
   const [loading, setLoading] = useState(true);
+  const firstContactDone = useRef(false);
   const {
     setupComplete,
     setSetupComplete,
     setConversations,
     setProviders,
+    setActiveConversation,
+    addMessage,
     setCompanionStatus,
     setWorkerStatus,
     updateTask,
-    addMessage,
+    settings,
   } = useStore();
 
   useEffect(() => {
@@ -23,21 +32,54 @@ export default function App() {
     return cleanup;
   }, []);
 
+  // Henry's autonomous first contact — fires once after wizard completes
+  useEffect(() => {
+    if (!setupComplete || firstContactDone.current) return;
+    const isFirstLaunch = useStore.getState().settings.henry_first_launch === 'true';
+    if (!isFirstLaunch) return;
+
+    firstContactDone.current = true;
+    void triggerFirstContact();
+  }, [setupComplete, settings]);
+
+  async function triggerFirstContact() {
+    try {
+      const convo = await window.henryAPI.createConversation("First session with Henry");
+      const convos = await window.henryAPI.getConversations();
+      setConversations(convos);
+      setActiveConversation(convo.id);
+
+      const firstMsg = {
+        id: `henry-first-${Date.now()}`,
+        conversation_id: convo.id,
+        role: 'assistant' as const,
+        content: HENRY_FIRST_MESSAGE,
+        engine: 'companion' as const,
+        created_at: new Date().toISOString(),
+      };
+
+      await window.henryAPI.saveMessage(firstMsg);
+      addMessage(firstMsg);
+
+      // Clear first launch flag
+      await window.henryAPI.saveSetting('henry_first_launch', 'false');
+      useStore.getState().updateSetting('henry_first_launch', 'false');
+    } catch (err) {
+      console.error('Failed to deliver Henry first contact:', err);
+    }
+  }
+
   async function initApp() {
     try {
-      // Load settings — backend returns Record<string, string>
       const settingsMap = (await window.henryAPI.getSettings()) as Record<string, string>;
 
-      // Load all settings into the store
       Object.entries(settingsMap).forEach(([key, value]) => {
         useStore.getState().updateSetting(key, value);
       });
 
-      // Check if setup is complete
       if (settingsMap.setup_complete === 'true') {
         setSetupComplete(true);
 
-        // Load initial data
         const [convos, providers] = await Promise.all([
           window.henryAPI.getConversations(),
           window.henryAPI.getProviders(),
@@ -61,7 +103,6 @@ export default function App() {
   }
 
   function setupEventListeners() {
-    // Engine status events
     const unsubEngine = window.henryAPI.onEngineStatus((data) => {
       if (data.engine === 'companion') {
         setCompanionStatus(data);
@@ -70,12 +111,10 @@ export default function App() {
       }
     });
 
-    // Task update events (for real-time queue updates)
     const unsubTask = window.henryAPI.onTaskUpdate((data) => {
       updateTask(data.id, data);
     });
 
-    // Task result events (when a Worker task completes and result should appear in chat)
     const unsubResult = window.henryAPI.onTaskResult((data) => {
       updateTask(data.taskId, {
         id: data.taskId,
@@ -86,7 +125,7 @@ export default function App() {
       if (!data.conversationId) return;
 
       if (data.error) {
-        addMessage({
+        useStore.getState().addMessage({
           id: `task-result-${data.taskId}-error`,
           conversation_id: data.conversationId,
           role: 'assistant',
@@ -101,7 +140,7 @@ export default function App() {
         ? data.result
         : data.result?.content || JSON.stringify(data.result ?? {});
 
-      addMessage({
+      useStore.getState().addMessage({
         id: `task-result-${data.taskId}`,
         conversation_id: data.conversationId,
         role: 'assistant',
@@ -132,7 +171,6 @@ export default function App() {
     );
   }
 
-  // SetupWizard handles completion internally via the store
   if (!setupComplete) {
     return <SetupWizard />;
   }

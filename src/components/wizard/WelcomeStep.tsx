@@ -4,69 +4,39 @@ interface WelcomeStepProps {
 
 export default function WelcomeStep({ onNext }: WelcomeStepProps) {
   return (
-    <div className="text-center animate-slide-up">
-      <div className="text-6xl mb-6">🧠</div>
-      <h1 className="text-3xl font-bold text-henry-text mb-3">
-        Welcome to Henry AI
-      </h1>
-      <p className="text-henry-text-dim text-lg mb-8 max-w-md mx-auto leading-relaxed">
-        Your local AI operating system. Henry runs on your machine, your data
-        stays with you, and you control everything.
-      </p>
+    <div className="flex flex-col items-center justify-center min-h-[60vh] animate-fade-in text-center px-4">
+      <div className="text-7xl mb-8">🧠</div>
 
-      <div className="grid grid-cols-2 gap-4 mb-8 max-w-lg mx-auto text-left">
-        <Feature
-          icon="🏠"
-          title="Local Brain (Ollama)"
-          desc="Free forever. Runs privately on your machine — no account needed"
-        />
-        <Feature
-          icon="☁️"
-          title="Second Brain (Cloud)"
-          desc="Optional GPT-4, Claude, or Gemini for when you need more power"
-        />
-        <Feature
-          icon="🔒"
-          title="Private by Default"
-          desc="Your conversations stay on your machine. No data leaves without you"
-        />
-        <Feature
-          icon="🎭"
-          title="Multiple Modes"
-          desc="Companion chat, Biblical study, Writer, Developer, and 3D design"
-        />
+      <div className="max-w-lg mx-auto mb-10">
+        <div className="bg-henry-surface/40 border border-henry-border/30 rounded-2xl p-7 text-left relative">
+          <div className="absolute -top-3 left-6 text-xs font-medium text-henry-text-muted bg-henry-bg px-2">
+            Henry
+          </div>
+          <p className="text-henry-text text-lg leading-relaxed mb-4">
+            Hey. I'm Henry.
+          </p>
+          <p className="text-henry-text-dim leading-relaxed mb-4">
+            I'm going to be your personal AI — not a generic chatbot, but{' '}
+            <span className="text-henry-text font-medium">your</span> AI. I can help you
+            think, write, study scripture, work through code, and design things.
+          </p>
+          <p className="text-henry-text-dim leading-relaxed">
+            I just need to know how you want me to think. Takes about 90 seconds.
+          </p>
+        </div>
+        <div className="flex justify-start ml-7 mt-1">
+          <div className="w-3 h-3 border-l border-b border-henry-border/30 rounded-bl-sm" />
+        </div>
       </div>
-
-      <p className="text-sm text-henry-text-muted mb-6">
-        Let's get you set up. It takes about 2 minutes.
-      </p>
 
       <button
         onClick={onNext}
-        className="px-8 py-3 bg-henry-accent text-white rounded-xl font-medium hover:bg-henry-accent-hover transition-colors text-lg"
+        className="px-10 py-4 bg-henry-accent text-white rounded-2xl font-semibold text-lg hover:bg-henry-accent-hover transition-all shadow-lg shadow-henry-accent/20"
       >
-        Get Started →
+        Let's do this →
       </button>
-    </div>
-  );
-}
 
-function Feature({
-  icon,
-  title,
-  desc,
-}: {
-  icon: string;
-  title: string;
-  desc: string;
-}) {
-  return (
-    <div className="p-4 rounded-xl bg-henry-surface/50 border border-henry-border/30">
-      <div className="text-xl mb-2">{icon}</div>
-      <div className="text-sm font-medium text-henry-text mb-1">{title}</div>
-      <div className="text-xs text-henry-text-muted leading-relaxed">
-        {desc}
-      </div>
+      <p className="text-xs text-henry-text-muted mt-4">No account needed · Works offline with Ollama</p>
     </div>
   );
 }
