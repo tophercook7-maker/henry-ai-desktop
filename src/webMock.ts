@@ -313,6 +313,12 @@ const henryAPI: Window['henryAPI'] = {
             body: JSON.stringify({ model, messages, temperature: temperature ?? 0.7, max_tokens: maxTokens, stream: true }),
             signal: controller.signal,
           });
+          if (!res.ok) {
+            const errBody = await res.text().catch(() => '');
+            let errMsg = `OpenAI ${res.status}: ${res.statusText}`;
+            try { const j = JSON.parse(errBody) as { error?: { message?: string } }; if (j.error?.message) errMsg = `OpenAI error: ${j.error.message}`; } catch { /* */ }
+            throw new Error(errMsg);
+          }
           const reader = res.body!.getReader();
           const decoder = new TextDecoder();
           while (!aborted) {
@@ -355,6 +361,12 @@ const henryAPI: Window['henryAPI'] = {
             }),
             signal: controller.signal,
           });
+          if (!res.ok) {
+            const errBody = await res.text().catch(() => '');
+            let errMsg = `Anthropic ${res.status}: ${res.statusText}`;
+            try { const j = JSON.parse(errBody) as { error?: { message?: string } }; if (j.error?.message) errMsg = `Anthropic error: ${j.error.message}`; } catch { /* */ }
+            throw new Error(errMsg);
+          }
           const reader = res.body!.getReader();
           const decoder = new TextDecoder();
           while (!aborted) {
@@ -387,6 +399,12 @@ const henryAPI: Window['henryAPI'] = {
               signal: controller.signal,
             }
           );
+          if (!res.ok) {
+            const errBody = await res.text().catch(() => '');
+            let errMsg = `Google ${res.status}: ${res.statusText}`;
+            try { const j = JSON.parse(errBody) as { error?: { message?: string } }; if (j.error?.message) errMsg = `Google error: ${j.error.message}`; } catch { /* */ }
+            throw new Error(errMsg);
+          }
           const reader = res.body!.getReader();
           const decoder = new TextDecoder();
           while (!aborted) {

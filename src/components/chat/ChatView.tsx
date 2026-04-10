@@ -802,35 +802,14 @@ export default function ChatView() {
       return;
     }
 
-    // URL browse shortcut: if the message is purely a URL (or starts with one), browse it
+    // URL browse: if message is ONLY a URL, fetch the page and inject it as context
     const trimmed = content.trim();
-    const urlsInMessage = extractUrlsFromText(trimmed);
-    const isPureUrl = urlsInMessage.length > 0 && (trimmed === urlsInMessage[0] || trimmed.startsWith('http://') || trimmed.startsWith('https://'));
-    if (isPureUrl && urlsInMessage[0]) {
-      const question = trimmed !== urlsInMessage[0] ? trimmed.replace(urlsInMessage[0], '').trim() : undefined;
-      await handleBrowseUrl(urlsInMessage[0], question || `Summarize the content at ${urlsInMessage[0]}`);
+    const urlMatch = trimmed.match(/^(https?:\/\/[^\s]+)(\s+(.+))?$/);
+    if (urlMatch) {
+      const url = urlMatch[1];
+      const question = urlMatch[3]?.trim() || `Summarize the key information from this page.`;
+      await handleBrowseUrl(url, question);
       return;
-    }
-
-    // Auto-search: if the message sounds like it needs live data, fetch first
-    if (autoShouldSearch(content) && !isSearching) {
-      setIsSearching(true);
-      try {
-        const apiKeys = getSearchApiKeys();
-        const sr = await webSearch(content.slice(0, 120), apiKeys);
-        if (sr.results.length > 0 || sr.abstract) {
-          const formatted = formatSearchResultsForHenry(sr);
-          const enriched = `${formatted}\n\n---\nMy question: ${content}`;
-          // Send the enriched message directly to companion stream
-          setIsSearching(false);
-          await handleSendEnriched(enriched, content);
-          return;
-        }
-      } catch {
-        // Fall through to normal send if search fails
-      } finally {
-        setIsSearching(false);
-      }
     }
 
     const engine = selectedEngine;
