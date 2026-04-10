@@ -1,18 +1,22 @@
 import { useState, useEffect } from 'react';
 import { useStore } from '../../store';
+import { loadProjects } from '../../henry/richMemory';
 
 interface CompleteStepProps {
   onBack: () => void;
 }
 
 export default function CompleteStep({ onBack }: CompleteStepProps) {
-  const { settings, updateSetting, setSetupComplete } = useStore();
+  const { settings, providers, updateSetting, setSetupComplete } = useStore();
   const [completing, setCompleting] = useState(false);
   const [visible, setVisible] = useState(false);
 
   const localModel = settings.companion_model || '';
   const provider = settings.companion_provider || '';
   const isOllama = provider === 'ollama';
+  const cloudHasKey = providers.some((p) => p.id === provider && p.apiKey?.trim());
+  const showKeyNudge = !isOllama && !cloudHasKey;
+  const activeProjects = loadProjects().filter((p) => p.status === 'active').slice(0, 3);
 
   useEffect(() => {
     const t = setTimeout(() => setVisible(true), 200);
@@ -68,6 +72,22 @@ export default function CompleteStep({ onBack }: CompleteStepProps) {
           </p>
         </div>
       </div>
+
+      {showKeyNudge && (
+        <div className="max-w-lg mx-auto mb-6">
+          <div className="flex items-start gap-3 bg-amber-500/5 border border-amber-500/20 rounded-xl px-4 py-3">
+            <span className="text-base mt-0.5">🔑</span>
+            <div>
+              <p className="text-xs font-medium text-amber-400 mb-0.5">One thing before we start</p>
+              <p className="text-xs text-henry-text-dim">
+                You skipped the API key — go to{' '}
+                <strong className="text-henry-text">Settings → AI Providers</strong>{' '}
+                and paste it whenever you're ready. Henry won't be able to respond until then.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="flex items-center justify-center gap-4">
         <button

@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useStore } from '../../store';
 import { getTodayBriefing, getTodayKey, saveBriefing, setGenerating, isGenerating, buildBriefingPrompt } from '../../henry/proactiveBriefing';
 import { getDueMacros, markMacroRun } from '../../henry/recurringMacros';
+import { loadProjects, type HenryProject } from '../../henry/richMemory';
 import type { DailyBriefing } from '../../henry/proactiveBriefing';
 
 const HENRY_OPERATING_MODE_KEY = 'henry_operating_mode';
@@ -47,6 +48,7 @@ export default function TodayPanel() {
   const [generatingBriefing, setGeneratingBriefing] = useState(false);
   const [briefingExpanded, setBriefingExpanded] = useState(true);
   const [dueMacros, setDueMacros] = useState<ReturnType<typeof getDueMacros>>([]);
+  const [activeProjects, setActiveProjects] = useState<HenryProject[]>([]);
   const greeting = getGreeting();
   const briefingStreamRef = useRef<any>(null);
 
@@ -70,6 +72,9 @@ export default function TodayPanel() {
 
     // Check due macros
     setDueMacros(getDueMacros());
+
+    // Load active projects for the sidebar
+    setActiveProjects(loadProjects().filter((p) => p.status === 'active').slice(0, 3));
 
     return () => {
       // Cancel any in-flight briefing stream so it doesn't update dead state
@@ -260,6 +265,36 @@ export default function TodayPanel() {
                       >
                         Skip
                       </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Active Projects */}
+          {activeProjects.length > 0 && (
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-[11px] font-medium text-henry-text-muted uppercase tracking-wider">
+                  In progress
+                </p>
+                <button
+                  onClick={() => useStore.getState().setCurrentView('settings')}
+                  className="text-[10px] text-henry-text-muted hover:text-henry-accent transition-colors"
+                >
+                  Manage →
+                </button>
+              </div>
+              <div className="space-y-2">
+                {activeProjects.map((p) => (
+                  <div key={p.id} className="flex items-start gap-2.5 px-3 py-2.5 rounded-xl bg-henry-surface/30 border border-henry-border/20">
+                    <div className="w-1.5 h-1.5 rounded-full bg-henry-success mt-1.5 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium text-henry-text truncate">{p.name}</p>
+                      {p.nextStep && (
+                        <p className="text-[11px] text-henry-text-muted truncate">→ {p.nextStep}</p>
+                      )}
                     </div>
                   </div>
                 ))}

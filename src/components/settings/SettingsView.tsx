@@ -7,14 +7,20 @@ import {
   type ProviderId,
 } from '../../providers/models';
 import { autoSelectModels } from '@/henry/modelPriority';
+import {
+  loadProjects, saveProject, deleteProject, newProject,
+  loadGoals, saveGoal, deleteGoal, newGoal,
+  type HenryProject, type HenryGoal,
+} from '../../henry/richMemory';
 
 export default function SettingsView() {
-  const [activeTab, setActiveTab] = useState<'providers' | 'engines' | 'general'>('providers');
+  const [activeTab, setActiveTab] = useState<'providers' | 'engines' | 'general' | 'memory'>('providers');
 
   const tabs = [
     { id: 'providers' as const, label: 'AI Providers' },
     { id: 'engines' as const, label: 'Engines' },
     { id: 'general' as const, label: 'General' },
+    { id: 'memory' as const, label: 'Memory' },
   ];
 
   return (
@@ -43,6 +49,7 @@ export default function SettingsView() {
           {activeTab === 'providers' && <ProvidersTab />}
           {activeTab === 'engines' && <EnginesTab />}
           {activeTab === 'general' && <GeneralTab />}
+          {activeTab === 'memory' && <MemoryTab />}
         </div>
       </div>
     </div>
@@ -751,6 +758,302 @@ function GeneralTab() {
           <p>Local-first AI operating system.</p>
           <p className="text-henry-text-muted">Your data stays on your machine.</p>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Memory Tab ────────────────────────────────────────────────────────────────
+
+function MemoryTab() {
+  const [projects, setProjects] = useState<HenryProject[]>([]);
+  const [goals, setGoals] = useState<HenryGoal[]>([]);
+  const [editingProject, setEditingProject] = useState<HenryProject | null>(null);
+  const [editingGoal, setEditingGoal] = useState<HenryGoal | null>(null);
+  const [section, setSection] = useState<'projects' | 'goals'>('projects');
+
+  useEffect(() => {
+    setProjects(loadProjects());
+    setGoals(loadGoals());
+  }, []);
+
+  function refreshAll() {
+    setProjects(loadProjects());
+    setGoals(loadGoals());
+  }
+
+  // ── Projects ──────────────────────────────────────────────────────────────
+
+  function saveAndRefreshProject(p: HenryProject) {
+    saveProject({ ...p, updatedAt: new Date().toISOString() });
+    setEditingProject(null);
+    refreshAll();
+  }
+
+  function removeProject(id: string) {
+    deleteProject(id);
+    refreshAll();
+  }
+
+  // ── Goals ─────────────────────────────────────────────────────────────────
+
+  function saveAndRefreshGoal(g: HenryGoal) {
+    saveGoal({ ...g, updatedAt: new Date().toISOString() });
+    setEditingGoal(null);
+    refreshAll();
+  }
+
+  function removeGoal(id: string) {
+    deleteGoal(id);
+    refreshAll();
+  }
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h2 className="text-sm font-semibold text-henry-text mb-1">Henry's Memory</h2>
+        <p className="text-xs text-henry-text-dim">
+          Projects and goals Henry knows about — injected into every conversation so he stays aware of your work.
+        </p>
+      </div>
+
+      {/* Sub-tabs */}
+      <div className="flex gap-1 border-b border-henry-border/30 pb-0">
+        {(['projects', 'goals'] as const).map((s) => (
+          <button
+            key={s}
+            onClick={() => setSection(s)}
+            className={`px-4 py-2 text-xs font-medium rounded-t-lg transition-all -mb-px ${
+              section === s
+                ? 'bg-henry-surface border border-henry-border/50 border-b-henry-surface text-henry-text'
+                : 'text-henry-text-muted hover:text-henry-text'
+            }`}
+          >
+            {s === 'projects' ? `Projects (${projects.length})` : `Goals (${goals.length})`}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Projects section ── */}
+      {section === 'projects' && (
+        <div className="space-y-3">
+          {projects.length === 0 && !editingProject && (
+            <p className="text-xs text-henry-text-muted italic py-2">No projects yet. Add one so Henry knows what you're building.</p>
+          )}
+          {projects.map((p) =>
+            editingProject?.id === p.id ? (
+              <ProjectForm
+                key={p.id}
+                project={editingProject}
+                onChange={setEditingProject}
+                onSave={() => saveAndRefreshProject(editingProject)}
+                onCancel={() => setEditingProject(null)}
+              />
+            ) : (
+              <div key={p.id} className="rounded-xl border border-henry-border/40 bg-henry-surface/30 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-sm font-medium text-henry-text truncate">{p.name || 'Untitled'}</span>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                        p.status === 'active' ? 'bg-henry-success/10 text-henry-success' :
+                        p.status === 'paused' ? 'bg-amber-500/10 text-amber-400' :
+                        'bg-henry-border/20 text-henry-text-muted'
+                      }`}>{p.status}</span>
+                    </div>
+                    {p.description && <p className="text-xs text-henry-text-dim mb-1">{p.description}</p>}
+                    {p.nextStep && (
+                      <p className="text-[11px] text-henry-accent">→ {p.nextStep}</p>
+                    )}
+                  </div>
+                  <div className="flex gap-1 shrink-0">
+                    <button onClick={() => setEditingProject({ ...p })} className="text-[11px] text-henry-text-muted hover:text-henry-text px-2 py-1 rounded">Edit</button>
+                    <button onClick={() => removeProject(p.id)} className="text-[11px] text-henry-text-muted hover:text-henry-error px-2 py-1 rounded">✕</button>
+                  </div>
+                </div>
+              </div>
+            )
+          )}
+          {editingProject && editingProject.id === 'new' ? (
+            <ProjectForm
+              project={editingProject}
+              onChange={setEditingProject}
+              onSave={() => saveAndRefreshProject({ ...editingProject, id: crypto.randomUUID() })}
+              onCancel={() => setEditingProject(null)}
+            />
+          ) : (
+            !editingProject && (
+              <button
+                onClick={() => setEditingProject({ ...newProject(), id: 'new' })}
+                className="w-full py-2.5 rounded-xl border border-dashed border-henry-border/50 text-xs text-henry-text-muted hover:text-henry-text hover:border-henry-border/80 transition-all"
+              >
+                + Add project
+              </button>
+            )
+          )}
+        </div>
+      )}
+
+      {/* ── Goals section ── */}
+      {section === 'goals' && (
+        <div className="space-y-3">
+          {goals.length === 0 && !editingGoal && (
+            <p className="text-xs text-henry-text-muted italic py-2">No goals yet. Add what you're working toward.</p>
+          )}
+          {goals.map((g) =>
+            editingGoal?.id === g.id ? (
+              <GoalForm
+                key={g.id}
+                goal={editingGoal}
+                onChange={setEditingGoal}
+                onSave={() => saveAndRefreshGoal(editingGoal)}
+                onCancel={() => setEditingGoal(null)}
+              />
+            ) : (
+              <div key={g.id} className="rounded-xl border border-henry-border/40 bg-henry-surface/30 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-henry-text mb-1">{g.title || 'Untitled'}</p>
+                    {g.description && <p className="text-xs text-henry-text-dim mb-1">{g.description}</p>}
+                    <div className="flex items-center gap-3 mt-2">
+                      {g.timeframe && <span className="text-[11px] text-henry-text-muted">{g.timeframe}</span>}
+                      {g.progress > 0 && (
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-20 h-1 bg-henry-bg rounded-full overflow-hidden">
+                            <div className="h-full bg-henry-accent rounded-full" style={{ width: `${g.progress}%` }} />
+                          </div>
+                          <span className="text-[11px] text-henry-text-muted">{g.progress}%</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex gap-1 shrink-0">
+                    <button onClick={() => setEditingGoal({ ...g })} className="text-[11px] text-henry-text-muted hover:text-henry-text px-2 py-1 rounded">Edit</button>
+                    <button onClick={() => removeGoal(g.id)} className="text-[11px] text-henry-text-muted hover:text-henry-error px-2 py-1 rounded">✕</button>
+                  </div>
+                </div>
+              </div>
+            )
+          )}
+          {editingGoal && editingGoal.id === 'new' ? (
+            <GoalForm
+              goal={editingGoal}
+              onChange={setEditingGoal}
+              onSave={() => saveAndRefreshGoal({ ...editingGoal, id: crypto.randomUUID() })}
+              onCancel={() => setEditingGoal(null)}
+            />
+          ) : (
+            !editingGoal && (
+              <button
+                onClick={() => setEditingGoal({ ...newGoal(), id: 'new' })}
+                className="w-full py-2.5 rounded-xl border border-dashed border-henry-border/50 text-xs text-henry-text-muted hover:text-henry-text hover:border-henry-border/80 transition-all"
+              >
+                + Add goal
+              </button>
+            )
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProjectForm({
+  project, onChange, onSave, onCancel,
+}: { project: HenryProject; onChange: (p: HenryProject) => void; onSave: () => void; onCancel: () => void }) {
+  return (
+    <div className="rounded-xl border border-henry-accent/30 bg-henry-surface/50 p-4 space-y-3">
+      <input
+        autoFocus
+        placeholder="Project name"
+        value={project.name}
+        onChange={(e) => onChange({ ...project, name: e.target.value })}
+        className="w-full bg-henry-bg border border-henry-border rounded-lg px-3 py-2 text-sm text-henry-text outline-none focus:border-henry-accent/50"
+      />
+      <textarea
+        placeholder="Short description — what is this project?"
+        value={project.description}
+        onChange={(e) => onChange({ ...project, description: e.target.value })}
+        rows={2}
+        className="w-full bg-henry-bg border border-henry-border rounded-lg px-3 py-2 text-sm text-henry-text outline-none focus:border-henry-accent/50 resize-none"
+      />
+      <input
+        placeholder="Next step (optional)"
+        value={project.nextStep}
+        onChange={(e) => onChange({ ...project, nextStep: e.target.value })}
+        className="w-full bg-henry-bg border border-henry-border rounded-lg px-3 py-2 text-sm text-henry-text outline-none focus:border-henry-accent/50"
+      />
+      <div className="flex items-center gap-2">
+        <select
+          value={project.status}
+          onChange={(e) => onChange({ ...project, status: e.target.value as HenryProject['status'] })}
+          className="bg-henry-bg border border-henry-border rounded-lg px-3 py-2 text-xs text-henry-text outline-none"
+        >
+          <option value="active">Active</option>
+          <option value="paused">Paused</option>
+          <option value="done">Done</option>
+        </select>
+        <div className="flex-1" />
+        <button onClick={onCancel} className="px-3 py-2 text-xs text-henry-text-muted hover:text-henry-text">Cancel</button>
+        <button
+          onClick={onSave}
+          disabled={!project.name.trim()}
+          className="px-4 py-2 bg-henry-accent text-white rounded-lg text-xs font-medium disabled:opacity-40"
+        >
+          Save
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function GoalForm({
+  goal, onChange, onSave, onCancel,
+}: { goal: HenryGoal; onChange: (g: HenryGoal) => void; onSave: () => void; onCancel: () => void }) {
+  return (
+    <div className="rounded-xl border border-henry-accent/30 bg-henry-surface/50 p-4 space-y-3">
+      <input
+        autoFocus
+        placeholder="Goal title"
+        value={goal.title}
+        onChange={(e) => onChange({ ...goal, title: e.target.value })}
+        className="w-full bg-henry-bg border border-henry-border rounded-lg px-3 py-2 text-sm text-henry-text outline-none focus:border-henry-accent/50"
+      />
+      <textarea
+        placeholder="Description — what does success look like?"
+        value={goal.description}
+        onChange={(e) => onChange({ ...goal, description: e.target.value })}
+        rows={2}
+        className="w-full bg-henry-bg border border-henry-border rounded-lg px-3 py-2 text-sm text-henry-text outline-none focus:border-henry-accent/50 resize-none"
+      />
+      <div className="flex gap-3">
+        <input
+          placeholder="Timeframe (e.g. Q1 2025)"
+          value={goal.timeframe}
+          onChange={(e) => onChange({ ...goal, timeframe: e.target.value })}
+          className="flex-1 bg-henry-bg border border-henry-border rounded-lg px-3 py-2 text-sm text-henry-text outline-none focus:border-henry-accent/50"
+        />
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-henry-text-muted whitespace-nowrap">Progress</label>
+          <input
+            type="number"
+            min={0} max={100}
+            value={goal.progress}
+            onChange={(e) => onChange({ ...goal, progress: Math.min(100, Math.max(0, Number(e.target.value))) })}
+            className="w-16 bg-henry-bg border border-henry-border rounded-lg px-2 py-2 text-xs text-henry-text outline-none focus:border-henry-accent/50 text-center"
+          />
+          <span className="text-xs text-henry-text-muted">%</span>
+        </div>
+      </div>
+      <div className="flex items-center justify-end gap-2">
+        <button onClick={onCancel} className="px-3 py-2 text-xs text-henry-text-muted hover:text-henry-text">Cancel</button>
+        <button
+          onClick={onSave}
+          disabled={!goal.title.trim()}
+          className="px-4 py-2 bg-henry-accent text-white rounded-lg text-xs font-medium disabled:opacity-40"
+        >
+          Save
+        </button>
       </div>
     </div>
   );

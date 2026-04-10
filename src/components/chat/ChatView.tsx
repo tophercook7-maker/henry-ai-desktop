@@ -1491,34 +1491,48 @@ export default function ChatView() {
                 shouldOfferCreateTaskFromMessage(operatingMode, msg, isErrorBubble) &&
                 msg.engine !== 'worker';
 
+              const isAuthError = isErrorBubble &&
+                /unauthorized|401|invalid.api.key|api[\s_-]?key|no.*key|authentication|billing|quota|forbidden|403/i.test(msg.content);
+
               return (
-                <MessageBubble
-                  key={msg.id}
-                  message={msg}
-                  workspaceSaveDraft={
-                    showWorkspaceSave
-                      ? {
-                          enabled: true,
-                          workspaceReady: !!settings.workspace_path?.trim(),
-                          busy: saveWorkspaceDraftBusy,
-                          label:
-                            operatingMode === 'design3d' ? 'Save design plan' : 'Save draft',
-                          onSave: () =>
-                            operatingMode === 'design3d'
-                              ? handleSaveDesign3dPlan(msg.content)
-                              : handleSaveWriterDraft(msg.content),
-                        }
-                      : undefined
-                  }
-                  createTask={
-                    showCreateTask
-                      ? {
-                          onClick: () => setCreateTaskFromMessage(msg),
-                          disabled: isStreaming,
-                        }
-                      : undefined
-                  }
-                />
+                <div key={msg.id}>
+                  <MessageBubble
+                    message={msg}
+                    workspaceSaveDraft={
+                      showWorkspaceSave
+                        ? {
+                            enabled: true,
+                            workspaceReady: !!settings.workspace_path?.trim(),
+                            busy: saveWorkspaceDraftBusy,
+                            label:
+                              operatingMode === 'design3d' ? 'Save design plan' : 'Save draft',
+                            onSave: () =>
+                              operatingMode === 'design3d'
+                                ? handleSaveDesign3dPlan(msg.content)
+                                : handleSaveWriterDraft(msg.content),
+                          }
+                        : undefined
+                    }
+                    createTask={
+                      showCreateTask
+                        ? {
+                            onClick: () => setCreateTaskFromMessage(msg),
+                            disabled: isStreaming,
+                          }
+                        : undefined
+                    }
+                  />
+                  {isAuthError && (
+                    <div className="flex items-center gap-2 mt-1 ml-11 pb-1">
+                      <button
+                        onClick={() => useStore.getState().setCurrentView('settings')}
+                        className="text-xs text-henry-accent hover:underline flex items-center gap-1"
+                      >
+                        → Add or fix your API key in Settings
+                      </button>
+                    </div>
+                  )}
+                </div>
               );
             })}
 
