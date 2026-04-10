@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import Layout from './components/layout/Layout';
 import SetupWizard from './components/wizard/SetupWizard';
+import ElectronAutoSetup from './components/wizard/ElectronAutoSetup';
 import { useStore } from './store';
 import type { Task } from './types';
 
@@ -205,6 +206,11 @@ export default function App() {
   }
 
   if (!setupComplete) {
+    // In Electron: skip the wizard entirely — run auto-setup immediately
+    const isElectron = typeof window.henryAPI?.ollamaIsInstalled === 'function';
+    if (isElectron) {
+      return <ElectronAutoSetup onComplete={() => setSetupComplete(true)} />;
+    }
     return <SetupWizard />;
   }
 
