@@ -43,6 +43,8 @@ const MODE_LABEL: Record<HenryOperatingMode, string> = {
   developer: 'Developer',
   biblical: 'Biblical',
   design3d: '3D / design',
+  secretary: 'Secretary',
+  computer: 'Computer control',
 };
 
 /** Markdown list for /help and command errors. */

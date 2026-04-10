@@ -410,23 +410,23 @@ const henryAPI: Window['henryAPI'] = {
         } else if (provider === 'ollama') {
           const settings = getStore<Record<string, string>>('henry:settings', {});
           const baseUrl = (settings.ollama_base_url || 'http://localhost:11434').replace(/\/$/, '');
-          const systemMsg = messages.find((m) => m.role === 'system');
-          const chatMessages = messages.filter((m) => m.role !== 'system');
           const res = await fetch(`${baseUrl}/api/chat`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               model,
-              messages: chatMessages,
-              ...(systemMsg ? { system: systemMsg.content } : {}),
+              messages,
               stream: true,
               options: { temperature: temperature ?? 0.7 },
             }),
             signal: controller.signal,
           });
           if (!res.ok) {
-            const errText = await res.text().catch(() => `HTTP ${res.status}`);
-            throw new Error(`Ollama error ${res.status}: ${errText}`);
+            const errText = await res.text().catch(() => '');
+            if (res.status === 404) {
+              throw new Error(`Model "${model}" not found in Ollama. Run: ollama pull ${model}`);
+            }
+            throw new Error(`Ollama ${res.status}: ${errText || res.statusText}`);
           }
           const reader = res.body!.getReader();
           const decoder = new TextDecoder();
@@ -474,7 +474,19 @@ const henryAPI: Window['henryAPI'] = {
         }
       } catch (err: unknown) {
         if (!aborted) {
-          errorCb?.(err instanceof Error ? err.message : String(err));
+          const raw = err instanceof Error ? err.message : String(err);
+          const lc = raw.toLowerCase();
+          let friendly = raw;
+          if (lc.includes('failed to fetch') || lc.includes('networkerror') || lc.includes('network request failed') || lc.includes('load failed')) {
+            const settings = getStore<Record<string, string>>('henry:settings', {});
+            const baseUrl = settings.ollama_base_url || 'http://localhost:11434';
+            friendly = `Cannot reach Ollama at ${baseUrl}.\n\nMake sure Ollama is running with:\n  OLLAMA_HOST=0.0.0.0 OLLAMA_ORIGINS=* ollama serve\n\nThen confirm the base URL in Settings → Engines matches your Mac's local IP (e.g. http://192.168.1.x:11434).`;
+          } else if (lc.includes('context length') || lc.includes('context window') || lc.includes('prompt is too long') || lc.includes('token limit')) {
+            friendly = `Context window full — the conversation is too long for this model. Start a new chat or switch to a model with a larger context window.`;
+          } else if (lc.includes('model') && (lc.includes('not found') || lc.includes('does not exist') || lc.includes('404'))) {
+            friendly = `Model not found in Ollama. Run \`ollama pull <model-name>\` on your Mac, then try again.`;
+          }
+          errorCb?.(friendly);
         }
       }
     };
