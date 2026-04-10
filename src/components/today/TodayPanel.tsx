@@ -158,7 +158,7 @@ export default function TodayPanel() {
   return (
     <div className="h-full flex flex-col bg-henry-bg overflow-hidden">
       {/* Hero greeting */}
-      <div className="shrink-0 px-8 pt-10 pb-4">
+      <div className="shrink-0 px-4 sm:px-8 pt-6 sm:pt-10 pb-4">
         <div className="max-w-3xl">
           <p className="text-xs text-henry-text-muted mb-1 font-medium tracking-wide uppercase">
             {getTodayLabel()}
@@ -200,7 +200,7 @@ export default function TodayPanel() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-8 pb-8">
+      <div className="flex-1 overflow-y-auto px-4 sm:px-8 pb-6 sm:pb-8">
         <div className="max-w-3xl space-y-8">
 
           {/* Proactive Briefing */}

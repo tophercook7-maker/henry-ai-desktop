@@ -44,9 +44,11 @@ export default function ChatInput({
     }
   }, [input]);
 
-  // Focus on mount
+  // Focus on mount — skip on touch devices so mobile keyboard doesn't pop immediately
   useEffect(() => {
-    textareaRef.current?.focus();
+    if (!window.matchMedia('(pointer: coarse)').matches) {
+      textareaRef.current?.focus();
+    }
   }, []);
 
   // Inject draft from parent
@@ -273,7 +275,10 @@ export default function ChatInput({
           {listening ? (
             <span className="text-henry-error">● Recording — speak now</span>
           ) : (
-            'Enter to send · Shift+Enter for new line'
+            <>
+              <span className="hidden sm:inline">Enter to send · Shift+Enter for new line</span>
+              <span className="sm:hidden">Tap ↑ to send</span>
+            </>
           )}
         </span>
         {isStreaming && (

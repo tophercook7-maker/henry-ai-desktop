@@ -109,6 +109,50 @@ GH_TOKEN=your_github_token npm run build:mac
 - Then create a GitHub Release from the `release/` directory artifacts
 - Future app installs will auto-download and show an in-app banner: "Henry update ready — restart to apply"
 
+## Mobile & Cross-Platform
+
+### Mobile (iPhone, iPad, Android) — Works Today via PWA
+Visit the deployed Henry URL in Safari (iOS) or Chrome (Android) → tap Share → **Add to Home Screen**. Henry launches as a standalone app with the Henry icon, full-screen with no browser chrome.
+
+**Mobile layout:**
+- On `< 768px` screens: sidebar is hidden; a **bottom tab bar** appears with Today, Chat, Secretary, People, and a **More** drawer
+- More drawer contains all remaining sections (Tasks, Files, Settings, etc.) + recent conversations
+- All panels have responsive padding and grid layouts for small screens
+- Chat input does not auto-focus on touch (prevents keyboard popping on load)
+- Voice input (microphone) works on iOS Safari and Android Chrome
+
+**What works on mobile:**
+| Feature | iOS/Android |
+|---|---|
+| All 8 Henry modes | ✅ |
+| Today, Chat, Secretary, Contacts | ✅ |
+| Voice input | ✅ (Web Speech API) |
+| Memory, projects, people | ✅ |
+| Morning briefing | ✅ |
+| OpenAI / Anthropic / Google AI | ✅ |
+| Ollama local models | ❌ (runs on Mac only) |
+| Terminal / Computer / File system | ❌ (desktop only) |
+
+**Ollama from mobile:** Go to Settings → AI Providers → Ollama, set URL to `http://[Mac-IP]:11434`. Both devices will use the same Ollama instance on your Mac.
+
+### Windows / Linux
+
+**Electron desktop app** — builds with:
+```bash
+npm run build:win      # Windows NSIS installer (.exe)
+npm run build:linux    # Linux AppImage
+```
+Run these on the target OS. All features work except Mac-specific automation (AppleScript).
+
+**Web PWA on Windows/Linux** — opens in any browser, all cloud AI features work. Add to home screen (Chrome: three-dot menu → "Install Henry AI") for desktop app feel.
+
+### iOS/Android Native App (Future)
+Capacitor wraps the existing React app into a true App Store / Play Store app with zero rewrite. This unlocks:
+- Push notifications
+- Device calendar & contacts sync
+- Offline-first with local storage
+- App Store distribution
+
 ## Web Adaptation
 
 The app uses `window.henryAPI` (Electron IPC bridge) everywhere. In web mode, `src/webMock.ts` provides a full browser-based implementation using `localStorage` and direct API fetch calls.

@@ -183,7 +183,7 @@ export default function ContactsPanel() {
   return (
     <div className="h-full flex flex-col bg-henry-bg overflow-hidden">
       {/* Header */}
-      <div className="shrink-0 px-8 pt-8 pb-5 border-b border-henry-border/30">
+      <div className="shrink-0 px-4 sm:px-8 pt-6 sm:pt-8 pb-5 border-b border-henry-border/30">
         <div className="max-w-3xl flex items-center justify-between">
           <div>
             <div className="flex items-center gap-2.5 mb-0.5">
@@ -219,7 +219,7 @@ export default function ContactsPanel() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-8 py-5">
+      <div className="flex-1 overflow-y-auto px-4 sm:px-8 py-5">
         <div className="max-w-3xl space-y-3">
 
           {/* Edit / New form */}

@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import TitleBar from './TitleBar';
 import Sidebar from './Sidebar';
+import MobileNav from './MobileNav';
 import ChatView from '../chat/ChatView';
 import TaskQueueView from '../queue/TaskQueueView';
 import SettingsView from '../settings/SettingsView';
@@ -16,6 +17,7 @@ import ContactsPanel from '../contacts/ContactsPanel';
 import CommandPalette from '../chat/CommandPalette';
 import { useStore } from '../../store';
 import { isHenryOperatingMode, type HenryOperatingMode } from '../../henry/charter';
+import { useEffect } from 'react';
 
 export default function Layout() {
   const currentView = useStore((s) => s.currentView);
@@ -54,9 +56,16 @@ export default function Layout() {
   return (
     <div className="h-full w-full flex flex-col bg-henry-bg overflow-hidden">
       <TitleBar />
-      <div className="flex-1 flex overflow-hidden">
-        <Sidebar />
-        <main className="flex-1 overflow-hidden">
+
+      {/* Main body: sidebar (desktop) + content */}
+      <div className="flex-1 flex overflow-hidden min-h-0">
+        {/* Sidebar: only visible on md+ */}
+        <div className="hidden md:block">
+          <Sidebar />
+        </div>
+
+        {/* Content */}
+        <main className="flex-1 overflow-hidden min-h-0">
           {currentView === 'today' && <TodayPanel />}
           {currentView === 'chat' && <ChatView />}
           {currentView === 'secretary' && <SecretaryPanel />}
@@ -71,6 +80,10 @@ export default function Layout() {
           {currentView === 'settings' && <SettingsView />}
         </main>
       </div>
+
+      {/* Mobile bottom nav — in-flow so content naturally sits above it */}
+      <MobileNav />
+
       <CommandPalette
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
