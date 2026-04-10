@@ -1030,7 +1030,12 @@ export default function ChatView() {
           </div>
         )}
         {messages.length === 0 && !isStreaming ? (
-          <EmptyChat onSend={handleSend} />
+          <EmptyChat
+            onModeAndInject={(mode, text) => {
+              setOperatingMode(mode);
+              setChatInject({ id: Date.now(), text });
+            }}
+          />
         ) : (
           <div className="max-w-3xl mx-auto space-y-4">
             {messages.map((msg) => {
@@ -1165,7 +1170,11 @@ export default function ChatView() {
               >
                 {HENRY_OPERATING_MODES.map((m) => (
                   <option key={m} value={m}>
-                    {m === 'design3d' ? '3D / design' : m.charAt(0).toUpperCase() + m.slice(1)}
+                    {m === 'companion' ? 'Chat' :
+                     m === 'writer' ? 'Writing' :
+                     m === 'biblical' ? 'Bible Study' :
+                     m === 'developer' ? 'Code' :
+                     m === 'design3d' ? '3D / Design' : m}
                   </option>
                 ))}
               </select>
@@ -1389,64 +1398,120 @@ export default function ChatView() {
   );
 }
 
-function EmptyChat({ onSend }: { onSend: (content: string) => void }) {
-  return (
-    <div className="h-full flex items-center justify-center">
-      <div className="text-center max-w-md animate-fade-in">
-        <div className="text-6xl mb-6">🧠</div>
-        <h2 className="text-2xl font-bold text-henry-text mb-3">Henry AI</h2>
-        <p className="text-henry-text-dim mb-6 leading-relaxed">
-          Your personal AI. Use the <span className="text-henry-companion font-medium">Local Brain</span> for
-          free private chat, or switch to your <span className="text-henry-worker font-medium">Second Brain</span> for
-          more power. Pick a Mode below to get started.
-        </p>
-        <div className="grid grid-cols-2 gap-3 text-xs">
-          <SuggestionCard
-            icon="💬"
-            text="What should I work on today?"
-            onSelect={onSend}
-          />
-          <SuggestionCard
-            icon="✍️"
-            text="Help me write a short essay outline"
-            onSelect={onSend}
-          />
-          <SuggestionCard
-            icon="📖"
-            text="Explain John 3:16 in context"
-            onSelect={onSend}
-          />
-          <SuggestionCard
-            icon="🔧"
-            text="Review my code and suggest improvements"
-            onSelect={onSend}
-          />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function SuggestionCard({
-  icon,
-  text,
-  onSelect,
-}: {
+const DISCOVERY_MODES: Array<{
+  mode: HenryOperatingMode;
   icon: string;
-  text: string;
-  onSelect: (text: string) => void;
+  title: string;
+  desc: string;
+  examples: string[];
+}> = [
+  {
+    mode: 'companion',
+    icon: '💬',
+    title: 'Just Talk',
+    desc: 'Ask anything, think out loud, plan your day, or have a real conversation.',
+    examples: [
+      'What should I focus on today?',
+      'Help me think through a decision I\'m facing',
+      'Give me a motivating thought for the morning',
+    ],
+  },
+  {
+    mode: 'writer',
+    icon: '✍️',
+    title: 'Write Something',
+    desc: 'Letters, essays, stories, outlines, summaries — you describe it, Henry drafts it.',
+    examples: [
+      'Help me write an email to my landlord',
+      'Draft a short essay about gratitude',
+      'Give me an outline for a 5-page report',
+    ],
+  },
+  {
+    mode: 'biblical',
+    icon: '📖',
+    title: 'Bible Study',
+    desc: 'Explore scripture, theology, and history. Ethiopian Orthodox tradition aware.',
+    examples: [
+      'Explain the meaning of John 3:16',
+      'What does the Ethiopian Orthodox Church teach about fasting?',
+      'Walk me through Psalm 23 verse by verse',
+    ],
+  },
+  {
+    mode: 'developer',
+    icon: '💻',
+    title: 'Help With Code',
+    desc: 'Debug errors, explain concepts, review code, or plan a project.',
+    examples: [
+      'Why does my code keep giving an error?',
+      'Explain what a for loop does in plain English',
+      'Review this function and suggest improvements',
+    ],
+  },
+  {
+    mode: 'design3d',
+    icon: '🎨',
+    title: 'Design & 3D',
+    desc: 'Plan room layouts, 3D models, architectural ideas, and visual projects.',
+    examples: [
+      'Help me plan a small kitchen layout',
+      'What are the steps to model a chair in Blender?',
+      'Describe a cozy home office setup for me',
+    ],
+  },
+];
+
+function EmptyChat({
+  onModeAndInject,
+}: {
+  onModeAndInject: (mode: HenryOperatingMode, text: string) => void;
 }) {
   return (
-    <button
-      onClick={() => onSelect(text)}
-      className="text-left p-3 rounded-xl bg-henry-surface/30 border border-henry-border/20 hover:border-henry-accent/30 hover:bg-henry-surface/50 transition-all group"
-    >
-      <div className="flex items-center gap-1.5 mb-1">
-        <span className="text-xs">{icon}</span>
+    <div className="h-full flex items-start justify-center pt-8 pb-6 overflow-y-auto">
+      <div className="w-full max-w-2xl px-4 animate-fade-in">
+        <div className="text-center mb-7">
+          <div className="text-5xl mb-3">🧠</div>
+          <h2 className="text-xl font-bold text-henry-text mb-1">Henry AI</h2>
+          <p className="text-sm text-henry-text-dim">
+            What would you like to do? Click any example below to get started, or just type anything.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {DISCOVERY_MODES.map(({ mode, icon, title, desc, examples }) => (
+            <div
+              key={mode}
+              className="p-4 rounded-xl bg-henry-surface/30 border border-henry-border/20 hover:border-henry-accent/20 transition-colors"
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-base">{icon}</span>
+                <span className="font-semibold text-henry-text text-sm">{title}</span>
+              </div>
+              <p className="text-[11px] text-henry-text-muted mb-3 leading-relaxed">{desc}</p>
+              <div className="space-y-1.5">
+                {examples.map((ex) => (
+                  <button
+                    key={ex}
+                    onClick={() => onModeAndInject(mode, ex)}
+                    className="w-full text-left text-[11px] px-2.5 py-1.5 rounded-lg bg-henry-surface/50 border border-henry-border/10 text-henry-text-dim hover:text-henry-text hover:border-henry-accent/30 hover:bg-henry-hover/30 transition-all"
+                  >
+                    "{ex}"
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <p className="text-center text-[10px] text-henry-text-muted mt-5">
+          <span className="text-henry-text">Local</span> = free &amp; private (Ollama on your machine)
+          {' · '}
+          <span className="text-henry-text">Cloud</span> = more power (GPT-4, Claude, Gemini)
+          {' · '}
+          Change mode anytime using the dropdown below
+        </p>
       </div>
-      <span className="text-henry-text-dim group-hover:text-henry-text transition-colors">
-        {text}
-      </span>
-    </button>
+    </div>
   );
 }
