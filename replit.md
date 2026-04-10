@@ -2,7 +2,9 @@
 
 ## Overview
 
-Henry AI is a local-first AI operating system with a dual-engine architecture (Companion + Worker engines). It supports multiple AI providers (OpenAI, Anthropic, Google Gemini, Ollama) and specialized modes for biblical study, writing, and 3D design planning.
+Henry AI is Topher's personal AI presence — a local-first AI OS with a dual-engine architecture (Local Brain / Ollama + Second Brain / Cloud). He has warmth, memory, and a can-do philosophy: he always finds a way to help, never dead-ends a request.
+
+Supports OpenAI, Anthropic, Google Gemini, and Ollama. Modes: Chat (Companion), Writing, Code, Bible Study (Ethiopian Orthodox aware), 3D/Design. Auto-detects mode from message content. Always knows current date/time. 
 
 Originally built as an Electron desktop app, it runs in Replit as a React web app with a browser-based mock layer replacing the Electron IPC bridge.
 
