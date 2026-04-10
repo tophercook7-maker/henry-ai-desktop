@@ -18,10 +18,28 @@
     "smoke": "npm run typecheck && vite build",
     "rebuild": "npx @electron/rebuild",
     "build:mac:unsigned": "tsc && vite build && electron-builder --mac --config.mac.identity=null",
-    "push": "git push \"https://${GITHUB_PERSONAL_ACCESS_TOKEN}@github.com/tophercook7-maker/henry-ai-desktop.git\" main"
+    "push": "git push \"https://${GITHUB_PERSONAL_ACCESS_TOKEN}@github.com/tophercook7-maker/henry-ai-desktop.git\" main",
+    "cap:build": "npm run build:web && npx cap sync",
+    "cap:sync": "npx cap sync",
+    "cap:ios": "npx cap open ios",
+    "cap:android": "npx cap open android",
+    "cap:run:ios": "npx cap run ios",
+    "cap:run:android": "npx cap run android"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.27.0",
+    "@capacitor-community/speech-recognition": "^7.0.1",
+    "@capacitor/android": "^8.3.0",
+    "@capacitor/app": "^8.1.0",
+    "@capacitor/core": "^8.3.0",
+    "@capacitor/haptics": "^8.0.2",
+    "@capacitor/ios": "^8.3.0",
+    "@capacitor/keyboard": "^8.0.3",
+    "@capacitor/local-notifications": "^8.0.2",
+    "@capacitor/network": "^8.0.1",
+    "@capacitor/push-notifications": "^8.0.3",
+    "@capacitor/splash-screen": "^8.0.1",
+    "@capacitor/status-bar": "^8.0.2",
     "@google/generative-ai": "^0.17.0",
     "better-sqlite3": "^11.1.2",
     "electron-updater": "^6.3.9",
@@ -36,6 +54,7 @@
     "zustand": "^4.5.4"
   },
   "devDependencies": {
+    "@capacitor/cli": "^7.6.1",
     "@electron/rebuild": "^4.0.3",
     "@types/better-sqlite3": "^7.6.11",
     "@types/react": "^18.3.4",
@@ -82,8 +101,16 @@
     "dmg": {
       "title": "Henry AI",
       "contents": [
-        { "x": 130, "y": 220 },
-        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
       ]
     },
     "win": {

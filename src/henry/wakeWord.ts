@@ -1,3 +1,5 @@
+import { Capacitor } from '@capacitor/core';
+
 export type AmbientNote = {
   text: string;
   timestamp: string;
@@ -14,31 +16,33 @@ const WAKE_PATTERNS: RegExp[] = [
 ];
 
 class WakeWordManager {
-  private recognition: any = null;
+  private webRecognition: any = null;
   private _active = false;
   private _ambientLog: AmbientNote[] = [];
   private _lastWake = 0;
+  private _useNative = false;
 
   get isActive() {
     return this._active;
   }
 
-  start(): 'ok' | 'no-api' {
-    const API = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!API) return 'no-api';
+  async start(): Promise<'ok' | 'no-api' | 'native-ok'> {
+    this._useNative = Capacitor.isNativePlatform();
 
-    this._active = true;
-    this._loadAmbientLog();
-    this._persist(true);
-    this._createAndStart(API);
-    window.dispatchEvent(new CustomEvent('henry_wake_state', { detail: { active: true } }));
-    return 'ok';
+    if (this._useNative) {
+      return await this._startNative();
+    } else {
+      return this._startWeb();
+    }
   }
 
   stop() {
     this._active = false;
-    try { this.recognition?.abort(); } catch { /* ignore */ }
-    this.recognition = null;
+    if (this._useNative) {
+      this._stopNative();
+    } else {
+      this._stopWeb();
+    }
     this._persist(false);
     window.dispatchEvent(new CustomEvent('henry_wake_state', { detail: { active: false } }));
   }
@@ -54,10 +58,81 @@ class WakeWordManager {
   clearAmbientLog() {
     this._ambientLog = [];
     try { localStorage.removeItem(AMBIENT_KEY); } catch { /* ignore */ }
-    window.dispatchEvent(new CustomEvent('henry_wake_state', { detail: { active: this._active } }));
   }
 
-  private _createAndStart(API: any) {
+  // ── Native (Capacitor) ─────────────────────────────────────────────────────
+
+  private async _startNative(): Promise<'ok' | 'native-ok' | 'no-api'> {
+    try {
+      const { SpeechRecognition } = await import('@capacitor-community/speech-recognition');
+
+      const perm = await SpeechRecognition.checkPermissions();
+      if (perm.speechRecognition !== 'granted') {
+        const req = await SpeechRecognition.requestPermissions();
+        if (req.speechRecognition !== 'granted') {
+          window.dispatchEvent(new CustomEvent('henry_wake_state', {
+            detail: { active: false, error: 'mic-denied' },
+          }));
+          return 'no-api';
+        }
+      }
+
+      this._active = true;
+      this._loadAmbientLog();
+      this._persist(true);
+
+      await SpeechRecognition.start({
+        language: 'en-US',
+        maxResults: 1,
+        partialResults: false,
+        popup: false,
+      });
+
+      SpeechRecognition.addListener('partialResults', (data: { matches: string[] }) => {
+        const text = data.matches?.[0]?.trim();
+        if (text) this._handleTranscript(text);
+      });
+
+      window.dispatchEvent(new CustomEvent('henry_wake_state', { detail: { active: true } }));
+      return 'native-ok';
+    } catch {
+      return this._startWeb();
+    }
+  }
+
+  private async _stopNative() {
+    try {
+      const { SpeechRecognition } = await import('@capacitor-community/speech-recognition');
+      await SpeechRecognition.stop();
+      SpeechRecognition.removeAllListeners();
+    } catch { /* ignore */ }
+  }
+
+  // ── Web (SpeechRecognition API) ────────────────────────────────────────────
+
+  private _startWeb(): 'ok' | 'no-api' {
+    const API = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!API) {
+      window.dispatchEvent(new CustomEvent('henry_wake_state', {
+        detail: { active: false, error: 'no-api' },
+      }));
+      return 'no-api';
+    }
+
+    this._active = true;
+    this._loadAmbientLog();
+    this._persist(true);
+    this._createAndStartWeb(API);
+    window.dispatchEvent(new CustomEvent('henry_wake_state', { detail: { active: true } }));
+    return 'ok';
+  }
+
+  private _stopWeb() {
+    try { this.webRecognition?.abort(); } catch { /* ignore */ }
+    this.webRecognition = null;
+  }
+
+  private _createAndStartWeb(API: any) {
     if (!this._active) return;
 
     const r = new API();
@@ -78,23 +153,27 @@ class WakeWordManager {
       if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
         this._active = false;
         this._persist(false);
-        window.dispatchEvent(new CustomEvent('henry_wake_state', { detail: { active: false, error: 'mic-denied' } }));
+        window.dispatchEvent(new CustomEvent('henry_wake_state', {
+          detail: { active: false, error: 'mic-denied' },
+        }));
       }
     };
 
     r.onend = () => {
-      this.recognition = null;
+      this.webRecognition = null;
       if (this._active) {
         setTimeout(() => {
           const A = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-          if (A && this._active) this._createAndStart(A);
+          if (A && this._active) this._createAndStartWeb(A);
         }, 300);
       }
     };
 
     r.start();
-    this.recognition = r;
+    this.webRecognition = r;
   }
+
+  // ── Shared transcript handler ──────────────────────────────────────────────
 
   private _handleTranscript(text: string) {
     if (!text) return;

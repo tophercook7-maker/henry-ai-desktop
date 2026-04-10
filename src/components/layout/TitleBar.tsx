@@ -9,6 +9,8 @@ export default function TitleBar() {
   const [wakeActive, setWakeActive] = useState(false);
   const [wakeFlash, setWakeFlash] = useState<string | null>(null);
   const [ambientCount, setAmbientCount] = useState(0);
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+  const [updateReady, setUpdateReady] = useState(false);
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -22,6 +24,19 @@ export default function TitleBar() {
     }
 
     return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
+  // Auto-updater listeners
+  useEffect(() => {
+    const unsubAvail = window.henryAPI.onUpdateAvailable(() => setUpdateAvailable(true));
+    const unsubReady = window.henryAPI.onUpdateDownloaded(() => {
+      setUpdateAvailable(false);
+      setUpdateReady(true);
+    });
+    return () => {
+      unsubAvail?.();
+      unsubReady?.();
+    };
   }, []);
 
   // Sync wake word state
@@ -54,11 +69,11 @@ export default function TitleBar() {
     };
   }, []);
 
-  function toggleWakeWord() {
+  async function toggleWakeWord() {
     if (wakeActive) {
       wakeWordManager.stop();
     } else {
-      const result = wakeWordManager.start();
+      const result = await wakeWordManager.start();
       if (result === 'no-api') {
         setWakeFlash('Voice not supported in this browser');
         setTimeout(() => setWakeFlash(null), 3500);
@@ -133,7 +148,7 @@ export default function TitleBar() {
         </div>
       </div>
 
-      {/* Right: wake word toggle + install badge */}
+      {/* Right: update badge + wake word toggle */}
       <div className="titlebar-no-drag flex items-center justify-end gap-2 shrink-0 min-w-0">
         {/* Mobile: install prompt */}
         {installPrompt && !installed && (
@@ -145,13 +160,41 @@ export default function TitleBar() {
             <span>Install</span>
           </button>
         )}
-        {installed && !wakeActive && (
+        {installed && !wakeActive && !updateReady && (
           <span className="text-[10px] text-henry-success/70 hidden sm:inline">📲 App</span>
+        )}
+
+        {/* Update downloading badge */}
+        {updateAvailable && !updateReady && (
+          <span
+            title="Downloading update…"
+            className="hidden sm:flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-henry-surface border border-henry-border/40 text-henry-text-muted animate-pulse"
+          >
+            <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
+            </svg>
+            Updating
+          </span>
+        )}
+
+        {/* Update ready — install button */}
+        {updateReady && (
+          <button
+            onClick={() => void window.henryAPI.installUpdate()}
+            title="Henry update downloaded — click to restart and apply"
+            className="flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-lg bg-henry-success/15 border border-henry-success/40 text-henry-success hover:bg-henry-success/25 transition-all animate-fade-in"
+          >
+            <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
+            </svg>
+            <span className="hidden sm:inline">Restart to update</span>
+            <span className="sm:hidden">↺</span>
+          </button>
         )}
 
         {/* Wake word toggle */}
         <button
-          onClick={toggleWakeWord}
+          onClick={() => void toggleWakeWord()}
           title={wakeActive
             ? `Henry is always listening · ${ambientCount} notes captured this session · click to stop`
             : 'Enable always-on listening — Henry wakes when he hears his name'}
