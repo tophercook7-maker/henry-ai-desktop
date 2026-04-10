@@ -142,6 +142,8 @@ const MODE_HUMAN_LABELS: Record<HenryOperatingMode, string> = {
   biblical: 'Bible Study',
   developer: 'Code',
   design3d: '3D / Design',
+  computer: 'Computer',
+  secretary: 'Secretary',
 };
 
 const BIBLICAL_BOOKS = [
@@ -264,6 +266,18 @@ export default function ChatView() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const streamRef = useRef<any>(null);
   const sessionAsyncResumeStartedRef = useRef(false);
+
+  useEffect(() => {
+    function handleSecretaryPrompt(e: Event) {
+      const { prompt } = (e as CustomEvent<{ prompt: string }>).detail;
+      setOperatingMode('secretary');
+      if (prompt) {
+        setChatInject({ id: Date.now(), text: prompt });
+      }
+    }
+    window.addEventListener('henry_secretary_prompt', handleSecretaryPrompt);
+    return () => window.removeEventListener('henry_secretary_prompt', handleSecretaryPrompt);
+  }, []);
 
   /** Restore active thread id before persistence effects run (avoids wiping saved conversation). */
   useLayoutEffect(() => {

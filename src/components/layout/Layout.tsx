@@ -9,6 +9,7 @@ import TerminalView from '../terminal/TerminalView';
 import CostDashboard from '../costs/CostDashboard';
 import ComputerPanel from '../computer/ComputerPanel';
 import PrinterPanel from '../computer/PrinterPanel';
+import SecretaryPanel from '../secretary/SecretaryPanel';
 import { useStore } from '../../store';
 
 export default function Layout() {
@@ -27,6 +28,7 @@ export default function Layout() {
           {currentView === 'terminal' && <TerminalView />}
           {currentView === 'computer' && <ComputerPanel />}
           {currentView === 'printer' && <PrinterPanel />}
+          {currentView === 'secretary' && <SecretaryPanel />}
           {currentView === 'costs' && <CostDashboard />}
           {currentView === 'settings' && <SettingsView />}
         </main>

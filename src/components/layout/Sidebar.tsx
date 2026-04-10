@@ -10,6 +10,7 @@ const NAV_ITEMS: { id: ViewType; label: string; icon: string; badge?: string }[]
   { id: 'files', label: 'Files', icon: '📁' },
   { id: 'workspace', label: 'Workspace', icon: '🗂️' },
   { id: 'terminal', label: 'Terminal', icon: '💻' },
+  { id: 'secretary', label: 'Secretary', icon: '🗓️' },
   { id: 'computer', label: 'Computer', icon: '🖥️', badge: 'NEW' },
   { id: 'printer', label: '3D Printer', icon: '🖨️', badge: 'NEW' },
   { id: 'costs', label: 'Costs', icon: '💰' },
