@@ -1,6 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
 import { useStore } from '../../store';
 import OllamaElectronSetup from './OllamaElectronSetup';
+import MobileProviderStep from './MobileProviderStep';
+
+function isNativeMobile(): boolean {
+  try {
+    const cap = (window as any).Capacitor;
+    return cap && typeof cap.isNativePlatform === 'function' && cap.isNativePlatform();
+  } catch { return false; }
+}
 
 interface ProviderStepProps {
   onNext: () => void;
@@ -108,6 +116,13 @@ function openUrl(url: string) {
 }
 
 export default function ProviderStep({ onNext, onBack }: ProviderStepProps) {
+  if (isNativeMobile()) {
+    return <MobileProviderStep onNext={onNext} onBack={onBack} />;
+  }
+  return <DesktopProviderStep onNext={onNext} onBack={onBack} />;
+}
+
+function DesktopProviderStep({ onNext, onBack }: ProviderStepProps) {
   const { setProviders, updateSetting } = useStore();
 
   // Top-level mode: cloud or ollama
