@@ -1,77 +1,64 @@
-# Henry AI Desktop — Replit Agent Guide
+# Henry AI Desktop — Replit Setup
 
-## What this app is
-Henry AI is a local-first desktop AI operating system built with Electron + React. It combines chat, coding assistance, workflows, file access, and multi-provider AI into a single application.
+## Overview
 
-## Current architecture
-- Electron main process: `electron/main.ts`
-- Preload bridge: `electron/preload.ts`
-- IPC layer: `electron/ipc/*`
-- UI: React + Vite in `src/`
-- State: Zustand
-- Database: SQLite via `better-sqlite3`
-- Build system: Vite + electron-builder
+Henry AI is a local-first AI operating system with a dual-engine architecture (Companion + Worker engines). It supports multiple AI providers (OpenAI, Anthropic, Google Gemini, Ollama) and specialized modes for biblical study, writing, and 3D design planning.
 
-## Product intent
-This is not just a desktop chat app. It is intended to become:
-- a full AI operating system
-- multi-engine (Companion + Worker)
-- multi-provider (OpenAI, Anthropic, Google, Ollama)
-- capable of executing tasks, managing files, and orchestrating workflows
+Originally built as an Electron desktop app, it runs in Replit as a React web app with a browser-based mock layer replacing the Electron IPC bridge.
 
-## What Replit Agent should optimize for
-1. Preserve the dual-engine architecture (Companion vs Worker).
-2. Do not collapse everything into a single chat loop.
-3. Maintain IPC boundaries between renderer and main process.
-4. Keep local-first philosophy — do not force cloud dependencies.
-5. Avoid breaking Electron build or packaging configuration.
-6. Keep security model (contextBridge, no direct Node access in renderer).
-7. Prefer incremental improvements instead of large rewrites.
+## Tech Stack
 
-## Important realities
-- This project is already well-structured but not fully production-hardened.
-- It is more complex than a typical web app due to Electron + IPC.
-- Replit cannot fully replicate native desktop packaging; focus on dev-mode functionality first.
+- **Framework:** React 18 + TypeScript
+- **Build Tool:** Vite 5
+- **Styling:** Tailwind CSS (dark theme)
+- **State Management:** Zustand
+- **AI SDKs:** OpenAI, Anthropic, Google Generative AI
+- **Package Manager:** npm
 
-## Build and run
-- install: `npm install`
-- dev: `npm run dev`
-- build: `npm run build`
+## Project Structure
 
-## High-priority finish plan
-1. Ensure dev mode runs reliably in Replit (renderer + Electron process).
-2. Validate IPC routes in `electron/ipc/*` are all wired correctly.
-3. Verify database initialization and migrations.
-4. Ensure setup wizard fully configures providers and persists settings.
-5. Validate task queue (Worker engine) lifecycle.
-6. Add clear error handling for provider failures.
-7. Improve logging and debugging visibility.
-8. Document all required API keys and configuration.
+```
+electron/         - Original Electron main process (not used in web mode)
+src/
+  App.tsx         - Root component with setup/init logic
+  main.tsx        - React entry point (imports webMock)
+  webMock.ts      - Browser-based mock for window.henryAPI (replaces Electron IPC)
+  components/     - UI components organized by feature
+  henry/          - Core AI logic, scripture tools, workspace utilities
+  store/          - Zustand global state
+  types/          - TypeScript interfaces
+vite.web.config.ts  - Web-specific Vite config (no Electron plugins, port 5000)
+vite.config.ts      - Original Electron Vite config (kept for desktop builds)
+```
 
-## Required configuration (likely)
-- OpenAI API key
-- Anthropic API key
-- Google AI API key
-- Ollama base URL (optional local)
+## Running the App
 
-These should be configurable through the app UI or environment variables — never hardcoded.
+The app runs via the **Start application** workflow using:
+```
+npm run dev
+```
+This starts Vite on `0.0.0.0:5000` using `vite.web.config.ts`.
 
-## Replit-specific expectations
-- Focus on getting the app running in development mode (not installer builds).
-- If Electron fails to run in Replit, create a fallback web-only dev mode for testing UI and logic.
-- Do not remove Electron — only create fallbacks if needed.
+## Web Adaptation
 
-## Coding preferences
-- Maintain TypeScript correctness.
-- Keep IPC handlers separated by concern.
-- Do not merge unrelated modules.
-- Avoid introducing global state outside Zustand.
-- Keep renderer clean and focused on UI.
+The original app uses `window.henryAPI` (Electron IPC bridge) for all backend operations. In web mode, `src/webMock.ts` provides a full browser-based implementation using `localStorage` for persistence and direct fetch calls to AI provider APIs.
 
-## Definition of done for a milestone
-- app boots without crashes
-- setup wizard completes successfully
-- at least one AI provider works end-to-end
-- task queue executes and returns results
-- file system access works safely
-- README clearly documents setup and limitations
+### Supported in Web Mode:
+- Settings, conversations, messages (localStorage)
+- AI providers: OpenAI, Anthropic, Google Gemini, Ollama (direct API calls)
+- Streaming responses from all providers
+- Tasks, memory facts, conversation summaries (localStorage)
+- Scripture store (localStorage)
+- Virtual file system (localStorage)
+
+### Limitations in Web Mode:
+- Terminal execution (disabled — shows friendly message)
+- File picker for scripture import (disabled — returns canceled)
+- Ollama requires CORS headers on the local Ollama instance
+
+## Deployment
+
+Configured as a static site deployment:
+- **Build:** `npm run build:web` (Vite build with web config)
+- **Output:** `dist/`
+- **Target:** Static hosting

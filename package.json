@@ -6,7 +6,9 @@
   "author": "Henry AI",
   "license": "MIT",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --config vite.web.config.ts",
+    "dev:electron": "vite",
+    "build:web": "vite build --config vite.web.config.ts",
     "build": "tsc && vite build && electron-builder",
     "build:mac": "tsc && vite build && electron-builder --mac",
     "build:win": "tsc && vite build && electron-builder --win",
