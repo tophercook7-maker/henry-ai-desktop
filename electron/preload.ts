@@ -148,6 +148,33 @@ contextBridge.exposeInMainWorld('henryAPI', {
   execTerminal: (params: Record<string, unknown>) => ipcRenderer.invoke('terminal:exec', params),
   killTerminal: (execId: string) => ipcRenderer.invoke('terminal:kill', execId),
 
+  // ── Computer Control ──────────────────────────────────────
+  computerScreenshot: (params?: Record<string, unknown>) => ipcRenderer.invoke('computer:screenshot', params ?? {}),
+  computerOpenApp: (appName: string) => ipcRenderer.invoke('computer:openApp', appName),
+  computerOpenUrl: (url: string) => ipcRenderer.invoke('computer:openUrl', url),
+  computerOsascript: (script: string) => ipcRenderer.invoke('computer:osascript', script),
+  computerRunShell: (params: Record<string, unknown>) => ipcRenderer.invoke('computer:runShell', params),
+  computerListApps: () => ipcRenderer.invoke('computer:listApps'),
+  computerListProcesses: () => ipcRenderer.invoke('computer:listProcesses'),
+  computerCheckPermissions: () => ipcRenderer.invoke('computer:checkPermissions'),
+  computerTypeText: (text: string) => ipcRenderer.invoke('computer:typeText', text),
+  computerClick: (params: Record<string, unknown>) => ipcRenderer.invoke('computer:click', params),
+  computerSystemInfo: () => ipcRenderer.invoke('computer:systemInfo'),
+
+  // ── 3D Printer ────────────────────────────────────────────
+  printerCheckDeps: () => ipcRenderer.invoke('printer:checkDeps'),
+  printerListPorts: () => ipcRenderer.invoke('printer:listPorts'),
+  printerConnect: (params: Record<string, unknown>) => ipcRenderer.invoke('printer:connect', params),
+  printerDisconnect: () => ipcRenderer.invoke('printer:disconnect'),
+  printerSendGcode: (command: string) => ipcRenderer.invoke('printer:sendGcode', command),
+  printerStatus: () => ipcRenderer.invoke('printer:status'),
+  printerPrintGcode: (gcode: string) => ipcRenderer.invoke('printer:printGcode', gcode),
+  onPrinterData: (cb: (data: unknown) => void) => {
+    const handler = (_: IpcRendererEvent, data: unknown) => cb(data);
+    ipcRenderer.on('printer:data', handler);
+    return () => ipcRenderer.removeListener('printer:data', handler);
+  },
+
   // ── Cost Tracking ─────────────────────────────────────────
   getCostLog: (period?: string) => ipcRenderer.invoke('cost:getAll', period),
 

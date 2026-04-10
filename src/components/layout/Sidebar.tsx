@@ -2,14 +2,16 @@ import { useState, useEffect } from 'react';
 import { useStore } from '../../store';
 import type { Conversation } from '../../types';
 
-type ViewType = 'chat' | 'tasks' | 'files' | 'workspace' | 'terminal' | 'costs' | 'settings';
+type ViewType = 'chat' | 'tasks' | 'files' | 'workspace' | 'terminal' | 'computer' | 'printer' | 'costs' | 'settings';
 
-const NAV_ITEMS: { id: ViewType; label: string; icon: string }[] = [
+const NAV_ITEMS: { id: ViewType; label: string; icon: string; badge?: string }[] = [
   { id: 'chat', label: 'Chat', icon: '💬' },
   { id: 'tasks', label: 'Tasks', icon: '📋' },
   { id: 'files', label: 'Files', icon: '📁' },
   { id: 'workspace', label: 'Workspace', icon: '🗂️' },
   { id: 'terminal', label: 'Terminal', icon: '💻' },
+  { id: 'computer', label: 'Computer', icon: '🖥️', badge: 'NEW' },
+  { id: 'printer', label: '3D Printer', icon: '🖨️', badge: 'NEW' },
   { id: 'costs', label: 'Costs', icon: '💰' },
   { id: 'settings', label: 'Settings', icon: '⚙️' },
 ];
@@ -117,7 +119,12 @@ export default function Sidebar() {
             }`}
           >
             <span className="text-sm">{item.icon}</span>
-            <span>{item.label}</span>
+            <span className="flex-1 text-left">{item.label}</span>
+            {item.badge && currentView !== item.id && (
+              <span className="text-[9px] px-1 py-0.5 rounded bg-henry-accent/20 text-henry-accent font-semibold leading-none">
+                {item.badge}
+              </span>
+            )}
             {item.id === 'tasks' && workerStatus.status === 'working' && (
               <span className="ml-auto w-2 h-2 rounded-full bg-henry-worker animate-pulse" />
             )}

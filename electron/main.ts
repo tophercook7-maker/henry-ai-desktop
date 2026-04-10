@@ -9,17 +9,13 @@ import { registerMemoryHandlers } from './ipc/memory';
 import { registerScriptureHandlers } from './ipc/scripture';
 import { registerOllamaHandlers } from './ipc/ollama';
 import { registerTerminalHandlers } from './ipc/terminal';
+import { registerComputerHandlers } from './ipc/computer';
+import { registerPrinterHandlers } from './ipc/printer';
 
 let mainWindow: BrowserWindow | null = null;
 
-/**
- * Always returns the current live BrowserWindow (or null).
- * Passed to IPC handlers so they never hold a stale reference —
- * critical during Vite HMR where the renderer reloads.
- */
 export function getMainWindow(): BrowserWindow | null {
   if (mainWindow && !mainWindow.isDestroyed()) return mainWindow;
-  // Fallback: find any open window
   const wins = BrowserWindow.getAllWindows();
   return wins.find((w) => !w.isDestroyed()) || null;
 }
@@ -66,13 +62,10 @@ app.whenReady().then(() => {
     fs.mkdirSync(henryDir, { recursive: true });
   }
 
-  // Initialize database with the workspace directory
   const db = initDatabase(henryDir);
 
   createWindow();
 
-  // Register all IPC handlers — pass getMainWindow getter so handlers
-  // always use the live window, even after Vite HMR reloads.
   registerSettingsHandlers(db);
   registerAIHandlers(db, getMainWindow);
   registerFilesystemHandlers(henryDir);
@@ -81,6 +74,8 @@ app.whenReady().then(() => {
   registerScriptureHandlers(db, getMainWindow);
   registerOllamaHandlers(getMainWindow);
   registerTerminalHandlers(getMainWindow, henryDir);
+  registerComputerHandlers(getMainWindow);
+  registerPrinterHandlers(getMainWindow);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

@@ -165,7 +165,7 @@ export interface DirectoryResult {
 
 // ── Store Types ───────────────────────────────────────────────
 
-export type ViewType = 'chat' | 'tasks' | 'files' | 'workspace' | 'terminal' | 'costs' | 'settings';
+export type ViewType = 'chat' | 'tasks' | 'files' | 'workspace' | 'terminal' | 'computer' | 'printer' | 'costs' | 'settings';
 
 export interface AppSettings {
   [key: string]: string;

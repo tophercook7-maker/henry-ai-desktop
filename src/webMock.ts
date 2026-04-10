@@ -630,11 +630,96 @@ const henryAPI: Window['henryAPI'] = {
   onOllamaPullProgress: (cb) => on('ollama:pull:progress', cb),
 
   execTerminal: async () => {
-    return { success: false, exitCode: null, stdout: '', stderr: 'Terminal not available in web mode.' };
+    return { success: false, exitCode: null, stdout: '', stderr: 'Terminal not available in web mode. Use the desktop app.' };
   },
   killTerminal: async () => {
     return { killed: false, error: 'Terminal not available in web mode.' };
   },
+
+  // ── Computer Control (web stubs — real capabilities in desktop app) ──
+  computerScreenshot: async () => ({
+    success: false,
+    base64: null,
+    error: 'Screen capture requires the Henry desktop app. Download it to get computer control.',
+  }),
+  computerOpenApp: async (appName: string) => ({
+    success: false,
+    output: `Opening apps (like "${appName}") requires the Henry desktop app.`,
+  }),
+  computerOpenUrl: async (url: string) => {
+    window.open(url, '_blank');
+    return { success: true, output: `Opened ${url} in browser.` };
+  },
+  computerOsascript: async () => ({
+    success: false,
+    output: 'AppleScript execution requires the Henry desktop app.',
+  }),
+  computerRunShell: async (params: { command: string }) => ({
+    success: false,
+    output: `Shell commands require the Henry desktop app. Would have run: ${params.command}`,
+  }),
+  computerListApps: async () => ({
+    apps: ['Safari', 'Chrome', 'Terminal', 'Xcode', 'VS Code', 'Finder', 'Mail', 'Calendar', 'Notes', 'Preview'],
+    platform: 'web-preview',
+  }),
+  computerListProcesses: async () => ({
+    processes: ['This is a preview — real process list requires the desktop app.'],
+  }),
+  computerCheckPermissions: async () => ({
+    platform: 'web',
+    accessibility: false,
+    screenRecording: false,
+    message: 'Computer permissions apply to the Henry desktop app. Download it to unlock full computer control.',
+  }),
+  computerTypeText: async () => ({
+    success: false,
+    output: 'Keyboard control requires the Henry desktop app.',
+  }),
+  computerClick: async () => ({
+    success: false,
+    output: 'Mouse control requires the Henry desktop app.',
+  }),
+  computerSystemInfo: async () => ({
+    platform: navigator.platform || 'web',
+    arch: 'unknown',
+    hostname: 'web-browser',
+    homeDir: '/',
+    appVersion: '0.1.0',
+    totalMemoryGB: ((navigator as any).deviceMemory ?? '?').toString(),
+    freeMemoryGB: '?',
+  }),
+
+  // ── 3D Printer (web stubs) ────────────────────────────────────────────
+  printerCheckDeps: async () => ({
+    available: false,
+    installCommand: 'pip3 install pyserial',
+    error: 'Printer control requires the Henry desktop app.',
+  }),
+  printerListPorts: async () => ({
+    ports: [],
+    error: 'Serial port access requires the Henry desktop app.',
+    method: 'none',
+  }),
+  printerConnect: async () => ({
+    success: false,
+    error: 'Printer connection requires the Henry desktop app.',
+  }),
+  printerDisconnect: async () => ({
+    success: false,
+    error: 'Not connected.',
+  }),
+  printerSendGcode: async () => ({
+    success: false,
+    error: 'G-code requires the Henry desktop app.',
+  }),
+  printerStatus: async () => ({
+    connected: false,
+  }),
+  printerPrintGcode: async () => ({
+    success: false,
+    error: 'Printing requires the Henry desktop app.',
+  }),
+  onPrinterData: (cb) => on('printer:data', cb),
 
   getCostLog: async () => {
     return getStore('henry:costlog', []);

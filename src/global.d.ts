@@ -142,6 +142,53 @@ declare global {
     execId?: string;
   }
 
+  // ── Computer Control Types ─────────────────────────────────────────
+  interface HenryScreenshotResult {
+    success: boolean;
+    base64: string | null;
+    mimeType?: string;
+    error?: string;
+  }
+
+  interface HenryPermissionsResult {
+    platform: string;
+    accessibility: boolean;
+    screenRecording: boolean;
+    accessibilityInstructions?: string | null;
+    screenRecordingInstructions?: string | null;
+    message?: string;
+  }
+
+  interface HenryComputerShellResult {
+    success: boolean;
+    output: string;
+    error?: string;
+    exitCode?: number;
+  }
+
+  interface HenrySystemInfo {
+    platform: string;
+    arch: string;
+    hostname: string;
+    homeDir: string;
+    appVersion: string;
+    totalMemoryGB: string;
+    freeMemoryGB: string;
+    macOS?: string;
+  }
+
+  // ── 3D Printer Types ───────────────────────────────────────────────
+  interface HenryPrinterPort {
+    device: string;
+    description: string;
+    hwid: string;
+  }
+
+  interface HenryPrinterData {
+    type: 'response' | 'sent' | 'error' | 'disconnected';
+    data?: string;
+  }
+
   interface HenryAPI {
     getSettings: () => Promise<Record<string, string>>;
     saveSetting: (key: string, value: string) => Promise<boolean>;
@@ -199,6 +246,29 @@ declare global {
 
     execTerminal: (params: HenryTerminalRequest) => Promise<HenryTerminalResponse>;
     killTerminal: (execId: string) => Promise<{ killed: boolean; error?: string }>;
+
+    // ── Computer Control ─────────────────────────────────────
+    computerScreenshot: (params?: { region?: { x: number; y: number; w: number; h: number } }) => Promise<HenryScreenshotResult>;
+    computerOpenApp: (appName: string) => Promise<HenryComputerShellResult>;
+    computerOpenUrl: (url: string) => Promise<HenryComputerShellResult>;
+    computerOsascript: (script: string) => Promise<HenryComputerShellResult>;
+    computerRunShell: (params: { command: string; timeout?: number }) => Promise<HenryComputerShellResult>;
+    computerListApps: () => Promise<{ apps: string[]; platform: string }>;
+    computerListProcesses: () => Promise<{ processes: string[] }>;
+    computerCheckPermissions: () => Promise<HenryPermissionsResult>;
+    computerTypeText: (text: string) => Promise<HenryComputerShellResult>;
+    computerClick: (params: { x: number; y: number; button?: string }) => Promise<HenryComputerShellResult>;
+    computerSystemInfo: () => Promise<HenrySystemInfo>;
+
+    // ── 3D Printer ───────────────────────────────────────────
+    printerCheckDeps: () => Promise<{ available: boolean; version?: string; installCommand?: string; error?: string }>;
+    printerListPorts: () => Promise<{ ports: HenryPrinterPort[]; method?: string; error?: string }>;
+    printerConnect: (params: { port: string; baudRate?: number }) => Promise<{ success: boolean; port?: string; baudRate?: number; error?: string }>;
+    printerDisconnect: () => Promise<{ success: boolean; error?: string }>;
+    printerSendGcode: (command: string) => Promise<{ success: boolean; sent?: string; error?: string }>;
+    printerStatus: () => Promise<{ connected: boolean; port?: string; baudRate?: number }>;
+    printerPrintGcode: (gcode: string) => Promise<{ success: boolean; sent?: number; total?: number; error?: string }>;
+    onPrinterData: (cb: (data: HenryPrinterData) => void) => () => void;
 
     getCostLog: (period?: string) => Promise<unknown[]>;
 
