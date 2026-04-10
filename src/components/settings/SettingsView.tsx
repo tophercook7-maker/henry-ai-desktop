@@ -10,7 +10,8 @@ import { autoSelectModels } from '@/henry/modelPriority';
 import {
   loadProjects, saveProject, deleteProject, newProject,
   loadGoals, saveGoal, deleteGoal, newGoal,
-  type HenryProject, type HenryGoal,
+  loadPeople, savePerson, deletePerson, newPerson,
+  type HenryProject, type HenryGoal, type HenryPerson,
 } from '../../henry/richMemory';
 
 export default function SettingsView() {
@@ -768,18 +769,22 @@ function GeneralTab() {
 function MemoryTab() {
   const [projects, setProjects] = useState<HenryProject[]>([]);
   const [goals, setGoals] = useState<HenryGoal[]>([]);
+  const [people, setPeople] = useState<HenryPerson[]>([]);
   const [editingProject, setEditingProject] = useState<HenryProject | null>(null);
   const [editingGoal, setEditingGoal] = useState<HenryGoal | null>(null);
-  const [section, setSection] = useState<'projects' | 'goals'>('projects');
+  const [editingPerson, setEditingPerson] = useState<HenryPerson | null>(null);
+  const [section, setSection] = useState<'projects' | 'goals' | 'people'>('projects');
 
   useEffect(() => {
     setProjects(loadProjects());
     setGoals(loadGoals());
+    setPeople(loadPeople());
   }, []);
 
   function refreshAll() {
     setProjects(loadProjects());
     setGoals(loadGoals());
+    setPeople(loadPeople());
   }
 
   // ── Projects ──────────────────────────────────────────────────────────────
@@ -808,28 +813,45 @@ function MemoryTab() {
     refreshAll();
   }
 
+  // ── People ────────────────────────────────────────────────────────────────
+
+  function saveAndRefreshPerson(p: HenryPerson) {
+    savePerson({ ...p, updatedAt: new Date().toISOString() });
+    setEditingPerson(null);
+    refreshAll();
+  }
+
+  function removePerson(id: string) {
+    deletePerson(id);
+    refreshAll();
+  }
+
   return (
     <div className="space-y-5">
       <div>
         <h2 className="text-sm font-semibold text-henry-text mb-1">Henry's Memory</h2>
         <p className="text-xs text-henry-text-dim">
-          Projects and goals Henry knows about — injected into every conversation so he stays aware of your work.
+          Projects, goals, and people Henry knows about — injected into every conversation so he stays aware of your world.
         </p>
       </div>
 
       {/* Sub-tabs */}
       <div className="flex gap-1 border-b border-henry-border/30 pb-0">
-        {(['projects', 'goals'] as const).map((s) => (
+        {([
+          { id: 'projects', label: `Projects (${projects.length})` },
+          { id: 'goals', label: `Goals (${goals.length})` },
+          { id: 'people', label: `People (${people.length})` },
+        ] as const).map((s) => (
           <button
-            key={s}
-            onClick={() => setSection(s)}
+            key={s.id}
+            onClick={() => setSection(s.id)}
             className={`px-4 py-2 text-xs font-medium rounded-t-lg transition-all -mb-px ${
-              section === s
+              section === s.id
                 ? 'bg-henry-surface border border-henry-border/50 border-b-henry-surface text-henry-text'
                 : 'text-henry-text-muted hover:text-henry-text'
             }`}
           >
-            {s === 'projects' ? `Projects (${projects.length})` : `Goals (${goals.length})`}
+            {s.label}
           </button>
         ))}
       </div>
@@ -954,6 +976,65 @@ function MemoryTab() {
           )}
         </div>
       )}
+
+      {/* ── People section ── */}
+      {section === 'people' && (
+        <div className="space-y-3">
+          <p className="text-xs text-henry-text-dim">
+            People Henry should know about — family, colleagues, collaborators. Injected into every conversation so he can reference them naturally.
+          </p>
+          {people.length === 0 && !editingPerson && (
+            <p className="text-xs text-henry-text-muted italic py-2">No people yet. Add someone so Henry knows who they are.</p>
+          )}
+          {people.map((p) =>
+            editingPerson?.id === p.id ? (
+              <PersonForm
+                key={p.id}
+                person={editingPerson}
+                onChange={setEditingPerson}
+                onSave={() => saveAndRefreshPerson(editingPerson)}
+                onCancel={() => setEditingPerson(null)}
+              />
+            ) : (
+              <div key={p.id} className="rounded-xl border border-henry-border/40 bg-henry-surface/30 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-sm font-medium text-henry-text">{p.name || 'Untitled'}</span>
+                      {p.relationship && (
+                        <span className="text-[11px] text-henry-text-muted bg-henry-bg px-2 py-0.5 rounded-full">{p.relationship}</span>
+                      )}
+                    </div>
+                    {p.context && <p className="text-xs text-henry-text-dim mb-1">{p.context}</p>}
+                    {p.lastNote && <p className="text-[11px] text-henry-accent">→ {p.lastNote}</p>}
+                  </div>
+                  <div className="flex gap-1 shrink-0">
+                    <button onClick={() => setEditingPerson({ ...p })} className="text-[11px] text-henry-text-muted hover:text-henry-text px-2 py-1 rounded">Edit</button>
+                    <button onClick={() => removePerson(p.id)} className="text-[11px] text-henry-text-muted hover:text-henry-error px-2 py-1 rounded">✕</button>
+                  </div>
+                </div>
+              </div>
+            )
+          )}
+          {editingPerson && editingPerson.id === 'new' ? (
+            <PersonForm
+              person={editingPerson}
+              onChange={setEditingPerson}
+              onSave={() => saveAndRefreshPerson({ ...editingPerson, id: crypto.randomUUID() })}
+              onCancel={() => setEditingPerson(null)}
+            />
+          ) : (
+            !editingPerson && (
+              <button
+                onClick={() => setEditingPerson({ ...newPerson(), id: 'new' })}
+                className="w-full py-2.5 rounded-xl border border-dashed border-henry-border/50 text-xs text-henry-text-muted hover:text-henry-text hover:border-henry-border/80 transition-all"
+              >
+                + Add person
+              </button>
+            )
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -1050,6 +1131,53 @@ function GoalForm({
         <button
           onClick={onSave}
           disabled={!goal.title.trim()}
+          className="px-4 py-2 bg-henry-accent text-white rounded-lg text-xs font-medium disabled:opacity-40"
+        >
+          Save
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function PersonForm({
+  person, onChange, onSave, onCancel,
+}: { person: HenryPerson; onChange: (p: HenryPerson) => void; onSave: () => void; onCancel: () => void }) {
+  return (
+    <div className="rounded-xl border border-henry-accent/30 bg-henry-surface/50 p-4 space-y-3">
+      <div className="flex gap-3">
+        <input
+          autoFocus
+          placeholder="Name"
+          value={person.name}
+          onChange={(e) => onChange({ ...person, name: e.target.value })}
+          className="flex-1 bg-henry-bg border border-henry-border rounded-lg px-3 py-2 text-sm text-henry-text outline-none focus:border-henry-accent/50"
+        />
+        <input
+          placeholder="Relationship (e.g. brother, coworker)"
+          value={person.relationship}
+          onChange={(e) => onChange({ ...person, relationship: e.target.value })}
+          className="flex-1 bg-henry-bg border border-henry-border rounded-lg px-3 py-2 text-sm text-henry-text outline-none focus:border-henry-accent/50"
+        />
+      </div>
+      <textarea
+        placeholder="Context — what should Henry know about them?"
+        value={person.context}
+        onChange={(e) => onChange({ ...person, context: e.target.value })}
+        rows={2}
+        className="w-full bg-henry-bg border border-henry-border rounded-lg px-3 py-2 text-sm text-henry-text outline-none focus:border-henry-accent/50 resize-none"
+      />
+      <input
+        placeholder="Latest note (optional — recent update or status)"
+        value={person.lastNote}
+        onChange={(e) => onChange({ ...person, lastNote: e.target.value })}
+        className="w-full bg-henry-bg border border-henry-border rounded-lg px-3 py-2 text-sm text-henry-text outline-none focus:border-henry-accent/50"
+      />
+      <div className="flex items-center justify-end gap-2">
+        <button onClick={onCancel} className="px-3 py-2 text-xs text-henry-text-muted hover:text-henry-text">Cancel</button>
+        <button
+          onClick={onSave}
+          disabled={!person.name.trim()}
           className="px-4 py-2 bg-henry-accent text-white rounded-lg text-xs font-medium disabled:opacity-40"
         >
           Save

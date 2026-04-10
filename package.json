@@ -15,7 +15,9 @@
     "build:linux": "tsc && vite build && electron-builder --linux",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
-    "smoke": "npm run typecheck && vite build"
+    "smoke": "npm run typecheck && vite build",
+    "rebuild": "npx @electron/rebuild",
+    "push": "git push \"https://${GITHUB_PERSONAL_ACCESS_TOKEN}@github.com/tophercook7-maker/henry-ai-desktop.git\" main"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.27.0",

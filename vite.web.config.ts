@@ -12,6 +12,7 @@ const routes: Record<string, string> = {
   '/proxy/openai':     'api.openai.com',
   '/proxy/anthropic':  'api.anthropic.com',
   '/proxy/google':     'generativelanguage.googleapis.com',
+  '/proxy/ddg':        'api.duckduckgo.com',
 };
 
 function aiProxyPlugin(): Plugin {

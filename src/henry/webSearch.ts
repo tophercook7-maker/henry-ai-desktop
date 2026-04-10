@@ -141,8 +141,10 @@ function parseDDG(data: Record<string, unknown>, query: string): SearchResponse 
 }
 
 async function searchDDG(query: string): Promise<SearchResponse | null> {
-  const ddgUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
+  const qs = `?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
+  const ddgUrl = `https://api.duckduckgo.com/${qs}`;
   const proxies = [
+    `/proxy/ddg/${qs}`,
     ddgUrl,
     `https://corsproxy.io/?${encodeURIComponent(ddgUrl)}`,
     `https://api.allorigins.win/raw?url=${encodeURIComponent(ddgUrl)}`,

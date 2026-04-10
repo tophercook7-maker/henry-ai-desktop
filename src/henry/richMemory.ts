@@ -121,11 +121,35 @@ export function loadPeople(): HenryPerson[] {
   return load<HenryPerson>(PEOPLE_KEY);
 }
 
+export function savePerson(person: HenryPerson): void {
+  const all = loadPeople();
+  const idx = all.findIndex((p) => p.id === person.id);
+  if (idx >= 0) all[idx] = person;
+  else all.unshift(person);
+  save(PEOPLE_KEY, all);
+}
+
+export function deletePerson(id: string): void {
+  save(PEOPLE_KEY, loadPeople().filter((p) => p.id !== id));
+}
+
+export function newPerson(): HenryPerson {
+  return {
+    id: crypto.randomUUID(),
+    name: '',
+    relationship: '',
+    context: '',
+    lastNote: '',
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 // ── System prompt block ───────────────────────────────────────────────────────
 
 export function buildRichMemoryBlock(): string {
   const projects = loadProjects().filter((p) => p.status === 'active').slice(0, 6);
   const goals = loadGoals().slice(0, 4);
+  const people = loadPeople().slice(0, 8);
 
   const lines: string[] = [];
 
@@ -142,6 +166,17 @@ export function buildRichMemoryBlock(): string {
     for (const g of goals) {
       const pct = g.progress > 0 ? ` (${g.progress}% complete)` : '';
       lines.push(`- **${g.title}**${pct}${g.timeframe ? ` — ${g.timeframe}` : ''}: ${g.description}`);
+    }
+    lines.push('');
+  }
+
+  if (people.length > 0) {
+    lines.push('**People important to Topher (mention when relevant):**');
+    for (const p of people) {
+      const rel = p.relationship ? ` — ${p.relationship}` : '';
+      const ctx = p.context ? `: ${p.context}` : '';
+      const note = p.lastNote ? ` | Note: ${p.lastNote.slice(0, 120)}` : '';
+      lines.push(`- **${p.name}**${rel}${ctx}${note}`);
     }
     lines.push('');
   }

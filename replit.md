@@ -10,7 +10,7 @@ Supports OpenAI, Anthropic, Google Gemini, and Ollama. 8 modes — all auto-dete
 ### Features
 - **Full web access** — auto-searches when needed (keywords like "latest", "today", "price of"), fetches any URL (via r.jina.ai), supports Google CSE + Brave Search APIs (Settings → General → Web Search)
 - **⌘K Command Palette** — fuzzy search across all modes, quick actions, recent conversations, navigation. Press ⌘K or Ctrl+K anywhere
-- **Rich memory** — structured projects + goals injected into Henry's system prompt (`henry:rich_memory:projects`, `henry:rich_memory:goals` in localStorage)
+- **Rich memory** — structured projects, goals, and people injected into Henry's system prompt (`henry:rich_memory:projects`, `henry:rich_memory:goals`, `henry:rich_memory:people` in localStorage)
 - **Contacts with interaction history** — log meetings/calls/emails per contact; "Brief me" button launches Henry secretary chat
 - **Builder mode live preview** — streaming partial HTML rendered live as Henry generates the app; viewport toggle (mobile/tablet/desktop); download HTML
 - **Builder diff-awareness** — every iteration starts with one sentence describing what changed
