@@ -61,6 +61,12 @@ interface HenryAPI {
   ollamaDelete: (model: string, baseUrl?: string) => Promise<{ success: boolean; error?: string }>;
   onOllamaPullProgress: (cb: (data: any) => void) => () => void;
 
+  // Ollama Lifecycle — Electron-only (undefined in web/browser mode)
+  ollamaIsInstalled?: () => Promise<{ installed: boolean; running: boolean; binPath?: string }>;
+  ollamaLaunch?: (binPath?: string) => Promise<{ success: boolean; error?: string }>;
+  ollamaInstall?: () => Promise<{ success: boolean; binPath?: string; running?: boolean; error?: string }>;
+  onOllamaInstallProgress?: (cb: (data: { phase: string; downloaded: number; total: number; message: string }) => void) => () => void;
+
   // Terminal
   execTerminal: (params: { command: string; cwd?: string; timeout?: number; channelId?: string }) => Promise<{
     success: boolean; exitCode: number; stdout: string; stderr: string; execId?: string;

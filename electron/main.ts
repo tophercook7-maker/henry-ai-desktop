@@ -8,6 +8,7 @@ import { registerTaskBrokerHandlers } from './ipc/taskBroker';
 import { registerMemoryHandlers } from './ipc/memory';
 import { registerScriptureHandlers } from './ipc/scripture';
 import { registerOllamaHandlers } from './ipc/ollama';
+import { registerOllamaCleanup } from './ipc/ollamaManager';
 import { registerTerminalHandlers } from './ipc/terminal';
 import { registerComputerHandlers } from './ipc/computer';
 import { registerPrinterHandlers } from './ipc/printer';
@@ -73,6 +74,7 @@ app.whenReady().then(() => {
   registerMemoryHandlers(db);
   registerScriptureHandlers(db, getMainWindow);
   registerOllamaHandlers(getMainWindow);
+  registerOllamaCleanup();
   registerTerminalHandlers(getMainWindow, henryDir);
   registerComputerHandlers(getMainWindow);
   registerPrinterHandlers(getMainWindow);

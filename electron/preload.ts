@@ -144,6 +144,16 @@ contextBridge.exposeInMainWorld('henryAPI', {
     return () => ipcRenderer.removeListener('ollama:pull:progress', handler);
   },
 
+  // ── Ollama Lifecycle (Electron-only — Henry manages Ollama automatically) ──
+  ollamaIsInstalled: () => ipcRenderer.invoke('ollama:isInstalled') as Promise<{ installed: boolean; running: boolean; binPath?: string }>,
+  ollamaLaunch: (binPath?: string) => ipcRenderer.invoke('ollama:launch', binPath) as Promise<{ success: boolean; error?: string }>,
+  ollamaInstall: () => ipcRenderer.invoke('ollama:install') as Promise<{ success: boolean; binPath?: string; running?: boolean; error?: string }>,
+  onOllamaInstallProgress: (cb: (data: { phase: string; downloaded: number; total: number; message: string }) => void) => {
+    const handler = (_: IpcRendererEvent, data: unknown) => cb(data as { phase: string; downloaded: number; total: number; message: string });
+    ipcRenderer.on('ollama:install:progress', handler);
+    return () => ipcRenderer.removeListener('ollama:install:progress', handler);
+  },
+
   // ── Terminal ──────────────────────────────────────────────
   execTerminal: (params: Record<string, unknown>) => ipcRenderer.invoke('terminal:exec', params),
   killTerminal: (execId: string) => ipcRenderer.invoke('terminal:kill', execId),

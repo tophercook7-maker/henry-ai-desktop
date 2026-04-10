@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useStore } from '../../store';
 import { type ProviderId } from '../../providers/models';
+import OllamaElectronSetup from './OllamaElectronSetup';
 
 interface ProviderStepProps {
   onNext: () => void;
@@ -81,6 +82,9 @@ export default function ProviderStep({ onNext, onBack }: ProviderStepProps) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
+  // Electron mode: ollamaIsInstalled IPC is only present in the real desktop build
+  const isElectron = typeof window.henryAPI.ollamaIsInstalled === 'function';
+
   async function runDetection(url: string) {
     if (probeRunning.current) return;
     probeRunning.current = true;
@@ -120,6 +124,37 @@ export default function ProviderStep({ onNext, onBack }: ProviderStepProps) {
       : mode === 'cloud'
       ? apiKey.trim().length > 0
       : false;
+
+  async function handleElectronModelReady(model: string) {
+    setSaving(true);
+    setError('');
+    try {
+      await window.henryAPI.saveProvider({ id: 'ollama', name: 'Ollama', apiKey: '', enabled: true, models: JSON.stringify([model]) });
+      await window.henryAPI.saveSetting('ollama_base_url', 'http://127.0.0.1:11434');
+      await window.henryAPI.saveSetting('companion_model', model);
+      await window.henryAPI.saveSetting('companion_provider', 'ollama');
+      await window.henryAPI.saveSetting('worker_model', model);
+      await window.henryAPI.saveSetting('worker_provider', 'ollama');
+      updateSetting('ollama_base_url', 'http://127.0.0.1:11434');
+      updateSetting('companion_model', model);
+      updateSetting('companion_provider', 'ollama');
+      updateSetting('worker_model', model);
+      updateSetting('worker_provider', 'ollama');
+      const rawProviders = await window.henryAPI.getProviders();
+      setProviders(rawProviders.map((p: any) => ({
+        id: p.id, name: p.name,
+        apiKey: p.api_key ?? p.apiKey ?? '',
+        enabled: Boolean(p.enabled),
+        models: JSON.parse(p.models || '[]'),
+      })));
+      onNext();
+    } catch (err) {
+      console.error(err);
+      setError('Failed to save settings. Try again.');
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function handleNext() {
     if (!mode || !canContinue) return;
@@ -204,7 +239,9 @@ export default function ProviderStep({ onNext, onBack }: ProviderStepProps) {
           <div className="font-semibold text-henry-text mb-1">Ollama</div>
           <div className="text-[11px] text-henry-success font-medium mb-3">Free · Private · Offline-capable</div>
           <div className="text-xs text-henry-text-dim leading-relaxed">
-            Runs AI directly on your Mac. No account, no cost, no data leaving your machine.
+            {isElectron
+              ? "Runs AI on your Mac. Henry will install and set everything up for you automatically."
+              : "Runs AI directly on your Mac. No account, no cost, no data leaving your machine."}
           </div>
         </button>
 
@@ -226,7 +263,23 @@ export default function ProviderStep({ onNext, onBack }: ProviderStepProps) {
       </div>
 
       {/* ── OLLAMA ONBOARDING ── */}
-      {mode === 'ollama' && (
+      {mode === 'ollama' && isElectron && (
+        <div className="mb-5 animate-fade-in">
+          {saving ? (
+            <div className="flex items-center justify-center gap-3 py-8 text-henry-text-dim text-sm">
+              <div className="w-4 h-4 border-2 border-henry-accent border-t-transparent rounded-full animate-spin" />
+              Saving settings…
+            </div>
+          ) : (
+            <OllamaElectronSetup
+              onModelReady={handleElectronModelReady}
+              onFallback={() => { /* switch to web mode detection */ }}
+            />
+          )}
+        </div>
+      )}
+
+      {mode === 'ollama' && !isElectron && (
         <div className="bg-henry-surface/40 border border-henry-border/30 rounded-2xl p-5 mb-5 animate-fade-in space-y-4">
 
           {/* Detecting */}
@@ -484,25 +537,28 @@ export default function ProviderStep({ onNext, onBack }: ProviderStepProps) {
         >
           ← Back
         </button>
-        <div className="flex items-center gap-3">
-          {!canContinue && mode === 'ollama' && ollamaPhase === 'found' && (
-            <span className="text-xs text-henry-text-muted">Pick a model above</span>
-          )}
-          {!canContinue && mode === 'cloud' && (
-            <span className="text-xs text-henry-text-muted">Enter your API key</span>
-          )}
-          <button
-            onClick={handleNext}
-            disabled={!canContinue || saving}
-            className={`px-8 py-2.5 rounded-xl font-medium text-sm transition-all ${
-              canContinue && !saving
-                ? 'bg-henry-accent text-white hover:bg-henry-accent-hover'
-                : 'bg-henry-hover text-henry-text-muted cursor-not-allowed'
-            }`}
-          >
-            {saving ? 'Saving...' : 'Continue →'}
-          </button>
-        </div>
+        {/* In Electron+Ollama mode, auto-setup calls onNext() — no button needed */}
+        {!(mode === 'ollama' && isElectron) && (
+          <div className="flex items-center gap-3">
+            {!canContinue && mode === 'ollama' && ollamaPhase === 'found' && (
+              <span className="text-xs text-henry-text-muted">Pick a model above</span>
+            )}
+            {!canContinue && mode === 'cloud' && (
+              <span className="text-xs text-henry-text-muted">Enter your API key</span>
+            )}
+            <button
+              onClick={handleNext}
+              disabled={!canContinue || saving}
+              className={`px-8 py-2.5 rounded-xl font-medium text-sm transition-all ${
+                canContinue && !saving
+                  ? 'bg-henry-accent text-white hover:bg-henry-accent-hover'
+                  : 'bg-henry-hover text-henry-text-muted cursor-not-allowed'
+              }`}
+            >
+              {saving ? 'Saving...' : 'Continue →'}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

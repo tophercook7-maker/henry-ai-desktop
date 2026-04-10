@@ -7,6 +7,13 @@
  */
 
 import { ipcMain, BrowserWindow } from 'electron';
+import {
+  findOllamaBinary,
+  downloadOllama,
+  launchOllama,
+  isOllamaResponding,
+  OLLAMA_URL,
+} from './ollamaManager';
 
 type WindowGetter = () => BrowserWindow | null;
 
@@ -117,6 +124,55 @@ export function registerOllamaHandlers(winGetter: WindowGetter) {
 
       return { success: true, model: modelName };
     } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  // ── Lifecycle: detect / install / launch ────────────────────────────────
+
+  /** Check whether the Ollama binary exists anywhere on this machine. */
+  ipcMain.handle('ollama:isInstalled', async () => {
+    const binPath = findOllamaBinary();
+    const running = await isOllamaResponding();
+    return { installed: binPath !== null, running, binPath: binPath ?? undefined };
+  });
+
+  /**
+   * Launch Ollama (must already be installed).
+   * Waits up to 12 s for it to start accepting requests.
+   */
+  ipcMain.handle('ollama:launch', async (_event, binPath?: string) => {
+    try {
+      const resolved = binPath ?? findOllamaBinary();
+      if (!resolved) return { success: false, error: 'Ollama binary not found.' };
+      await launchOllama(resolved);
+      const running = await isOllamaResponding();
+      return { success: running, error: running ? undefined : 'Ollama did not start in time.' };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  /**
+   * Download + install Ollama into Henry's userData/bin.
+   * Sends progress events: { phase, downloaded, total, message }
+   */
+  ipcMain.handle('ollama:install', async () => {
+    try {
+      const binPath = await downloadOllama((progress) => {
+        safeSend(getWindow, 'ollama:install:progress', progress);
+      });
+      // Auto-launch after install
+      await launchOllama(binPath);
+      const running = await isOllamaResponding();
+      return { success: true, binPath, running };
+    } catch (err: any) {
+      safeSend(getWindow, 'ollama:install:progress', {
+        phase: 'error',
+        downloaded: 0,
+        total: 0,
+        message: err.message,
+      });
       return { success: false, error: err.message };
     }
   });

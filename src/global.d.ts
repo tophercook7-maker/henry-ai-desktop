@@ -238,11 +238,17 @@ declare global {
     pathExists: (path: string) => Promise<boolean>;
     writeFile: (path: string, content: string) => Promise<boolean>;
 
-    ollamaStatus: (baseUrl?: string) => Promise<unknown>;
-    ollamaModels: (baseUrl?: string) => Promise<unknown>;
-    ollamaPull: (model: string, baseUrl?: string) => Promise<unknown>;
-    ollamaDelete: (model: string, baseUrl?: string) => Promise<unknown>;
-    onOllamaPullProgress: (cb: (data: unknown) => void) => () => void;
+    ollamaStatus: (baseUrl?: string) => Promise<{ running: boolean; version?: string; url: string; error?: string }>;
+    ollamaModels: (baseUrl?: string) => Promise<{ models: Array<{ name: string; [k: string]: any }>; error?: string }>;
+    ollamaPull: (model: string, baseUrl?: string) => Promise<{ success: boolean; error?: string }>;
+    ollamaDelete: (model: string, baseUrl?: string) => Promise<{ success: boolean; error?: string }>;
+    onOllamaPullProgress: (cb: (data: any) => void) => () => void;
+
+    // Ollama Lifecycle — Electron-only (undefined in web/browser mode)
+    ollamaIsInstalled?: () => Promise<{ installed: boolean; running: boolean; binPath?: string }>;
+    ollamaLaunch?: (binPath?: string) => Promise<{ success: boolean; error?: string }>;
+    ollamaInstall?: () => Promise<{ success: boolean; binPath?: string; running?: boolean; error?: string }>;
+    onOllamaInstallProgress?: (cb: (data: { phase: string; downloaded: number; total: number; message: string }) => void) => () => void;
 
     execTerminal: (params: HenryTerminalRequest) => Promise<HenryTerminalResponse>;
     killTerminal: (execId: string) => Promise<{ killed: boolean; error?: string }>;
