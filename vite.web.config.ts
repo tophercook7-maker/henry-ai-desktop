@@ -53,7 +53,14 @@ function aiProxyPlugin(): Plugin {
           };
 
           const upstream = https.request(options, (upRes) => {
-            res.writeHead(upRes.statusCode ?? 200, upRes.headers);
+            // Strip hop-by-hop headers that cause the browser to see raw
+            // chunked-encoding framing (the "0\r\n\r\n" terminator shows up
+            // as a stray "0" at the end of streamed AI responses).
+            const outHeaders = { ...upRes.headers };
+            delete outHeaders['transfer-encoding'];
+            delete outHeaders['content-encoding'];
+            delete outHeaders['content-length'];
+            res.writeHead(upRes.statusCode ?? 200, outHeaders);
             upRes.pipe(res);
           });
 
