@@ -1,8 +1,22 @@
+import { useStore } from '../../store';
+
 interface WelcomeStepProps {
   onNext: () => void;
 }
 
 export default function WelcomeStep({ onNext }: WelcomeStepProps) {
+  const { setSetupComplete, updateSetting } = useStore();
+
+  async function handleSkip() {
+    try {
+      await window.henryAPI.saveSetting('setup_complete', 'true');
+      updateSetting('setup_complete', 'true');
+    } catch {
+      /* ignore — still enter */
+    }
+    setSetupComplete(true);
+  }
+
   return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] animate-fade-in text-center px-4">
       <div className="text-7xl mb-8">🧠</div>
@@ -31,12 +45,23 @@ export default function WelcomeStep({ onNext }: WelcomeStepProps) {
 
       <button
         onClick={onNext}
-        className="px-10 py-4 bg-henry-accent text-white rounded-2xl font-semibold text-lg hover:bg-henry-accent-hover transition-all shadow-lg shadow-henry-accent/20"
+        onTouchEnd={(e) => { e.preventDefault(); onNext(); }}
+        className="px-10 py-4 bg-henry-accent text-white rounded-2xl font-semibold text-lg hover:bg-henry-accent-hover transition-all shadow-lg shadow-henry-accent/20 touch-manipulation select-none"
       >
         Let's do this →
       </button>
 
-      <p className="text-xs text-henry-text-muted mt-4">No account needed · Works offline with Ollama</p>
+      <div className="flex items-center gap-4 mt-4">
+        <p className="text-xs text-henry-text-muted">No account needed · Works offline with Ollama</p>
+        <span className="text-henry-border/50">·</span>
+        <button
+          onClick={handleSkip}
+          onTouchEnd={(e) => { e.preventDefault(); void handleSkip(); }}
+          className="text-xs text-henry-text-muted hover:text-henry-accent transition-colors underline underline-offset-4 touch-manipulation"
+        >
+          Already set up? Skip →
+        </button>
+      </div>
     </div>
   );
 }
