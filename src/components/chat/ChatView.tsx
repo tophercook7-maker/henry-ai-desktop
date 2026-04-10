@@ -1067,6 +1067,37 @@ export default function ChatView() {
 
     const apiKey = provider.api_key || provider.apiKey || '';
 
+    // ── HTTPS + Ollama guard ────────────────────────────────────────────────
+    // Browsers silently block HTTP requests from HTTPS pages (mixed content).
+    // Catch this before the fetch so we can show a helpful message instead of
+    // the cryptic "load failed" network error.
+    if (companionProvider === 'ollama' && window.location.protocol === 'https:') {
+      const ollamaBase = (useStore.getState().settings.ollama_base_url || 'http://localhost:11434');
+      if (ollamaBase.startsWith('http://')) {
+        addMessage({
+          id: crypto.randomUUID(),
+          conversation_id: convId,
+          role: 'assistant',
+          content: [
+            `🔒 **Henry can't reach Ollama from this browser page**`,
+            ``,
+            `Ollama runs on plain HTTP (\`${ollamaBase}\`), but this page is HTTPS — the browser blocks that connection automatically.`,
+            ``,
+            `**Your options:**`,
+            `- **Use the desktop app** — Henry connects to Ollama directly, no browser restrictions`,
+            `- **Switch to a Cloud AI** — OpenAI, Anthropic, or Google. Add an API key in **Settings → AI Providers**`,
+            `- **iPad → Mac IP** — If Ollama is on your Mac at e.g. \`192.168.x.x\`, update the URL in **Settings → AI Providers → Ollama** (must still be served over HTTPS or via the desktop app)`,
+          ].join('\n'),
+          engine: 'companion',
+          created_at: new Date().toISOString(),
+        });
+        setStreamingContent('');
+        setIsStreaming(false);
+        setCompanionStatus({ status: 'idle' });
+        return;
+      }
+    }
+
     try {
       setCompanionStatus({ status: 'streaming' });
 
@@ -1218,11 +1249,30 @@ export default function ChatView() {
           return;
         }
 
+        const isNetworkBlock = /load failed|failed to fetch|networkerror|network request failed/i.test(error);
+        const isOllama = companionProvider === 'ollama';
+        const isHttpsCtx = window.location.protocol === 'https:';
+
+        let errorContent: string;
+        if (isNetworkBlock && isOllama && isHttpsCtx) {
+          errorContent = [
+            `🔒 **Henry can't reach Ollama from this browser page**`,
+            ``,
+            `Ollama runs on HTTP but this page is HTTPS — the browser blocks that connection.`,
+            ``,
+            `**Fix:** Open **Settings → AI Providers** and switch to a Cloud AI (OpenAI / Anthropic / Google), or use the Henry desktop app where this restriction doesn't apply.`,
+          ].join('\n');
+        } else if (isNetworkBlock) {
+          errorContent = `❌ **Connection failed** (\`${error}\`)\n\nHenry couldn't reach the AI provider. Check that your API key is correct in **Settings → AI Providers**, or try again in a moment.`;
+        } else {
+          errorContent = `❌ **Error:** ${error}`;
+        }
+
         addMessage({
           id: crypto.randomUUID(),
           conversation_id: convId,
           role: 'assistant',
-          content: `❌ Error: ${error}`,
+          content: errorContent,
           engine: 'companion',
           created_at: new Date().toISOString(),
         });
