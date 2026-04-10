@@ -57,7 +57,7 @@ async function runWorkerAI(params: {
 
   updateTask({ status: 'running', started_at: now() });
 
-  const modeName = (['companion','writer','developer','biblical','design3d','computer','secretary'] as const).includes(currentMode as any)
+  const modeName = (['companion','writer','developer','builder','biblical','design3d','computer','secretary'] as const).includes(currentMode as any)
     ? (currentMode as import('./henry/charter').HenryOperatingMode)
     : 'developer';
 

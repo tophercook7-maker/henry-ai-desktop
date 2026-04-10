@@ -92,6 +92,8 @@ import { parseUserCommandLine, type HenryCommand } from '@/henry/commandLayer';
 import { resolveHenryCommand } from '@/henry/commandActions';
 import { webSearch, formatSearchResultsForHenry } from '@/henry/webSearch';
 import { logAction } from '@/henry/auditLog';
+import { extractHtmlFromMessage } from '@/henry/builderPreview';
+import BuilderPreviewPanel from './BuilderPreviewPanel';
 
 const HENRY_OPERATING_MODE_KEY = 'henry_operating_mode';
 const HENRY_BIBLICAL_PROFILE_KEY = 'henry_biblical_source_profile';
@@ -143,6 +145,7 @@ const MODE_HUMAN_LABELS: Record<HenryOperatingMode, string> = {
   writer: 'Writing',
   biblical: 'Bible Study',
   developer: 'Code',
+  builder: 'App Builder',
   design3d: '3D / Design',
   computer: 'Computer',
   secretary: 'Secretary',
@@ -194,9 +197,18 @@ function detectModeFromMessage(text: string, currentMode: HenryOperatingMode): H
     'launch the app','automate my','run this script','execute','system command',
     'find the file','move the file','delete the file','computer control'];
 
+  const builderPhrases = ['build a website','build a web app','build an app','build me a',
+    'create a website','create a web app','create an app','make a website','make a web app',
+    'make me a website','make me an app','landing page','build a landing','build a dashboard',
+    'build a tool','build a form','build a game','build a calculator','build a timer',
+    'build a portfolio','build me a portfolio','design a website','design a web app',
+    'build a todo','build a task','build a budget','build a habit tracker'];
+
   if (BIBLE_ABBR_PATTERN.test(text)) return 'biblical';
   if (BIBLICAL_BOOKS.some((b) => lower.includes(b))) return 'biblical';
   if (biblicalWords.some((w) => lower.includes(w))) return 'biblical';
+
+  if (builderPhrases.some((p) => lower.includes(p))) return 'builder';
 
   if (designKeywords.some((k) => lower.includes(k))) return 'design3d';
 
@@ -217,6 +229,7 @@ function exportPresetForOperatingMode(mode: HenryOperatingMode): ExportPresetId 
   if (mode === 'writer') return 'writer_handoff';
   if (mode === 'design3d') return 'design3d_handoff';
   if (mode === 'biblical') return 'biblical_study_pack';
+  if (mode === 'builder') return 'mixed_workspace';
   return 'mixed_workspace';
 }
 
@@ -284,6 +297,8 @@ export default function ChatView() {
   const [recoveryConvMissing, setRecoveryConvMissing] = useState(false);
   const [memoryPanelSessionHint, setMemoryPanelSessionHint] = useState(false);
   const [autoSwitchNotice, setAutoSwitchNotice] = useState<string | null>(null);
+  const [builderPreviewHtml, setBuilderPreviewHtml] = useState<string | null>(null);
+  const [builderPreviewOpen, setBuilderPreviewOpen] = useState(false);
   const autoSwitchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const streamRef = useRef<any>(null);
@@ -1027,6 +1042,15 @@ export default function ChatView() {
         setIsStreaming(false);
         setCompanionStatus({ status: 'idle' });
 
+        // Builder mode: extract HTML and show live preview
+        if (effectiveMode === 'builder') {
+          const extracted = extractHtmlFromMessage(fullText);
+          if (extracted) {
+            setBuilderPreviewHtml(extracted);
+            setBuilderPreviewOpen(true);
+          }
+        }
+
         try {
           await window.henryAPI.saveMessage(assistantMsg);
         } catch (err) {
@@ -1103,6 +1127,10 @@ export default function ChatView() {
             setStreamingContent('');
             setIsStreaming(false);
             setCompanionStatus({ status: 'idle' });
+            if (effectiveMode === 'builder') {
+              const extracted = extractHtmlFromMessage(fullText);
+              if (extracted) { setBuilderPreviewHtml(extracted); setBuilderPreviewOpen(true); }
+            }
             try { await window.henryAPI.saveMessage(fbMsg); } catch { /* optional */ }
           });
           fbStream.onError((fbError: string) => {
@@ -1508,11 +1536,7 @@ export default function ChatView() {
               >
                 {HENRY_OPERATING_MODES.map((m) => (
                   <option key={m} value={m}>
-                    {m === 'companion' ? 'Chat' :
-                     m === 'writer' ? 'Writing' :
-                     m === 'biblical' ? 'Bible Study' :
-                     m === 'developer' ? 'Code' :
-                     m === 'design3d' ? '3D / Design' : m}
+                    {MODE_HUMAN_LABELS[m] ?? m}
                   </option>
                 ))}
               </select>
@@ -1608,6 +1632,21 @@ export default function ChatView() {
               (metadata is added on save). Pick a prior draft with <span className="text-henry-text-dim">Use as context</span> for lean continuity — Henry does not auto-load file contents.
             </p>
           )}
+          {operatingMode === 'builder' && (
+            <p className="text-[10px] text-henry-text-muted mt-2 leading-relaxed">
+              App Builder: describe anything — landing page, dashboard, tool, game. Henry generates a complete,
+              working HTML app instantly. Preview appears live on the right. Tell him to change anything and he
+              rebuilds it in full.
+              {builderPreviewHtml && !builderPreviewOpen && (
+                <button
+                  onClick={() => setBuilderPreviewOpen(true)}
+                  className="ml-1 text-henry-accent hover:underline"
+                >
+                  Show preview →
+                </button>
+              )}
+            </p>
+          )}
           {operatingMode === 'design3d' && (
             <p className="text-[10px] text-henry-text-muted mt-2 leading-relaxed">
               Design3D mode: label measured vs estimated dimensions clearly. In Files, use{' '}
@@ -1620,6 +1659,15 @@ export default function ChatView() {
         </div>
       </div>
       </div>
+      {(operatingMode === 'builder' || builderPreviewOpen) && (
+        <BuilderPreviewPanel
+          html={builderPreviewHtml}
+          isStreaming={isStreaming}
+          streamingHtml={streamingContent}
+          onClose={() => setBuilderPreviewOpen(false)}
+        />
+      )}
+
       <MemoryAwarenessPanel
         operatingMode={operatingMode}
         biblicalSourceProfileId={biblicalSourceProfileId}
@@ -1778,6 +1826,17 @@ const DISCOVERY_MODES: Array<{
       'Explain the meaning of John 3:16',
       'What does the Ethiopian Orthodox Church teach about fasting?',
       'Walk me through Psalm 23 verse by verse',
+    ],
+  },
+  {
+    mode: 'builder',
+    icon: '🌐',
+    title: 'Build an App',
+    desc: 'Describe a website or app. Henry generates it live — one HTML file, works instantly.',
+    examples: [
+      'Build me a personal landing page',
+      'Create a task manager app with localStorage',
+      'Make a dashboard with charts and stats',
     ],
   },
   {

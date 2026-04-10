@@ -41,6 +41,7 @@ const MODE_LABEL: Record<HenryOperatingMode, string> = {
   companion: 'Companion',
   writer: 'Writer / document',
   developer: 'Developer',
+  builder: 'App Builder',
   biblical: 'Biblical',
   design3d: '3D / design',
   secretary: 'Secretary',

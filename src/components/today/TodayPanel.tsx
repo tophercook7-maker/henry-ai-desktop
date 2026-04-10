@@ -18,6 +18,7 @@ interface ModeCard {
 
 const MODE_CARDS: ModeCard[] = [
   { mode: 'companion', icon: '💬', label: 'Chat', desc: 'Think out loud, ask anything, get unstuck', border: 'border-henry-accent/20 hover:border-henry-accent/50', glow: 'hover:shadow-henry-accent/10' },
+  { mode: 'builder', icon: '🌐', label: 'App Builder', desc: 'Describe an app or site — Henry builds it live', border: 'border-indigo-500/20 hover:border-indigo-400/50', glow: 'hover:shadow-indigo-500/10' },
   { mode: 'secretary', icon: '🗓️', label: 'Secretary', desc: 'Email, scheduling, task triage, briefings', border: 'border-violet-500/20 hover:border-violet-400/50', glow: 'hover:shadow-violet-500/10' },
   { mode: 'writer', icon: '✍️', label: 'Writing', desc: 'Draft, edit, shape anything worth keeping', border: 'border-emerald-500/20 hover:border-emerald-400/50', glow: 'hover:shadow-emerald-500/10' },
   { mode: 'developer', icon: '⚡', label: 'Code', desc: 'Debug, build, review — working code only', border: 'border-amber-500/20 hover:border-amber-400/50', glow: 'hover:shadow-amber-500/10' },
@@ -333,11 +334,11 @@ export default function TodayPanel() {
             <div className="flex flex-wrap gap-2">
               {[
                 { label: "What should I focus on today?", mode: 'companion' },
+                { label: "Build me a landing page", mode: 'builder' },
                 { label: "Draft a quick email", mode: 'secretary' },
-                { label: "Review my tasks", mode: 'secretary' },
                 { label: "I need to write something", mode: 'writer' },
                 { label: "Help me debug this", mode: 'developer' },
-                { label: "Plan a 3D print", mode: 'design3d' },
+                { label: "Build a dashboard app", mode: 'builder' },
               ].map(({ label, mode }) => (
                 <button
                   key={label}
