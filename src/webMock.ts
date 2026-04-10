@@ -84,7 +84,7 @@ async function runWorkerAI(params: {
     let resultText = '';
 
     if (workerProvider === 'openai') {
-      const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      const res = await fetch('/proxy/openai/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
         body: JSON.stringify({ model: workerModel, messages, temperature: 0.7, max_tokens: 4000 }),
@@ -96,7 +96,7 @@ async function runWorkerAI(params: {
       const convMsgs = messages
         .filter((m) => m.role !== 'system')
         .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
+      const res = await fetch('/proxy/anthropic/v1/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
         body: JSON.stringify({ model: workerModel, max_tokens: 4000, system: sysMsg?.content ?? '', messages: convMsgs }),
@@ -108,7 +108,7 @@ async function runWorkerAI(params: {
         .filter((m) => m.role !== 'system')
         .map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }));
       const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${workerModel}:generateContent?key=${apiKey}`,
+        `/proxy/google/v1beta/models/${workerModel}:generateContent?key=${apiKey}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -231,7 +231,7 @@ const henryAPI: Window['henryAPI'] = {
     const { provider, model, apiKey, messages, temperature, maxTokens } = params;
 
     if (provider === 'openai') {
-      const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      const res = await fetch('/proxy/openai/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
         body: JSON.stringify({ model, messages, temperature: temperature ?? 0.7, max_tokens: maxTokens }),
@@ -243,13 +243,12 @@ const henryAPI: Window['henryAPI'] = {
     if (provider === 'anthropic') {
       const systemMsg = messages.find((m) => m.role === 'system');
       const userMsgs = messages.filter((m) => m.role !== 'system');
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
+      const res = await fetch('/proxy/anthropic/v1/messages', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'x-api-key': apiKey,
           'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true',
         },
         body: JSON.stringify({
           model,
@@ -268,7 +267,7 @@ const henryAPI: Window['henryAPI'] = {
         .filter((m) => m.role !== 'system')
         .map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }));
       const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+        `/proxy/google/v1beta/models/${model}:generateContent?key=${apiKey}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -307,7 +306,7 @@ const henryAPI: Window['henryAPI'] = {
         let fullText = '';
 
         if (provider === 'openai') {
-          const res = await fetch('https://api.openai.com/v1/chat/completions', {
+          const res = await fetch('/proxy/openai/v1/chat/completions', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
             body: JSON.stringify({ model, messages, temperature: temperature ?? 0.7, max_tokens: maxTokens, stream: true }),
@@ -343,13 +342,12 @@ const henryAPI: Window['henryAPI'] = {
         } else if (provider === 'anthropic') {
           const systemMsg = messages.find((m) => m.role === 'system');
           const userMsgs = messages.filter((m) => m.role !== 'system');
-          const res = await fetch('https://api.anthropic.com/v1/messages', {
+          const res = await fetch('/proxy/anthropic/v1/messages', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
               'x-api-key': apiKey,
               'anthropic-version': '2023-06-01',
-              'anthropic-dangerous-direct-browser-access': 'true',
             },
             body: JSON.stringify({
               model,
@@ -391,7 +389,7 @@ const henryAPI: Window['henryAPI'] = {
             .filter((m) => m.role !== 'system')
             .map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }));
           const res = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?key=${apiKey}&alt=sse`,
+            `/proxy/google/v1beta/models/${model}:streamGenerateContent?key=${apiKey}&alt=sse`,
             {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -496,9 +494,13 @@ const henryAPI: Window['henryAPI'] = {
           const lc = raw.toLowerCase();
           let friendly = raw;
           if (lc.includes('failed to fetch') || lc.includes('networkerror') || lc.includes('network request failed') || lc.includes('load failed')) {
-            const settings = getStore<Record<string, string>>('henry:settings', {});
-            const baseUrl = settings.ollama_base_url || 'http://localhost:11434';
-            friendly = `Cannot reach Ollama at ${baseUrl}.\n\nMake sure Ollama is running with:\n  OLLAMA_HOST=0.0.0.0 OLLAMA_ORIGINS=* ollama serve\n\nThen confirm the base URL in Settings → Engines matches your Mac's local IP (e.g. http://192.168.1.x:11434).`;
+            if (provider === 'ollama') {
+              const settings = getStore<Record<string, string>>('henry:settings', {});
+              const baseUrl = settings.ollama_base_url || 'http://localhost:11434';
+              friendly = `Cannot reach Ollama at ${baseUrl}.\n\nMake sure Ollama is running with:\n  OLLAMA_HOST=0.0.0.0 OLLAMA_ORIGINS=* ollama serve\n\nThen confirm the base URL in Settings → Engines matches your Mac's local IP (e.g. http://192.168.1.x:11434).`;
+            } else {
+              friendly = `Network error reaching ${provider} API. Check your connection and try again.`;
+            }
           } else if (lc.includes('context length') || lc.includes('context window') || lc.includes('prompt is too long') || lc.includes('token limit')) {
             friendly = `Context window full — the conversation is too long for this model. Start a new chat or switch to a model with a larger context window.`;
           } else if (lc.includes('model') && (lc.includes('not found') || lc.includes('does not exist') || lc.includes('404'))) {
