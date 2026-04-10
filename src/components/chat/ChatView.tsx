@@ -1030,7 +1030,7 @@ export default function ChatView() {
           </div>
         )}
         {messages.length === 0 && !isStreaming ? (
-          <EmptyChat />
+          <EmptyChat onSend={handleSend} />
         ) : (
           <div className="max-w-3xl mx-auto space-y-4">
             {messages.map((msg) => {
@@ -1389,41 +1389,36 @@ export default function ChatView() {
   );
 }
 
-function EmptyChat() {
+function EmptyChat({ onSend }: { onSend: (content: string) => void }) {
   return (
     <div className="h-full flex items-center justify-center">
       <div className="text-center max-w-md animate-fade-in">
         <div className="text-6xl mb-6">🧠</div>
-        <h2 className="text-2xl font-bold text-henry-text mb-3">
-          Henry AI
-        </h2>
+        <h2 className="text-2xl font-bold text-henry-text mb-3">Henry AI</h2>
         <p className="text-henry-text-dim mb-6 leading-relaxed">
-          Your personal AI operating system. Switch between
-          <span className="text-henry-companion font-medium"> Companion </span>
-          for quick chat and
-          <span className="text-henry-worker font-medium"> Worker </span>
-          for heavy tasks.
+          Your personal AI. Use the <span className="text-henry-companion font-medium">Mode</span> dropdown
+          below to switch between Companion, Writer, Biblical, and Design modes.
         </p>
         <div className="grid grid-cols-2 gap-3 text-xs">
           <SuggestionCard
-            icon="🧠"
-            label="Companion"
+            icon="💬"
             text="What should I work on today?"
+            onSelect={onSend}
           />
           <SuggestionCard
-            icon="⚡"
-            label="Worker"
-            text="Generate a REST API for my app"
+            icon="✍️"
+            text="Help me write a short essay outline"
+            onSelect={onSend}
           />
           <SuggestionCard
-            icon="🧠"
-            label="Companion"
-            text="Summarize my meeting notes"
+            icon="📖"
+            text="Explain John 3:16 in context"
+            onSelect={onSend}
           />
           <SuggestionCard
-            icon="⚡"
-            label="Worker"
-            text="Research the best tech stack for a SaaS"
+            icon="🔧"
+            text="Review my code and suggest improvements"
+            onSelect={onSend}
           />
         </div>
       </div>
@@ -1433,18 +1428,20 @@ function EmptyChat() {
 
 function SuggestionCard({
   icon,
-  label,
   text,
+  onSelect,
 }: {
   icon: string;
-  label: string;
   text: string;
+  onSelect: (text: string) => void;
 }) {
   return (
-    <button className="text-left p-3 rounded-xl bg-henry-surface/30 border border-henry-border/20 hover:border-henry-border/40 transition-all group">
+    <button
+      onClick={() => onSelect(text)}
+      className="text-left p-3 rounded-xl bg-henry-surface/30 border border-henry-border/20 hover:border-henry-accent/30 hover:bg-henry-surface/50 transition-all group"
+    >
       <div className="flex items-center gap-1.5 mb-1">
         <span className="text-xs">{icon}</span>
-        <span className="text-[10px] text-henry-text-muted">{label}</span>
       </div>
       <span className="text-henry-text-dim group-hover:text-henry-text transition-colors">
         {text}

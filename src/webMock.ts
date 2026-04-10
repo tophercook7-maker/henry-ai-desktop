@@ -286,28 +286,64 @@ const henryAPI: Window['henryAPI'] = {
           doneCb?.(fullText);
         } else if (provider === 'ollama') {
           const settings = getStore<Record<string, string>>('henry:settings', {});
-          const baseUrl = settings.ollama_base_url || 'http://localhost:11434';
+          const baseUrl = (settings.ollama_base_url || 'http://localhost:11434').replace(/\/$/, '');
+          const systemMsg = messages.find((m) => m.role === 'system');
+          const chatMessages = messages.filter((m) => m.role !== 'system');
           const res = await fetch(`${baseUrl}/api/chat`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ model, messages, stream: true }),
+            body: JSON.stringify({
+              model,
+              messages: chatMessages,
+              ...(systemMsg ? { system: systemMsg.content } : {}),
+              stream: true,
+              options: { temperature: temperature ?? 0.7 },
+            }),
             signal: controller.signal,
           });
+          if (!res.ok) {
+            const errText = await res.text().catch(() => `HTTP ${res.status}`);
+            throw new Error(`Ollama error ${res.status}: ${errText}`);
+          }
           const reader = res.body!.getReader();
           const decoder = new TextDecoder();
+          let lineBuffer = '';
           while (!aborted) {
             const { done, value } = await reader.read();
             if (done) break;
-            const lines = decoder.decode(value).split('\n').filter(Boolean);
+            lineBuffer += decoder.decode(value, { stream: true });
+            const lines = lineBuffer.split('\n');
+            lineBuffer = lines.pop() ?? '';
             for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed) continue;
               try {
-                const parsed = JSON.parse(line) as { message?: { content?: string }; done?: boolean };
-                if (parsed.message?.content) {
-                  fullText += parsed.message.content;
-                  chunkCb?.(parsed.message.content);
+                const parsed = JSON.parse(trimmed) as {
+                  message?: { content?: string };
+                  response?: string;
+                  done?: boolean;
+                  error?: string;
+                };
+                if (parsed.error) throw new Error(parsed.error);
+                if (parsed.done) continue;
+                const chunk = parsed.message?.content ?? parsed.response ?? '';
+                if (chunk) {
+                  fullText += chunk;
+                  chunkCb?.(chunk);
                 }
-              } catch { /* skip */ }
+              } catch (e) {
+                if ((e as Error).message && !((e as Error) instanceof SyntaxError)) throw e;
+              }
             }
+          }
+          if (lineBuffer.trim()) {
+            try {
+              const parsed = JSON.parse(lineBuffer.trim()) as { message?: { content?: string }; response?: string; done?: boolean };
+              if (!parsed.done) {
+                const chunk = parsed.message?.content ?? parsed.response ?? '';
+                if (chunk) { fullText += chunk; chunkCb?.(chunk); }
+              }
+            } catch { /* ignore trailing partial line */ }
           }
           doneCb?.(fullText);
         } else {
