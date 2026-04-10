@@ -136,6 +136,64 @@ function readStoredDesign3dWorkflow(): Design3DWorkflowTypeId {
   return DEFAULT_DESIGN3D_WORKFLOW_TYPE_ID;
 }
 
+const MODE_HUMAN_LABELS: Record<HenryOperatingMode, string> = {
+  companion: 'Chat',
+  writer: 'Writing',
+  biblical: 'Bible Study',
+  developer: 'Code',
+  design3d: '3D / Design',
+};
+
+const BIBLICAL_BOOKS = [
+  'genesis','exodus','leviticus','numbers','deuteronomy','joshua','judges','ruth',
+  'samuel','kings','chronicles','ezra','nehemiah','esther','job','psalm','psalms',
+  'proverbs','ecclesiastes','isaiah','jeremiah','lamentations','ezekiel','daniel',
+  'hosea','joel','amos','obadiah','jonah','micah','nahum','habakkuk','zephaniah',
+  'haggai','zechariah','malachi','matthew','mark','luke','john','acts','romans',
+  'corinthians','galatians','ephesians','philippians','colossians','thessalonians',
+  'timothy','titus','philemon','hebrews','james','peter','jude','revelation',
+  'tobit','judith','maccabees','sirach','wisdom','baruch',
+];
+
+const BIBLE_ABBR_PATTERN = /\b(gen|exo|lev|num|deu|jos|jdg|rut|sam|kgs|chr|ezr|neh|est|job|psa|pro|ecc|isa|jer|lam|eze|dan|hos|joe|amo|oba|jon|mic|nah|hab|zep|hag|zec|mal|mat|mar|luk|joh|act|rom|cor|gal|eph|phi|col|the|tim|tit|phm|heb|jam|pet|jud|rev)\w*\.?\s+\d+/i;
+
+function detectModeFromMessage(text: string, currentMode: HenryOperatingMode): HenryOperatingMode {
+  const lower = text.toLowerCase();
+
+  const biblicalWords = ['verse','scripture','bible','biblical','gospel','sermon','prayer',
+    'theology','orthodox','ethiopian orthodox','fasting','liturgy','lent','holy spirit',
+    'trinity','resurrection','baptism','saint','saints','prophet','epistle','testament',
+    'covenant','church fathers','apostle','disciple','amen','hallelujah'];
+
+  const devKeywords = ['debug','bug','error','function','programming','python','javascript',
+    'typescript','html','css','react','api','database','algorithm','variable','syntax',
+    'compiler','git','github','software','terminal','command','script','loop','array',
+    'class','method','exception','null','undefined','import','export','package'];
+
+  const writerPhrases = ['write a','write an','draft a','draft an','help me write',
+    'write me a','write me an','give me an essay','an essay about','a letter to',
+    'an email to','a story about','a poem about','a report on','an outline for',
+    'proofread','edit my writing','cover letter'];
+
+  const designKeywords = ['3d model','blender','room layout','floor plan','architecture',
+    'interior design','render','blueprint','furniture layout','kitchen layout',
+    'bedroom layout','home office','workspace design','3d print','cad '];
+
+  if (BIBLE_ABBR_PATTERN.test(text)) return 'biblical';
+  if (BIBLICAL_BOOKS.some((b) => lower.includes(b))) return 'biblical';
+  if (biblicalWords.some((w) => lower.includes(w))) return 'biblical';
+
+  if (designKeywords.some((k) => lower.includes(k))) return 'design3d';
+
+  if (writerPhrases.some((p) => lower.includes(p))) return 'writer';
+
+  // Code detection — require multiple signals or specific code keywords to avoid false positives
+  const devMatches = devKeywords.filter((k) => lower.includes(k)).length;
+  if (devMatches >= 2 || (devMatches >= 1 && /[{}\[\]()=>]|```/.test(text))) return 'developer';
+
+  return currentMode;
+}
+
 function exportPresetForOperatingMode(mode: HenryOperatingMode): ExportPresetId {
   if (mode === 'writer') return 'writer_handoff';
   if (mode === 'design3d') return 'design3d_handoff';
@@ -201,6 +259,8 @@ export default function ChatView() {
   const [recoveryConvRestored, setRecoveryConvRestored] = useState(false);
   const [recoveryConvMissing, setRecoveryConvMissing] = useState(false);
   const [memoryPanelSessionHint, setMemoryPanelSessionHint] = useState(false);
+  const [autoSwitchNotice, setAutoSwitchNotice] = useState<string | null>(null);
+  const autoSwitchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const streamRef = useRef<any>(null);
   const sessionAsyncResumeStartedRef = useRef(false);
@@ -570,6 +630,19 @@ export default function ChatView() {
 
     const engine = selectedEngine;
 
+    // Auto-detect mode from message content (only for companion/chat engine)
+    let detectedMode = operatingMode;
+    if (engine !== 'worker') {
+      detectedMode = detectModeFromMessage(content, operatingMode);
+      if (detectedMode !== operatingMode) {
+        setOperatingMode(detectedMode);
+        const label = MODE_HUMAN_LABELS[detectedMode];
+        setAutoSwitchNotice(label);
+        if (autoSwitchTimerRef.current) clearTimeout(autoSwitchTimerRef.current);
+        autoSwitchTimerRef.current = setTimeout(() => setAutoSwitchNotice(null), 4000);
+      }
+    }
+
     // Ensure we have a conversation
     let convId = activeConversationId;
     if (!convId) {
@@ -612,12 +685,14 @@ export default function ChatView() {
       // Worker tasks go through the task queue
       await handleWorkerRequest(content, convId);
     } else {
-      // Companion uses streaming directly
-      await handleCompanionStream(content, convId);
+      // Companion uses streaming directly — pass detectedMode so the prompt uses the right mode
+      // even before React re-renders with the new operatingMode state
+      await handleCompanionStream(content, convId, detectedMode);
     }
   }
 
-  async function handleCompanionStream(content: string, convId: string) {
+  async function handleCompanionStream(content: string, convId: string, modeOverride?: HenryOperatingMode) {
+    const effectiveMode = modeOverride ?? operatingMode;
     setIsStreaming(true);
     setStreamingContent('');
     setCompanionStatus({ status: 'thinking' });
@@ -644,9 +719,9 @@ export default function ChatView() {
     const bibleProfile = getBibleSourceProfile(biblicalSourceProfileId);
     const writerType = getWriterDocumentType(writerDocumentTypeId);
     const design3dType = getDesign3DWorkflowType(design3dWorkflowTypeId);
-    const lastFile = operatingMode === 'design3d' ? design3dRefPath : null;
+    const lastFile = effectiveMode === 'design3d' ? design3dRefPath : null;
     const design3dRefNote =
-      operatingMode === 'design3d' && lastFile
+      effectiveMode === 'design3d' && lastFile
         ? buildDesign3dReferenceFilesNote([lastFile])
         : null;
 
@@ -659,21 +734,21 @@ export default function ChatView() {
         : '';
 
     let memoryContext = buildHenryMemoryContextBlock({
-      mode: operatingMode,
+      mode: effectiveMode,
       lean,
       workspacePathHint: workspacePath,
       conversationTitle: convTitle,
       biblicalSourceProfileLabel:
-        operatingMode === 'biblical' ? bibleProfile?.label ?? null : null,
+        effectiveMode === 'biblical' ? bibleProfile?.label ?? null : null,
       writerDocumentTypeLabel:
-        operatingMode === 'writer' ? writerType?.label ?? null : null,
+        effectiveMode === 'writer' ? writerType?.label ?? null : null,
       design3dWorkflowLabel:
-        operatingMode === 'design3d' ? design3dType?.label ?? null : null,
+        effectiveMode === 'design3d' ? design3dType?.label ?? null : null,
       design3dReferenceNote: design3dRefNote,
       activeWorkspaceContextBlock: wsBlock || null,
     });
 
-    if (operatingMode === 'biblical') {
+    if (effectiveMode === 'biblical') {
       try {
         const sl = await lookupScriptureFromUserMessage(content);
         if (sl) {
@@ -733,15 +808,15 @@ export default function ChatView() {
     }
 
     // Prepare the streaming call (Henry charter + mode + memory + mode-specific options)
-    const systemPrompt = buildCompanionStreamSystemPrompt(operatingMode, memoryContext, {
-      ...(operatingMode === 'biblical' ? { biblicalSourceProfileId: biblicalSourceProfileId } : {}),
-      ...(operatingMode === 'writer'
+    const systemPrompt = buildCompanionStreamSystemPrompt(effectiveMode, memoryContext, {
+      ...(effectiveMode === 'biblical' ? { biblicalSourceProfileId: biblicalSourceProfileId } : {}),
+      ...(effectiveMode === 'writer'
         ? {
             writerDocumentTypeId: writerDocumentTypeId,
             writerActiveDraftRelativePath: writerActiveDraftPath,
           }
         : {}),
-      ...(operatingMode === 'design3d'
+      ...(effectiveMode === 'design3d'
         ? {
             design3dWorkflowTypeId: design3dWorkflowTypeId,
             design3dReferencePath: design3dRefPath,
@@ -1149,6 +1224,18 @@ export default function ChatView() {
                 className="text-[10px] uppercase tracking-wide text-henry-accent/90 hover:text-henry-accent disabled:opacity-40"
               >
                 Create export pack
+              </button>
+            </div>
+          )}
+          {autoSwitchNotice && (
+            <div className="flex items-center gap-2 mb-2 px-3 py-1.5 rounded-lg bg-henry-accent/10 border border-henry-accent/20 text-xs text-henry-accent animate-fade-in">
+              <span>✦</span>
+              <span>Switched to <strong>{autoSwitchNotice}</strong> mode based on your message</span>
+              <button
+                onClick={() => setAutoSwitchNotice(null)}
+                className="ml-auto text-henry-accent/60 hover:text-henry-accent"
+              >
+                ×
               </button>
             </div>
           )}

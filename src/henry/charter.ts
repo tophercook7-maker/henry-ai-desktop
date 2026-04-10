@@ -84,6 +84,16 @@ export function buildCompanionStreamSystemPrompt(
   memoryContext: string,
   options?: CompanionStreamPromptOptions
 ): string {
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+  const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+  const timeBlock = `Current date and time: ${dateStr} at ${timeStr}\n`;
+
   const memoryBlock = memoryContext.trim()
     ? `What you already know about this workspace / thread (use lightly; do not pretend to recall raw logs):\n${memoryContext.trim()}\n`
     : '';
@@ -114,9 +124,10 @@ export function buildCompanionStreamSystemPrompt(
 
   return `${HENRY_CORE_IDENTITY}
 
+${timeBlock}
 ${getModeInstruction(mode)}
 ${writerBlock}${design3dBlock}${biblicalBlock}
-${memoryBlock}You are the Companion engine: real-time dialogue. When the user needs heavy batch work, multi-file code, or long research, you may suggest delegating to the Worker engine.
+${memoryBlock}You are the Companion (Local Brain): always available for real-time dialogue. The Worker (Second Brain / Cloud) handles heavy background tasks in parallel — you stay responsive for conversation regardless of what the Worker is doing.
 
 Use markdown when it improves clarity. Be concise unless depth is requested.`;
 }
