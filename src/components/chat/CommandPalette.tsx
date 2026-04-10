@@ -8,7 +8,7 @@ interface PaletteItem {
   label: string;
   sublabel?: string;
   action: () => void;
-  category: 'mode' | 'nav' | 'action' | 'conversation';
+  category: 'mode' | 'nav' | 'action' | 'conversation' | 'contact';
   keywords?: string[];
 }
 
@@ -53,11 +53,33 @@ const QUICK_ACTIONS: Array<{ icon: string; label: string; mode: HenryOperatingMo
   { icon: '💡', label: 'Think through a decision', mode: 'companion', prompt: 'I need to think through a decision. Let me walk you through it.' },
 ];
 
+interface StoredContact {
+  id: string;
+  name: string;
+  role?: string;
+  company?: string;
+}
+
+function loadContactsFromStorage(): StoredContact[] {
+  try {
+    const raw = localStorage.getItem('henry_contacts');
+    if (!raw) return [];
+    return JSON.parse(raw) as StoredContact[];
+  } catch {
+    return [];
+  }
+}
+
 export default function CommandPalette({ open, onClose, onSetMode, onNewChat, onInjectPrompt }: Props) {
   const [query, setQuery] = useState('');
   const [selectedIdx, setSelectedIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [allContacts, setAllContacts] = useState<StoredContact[]>([]);
   const { conversations, setActiveConversation, setMessages, setCurrentView } = useStore();
+
+  useEffect(() => {
+    if (open) setAllContacts(loadContactsFromStorage());
+  }, [open]);
 
   useEffect(() => {
     if (open) {
@@ -67,7 +89,7 @@ export default function CommandPalette({ open, onClose, onSetMode, onNewChat, on
     }
   }, [open]);
 
-  const buildItems = useCallback((): PaletteItem[] => {
+  const buildItems = useCallback((q: string): PaletteItem[] => {
     const items: PaletteItem[] = [];
 
     // New chat
@@ -127,6 +149,32 @@ export default function CommandPalette({ open, onClose, onSetMode, onNewChat, on
       });
     }
 
+    // Contacts (only when there's a query so they don't flood the default view)
+    if (q.trim()) {
+      const qLow = q.toLowerCase();
+      for (const contact of allContacts) {
+        const matches =
+          contact.name.toLowerCase().includes(qLow) ||
+          (contact.role ?? '').toLowerCase().includes(qLow) ||
+          (contact.company ?? '').toLowerCase().includes(qLow);
+        if (matches) {
+          items.push({
+            id: `contact-${contact.id}`,
+            icon: '👤',
+            label: contact.name,
+            sublabel: [contact.role, contact.company].filter(Boolean).join(' · ') || 'Contact',
+            category: 'contact',
+            keywords: [contact.name.toLowerCase(), (contact.role ?? '').toLowerCase(), (contact.company ?? '').toLowerCase()],
+            action: () => {
+              setCurrentView('contacts');
+              window.dispatchEvent(new CustomEvent('henry_contact_select', { detail: { id: contact.id } }));
+              onClose();
+            },
+          });
+        }
+      }
+    }
+
     // Recent conversations
     for (const convo of conversations.slice(0, 5)) {
       items.push({
@@ -149,9 +197,9 @@ export default function CommandPalette({ open, onClose, onSetMode, onNewChat, on
     }
 
     return items;
-  }, [conversations, onNewChat, onClose, onSetMode, onInjectPrompt, setActiveConversation, setMessages, setCurrentView]);
+  }, [conversations, allContacts, onNewChat, onClose, onSetMode, onInjectPrompt, setActiveConversation, setMessages, setCurrentView]);
 
-  const allItems = buildItems();
+  const allItems = buildItems(query);
 
   const filtered = query.trim()
     ? allItems.filter((item) => {
@@ -189,6 +237,7 @@ export default function CommandPalette({ open, onClose, onSetMode, onNewChat, on
     action: 'Actions',
     mode: 'Switch Mode',
     nav: 'Navigate',
+    contact: 'Contacts',
     conversation: 'Recent Chats',
   };
 

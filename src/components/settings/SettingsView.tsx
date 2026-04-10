@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useStore } from '../../store';
 import {
   PROVIDERS,
@@ -54,6 +54,15 @@ function ProvidersTab() {
   const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
   const [ollamaUrl, setOllamaUrl] = useState(settings.ollama_base_url || 'http://localhost:11434');
   const [saving, setSaving] = useState<string | null>(null);
+  const [ollamaModels, setOllamaModels] = useState<string[]>([]);
+  const [modelsLoading, setModelsLoading] = useState(false);
+  const [modelsError, setModelsError] = useState('');
+  const [pullName, setPullName] = useState('');
+  const [pulling, setPulling] = useState(false);
+  const [pullProgress, setPullProgress] = useState<{ downloaded: number; total: number; message: string } | null>(null);
+  const [pullError, setPullError] = useState('');
+  const [deletingModel, setDeletingModel] = useState<string | null>(null);
+  const pullUnsubRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     const keys: Record<string, string> = {};
@@ -93,6 +102,61 @@ function ProvidersTab() {
       console.error('Failed to save provider:', err);
     } finally {
       setSaving(null);
+    }
+  }
+
+  async function loadOllamaModels(url?: string) {
+    setModelsLoading(true);
+    setModelsError('');
+    try {
+      const result = await window.henryAPI.ollamaModels(url || ollamaUrl);
+      if (result.error) { setModelsError(result.error); setOllamaModels([]); }
+      else setOllamaModels(result.models.map((m) => m.name));
+    } catch (err: any) {
+      setModelsError(err?.message || 'Could not reach Ollama');
+      setOllamaModels([]);
+    } finally {
+      setModelsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadOllamaModels();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function pullModel() {
+    const name = pullName.trim();
+    if (!name || pulling) return;
+    setPulling(true);
+    setPullError('');
+    setPullProgress(null);
+    pullUnsubRef.current?.();
+    pullUnsubRef.current = window.henryAPI.onOllamaPullProgress((data: any) => {
+      setPullProgress({ downloaded: data.completed ?? data.downloaded ?? 0, total: data.total ?? 0, message: data.status ?? data.message ?? '' });
+    });
+    try {
+      const result = await window.henryAPI.ollamaPull(name, ollamaUrl);
+      if (!result.success) setPullError(result.error || 'Pull failed');
+      else { setPullName(''); setPullProgress(null); await loadOllamaModels(); }
+    } catch (err: any) {
+      setPullError(err?.message || 'Pull failed');
+    } finally {
+      pullUnsubRef.current?.();
+      pullUnsubRef.current = null;
+      setPulling(false);
+    }
+  }
+
+  async function deleteModel(modelName: string) {
+    setDeletingModel(modelName);
+    try {
+      await window.henryAPI.ollamaDelete(modelName, ollamaUrl);
+      await loadOllamaModels();
+    } catch (err) {
+      console.error('Delete model failed:', err);
+    } finally {
+      setDeletingModel(null);
     }
   }
 
@@ -178,6 +242,78 @@ function ProvidersTab() {
                       {saving === 'ollama' ? 'Saving...' : 'Save'}
                     </button>
                   </div>
+                </div>
+
+                {/* ── Installed models ── */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-medium text-henry-text-dim">Installed models</label>
+                    <button
+                      onClick={() => loadOllamaModels()}
+                      disabled={modelsLoading}
+                      className="text-[10px] text-henry-text-muted hover:text-henry-text transition-colors"
+                    >
+                      {modelsLoading ? 'Loading…' : '↻ Refresh'}
+                    </button>
+                  </div>
+                  {modelsError && (
+                    <p className="text-xs text-henry-error mb-2">{modelsError}</p>
+                  )}
+                  {ollamaModels.length === 0 && !modelsLoading && !modelsError && (
+                    <p className="text-xs text-henry-text-muted italic">No models found — pull one below.</p>
+                  )}
+                  <div className="space-y-1">
+                    {ollamaModels.map((m) => (
+                      <div key={m} className="flex items-center justify-between bg-henry-bg/60 rounded-lg px-3 py-2">
+                        <span className="text-xs text-henry-text font-mono">{m}</span>
+                        <button
+                          onClick={() => deleteModel(m)}
+                          disabled={deletingModel === m}
+                          className="text-henry-text-muted hover:text-henry-error transition-colors text-[11px]"
+                          title="Remove model"
+                        >
+                          {deletingModel === m ? '…' : '✕'}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* ── Pull new model ── */}
+                <div>
+                  <label className="block text-xs font-medium text-henry-text-dim mb-1.5">Pull a model</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={pullName}
+                      onChange={(e) => setPullName(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') pullModel(); }}
+                      placeholder="e.g. llama3, mistral, phi3"
+                      disabled={pulling}
+                      className="flex-1 bg-henry-bg border border-henry-border rounded-lg px-3 py-2 text-sm text-henry-text font-mono outline-none focus:border-henry-accent/50 disabled:opacity-50"
+                    />
+                    <button
+                      onClick={pullModel}
+                      disabled={pulling || !pullName.trim()}
+                      className="px-4 py-2 bg-henry-accent/10 text-henry-accent rounded-lg text-xs font-medium hover:bg-henry-accent/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {pulling ? 'Pulling…' : 'Pull'}
+                    </button>
+                  </div>
+                  {pullProgress && (
+                    <div className="mt-2 space-y-1">
+                      <p className="text-[11px] text-henry-text-dim truncate">{pullProgress.message}</p>
+                      {pullProgress.total > 0 && (
+                        <div className="h-1 bg-henry-bg rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-henry-accent transition-all duration-300"
+                            style={{ width: `${Math.round((pullProgress.downloaded / pullProgress.total) * 100)}%` }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {pullError && <p className="text-xs text-henry-error mt-1">{pullError}</p>}
                 </div>
               </div>
             ) : (

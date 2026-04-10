@@ -84,6 +84,8 @@ export default function ProviderStep({ onNext, onBack }: ProviderStepProps) {
 
   // Electron mode: ollamaIsInstalled IPC is only present in the real desktop build
   const isElectron = typeof window.henryAPI.ollamaIsInstalled === 'function';
+  // Set to true if the user hits "Set up manually" after an Electron auto-setup failure
+  const [forceWebMode, setForceWebMode] = useState(false);
 
   async function runDetection(url: string) {
     if (probeRunning.current) return;
@@ -228,7 +230,7 @@ export default function ProviderStep({ onNext, onBack }: ProviderStepProps) {
       {/* Mode cards */}
       <div className="grid grid-cols-2 gap-4 mb-6">
         <button
-          onClick={() => setMode('ollama')}
+          onClick={() => { setMode('ollama'); setForceWebMode(false); }}
           className={`rounded-2xl border-2 p-6 text-left transition-all ${
             mode === 'ollama'
               ? 'border-henry-success bg-henry-success/5'
@@ -263,7 +265,7 @@ export default function ProviderStep({ onNext, onBack }: ProviderStepProps) {
       </div>
 
       {/* ── OLLAMA ONBOARDING ── */}
-      {mode === 'ollama' && isElectron && (
+      {mode === 'ollama' && isElectron && !forceWebMode && (
         <div className="mb-5 animate-fade-in">
           {saving ? (
             <div className="flex items-center justify-center gap-3 py-8 text-henry-text-dim text-sm">
@@ -273,13 +275,13 @@ export default function ProviderStep({ onNext, onBack }: ProviderStepProps) {
           ) : (
             <OllamaElectronSetup
               onModelReady={handleElectronModelReady}
-              onFallback={() => { /* switch to web mode detection */ }}
+              onFallback={() => setForceWebMode(true)}
             />
           )}
         </div>
       )}
 
-      {mode === 'ollama' && !isElectron && (
+      {mode === 'ollama' && (!isElectron || forceWebMode) && (
         <div className="bg-henry-surface/40 border border-henry-border/30 rounded-2xl p-5 mb-5 animate-fade-in space-y-4">
 
           {/* Detecting */}

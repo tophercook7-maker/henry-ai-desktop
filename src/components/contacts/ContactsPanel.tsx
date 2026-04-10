@@ -78,6 +78,16 @@ export default function ContactsPanel() {
     setContacts(loadContacts());
   }, []);
 
+  useEffect(() => {
+    function handleContactSelect(e: Event) {
+      const { id } = (e as CustomEvent<{ id: string }>).detail;
+      setExpandedId(id);
+      setSearch('');
+    }
+    window.addEventListener('henry_contact_select', handleContactSelect);
+    return () => window.removeEventListener('henry_contact_select', handleContactSelect);
+  }, []);
+
   function filtered() {
     if (!search.trim()) return contacts;
     const q = search.toLowerCase();
