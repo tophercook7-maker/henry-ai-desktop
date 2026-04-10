@@ -21,7 +21,7 @@ export default function WelcomeStep({ onNext }: WelcomeStepProps) {
             think, write, study scripture, work through code, and design things.
           </p>
           <p className="text-henry-text-dim leading-relaxed">
-            I just need to know how you want me to think. Takes about 90 seconds.
+            I just need to know how you want me to think. One choice — done.
           </p>
         </div>
         <div className="flex justify-start ml-7 mt-1">

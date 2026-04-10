@@ -124,7 +124,7 @@ export default function ProviderStep({ onNext, onBack }: ProviderStepProps) {
     mode === 'ollama'
       ? selectedModel.trim().length > 0
       : mode === 'cloud'
-      ? apiKey.trim().length > 0
+      ? true          // key is optional — user can add it in Settings later
       : false;
 
   async function handleElectronModelReady(model: string) {
@@ -496,16 +496,17 @@ export default function ProviderStep({ onNext, onBack }: ProviderStepProps) {
             ))}
           </div>
           <div>
-            <label className="block text-xs font-medium text-henry-text-dim mb-2">
-              {CLOUD_OPTIONS.find((c) => c.id === cloudProvider)?.label} API Key
-            </label>
+            <div className="flex items-baseline justify-between mb-2">
+              <label className="text-xs font-medium text-henry-text-dim">
+                API Key <span className="text-henry-text-muted font-normal">(optional — you can add it in Settings later)</span>
+              </label>
+            </div>
             <input
               type="password"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
-              placeholder={CLOUD_OPTIONS.find((c) => c.id === cloudProvider)?.placeholder}
+              placeholder={`Paste key or skip for now…`}
               className="w-full bg-henry-bg border border-henry-border rounded-xl px-4 py-3 text-sm text-henry-text outline-none focus:border-henry-accent/50"
-              autoFocus
             />
             <a
               href={KEY_URLS[cloudProvider]}
@@ -545,8 +546,8 @@ export default function ProviderStep({ onNext, onBack }: ProviderStepProps) {
             {!canContinue && mode === 'ollama' && ollamaPhase === 'found' && (
               <span className="text-xs text-henry-text-muted">Pick a model above</span>
             )}
-            {!canContinue && mode === 'cloud' && (
-              <span className="text-xs text-henry-text-muted">Enter your API key</span>
+            {mode === 'cloud' && !apiKey.trim() && (
+              <span className="text-xs text-henry-text-muted">Add your API key in Settings later</span>
             )}
             <button
               onClick={handleNext}
