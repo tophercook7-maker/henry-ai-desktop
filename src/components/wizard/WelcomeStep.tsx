@@ -44,24 +44,22 @@ export default function WelcomeStep({ onNext }: WelcomeStepProps) {
       </div>
 
       <button
-        onClick={onNext}
-        onTouchEnd={(e) => { e.preventDefault(); onNext(); }}
+        onClick={handleSkip}
+        onTouchEnd={(e) => { e.preventDefault(); void handleSkip(); }}
         className="px-10 py-4 bg-henry-accent text-white rounded-2xl font-semibold text-lg hover:bg-henry-accent-hover transition-all shadow-lg shadow-henry-accent/20 touch-manipulation select-none"
       >
         Let's do this →
       </button>
 
-      <div className="flex items-center gap-4 mt-4">
-        <p className="text-xs text-henry-text-muted">No account needed · Works offline with Ollama</p>
-        <span className="text-henry-border/50">·</span>
-        <button
-          onClick={handleSkip}
-          onTouchEnd={(e) => { e.preventDefault(); void handleSkip(); }}
-          className="text-xs text-henry-text-muted hover:text-henry-accent transition-colors underline underline-offset-4 touch-manipulation"
-        >
-          Already set up? Skip →
-        </button>
-      </div>
+      <p className="text-xs text-henry-text-muted mt-4">No account needed · Works offline with Ollama</p>
+
+      <button
+        onClick={onNext}
+        onTouchEnd={(e) => { e.preventDefault(); onNext(); }}
+        className="mt-3 text-xs text-henry-text-muted hover:text-henry-text transition-colors underline underline-offset-4 touch-manipulation"
+      >
+        Set up AI provider first →
+      </button>
     </div>
   );
 }

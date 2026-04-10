@@ -79,7 +79,27 @@ export default function App() {
         useStore.getState().updateSetting(key, value);
       });
 
-      if (settingsMap.setup_complete === 'true') {
+      // Check setup_complete from API result OR directly from localStorage as fallback
+      const lsSettings = (() => {
+        try { return JSON.parse(localStorage.getItem('henry:settings') || '{}'); } catch { return {}; }
+      })();
+
+      const isComplete =
+        settingsMap.setup_complete === 'true' ||
+        lsSettings.setup_complete === 'true';
+
+      // Also auto-enter if providers are already saved (returning user whose flag got cleared)
+      const lsProviders: HenryProviderRecord[] = (() => {
+        try { return JSON.parse(localStorage.getItem('henry:providers') || '[]'); } catch { return []; }
+      })();
+      const hasProviders = lsProviders.length > 0;
+
+      if (isComplete || hasProviders) {
+        // Mark complete if only providers existed without the flag
+        if (!isComplete && hasProviders) {
+          await window.henryAPI.saveSetting('setup_complete', 'true');
+        }
+
         setSetupComplete(true);
 
         const [convos, providers] = await Promise.all([
