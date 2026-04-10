@@ -941,6 +941,11 @@ const henryAPI: Window['henryAPI'] = {
   onTaskResult: (cb) => on('task:result', cb),
   onEngineStatus: (cb) => on('engine:status', cb),
   onWorkerMessage: (cb) => on('worker:message', cb),
+
+  checkForUpdates: async () => null,
+  installUpdate: async () => {},
+  onUpdateAvailable: () => () => {},
+  onUpdateDownloaded: () => () => {},
 };
 
 window.henryAPI = henryAPI;

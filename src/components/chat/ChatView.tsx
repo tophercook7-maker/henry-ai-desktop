@@ -914,6 +914,41 @@ export default function ChatView() {
     await handleCompanionStream(enrichedContent, convId, detectedMode);
   }
 
+  async function autoNameConversation(
+    convId: string,
+    userMessage: string,
+    assistantReply: string,
+    providerName: string,
+    model: string,
+    apiKey: string
+  ): Promise<void> {
+    try {
+      const prompt = `Here is the start of a conversation. Create a concise 4-6 word title for it.\nUser: ${userMessage.slice(0, 300)}\nAssistant: ${assistantReply.slice(0, 300)}`;
+      const titleStream = window.henryAPI.streamMessage({
+        provider: providerName,
+        model,
+        apiKey,
+        messages: [
+          { role: 'system', content: 'You name conversations with a crisp 4-6 word title. Output ONLY the title text, no quotes, no trailing punctuation.' },
+          { role: 'user', content: prompt },
+        ],
+        temperature: 0.3,
+      });
+      titleStream.onChunk(() => { /* collect silently */ });
+      titleStream.onDone(async (rawTitle: string) => {
+        const clean = rawTitle.trim().replace(/^["'`]+|["'`]+$/g, '').replace(/[.!?]+$/, '').slice(0, 60);
+        if (clean.length >= 4) {
+          try {
+            await window.henryAPI.updateConversation(convId, clean);
+            const convos = await window.henryAPI.getConversations();
+            useStore.getState().setConversations(convos);
+          } catch { /* silent */ }
+        }
+      });
+      titleStream.onError(() => { /* silent */ });
+    } catch { /* silent */ }
+  }
+
   async function handleCompanionStream(content: string, convId: string, modeOverride?: HenryOperatingMode) {
     const effectiveMode = modeOverride ?? operatingMode;
     setIsStreaming(true);
@@ -1169,6 +1204,15 @@ export default function ChatView() {
         } catch {
           // Fact extraction is optional
         }
+
+        // Auto-name conversation after the first complete exchange
+        try {
+          const allConvMsgs = useStore.getState().messages.filter((m) => m.conversation_id === convId);
+          const userCount = allConvMsgs.filter((m) => m.role === 'user').length;
+          if (userCount === 1) {
+            void autoNameConversation(convId, content, fullText, companionProvider, companionModel, apiKey);
+          }
+        } catch { /* optional */ }
 
         // Auto-delegate to Worker Brain if the task is heavy and Worker is configured
         const heavyTaskType = detectTaskType(content);

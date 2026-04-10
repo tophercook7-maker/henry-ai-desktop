@@ -17,12 +17,14 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
     "smoke": "npm run typecheck && vite build",
     "rebuild": "npx @electron/rebuild",
+    "build:mac:unsigned": "tsc && vite build && electron-builder --mac --config.mac.identity=null",
     "push": "git push \"https://${GITHUB_PERSONAL_ACCESS_TOKEN}@github.com/tophercook7-maker/henry-ai-desktop.git\" main"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.27.0",
     "@google/generative-ai": "^0.17.0",
     "better-sqlite3": "^11.1.2",
+    "electron-updater": "^6.3.9",
     "highlight.js": "^11.10.0",
     "lucide-react": "^0.436.0",
     "openai": "^4.56.0",
@@ -53,6 +55,7 @@
   "build": {
     "appId": "com.henryai.desktop",
     "productName": "Henry AI",
+    "icon": "resources/icon.png",
     "directories": {
       "output": "release"
     },
@@ -60,26 +63,39 @@
       "dist/**/*",
       "dist-electron/**/*"
     ],
+    "publish": {
+      "provider": "github",
+      "owner": "tophercook7-maker",
+      "repo": "henry-ai-desktop"
+    },
     "mac": {
       "target": [
         "dmg",
         "zip"
       ],
-      "icon": "resources/icon.icns",
-      "category": "public.app-category.productivity"
+      "category": "public.app-category.productivity",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "resources/entitlements.mac.plist",
+      "entitlementsInherit": "resources/entitlements.mac.plist"
+    },
+    "dmg": {
+      "title": "Henry AI",
+      "contents": [
+        { "x": 130, "y": 220 },
+        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+      ]
     },
     "win": {
       "target": [
         "nsis"
-      ],
-      "icon": "resources/icon.ico"
+      ]
     },
     "linux": {
       "target": [
         "AppImage",
         "deb"
       ],
-      "icon": "resources/icon.png",
       "category": "Utility"
     },
     "nsis": {

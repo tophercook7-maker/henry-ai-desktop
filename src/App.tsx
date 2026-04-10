@@ -13,6 +13,7 @@ If you want to explore what I can do first, try saying something like "show me w
 
 export default function App() {
   const [loading, setLoading] = useState(true);
+  const [updateState, setUpdateState] = useState<'none' | 'available' | 'downloaded'>('none');
   const firstContactDone = useRef(false);
   const {
     setupComplete,
@@ -186,10 +187,19 @@ export default function App() {
       });
     });
 
+    const unsubUpdateAvailable = window.henryAPI.onUpdateAvailable(() => {
+      setUpdateState('available');
+    });
+    const unsubUpdateDownloaded = window.henryAPI.onUpdateDownloaded(() => {
+      setUpdateState('downloaded');
+    });
+
     return () => {
       unsubEngine();
       unsubTask();
       unsubResult();
+      unsubUpdateAvailable();
+      unsubUpdateDownloaded();
     };
   }
 
@@ -214,5 +224,36 @@ export default function App() {
     return <SetupWizard />;
   }
 
-  return <Layout />;
+  return (
+    <div className="h-screen w-screen flex flex-col overflow-hidden">
+      {updateState !== 'none' && (
+        <div className="shrink-0 flex items-center justify-between px-4 py-2 bg-henry-accent/15 border-b border-henry-accent/25 text-sm text-henry-text">
+          <span>
+            {updateState === 'downloaded'
+              ? '✅ Henry update ready — restart to apply'
+              : '⬇️ A Henry update is downloading in the background'}
+          </span>
+          <div className="flex items-center gap-3">
+            {updateState === 'downloaded' && (
+              <button
+                onClick={() => void window.henryAPI.installUpdate()}
+                className="text-xs px-3 py-1 rounded-lg bg-henry-accent text-white hover:bg-henry-accent/80 transition-colors font-medium"
+              >
+                Restart &amp; update
+              </button>
+            )}
+            <button
+              onClick={() => setUpdateState('none')}
+              className="text-henry-text-muted hover:text-henry-text transition-colors"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+      <div className="flex-1 min-h-0">
+        <Layout />
+      </div>
+    </div>
+  );
 }

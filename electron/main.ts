@@ -1,5 +1,6 @@
-import { app, BrowserWindow, shell } from 'electron';
+import { app, BrowserWindow, shell, ipcMain } from 'electron';
 import path from 'path';
+import { autoUpdater } from 'electron-updater';
 import { initDatabase } from './ipc/database';
 import { registerSettingsHandlers } from './ipc/settings';
 import { registerAIHandlers } from './ipc/ai';
@@ -78,6 +79,32 @@ app.whenReady().then(() => {
   registerTerminalHandlers(getMainWindow, henryDir);
   registerComputerHandlers(getMainWindow);
   registerPrinterHandlers(getMainWindow);
+
+  // ── Auto-updater ────────────────────────────────────────────────────────────
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on('update-available', () => {
+    getMainWindow()?.webContents.send('updater:update-available');
+  });
+  autoUpdater.on('update-downloaded', () => {
+    getMainWindow()?.webContents.send('updater:update-downloaded');
+  });
+  autoUpdater.on('error', (err: Error) => {
+    console.error('[AutoUpdater] Error:', err.message);
+  });
+
+  ipcMain.handle('updater:check', () => {
+    return autoUpdater.checkForUpdates().catch(() => null);
+  });
+  ipcMain.handle('updater:install', () => {
+    autoUpdater.quitAndInstall(false, true);
+  });
+
+  // Check silently after 10 s so first launch isn't slowed down
+  setTimeout(() => {
+    autoUpdater.checkForUpdates().catch(() => null);
+  }, 10_000);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

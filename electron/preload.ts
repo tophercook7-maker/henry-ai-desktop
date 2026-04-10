@@ -209,4 +209,18 @@ contextBridge.exposeInMainWorld('henryAPI', {
     ipcRenderer.on('worker:message', handler);
     return () => ipcRenderer.removeListener('worker:message', handler);
   },
+
+  // ── Auto-updater ──────────────────────────────────────────
+  checkForUpdates: () => ipcRenderer.invoke('updater:check'),
+  installUpdate: () => ipcRenderer.invoke('updater:install'),
+  onUpdateAvailable: (cb: () => void) => {
+    const handler = () => cb();
+    ipcRenderer.on('updater:update-available', handler);
+    return () => ipcRenderer.removeListener('updater:update-available', handler);
+  },
+  onUpdateDownloaded: (cb: () => void) => {
+    const handler = () => cb();
+    ipcRenderer.on('updater:update-downloaded', handler);
+    return () => ipcRenderer.removeListener('updater:update-downloaded', handler);
+  },
 });

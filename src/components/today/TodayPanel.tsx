@@ -49,6 +49,8 @@ export default function TodayPanel() {
   const [briefingExpanded, setBriefingExpanded] = useState(true);
   const [dueMacros, setDueMacros] = useState<ReturnType<typeof getDueMacros>>([]);
   const [activeProjects, setActiveProjects] = useState<HenryProject[]>([]);
+  const [quickAsk, setQuickAsk] = useState('');
+  const quickAskRef = useRef<HTMLInputElement>(null);
   const greeting = getGreeting();
   const briefingStreamRef = useRef<any>(null);
 
@@ -156,13 +158,45 @@ export default function TodayPanel() {
   return (
     <div className="h-full flex flex-col bg-henry-bg overflow-hidden">
       {/* Hero greeting */}
-      <div className="shrink-0 px-8 pt-10 pb-6">
+      <div className="shrink-0 px-8 pt-10 pb-4">
         <div className="max-w-3xl">
           <p className="text-xs text-henry-text-muted mb-1 font-medium tracking-wide uppercase">
             {getTodayLabel()}
           </p>
           <h1 className="text-2xl font-semibold text-henry-text mb-1">{greeting.line1}</h1>
-          <p className="text-henry-text-dim text-base">{greeting.line2}</p>
+          <p className="text-henry-text-dim text-base mb-5">{greeting.line2}</p>
+
+          {/* Quick-ask input */}
+          <div className="relative">
+            <input
+              ref={quickAskRef}
+              type="text"
+              value={quickAsk}
+              onChange={(e) => setQuickAsk(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && quickAsk.trim()) {
+                  launchMode('companion', quickAsk.trim());
+                  setQuickAsk('');
+                }
+              }}
+              placeholder="Ask Henry anything…"
+              className="w-full bg-henry-surface/60 border border-henry-border/40 rounded-xl px-4 py-3.5 pr-12 text-sm text-henry-text placeholder-henry-text-muted outline-none focus:border-henry-accent/60 focus:bg-henry-surface/80 focus:shadow-[0_0_0_3px_rgba(107,92,246,0.12)] transition-all"
+            />
+            <button
+              onClick={() => {
+                if (quickAsk.trim()) {
+                  launchMode('companion', quickAsk.trim());
+                  setQuickAsk('');
+                }
+              }}
+              className="absolute right-3 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center rounded-lg bg-henry-accent/20 text-henry-accent hover:bg-henry-accent/35 transition-colors disabled:opacity-30"
+              disabled={!quickAsk.trim()}
+            >
+              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <path d="M5 12h14M12 5l7 7-7 7" />
+              </svg>
+            </button>
+          </div>
         </div>
       </div>
 

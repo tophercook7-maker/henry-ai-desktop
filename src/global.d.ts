@@ -282,6 +282,11 @@ declare global {
     onTaskResult: (cb: (data: HenryTaskResultPayload) => void) => () => void;
     onEngineStatus: (cb: (data: HenryEngineStatusPayload) => void) => () => void;
     onWorkerMessage: (cb: (data: Message) => void) => () => void;
+
+    checkForUpdates: () => Promise<unknown>;
+    installUpdate: () => Promise<void>;
+    onUpdateAvailable: (cb: () => void) => () => void;
+    onUpdateDownloaded: (cb: () => void) => () => void;
   }
 
   interface Window {

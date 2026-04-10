@@ -1,7 +1,8 @@
+import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
+import hljs from 'highlight.js';
 import type { Message } from '../../types';
 
-/** Save markdown to workspace (Writer mode, Design3D mode, etc.) */
 export interface WorkspaceSaveDraftProps {
   enabled: boolean;
   workspaceReady: boolean;
@@ -15,11 +16,107 @@ interface MessageBubbleProps {
   isStreaming?: boolean;
   streamingContent?: string;
   workspaceSaveDraft?: WorkspaceSaveDraftProps;
-  /** Follow-up Worker task from this assistant reply (chat → queue bridge). */
   createTask?: {
     onClick: () => void;
     disabled?: boolean;
   };
+}
+
+function CodeBlock({ language, code }: { language: string; code: string }) {
+  const [copied, setCopied] = useState(false);
+
+  function copy() {
+    navigator.clipboard.writeText(code).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }).catch(() => {});
+  }
+
+  let highlighted = '';
+  try {
+    highlighted = language
+      ? hljs.highlight(code, { language, ignoreIllegals: true }).value
+      : hljs.highlightAuto(code).value;
+  } catch {
+    highlighted = code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  return (
+    <div className="relative my-3 rounded-xl overflow-hidden border border-henry-border/40 bg-henry-bg">
+      <div className="flex items-center justify-between px-4 py-2 bg-henry-surface/50 border-b border-henry-border/30">
+        <span className="text-[10px] font-medium text-henry-text-muted uppercase tracking-wide font-mono">
+          {language || 'code'}
+        </span>
+        <button
+          onClick={copy}
+          className="text-[10px] text-henry-text-muted hover:text-henry-text transition-colors flex items-center gap-1"
+        >
+          {copied ? (
+            <>
+              <svg className="w-3 h-3 text-henry-success" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <path d="M20 6L9 17l-5-5" />
+              </svg>
+              <span className="text-henry-success">Copied</span>
+            </>
+          ) : (
+            <>
+              <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+              </svg>
+              Copy
+            </>
+          )}
+        </button>
+      </div>
+      <pre className="overflow-x-auto p-4">
+        <code
+          className="text-xs font-mono leading-relaxed"
+          dangerouslySetInnerHTML={{ __html: highlighted }}
+        />
+      </pre>
+    </div>
+  );
+}
+
+const markdownComponents: React.ComponentProps<typeof ReactMarkdown>['components'] = {
+  code(props) {
+    const { children, className } = props as { children?: React.ReactNode; className?: string };
+    const raw = String(children ?? '').replace(/\n$/, '');
+    const langMatch = /^language-(\w+)/.exec(className || '');
+    const isBlock = langMatch || raw.includes('\n');
+    if (!isBlock) {
+      return (
+        <code className="bg-henry-bg/70 border border-henry-border/30 px-1.5 py-0.5 rounded text-[0.8em] font-mono text-henry-accent/90">
+          {raw}
+        </code>
+      );
+    }
+    return <CodeBlock language={langMatch?.[1] || ''} code={raw} />;
+  },
+  pre(props) {
+    return <>{props.children}</>;
+  },
+  a(props) {
+    return (
+      <a
+        href={props.href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-henry-accent hover:underline"
+      >
+        {props.children}
+      </a>
+    );
+  },
+};
+
+function formatTime(iso: string): string {
+  try {
+    return new Date(iso).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+  } catch {
+    return '';
+  }
 }
 
 export default function MessageBubble({
@@ -29,75 +126,65 @@ export default function MessageBubble({
   workspaceSaveDraft,
   createTask,
 }: MessageBubbleProps) {
+  const [copied, setCopied] = useState(false);
+  const [hovered, setHovered] = useState(false);
+
   const isUser = message.role === 'user';
-  // Support both the explicit prop and the message flag
   const isStreaming = isStreamingProp || message.isStreaming;
   const content = isStreaming
     ? (streamingContent || message.content || '')
     : message.content;
 
+  function copyMessage() {
+    navigator.clipboard.writeText(content).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }).catch(() => {});
+  }
+
   return (
     <div
-      className={`flex gap-3 py-4 animate-fade-in ${
-        isUser ? 'justify-end' : 'justify-start'
-      }`}
+      className={`flex gap-3 py-4 animate-fade-in ${isUser ? 'justify-end' : 'justify-start'}`}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
     >
-      {/* Avatar */}
       {!isUser && (
         <div className="shrink-0 w-8 h-8 rounded-lg bg-henry-accent/10 flex items-center justify-center text-sm">
           {message.engine === 'worker' ? '⚡' : '🧠'}
         </div>
       )}
 
-      {/* Message content */}
-      <div
-        className={`max-w-[80%] ${
-          isUser
-            ? 'bg-henry-accent/15 border border-henry-accent/20 rounded-2xl rounded-br-md px-4 py-3'
-            : 'bg-transparent'
-        }`}
-      >
-        {/* Engine badge */}
+      <div className={`max-w-[80%] ${isUser ? 'bg-henry-accent/15 border border-henry-accent/20 rounded-2xl rounded-br-md px-4 py-3' : 'bg-transparent'}`}>
+
         {!isUser && message.engine && (
           <div className="flex items-center gap-2 mb-1.5">
-            <span
-              className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
-                message.engine === 'companion'
-                  ? 'bg-henry-companion/10 text-henry-companion'
-                  : 'bg-henry-worker/10 text-henry-worker'
-              }`}
-            >
+            <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
+              message.engine === 'companion'
+                ? 'bg-henry-companion/10 text-henry-companion'
+                : 'bg-henry-worker/10 text-henry-worker'
+            }`}>
               {message.engine === 'companion' ? 'Local' : 'Cloud'}
             </span>
             {message.model && (
-              <span className="text-[10px] text-henry-text-muted">
-                {message.model}
-              </span>
+              <span className="text-[10px] text-henry-text-muted">{message.model}</span>
             )}
           </div>
         )}
 
-        {/* Content */}
-        <div
-          className={`text-sm leading-relaxed ${
-            isUser ? 'text-henry-text' : 'markdown-content text-henry-text'
-          }`}
-        >
+        <div className={`text-sm leading-relaxed ${isUser ? 'text-henry-text' : 'markdown-content text-henry-text'}`}>
           {isUser ? (
             <p className="whitespace-pre-wrap">{content}</p>
           ) : content ? (
-            <ReactMarkdown>{content}</ReactMarkdown>
+            <ReactMarkdown components={markdownComponents}>{content}</ReactMarkdown>
           ) : isStreaming ? (
             <p className="text-henry-text-muted text-sm italic">Thinking…</p>
           ) : null}
 
-          {/* Streaming indicator */}
           {isStreaming && (
-            <span className="inline-block w-2 h-4 bg-henry-accent/60 animate-pulse ml-0.5" />
+            <span className="inline-block w-2 h-4 bg-henry-accent/60 animate-pulse ml-0.5 align-middle" />
           )}
         </div>
 
-        {/* Cost info */}
         {!isUser && !isStreaming && message.cost && message.cost > 0 && (
           <div className="mt-2 flex items-center gap-3 text-[10px] text-henry-text-muted">
             <span>{message.tokens_used?.toLocaleString()} tokens</span>
@@ -105,20 +192,14 @@ export default function MessageBubble({
           </div>
         )}
 
-        {!isUser &&
-          !isStreaming &&
-          (message.content || '').trim().length > 0 &&
-          ((workspaceSaveDraft?.enabled || createTask) && (
+        {!isUser && !isStreaming && (message.content || '').trim().length > 0 && (
+          (workspaceSaveDraft?.enabled || createTask) && (
             <div className="mt-2 flex flex-wrap gap-2">
               {workspaceSaveDraft?.enabled && (
                 <button
                   type="button"
                   disabled={workspaceSaveDraft.busy || !workspaceSaveDraft.workspaceReady}
-                  title={
-                    !workspaceSaveDraft.workspaceReady
-                      ? 'Set a workspace folder in Settings to save files'
-                      : 'Save this reply as markdown in the workspace'
-                  }
+                  title={!workspaceSaveDraft.workspaceReady ? 'Set a workspace folder in Settings to save files' : 'Save this reply as markdown in the workspace'}
                   onClick={() => void workspaceSaveDraft.onSave()}
                   className="text-xs font-medium px-2.5 py-1 rounded-lg border border-henry-border/50 bg-henry-surface/30 text-henry-text hover:border-henry-accent/40 hover:bg-henry-surface/50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
@@ -137,10 +218,43 @@ export default function MessageBubble({
                 </button>
               )}
             </div>
-          ))}
+          )
+        )}
+
+        {/* Hover actions row: copy + timestamp */}
+        {!isStreaming && (message.content || '').trim().length > 0 && (
+          <div className={`flex items-center gap-3 mt-1.5 transition-opacity duration-150 ${hovered ? 'opacity-100' : 'opacity-0'}`}>
+            <button
+              onClick={copyMessage}
+              title="Copy to clipboard"
+              className="flex items-center gap-1 text-[10px] text-henry-text-muted hover:text-henry-text transition-colors"
+            >
+              {copied ? (
+                <>
+                  <svg className="w-3 h-3 text-henry-success" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <path d="M20 6L9 17l-5-5" />
+                  </svg>
+                  <span className="text-henry-success">Copied</span>
+                </>
+              ) : (
+                <>
+                  <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+                  </svg>
+                  Copy
+                </>
+              )}
+            </button>
+            {message.created_at && (
+              <span className="text-[10px] text-henry-text-muted/60">
+                {formatTime(message.created_at)}
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* User avatar */}
       {isUser && (
         <div className="shrink-0 w-8 h-8 rounded-lg bg-henry-hover flex items-center justify-center text-sm">
           👤
