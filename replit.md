@@ -146,12 +146,41 @@ Run these on the target OS. All features work except Mac-specific automation (Ap
 
 **Web PWA on Windows/Linux** — opens in any browser, all cloud AI features work. Add to home screen (Chrome: three-dot menu → "Install Henry AI") for desktop app feel.
 
-### iOS/Android Native App (Future)
-Capacitor wraps the existing React app into a true App Store / Play Store app with zero rewrite. This unlocks:
-- Push notifications
-- Device calendar & contacts sync
-- Offline-first with local storage
-- App Store distribution
+### iOS/Android Native App (Capacitor — Ready to build)
+Capacitor wraps the existing React app into a true App Store / Play Store app with zero rewrite.
+
+**First-time native project setup (run on your Mac):**
+```bash
+npx cap add ios      # creates ios/ Xcode project
+npx cap add android  # creates android/ Android Studio project
+```
+
+**Every build thereafter:**
+```bash
+npm run cap:build    # builds web assets + syncs to native
+npm run cap:ios      # opens Xcode → Archive → App Store
+npm run cap:android  # opens Android Studio → Build → AAB
+```
+
+**Mobile proxy (required for AI calls on native):**
+iOS/Android apps don't have a local server, so AI API calls need a proxy:
+1. Deploy `proxy/worker.js` to Cloudflare Workers (free, ~2 min — see `proxy/README.md`)
+2. In Henry on mobile: Settings → AI Providers → Mobile Proxy URL → paste worker URL
+
+**Best free AI for mobile:**
+| Provider    | Free tier               | Setup |
+|-------------|------------------------|-------|
+| Groq        | Llama 3.3 70B, Mistral | groq.com → free API key |
+| Google Gemini | Gemini Flash          | aistudio.google.com → free key |
+| OpenRouter  | 50+ free models        | openrouter.ai → free key |
+| Ollama (Mac)| Unlimited, local       | Point mobile to Mac IP in settings |
+
+### Desktop CI/CD (GitHub Actions)
+Push a version tag and all three desktop builds run automatically:
+```bash
+git tag v1.0.0 && git push origin v1.0.0
+```
+GitHub Actions builds Mac DMG, Windows NSIS installer, and Linux AppImage + deb — artifacts attached to the GitHub Release automatically. See `.github/workflows/desktop-release.yml`.
 
 ## Web Adaptation
 

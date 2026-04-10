@@ -9,10 +9,12 @@ import type { IncomingMessage, ServerResponse } from 'http';
 // Manually proxies /proxy/{provider}/* → external API server-side.
 // This avoids browser CORS/mixed-content blocks and Vite proxy streaming issues.
 const routes: Record<string, string> = {
-  '/proxy/openai':     'api.openai.com',
-  '/proxy/anthropic':  'api.anthropic.com',
-  '/proxy/google':     'generativelanguage.googleapis.com',
-  '/proxy/ddg':        'api.duckduckgo.com',
+  '/proxy/openai':      'api.openai.com',
+  '/proxy/anthropic':   'api.anthropic.com',
+  '/proxy/google':      'generativelanguage.googleapis.com',
+  '/proxy/groq':        'api.groq.com',
+  '/proxy/openrouter':  'openrouter.ai',
+  '/proxy/ddg':         'api.duckduckgo.com',
 };
 
 function aiProxyPlugin(): Plugin {

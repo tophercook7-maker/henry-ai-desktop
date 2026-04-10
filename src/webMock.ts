@@ -31,6 +31,24 @@ function on<T>(event: string, cb: Listener<T>): () => void {
 
 const now = () => new Date().toISOString();
 
+// ── Mobile proxy support ───────────────────────────────────────────────────
+// On web/Electron: relative /proxy/* paths work (Vite dev server or IPC).
+// On Capacitor iOS/Android: there is no local server — must prefix with the
+// user-configured Cloudflare Worker URL stored in henry:mobile_proxy_url.
+function getProxyBase(): string {
+  try {
+    const cap = (window as any).Capacitor;
+    if (cap && typeof cap.isNativePlatform === 'function' && cap.isNativePlatform()) {
+      return (localStorage.getItem('henry:mobile_proxy_url') || '').replace(/\/$/, '');
+    }
+  } catch { /* ignore */ }
+  return '';
+}
+
+function proxyFetch(path: string, init?: RequestInit): Promise<Response> {
+  return fetch(`${getProxyBase()}${path}`, init);
+}
+
 // ── Worker Brain: actual AI execution in web mode ──────────────────────────
 // Runs in the background after submitTask; injects result back into the thread.
 async function runWorkerAI(params: {
@@ -84,9 +102,30 @@ async function runWorkerAI(params: {
     let resultText = '';
 
     if (workerProvider === 'openai') {
-      const res = await fetch('/proxy/openai/v1/chat/completions', {
+      const res = await proxyFetch('/proxy/openai/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({ model: workerModel, messages, temperature: 0.7, max_tokens: 4000 }),
+      });
+      const data = await res.json() as any;
+      resultText = data.choices?.[0]?.message?.content ?? '';
+    } else if (workerProvider === 'groq') {
+      const res = await proxyFetch('/proxy/groq/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({ model: workerModel, messages, temperature: 0.7, max_tokens: 4000 }),
+      });
+      const data = await res.json() as any;
+      resultText = data.choices?.[0]?.message?.content ?? '';
+    } else if (workerProvider === 'openrouter') {
+      const res = await proxyFetch('/proxy/openrouter/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+          'HTTP-Referer': 'https://henry.ai',
+          'X-Title': 'Henry AI',
+        },
         body: JSON.stringify({ model: workerModel, messages, temperature: 0.7, max_tokens: 4000 }),
       });
       const data = await res.json() as any;
@@ -96,7 +135,7 @@ async function runWorkerAI(params: {
       const convMsgs = messages
         .filter((m) => m.role !== 'system')
         .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
-      const res = await fetch('/proxy/anthropic/v1/messages', {
+      const res = await proxyFetch('/proxy/anthropic/v1/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
         body: JSON.stringify({ model: workerModel, max_tokens: 4000, system: sysMsg?.content ?? '', messages: convMsgs }),
@@ -107,7 +146,7 @@ async function runWorkerAI(params: {
       const convMsgs = messages
         .filter((m) => m.role !== 'system')
         .map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }));
-      const res = await fetch(
+      const res = await proxyFetch(
         `/proxy/google/v1beta/models/${workerModel}:generateContent?key=${apiKey}`,
         {
           method: 'POST',
@@ -231,7 +270,7 @@ const henryAPI: Window['henryAPI'] = {
     const { provider, model, apiKey, messages, temperature, maxTokens } = params;
 
     if (provider === 'openai') {
-      const res = await fetch('/proxy/openai/v1/chat/completions', {
+      const res = await proxyFetch('/proxy/openai/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
         body: JSON.stringify({ model, messages, temperature: temperature ?? 0.7, max_tokens: maxTokens }),
@@ -240,10 +279,35 @@ const henryAPI: Window['henryAPI'] = {
       return { content: data.choices[0].message.content, usage: data.usage };
     }
 
+    if (provider === 'groq') {
+      const res = await proxyFetch('/proxy/groq/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({ model, messages, temperature: temperature ?? 0.7, max_tokens: maxTokens }),
+      });
+      const data = await res.json() as { choices: Array<{ message: { content: string } }>; usage?: HenryAIUsage };
+      return { content: data.choices[0].message.content, usage: data.usage };
+    }
+
+    if (provider === 'openrouter') {
+      const res = await proxyFetch('/proxy/openrouter/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+          'HTTP-Referer': 'https://henry.ai',
+          'X-Title': 'Henry AI',
+        },
+        body: JSON.stringify({ model, messages, temperature: temperature ?? 0.7, max_tokens: maxTokens }),
+      });
+      const data = await res.json() as { choices: Array<{ message: { content: string } }>; usage?: HenryAIUsage };
+      return { content: data.choices[0].message.content, usage: data.usage };
+    }
+
     if (provider === 'anthropic') {
       const systemMsg = messages.find((m) => m.role === 'system');
       const userMsgs = messages.filter((m) => m.role !== 'system');
-      const res = await fetch('/proxy/anthropic/v1/messages', {
+      const res = await proxyFetch('/proxy/anthropic/v1/messages', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -266,7 +330,7 @@ const henryAPI: Window['henryAPI'] = {
       const contents = messages
         .filter((m) => m.role !== 'system')
         .map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }));
-      const res = await fetch(
+      const res = await proxyFetch(
         `/proxy/google/v1beta/models/${model}:generateContent?key=${apiKey}`,
         {
           method: 'POST',
@@ -305,19 +369,8 @@ const henryAPI: Window['henryAPI'] = {
       try {
         let fullText = '';
 
-        if (provider === 'openai') {
-          const res = await fetch('/proxy/openai/v1/chat/completions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-            body: JSON.stringify({ model, messages, temperature: temperature ?? 0.7, max_tokens: maxTokens, stream: true }),
-            signal: controller.signal,
-          });
-          if (!res.ok) {
-            const errBody = await res.text().catch(() => '');
-            let errMsg = `OpenAI ${res.status}: ${res.statusText}`;
-            try { const j = JSON.parse(errBody) as { error?: { message?: string } }; if (j.error?.message) errMsg = `OpenAI error: ${j.error.message}`; } catch { /* */ }
-            throw new Error(errMsg);
-          }
+        // ── Shared SSE reader for OpenAI-compatible providers ──────────────
+        const readOpenAIStream = async (res: Response) => {
           const reader = res.body!.getReader();
           const decoder = new TextDecoder();
           while (!aborted) {
@@ -331,18 +384,66 @@ const henryAPI: Window['henryAPI'] = {
               try {
                 const parsed = JSON.parse(json) as { choices: Array<{ delta: { content?: string } }> };
                 const chunk = parsed.choices[0]?.delta?.content || '';
-                if (chunk) {
-                  fullText += chunk;
-                  chunkCb?.(chunk);
-                }
+                if (chunk) { fullText += chunk; chunkCb?.(chunk); }
               } catch { /* skip bad JSON */ }
             }
           }
+        };
+
+        if (provider === 'openai') {
+          const res = await proxyFetch('/proxy/openai/v1/chat/completions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+            body: JSON.stringify({ model, messages, temperature: temperature ?? 0.7, max_tokens: maxTokens, stream: true }),
+            signal: controller.signal,
+          });
+          if (!res.ok) {
+            const errBody = await res.text().catch(() => '');
+            let errMsg = `OpenAI ${res.status}: ${res.statusText}`;
+            try { const j = JSON.parse(errBody) as { error?: { message?: string } }; if (j.error?.message) errMsg = `OpenAI error: ${j.error.message}`; } catch { /* */ }
+            throw new Error(errMsg);
+          }
+          await readOpenAIStream(res);
+          doneCb?.(fullText);
+        } else if (provider === 'groq') {
+          const res = await proxyFetch('/proxy/groq/openai/v1/chat/completions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+            body: JSON.stringify({ model, messages, temperature: temperature ?? 0.7, max_tokens: maxTokens, stream: true }),
+            signal: controller.signal,
+          });
+          if (!res.ok) {
+            const errBody = await res.text().catch(() => '');
+            let errMsg = `Groq ${res.status}: ${res.statusText}`;
+            try { const j = JSON.parse(errBody) as { error?: { message?: string } }; if (j.error?.message) errMsg = `Groq error: ${j.error.message}`; } catch { /* */ }
+            throw new Error(errMsg);
+          }
+          await readOpenAIStream(res);
+          doneCb?.(fullText);
+        } else if (provider === 'openrouter') {
+          const res = await proxyFetch('/proxy/openrouter/api/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${apiKey}`,
+              'HTTP-Referer': 'https://henry.ai',
+              'X-Title': 'Henry AI',
+            },
+            body: JSON.stringify({ model, messages, temperature: temperature ?? 0.7, max_tokens: maxTokens, stream: true }),
+            signal: controller.signal,
+          });
+          if (!res.ok) {
+            const errBody = await res.text().catch(() => '');
+            let errMsg = `OpenRouter ${res.status}: ${res.statusText}`;
+            try { const j = JSON.parse(errBody) as { error?: { message?: string } }; if (j.error?.message) errMsg = `OpenRouter error: ${j.error.message}`; } catch { /* */ }
+            throw new Error(errMsg);
+          }
+          await readOpenAIStream(res);
           doneCb?.(fullText);
         } else if (provider === 'anthropic') {
           const systemMsg = messages.find((m) => m.role === 'system');
           const userMsgs = messages.filter((m) => m.role !== 'system');
-          const res = await fetch('/proxy/anthropic/v1/messages', {
+          const res = await proxyFetch('/proxy/anthropic/v1/messages', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -388,7 +489,7 @@ const henryAPI: Window['henryAPI'] = {
           const contents = messages
             .filter((m) => m.role !== 'system')
             .map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }));
-          const res = await fetch(
+          const res = await proxyFetch(
             `/proxy/google/v1beta/models/${model}:streamGenerateContent?key=${apiKey}&alt=sse`,
             {
               method: 'POST',

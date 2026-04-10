@@ -1,0 +1,12 @@
+name = "henry-ai-proxy"
+main = "worker.js"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+[observability]
+enabled = true
+
+# Optional: lock to a specific zone / custom domain
+# [[routes]]
+# pattern = "proxy.henry.yourdomain.com/*"
+# zone_name = "yourdomain.com"
