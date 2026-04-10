@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
 import { useStore } from '../../store';
-import { type ProviderId } from '../../providers/models';
 import OllamaElectronSetup from './OllamaElectronSetup';
 
 interface ProviderStepProps {
@@ -8,84 +7,146 @@ interface ProviderStepProps {
   onBack: () => void;
 }
 
-type PowerMode = 'ollama' | 'cloud' | null;
-type CloudProvider = 'openai' | 'anthropic' | 'google';
-type OllamaPhase =
-  | 'detecting'
-  | 'found'
-  | 'no_models'
-  | 'not_found'
-  | 'custom_url';
+type ProviderId = 'groq' | 'openrouter' | 'openai' | 'anthropic' | 'google' | 'ollama';
 
-const CLOUD_OPTIONS: {
-  id: CloudProvider;
+interface CloudOption {
+  id: Exclude<ProviderId, 'ollama'>;
   label: string;
   icon: string;
+  free: boolean;
+  freeLabel: string;
+  desc: string;
   placeholder: string;
   defaultModel: string;
-}[] = [
-  { id: 'openai',    label: 'OpenAI',    icon: '🤖', placeholder: 'sk-...', defaultModel: 'gpt-4o' },
-  { id: 'anthropic', label: 'Anthropic', icon: '🌙', placeholder: 'sk-ant-...', defaultModel: 'claude-3-5-sonnet-20241022' },
-  { id: 'google',    label: 'Google',    icon: '✨', placeholder: 'AIza...', defaultModel: 'gemini-1.5-pro' },
+  keyUrl: string;
+  recommended?: boolean;
+}
+
+const CLOUD_OPTIONS: CloudOption[] = [
+  {
+    id: 'groq',
+    label: 'Groq',
+    icon: '⚡',
+    free: true,
+    freeLabel: 'Completely free',
+    desc: 'Llama 3.3 70B & Mistral — fast, no credit card needed',
+    placeholder: 'gsk_…',
+    defaultModel: 'llama-3.3-70b-versatile',
+    keyUrl: 'https://console.groq.com/keys',
+    recommended: true,
+  },
+  {
+    id: 'openrouter',
+    label: 'OpenRouter',
+    icon: '🔀',
+    free: true,
+    freeLabel: 'Free models available',
+    desc: '50+ models including free Llama, Mistral, Gemma',
+    placeholder: 'sk-or-…',
+    defaultModel: 'meta-llama/llama-3.3-70b-instruct:free',
+    keyUrl: 'https://openrouter.ai/keys',
+  },
+  {
+    id: 'openai',
+    label: 'OpenAI',
+    icon: '🤖',
+    free: false,
+    freeLabel: '~$0.01/message',
+    desc: 'GPT-4o — strongest at complex reasoning and coding',
+    placeholder: 'sk-…',
+    defaultModel: 'gpt-4o',
+    keyUrl: 'https://platform.openai.com/api-keys',
+  },
+  {
+    id: 'anthropic',
+    label: 'Anthropic',
+    icon: '🌙',
+    free: false,
+    freeLabel: '~$0.015/message',
+    desc: 'Claude — exceptional writing, analysis, long documents',
+    placeholder: 'sk-ant-…',
+    defaultModel: 'claude-3-5-sonnet-20241022',
+    keyUrl: 'https://console.anthropic.com/settings/keys',
+  },
+  {
+    id: 'google',
+    label: 'Google AI',
+    icon: '✨',
+    free: false,
+    freeLabel: 'Free quota, then cheap',
+    desc: 'Gemini 1.5 Pro — solid all-rounder with a free tier',
+    placeholder: 'AIza…',
+    defaultModel: 'gemini-1.5-pro',
+    keyUrl: 'https://aistudio.google.com/app/apikey',
+  },
 ];
 
-const KEY_URLS: Record<CloudProvider, string> = {
-  openai:    'https://platform.openai.com/api-keys',
-  anthropic: 'https://console.anthropic.com/settings/keys',
-  google:    'https://aistudio.google.com/app/apikey',
-};
-
-const SUGGESTED_MODELS: { name: string; desc: string }[] = [
+const OLLAMA_SUGGESTED = [
   { name: 'llama3.2',    desc: 'Fast · great all-rounder' },
   { name: 'mistral',     desc: 'Sharp · strong at writing' },
   { name: 'phi4',        desc: 'Efficient · Microsoft' },
   { name: 'gemma3',      desc: 'Lightweight · Google' },
   { name: 'qwen2.5',     desc: 'Multilingual · Alibaba' },
-  { name: 'llama3.1:8b', desc: 'Smarter · more memory' },
 ];
 
 async function probeOllama(baseUrl: string): Promise<{ ok: boolean; models: string[] }> {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 4000);
-    const res = await fetch(`${baseUrl.replace(/\/$/, '')}/api/tags`, {
-      signal: controller.signal,
-    });
+    const res = await fetch(`${baseUrl.replace(/\/$/, '')}/api/tags`, { signal: controller.signal });
     clearTimeout(timer);
     if (!res.ok) return { ok: false, models: [] };
     const data = await res.json() as { models?: Array<{ name?: string }> };
-    const models = (data.models || []).map((m) => m.name || '').filter(Boolean);
-    return { ok: true, models };
+    return { ok: true, models: (data.models || []).map((m) => m.name || '').filter(Boolean) };
   } catch {
     return { ok: false, models: [] };
   }
 }
 
+function openUrl(url: string) {
+  try { window.open(url, '_blank', 'noopener,noreferrer'); } catch { /* ignore */ }
+}
+
 export default function ProviderStep({ onNext, onBack }: ProviderStepProps) {
   const { setProviders, updateSetting } = useStore();
 
-  const [mode, setMode] = useState<PowerMode>(null);
+  // Top-level mode: cloud or ollama
+  const [mode, setMode] = useState<'cloud' | 'ollama' | null>('cloud');
+
+  // Cloud state — default to Groq (free)
+  const [selectedCloud, setSelectedCloud] = useState<CloudOption>(CLOUD_OPTIONS[0]);
+  const [apiKey, setApiKey] = useState('');
+  const [keyPageOpened, setKeyPageOpened] = useState(false);
+  const keyInputRef = useRef<HTMLInputElement>(null);
 
   // Ollama state
-  const [ollamaPhase, setOllamaPhase] = useState<OllamaPhase>('detecting');
+  const [ollamaPhase, setOllamaPhase] = useState<'detecting' | 'found' | 'no_models' | 'not_found'>('detecting');
   const [ollamaUrl, setOllamaUrl] = useState('http://localhost:11434');
   const [customUrlInput, setCustomUrlInput] = useState('http://192.168.1.x:11434');
   const [detectedModels, setDetectedModels] = useState<string[]>([]);
   const [selectedModel, setSelectedModel] = useState('');
   const [copiedCmd, setCopiedCmd] = useState('');
   const probeRunning = useRef(false);
-
-  // Cloud state
-  const [cloudProvider, setCloudProvider] = useState<CloudProvider>('openai');
-  const [apiKey, setApiKey] = useState('');
+  const [forceWebMode, setForceWebMode] = useState(false);
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  // Electron mode: ollamaIsInstalled IPC is only present in the real desktop build
   const isElectron = typeof window.henryAPI.ollamaIsInstalled === 'function';
-  // Set to true if the user hits "Set up manually" after an Electron auto-setup failure
-  const [forceWebMode, setForceWebMode] = useState(false);
+
+  useEffect(() => {
+    if (mode === 'ollama') {
+      probeRunning.current = false;
+      void runDetection('http://localhost:11434');
+    }
+  }, [mode]);
+
+  // Focus key input when they return from the key page
+  useEffect(() => {
+    if (keyPageOpened) {
+      setTimeout(() => keyInputRef.current?.focus(), 300);
+    }
+  }, [keyPageOpened]);
 
   async function runDetection(url: string) {
     if (probeRunning.current) return;
@@ -99,20 +160,11 @@ export default function ProviderStep({ onNext, onBack }: ProviderStepProps) {
       setOllamaUrl(url);
       setDetectedModels(result.models);
       setOllamaPhase(result.models.length > 0 ? 'found' : 'no_models');
-      if (result.models.length === 1) {
-        setSelectedModel(result.models[0]);
-      }
+      if (result.models.length === 1) setSelectedModel(result.models[0]);
     } else {
       setOllamaPhase('not_found');
     }
   }
-
-  useEffect(() => {
-    if (mode === 'ollama') {
-      probeRunning.current = false;
-      void runDetection('http://localhost:11434');
-    }
-  }, [mode]);
 
   function copyCmd(cmd: string) {
     navigator.clipboard.writeText(cmd).catch(() => {});
@@ -120,11 +172,22 @@ export default function ProviderStep({ onNext, onBack }: ProviderStepProps) {
     setTimeout(() => setCopiedCmd(''), 2000);
   }
 
+  function handleSelectCloud(opt: CloudOption) {
+    setSelectedCloud(opt);
+    setApiKey('');
+    setKeyPageOpened(false);
+  }
+
+  function handleOpenKeyPage() {
+    openUrl(selectedCloud.keyUrl);
+    setKeyPageOpened(true);
+  }
+
   const canContinue =
-    mode === 'ollama'
+    mode === 'cloud'
+      ? true  // key is optional — can add in Settings
+      : mode === 'ollama'
       ? selectedModel.trim().length > 0
-      : mode === 'cloud'
-      ? true          // key is optional — user can add it in Settings later
       : false;
 
   async function handleElectronModelReady(model: string) {
@@ -142,16 +205,10 @@ export default function ProviderStep({ onNext, onBack }: ProviderStepProps) {
       updateSetting('companion_provider', 'ollama');
       updateSetting('worker_model', model);
       updateSetting('worker_provider', 'ollama');
-      const rawProviders = await window.henryAPI.getProviders();
-      setProviders(rawProviders.map((p: any) => ({
-        id: p.id, name: p.name,
-        apiKey: p.api_key ?? p.apiKey ?? '',
-        enabled: Boolean(p.enabled),
-        models: JSON.parse(p.models || '[]'),
-      })));
+      const raw = await window.henryAPI.getProviders();
+      setProviders(raw.map((p: any) => ({ id: p.id, name: p.name, apiKey: p.api_key ?? p.apiKey ?? '', enabled: Boolean(p.enabled), models: JSON.parse(p.models || '[]') })));
       onNext();
-    } catch (err) {
-      console.error(err);
+    } catch {
       setError('Failed to save settings. Try again.');
     } finally {
       setSaving(false);
@@ -163,51 +220,43 @@ export default function ProviderStep({ onNext, onBack }: ProviderStepProps) {
     setSaving(true);
     setError('');
     try {
-      const providersToSave: { id: ProviderId; name: string; apiKey: string; enabled: boolean; models: string }[] = [];
+      if (mode === 'cloud') {
+        const key = apiKey.trim();
+        await window.henryAPI.saveProvider({
+          id: selectedCloud.id,
+          name: selectedCloud.label,
+          apiKey: key,
+          enabled: true,
+          models: JSON.stringify([selectedCloud.defaultModel]),
+        });
+        await window.henryAPI.saveSetting('companion_model', selectedCloud.defaultModel);
+        await window.henryAPI.saveSetting('companion_provider', selectedCloud.id);
+        await window.henryAPI.saveSetting('worker_model', selectedCloud.defaultModel);
+        await window.henryAPI.saveSetting('worker_provider', selectedCloud.id);
+        updateSetting('companion_model', selectedCloud.defaultModel);
+        updateSetting('companion_provider', selectedCloud.id);
+        updateSetting('worker_model', selectedCloud.defaultModel);
+        updateSetting('worker_provider', selectedCloud.id);
+      }
 
       if (mode === 'ollama') {
-        providersToSave.push({ id: 'ollama', name: 'Ollama', apiKey: '', enabled: true, models: JSON.stringify([selectedModel.trim()]) });
+        await window.henryAPI.saveProvider({ id: 'ollama', name: 'Ollama', apiKey: '', enabled: true, models: JSON.stringify([selectedModel.trim()]) });
         await window.henryAPI.saveSetting('ollama_base_url', ollamaUrl);
-        updateSetting('ollama_base_url', ollamaUrl);
         await window.henryAPI.saveSetting('companion_model', selectedModel.trim());
         await window.henryAPI.saveSetting('companion_provider', 'ollama');
         await window.henryAPI.saveSetting('worker_model', selectedModel.trim());
         await window.henryAPI.saveSetting('worker_provider', 'ollama');
+        updateSetting('ollama_base_url', ollamaUrl);
         updateSetting('companion_model', selectedModel.trim());
         updateSetting('companion_provider', 'ollama');
         updateSetting('worker_model', selectedModel.trim());
         updateSetting('worker_provider', 'ollama');
       }
 
-      if (mode === 'cloud') {
-        const selected = CLOUD_OPTIONS.find((c) => c.id === cloudProvider)!;
-        providersToSave.push({ id: cloudProvider, name: selected.label, apiKey: apiKey.trim(), enabled: true, models: JSON.stringify([selected.defaultModel]) });
-        await window.henryAPI.saveSetting('companion_model', selected.defaultModel);
-        await window.henryAPI.saveSetting('companion_provider', cloudProvider);
-        await window.henryAPI.saveSetting('worker_model', selected.defaultModel);
-        await window.henryAPI.saveSetting('worker_provider', cloudProvider);
-        updateSetting('companion_model', selected.defaultModel);
-        updateSetting('companion_provider', cloudProvider);
-        updateSetting('worker_model', selected.defaultModel);
-        updateSetting('worker_provider', cloudProvider);
-      }
-
-      for (const p of providersToSave) {
-        await window.henryAPI.saveProvider(p);
-      }
-
-      const rawProviders = await window.henryAPI.getProviders();
-      setProviders(rawProviders.map((p: any) => ({
-        id: p.id,
-        name: p.name,
-        apiKey: p.api_key ?? p.apiKey ?? '',
-        enabled: Boolean(p.enabled),
-        models: JSON.parse(p.models || '[]'),
-      })));
-
+      const raw = await window.henryAPI.getProviders();
+      setProviders(raw.map((p: any) => ({ id: p.id, name: p.name, apiKey: p.api_key ?? p.apiKey ?? '', enabled: Boolean(p.enabled), models: JSON.parse(p.models || '[]') })));
       onNext();
-    } catch (err) {
-      console.error('Failed to save providers:', err);
+    } catch {
       setError('Something went wrong saving your settings. Try again.');
     } finally {
       setSaving(false);
@@ -217,350 +266,363 @@ export default function ProviderStep({ onNext, onBack }: ProviderStepProps) {
   return (
     <div className="animate-slide-up">
       {/* Henry prompt */}
-      <div className="text-center mb-8">
-        <div className="bg-henry-surface/40 border border-henry-border/30 rounded-2xl p-5 text-left relative max-w-lg mx-auto">
-          <div className="absolute -top-3 left-6 text-xs font-medium text-henry-text-muted bg-henry-bg px-2">Henry</div>
-          <p className="text-henry-text-dim leading-relaxed">
-            How should I think? Pick one to start —{' '}
-            <span className="text-henry-text font-medium">you can add more in Settings later.</span>
-          </p>
-        </div>
-      </div>
-
-      {/* Mode cards */}
-      <div className="grid grid-cols-2 gap-4 mb-6">
-        <button
-          onClick={() => { setMode('ollama'); setForceWebMode(false); }}
-          className={`rounded-2xl border-2 p-6 text-left transition-all ${
-            mode === 'ollama'
-              ? 'border-henry-success bg-henry-success/5'
-              : 'border-henry-border/40 bg-henry-surface/30 hover:border-henry-border hover:bg-henry-surface/60'
-          }`}
-        >
-          <div className="text-3xl mb-3">🏠</div>
-          <div className="font-semibold text-henry-text mb-1">Ollama</div>
-          <div className="text-[11px] text-henry-success font-medium mb-3">Free · Private · Offline-capable</div>
-          <div className="text-xs text-henry-text-dim leading-relaxed">
-            {isElectron
-              ? "Runs AI on your Mac. Henry will install and set everything up for you automatically."
-              : "Runs AI directly on your Mac. No account, no cost, no data leaving your machine."}
-          </div>
-        </button>
-
-        <button
-          onClick={() => setMode('cloud')}
-          className={`rounded-2xl border-2 p-6 text-left transition-all ${
-            mode === 'cloud'
-              ? 'border-henry-accent bg-henry-accent/5'
-              : 'border-henry-border/40 bg-henry-surface/30 hover:border-henry-border hover:bg-henry-surface/60'
-          }`}
-        >
-          <div className="text-3xl mb-3">☁️</div>
-          <div className="font-semibold text-henry-text mb-1">Cloud AI</div>
-          <div className="text-[11px] text-henry-accent font-medium mb-3">GPT · Claude · Gemini</div>
-          <div className="text-xs text-henry-text-dim leading-relaxed">
-            More powerful for complex tasks. Needs an API key — costs a little per message.
-          </div>
-        </button>
-      </div>
-
-      {/* ── OLLAMA ONBOARDING ── */}
-      {mode === 'ollama' && isElectron && !forceWebMode && (
-        <div className="mb-5 animate-fade-in">
-          {saving ? (
-            <div className="flex items-center justify-center gap-3 py-8 text-henry-text-dim text-sm">
-              <div className="w-4 h-4 border-2 border-henry-accent border-t-transparent rounded-full animate-spin" />
-              Saving settings…
-            </div>
-          ) : (
-            <OllamaElectronSetup
-              onModelReady={handleElectronModelReady}
-              onFallback={() => setForceWebMode(true)}
-            />
-          )}
-        </div>
-      )}
-
-      {mode === 'ollama' && (!isElectron || forceWebMode) && (
-        <div className="bg-henry-surface/40 border border-henry-border/30 rounded-2xl p-5 mb-5 animate-fade-in space-y-4">
-
-          {/* Detecting */}
-          {ollamaPhase === 'detecting' && (
-            <div className="flex items-center gap-3 py-2">
-              <div className="w-4 h-4 border-2 border-henry-accent border-t-transparent rounded-full animate-spin shrink-0" />
-              <p className="text-sm text-henry-text-dim">Checking if Ollama is running on your machine…</p>
-            </div>
-          )}
-
-          {/* Found with models */}
-          {ollamaPhase === 'found' && (
-            <>
-              <div className="flex items-center gap-2 text-henry-success text-sm font-medium">
-                <span>✓</span>
-                <span>Ollama is running at <code className="text-xs font-mono opacity-80">{ollamaUrl}</code></span>
-              </div>
-              <div>
-                <p className="text-xs text-henry-text-dim mb-3">
-                  {detectedModels.length === 1
-                    ? 'Found one model — selecting it for you.'
-                    : `Found ${detectedModels.length} models installed. Pick one:`}
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {detectedModels.map((m) => (
-                    <button
-                      key={m}
-                      onClick={() => setSelectedModel(m)}
-                      className={`px-3 py-1.5 rounded-xl text-sm font-mono transition-all border ${
-                        selectedModel === m
-                          ? 'bg-henry-success/15 border-henry-success text-henry-success'
-                          : 'bg-henry-hover border-henry-border text-henry-text-dim hover:border-henry-text-dim'
-                      }`}
-                    >
-                      {selectedModel === m && <span className="mr-1.5">✓</span>}
-                      {m}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* Found but no models */}
-          {ollamaPhase === 'no_models' && (
-            <>
-              <div className="flex items-center gap-2 text-henry-warning text-sm font-medium">
-                <span>⚠️</span>
-                <span>Ollama is running but you don't have any models yet.</span>
-              </div>
-              <p className="text-xs text-henry-text-dim">
-                Run this in your terminal to grab a good starter model:
-              </p>
-              <div className="flex items-center gap-2">
-                <code className="flex-1 bg-henry-bg border border-henry-border rounded-xl px-4 py-2.5 text-sm text-henry-accent font-mono">
-                  ollama pull llama3.2
-                </code>
-                <button
-                  onClick={() => copyCmd('ollama pull llama3.2')}
-                  className="shrink-0 px-3 py-2.5 rounded-xl bg-henry-hover border border-henry-border text-xs text-henry-text-dim hover:text-henry-text transition-all"
-                >
-                  {copiedCmd === 'ollama pull llama3.2' ? '✓ Copied' : 'Copy'}
-                </button>
-              </div>
-              <p className="text-xs text-henry-text-muted">Then click Try again below.</p>
-              <div className="flex flex-wrap gap-2 mt-1">
-                {SUGGESTED_MODELS.map((m) => (
-                  <div key={m.name} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-henry-bg border border-henry-border/50">
-                    <span className="font-mono text-xs text-henry-text">{m.name}</span>
-                    <span className="text-[10px] text-henry-text-muted">· {m.desc}</span>
-                  </div>
-                ))}
-              </div>
-              <button
-                onClick={() => runDetection(ollamaUrl)}
-                className="w-full py-2.5 rounded-xl border border-henry-border text-sm text-henry-text-dim hover:text-henry-text hover:border-henry-text-dim transition-all"
-              >
-                ↻ Try again
-              </button>
-            </>
-          )}
-
-          {/* Not found */}
-          {(ollamaPhase === 'not_found' || ollamaPhase === 'custom_url') && (
-            <>
-              <div className="flex items-center gap-2 text-henry-error text-sm font-medium">
-                <span>✗</span>
-                <span>Can't reach Ollama at {ollamaUrl}</span>
-              </div>
-
-              <div className="bg-henry-bg rounded-xl border border-henry-border/50 p-4 space-y-3">
-                <p className="text-xs font-semibold text-henry-text">Get Ollama running in 3 steps:</p>
-
-                <div className="space-y-2.5">
-                  {/* Step 1 */}
-                  <div className="flex gap-3">
-                    <span className="shrink-0 w-5 h-5 rounded-full bg-henry-accent/15 text-henry-accent text-[10px] font-bold flex items-center justify-center">1</span>
-                    <div>
-                      <p className="text-xs text-henry-text mb-1">Download and install Ollama</p>
-                      <a
-                        href="https://ollama.com/download"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs text-henry-accent hover:underline"
-                      >
-                        ollama.com/download →
-                      </a>
-                    </div>
-                  </div>
-
-                  {/* Step 2 */}
-                  <div className="flex gap-3">
-                    <span className="shrink-0 w-5 h-5 rounded-full bg-henry-accent/15 text-henry-accent text-[10px] font-bold flex items-center justify-center">2</span>
-                    <div className="flex-1">
-                      <p className="text-xs text-henry-text mb-1.5">Start it with network access enabled</p>
-                      <div className="flex items-center gap-2">
-                        <code className="flex-1 bg-henry-surface border border-henry-border/50 rounded-lg px-3 py-2 text-[11px] text-henry-accent font-mono break-all">
-                          OLLAMA_HOST=0.0.0.0 OLLAMA_ORIGINS=* ollama serve
-                        </code>
-                        <button
-                          onClick={() => copyCmd('OLLAMA_HOST=0.0.0.0 OLLAMA_ORIGINS=* ollama serve')}
-                          className="shrink-0 px-2.5 py-2 rounded-lg bg-henry-hover border border-henry-border text-xs text-henry-text-dim hover:text-henry-text"
-                        >
-                          {copiedCmd === 'OLLAMA_HOST=0.0.0.0 OLLAMA_ORIGINS=* ollama serve' ? '✓' : 'Copy'}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Step 3 */}
-                  <div className="flex gap-3">
-                    <span className="shrink-0 w-5 h-5 rounded-full bg-henry-accent/15 text-henry-accent text-[10px] font-bold flex items-center justify-center">3</span>
-                    <div className="flex-1">
-                      <p className="text-xs text-henry-text mb-1.5">Pull a model (in a new terminal tab)</p>
-                      <div className="flex items-center gap-2">
-                        <code className="flex-1 bg-henry-surface border border-henry-border/50 rounded-lg px-3 py-2 text-[11px] text-henry-accent font-mono">
-                          ollama pull llama3.2
-                        </code>
-                        <button
-                          onClick={() => copyCmd('ollama pull llama3.2')}
-                          className="shrink-0 px-2.5 py-2 rounded-lg bg-henry-hover border border-henry-border text-xs text-henry-text-dim hover:text-henry-text"
-                        >
-                          {copiedCmd === 'ollama pull llama3.2' ? '✓' : 'Copy'}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* iPad / remote device section */}
-              <details className="group">
-                <summary className="text-xs text-henry-text-muted cursor-pointer hover:text-henry-text-dim select-none list-none flex items-center gap-1.5">
-                  <span className="group-open:rotate-90 transition-transform inline-block">›</span>
-                  Connecting from iPad or another device?
-                </summary>
-                <div className="mt-3 space-y-2">
-                  <p className="text-xs text-henry-text-dim">
-                    Enter your Mac's local IP — find it in System Settings → Wi-Fi → Details:
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      value={customUrlInput}
-                      onChange={(e) => setCustomUrlInput(e.target.value)}
-                      placeholder="http://192.168.x.x:11434"
-                      className="flex-1 bg-henry-bg border border-henry-border rounded-xl px-4 py-2.5 text-sm text-henry-text font-mono outline-none focus:border-henry-accent/50"
-                    />
-                    <button
-                      onClick={() => {
-                        const url = customUrlInput.trim().replace(/\/$/, '');
-                        const fullUrl = url.startsWith('http') ? url : `http://${url}`;
-                        setOllamaPhase('detecting');
-                        void runDetection(fullUrl);
-                      }}
-                      className="shrink-0 px-4 py-2.5 rounded-xl bg-henry-accent text-white text-sm font-medium hover:bg-henry-accent-hover transition-all"
-                    >
-                      Try
-                    </button>
-                  </div>
-                </div>
-              </details>
-
-              <button
-                onClick={() => runDetection('http://localhost:11434')}
-                className="w-full py-2.5 rounded-xl border border-henry-border text-sm text-henry-text-dim hover:text-henry-text hover:border-henry-text-dim transition-all"
-              >
-                ↻ Try again at localhost
-              </button>
-            </>
-          )}
-        </div>
-      )}
-
-      {/* ── CLOUD CONFIG ── */}
-      {mode === 'cloud' && (
-        <div className="bg-henry-surface/40 border border-henry-border/30 rounded-2xl p-5 mb-5 animate-fade-in">
-          <div className="flex gap-2 mb-4">
-            {CLOUD_OPTIONS.map((opt) => (
-              <button
-                key={opt.id}
-                onClick={() => { setCloudProvider(opt.id); setApiKey(''); }}
-                className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-medium transition-all ${
-                  cloudProvider === opt.id
-                    ? 'bg-henry-accent text-white'
-                    : 'bg-henry-hover text-henry-text-dim hover:text-henry-text'
-                }`}
-              >
-                <span>{opt.icon}</span>
-                <span>{opt.label}</span>
-              </button>
-            ))}
-          </div>
-          <div>
-            <div className="flex items-baseline justify-between mb-2">
-              <label className="text-xs font-medium text-henry-text-dim">
-                API Key <span className="text-henry-text-muted font-normal">(optional — you can add it in Settings later)</span>
-              </label>
-            </div>
-            <input
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder={`Paste key or skip for now…`}
-              className="w-full bg-henry-bg border border-henry-border rounded-xl px-4 py-3 text-sm text-henry-text outline-none focus:border-henry-accent/50"
-            />
-            <a
-              href={KEY_URLS[cloudProvider]}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-[11px] text-henry-accent hover:underline mt-1.5 block"
-            >
-              Get a key from {CLOUD_OPTIONS.find((c) => c.id === cloudProvider)?.label} →
-            </a>
-          </div>
-        </div>
-      )}
-
-      {/* Not sure helper */}
-      {!mode && (
-        <p className="text-center text-xs text-henry-text-muted mb-5">
-          Not sure?{' '}
-          <button onClick={() => setMode('ollama')} className="text-henry-accent hover:underline">
-            Start with Ollama
-          </button>{' '}
-          — it's free and runs on your Mac.
+      <div className="bg-henry-surface/40 border border-henry-border/30 rounded-2xl p-5 text-left relative max-w-lg mx-auto mb-8">
+        <div className="absolute -top-3 left-6 text-xs font-medium text-henry-text-muted bg-henry-bg px-2">Henry</div>
+        <p className="text-henry-text-dim leading-relaxed">
+          How should I think? Choose a brain below.{' '}
+          <span className="text-henry-text font-medium">Groq is free and fast — a great place to start.</span>
+          {' '}You can always add more in Settings.
         </p>
+      </div>
+
+      {/* Mode toggle */}
+      <div className="flex gap-2 mb-5">
+        <button
+          onClick={() => { setMode('cloud'); setKeyPageOpened(false); }}
+          className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-all border ${
+            mode === 'cloud'
+              ? 'bg-henry-accent/10 border-henry-accent/40 text-henry-accent'
+              : 'bg-henry-surface/30 border-henry-border/30 text-henry-text-dim hover:text-henry-text hover:border-henry-border'
+          }`}
+        >
+          ☁️ Cloud AI
+        </button>
+        <button
+          onClick={() => { setMode('ollama'); setKeyPageOpened(false); }}
+          className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-all border ${
+            mode === 'ollama'
+              ? 'bg-henry-success/10 border-henry-success/40 text-henry-success'
+              : 'bg-henry-surface/30 border-henry-border/30 text-henry-text-dim hover:text-henry-text hover:border-henry-border'
+          }`}
+        >
+          🏠 Local (Ollama)
+        </button>
+      </div>
+
+      {/* ── CLOUD MODE ── */}
+      {mode === 'cloud' && (
+        <div className="animate-fade-in space-y-4 mb-5">
+
+          {/* Provider grid */}
+          <div className="grid grid-cols-1 gap-2">
+            {CLOUD_OPTIONS.map((opt) => {
+              const isSelected = selectedCloud.id === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  onClick={() => handleSelectCloud(opt)}
+                  className={`w-full text-left px-4 py-3.5 rounded-xl border-2 transition-all ${
+                    isSelected
+                      ? 'border-henry-accent bg-henry-accent/8'
+                      : 'border-henry-border/30 bg-henry-surface/20 hover:border-henry-border hover:bg-henry-surface/40'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-xl leading-none shrink-0">{opt.icon}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-semibold text-henry-text">{opt.label}</span>
+                        {opt.recommended && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-henry-success/15 text-henry-success font-semibold">
+                            Recommended
+                          </span>
+                        )}
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                          opt.free
+                            ? 'bg-henry-success/10 text-henry-success'
+                            : 'bg-henry-surface text-henry-text-muted border border-henry-border/30'
+                        }`}>
+                          {opt.freeLabel}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-henry-text-muted mt-0.5 truncate">{opt.desc}</p>
+                    </div>
+                    {isSelected && (
+                      <svg className="w-4 h-4 text-henry-accent shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <path d="M20 6L9 17l-5-5" />
+                      </svg>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Key panel for selected provider */}
+          <div className="bg-henry-surface/40 border border-henry-border/30 rounded-2xl p-5 space-y-4 animate-fade-in">
+
+            {!keyPageOpened ? (
+              <>
+                <p className="text-sm text-henry-text-dim">
+                  Henry will open{' '}
+                  <span className="text-henry-text font-medium">{selectedCloud.label}'s API key page</span>
+                  {' '}in your browser. Sign up (free for {selectedCloud.label}), copy your key, and come right back.
+                </p>
+                <button
+                  onClick={handleOpenKeyPage}
+                  className="w-full flex items-center justify-center gap-2.5 py-3.5 rounded-xl bg-henry-accent text-white text-sm font-semibold hover:bg-henry-accent-hover transition-all shadow-lg shadow-henry-accent/20"
+                >
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3" />
+                  </svg>
+                  Open {selectedCloud.label} — get your free key
+                </button>
+                <p className="text-center text-[11px] text-henry-text-muted">
+                  Or{' '}
+                  <button
+                    onClick={() => setKeyPageOpened(true)}
+                    className="text-henry-accent hover:underline"
+                  >
+                    I already have a key
+                  </button>
+                </p>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center gap-2 text-henry-success text-sm font-medium">
+                  <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Welcome back. Paste your {selectedCloud.label} key here:
+                </div>
+
+                <input
+                  ref={keyInputRef}
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder={selectedCloud.placeholder}
+                  autoFocus
+                  className="w-full bg-henry-bg border border-henry-border rounded-xl px-4 py-3 text-sm text-henry-text font-mono outline-none focus:border-henry-accent/60 focus:shadow-[0_0_0_3px_rgba(107,92,246,0.12)] transition-all"
+                  onKeyDown={(e) => { if (e.key === 'Enter' && apiKey.trim()) void handleNext(); }}
+                />
+
+                <div className="flex items-center justify-between">
+                  <button
+                    onClick={() => { setKeyPageOpened(false); }}
+                    className="text-xs text-henry-text-muted hover:text-henry-text transition-colors"
+                  >
+                    ← Reopen {selectedCloud.label}
+                  </button>
+                  {!apiKey.trim() && (
+                    <span className="text-[11px] text-henry-text-muted">
+                      No key?{' '}
+                      <button
+                        onClick={() => void handleNext()}
+                        className="text-henry-accent hover:underline"
+                      >
+                        Skip and add it later in Settings
+                      </button>
+                    </span>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── OLLAMA MODE ── */}
+      {mode === 'ollama' && (
+        <div className="mb-5 animate-fade-in">
+          {isElectron && !forceWebMode ? (
+            saving ? (
+              <div className="flex items-center justify-center gap-3 py-8 text-henry-text-dim text-sm">
+                <div className="w-4 h-4 border-2 border-henry-accent border-t-transparent rounded-full animate-spin" />
+                Saving settings…
+              </div>
+            ) : (
+              <OllamaElectronSetup
+                onModelReady={handleElectronModelReady}
+                onFallback={() => setForceWebMode(true)}
+              />
+            )
+          ) : (
+            <div className="bg-henry-surface/40 border border-henry-border/30 rounded-2xl p-5 space-y-4">
+
+              {ollamaPhase === 'detecting' && (
+                <div className="flex items-center gap-3 py-2">
+                  <div className="w-4 h-4 border-2 border-henry-accent border-t-transparent rounded-full animate-spin shrink-0" />
+                  <p className="text-sm text-henry-text-dim">Checking if Ollama is running…</p>
+                </div>
+              )}
+
+              {ollamaPhase === 'found' && (
+                <>
+                  <div className="flex items-center gap-2 text-henry-success text-sm font-medium">
+                    <span>✓</span>
+                    <span>Ollama found at <code className="text-xs font-mono opacity-80">{ollamaUrl}</code></span>
+                  </div>
+                  <p className="text-xs text-henry-text-dim">
+                    {detectedModels.length === 1
+                      ? 'Found one model — selecting it automatically.'
+                      : `Found ${detectedModels.length} models. Pick one:`}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {detectedModels.map((m) => (
+                      <button key={m} onClick={() => setSelectedModel(m)}
+                        className={`px-3 py-1.5 rounded-xl text-sm font-mono transition-all border ${
+                          selectedModel === m
+                            ? 'bg-henry-success/15 border-henry-success text-henry-success'
+                            : 'bg-henry-hover border-henry-border text-henry-text-dim hover:border-henry-text-dim'
+                        }`}
+                      >
+                        {selectedModel === m && <span className="mr-1.5">✓</span>}
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {ollamaPhase === 'no_models' && (
+                <>
+                  <div className="flex items-center gap-2 text-henry-warning text-sm font-medium">
+                    <span>⚠️</span><span>Ollama is running but no models installed yet.</span>
+                  </div>
+                  <p className="text-xs text-henry-text-dim">Run this in Terminal to pull a model:</p>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 bg-henry-bg border border-henry-border rounded-xl px-4 py-2.5 text-sm text-henry-accent font-mono">
+                      ollama pull llama3.2
+                    </code>
+                    <button onClick={() => copyCmd('ollama pull llama3.2')}
+                      className="shrink-0 px-3 py-2.5 rounded-xl bg-henry-hover border border-henry-border text-xs text-henry-text-dim hover:text-henry-text">
+                      {copiedCmd === 'ollama pull llama3.2' ? '✓ Copied' : 'Copy'}
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {OLLAMA_SUGGESTED.map((m) => (
+                      <div key={m.name} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-henry-bg border border-henry-border/50">
+                        <span className="font-mono text-xs text-henry-text">{m.name}</span>
+                        <span className="text-[10px] text-henry-text-muted">· {m.desc}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <button onClick={() => runDetection(ollamaUrl)}
+                    className="w-full py-2.5 rounded-xl border border-henry-border text-sm text-henry-text-dim hover:text-henry-text transition-all">
+                    ↻ Try again
+                  </button>
+                </>
+              )}
+
+              {ollamaPhase === 'not_found' && (
+                <>
+                  <div className="flex items-center gap-2 text-henry-error text-sm font-medium">
+                    <span>✗</span><span>Can't reach Ollama at {ollamaUrl}</span>
+                  </div>
+
+                  <div className="bg-henry-bg rounded-xl border border-henry-border/50 p-4 space-y-3">
+                    <p className="text-xs font-semibold text-henry-text">Get Ollama running in 3 steps:</p>
+                    <div className="space-y-2.5">
+                      <div className="flex gap-3">
+                        <span className="shrink-0 w-5 h-5 rounded-full bg-henry-accent/15 text-henry-accent text-[10px] font-bold flex items-center justify-center">1</span>
+                        <div>
+                          <p className="text-xs text-henry-text mb-1">Download and install Ollama</p>
+                          <button onClick={() => openUrl('https://ollama.com/download')}
+                            className="text-xs text-henry-accent hover:underline">ollama.com/download →</button>
+                        </div>
+                      </div>
+                      <div className="flex gap-3">
+                        <span className="shrink-0 w-5 h-5 rounded-full bg-henry-accent/15 text-henry-accent text-[10px] font-bold flex items-center justify-center">2</span>
+                        <div className="flex-1">
+                          <p className="text-xs text-henry-text mb-1.5">Start it</p>
+                          <div className="flex items-center gap-2">
+                            <code className="flex-1 bg-henry-surface border border-henry-border/50 rounded-lg px-3 py-2 text-[11px] text-henry-accent font-mono break-all">
+                              OLLAMA_HOST=0.0.0.0 OLLAMA_ORIGINS=* ollama serve
+                            </code>
+                            <button onClick={() => copyCmd('OLLAMA_HOST=0.0.0.0 OLLAMA_ORIGINS=* ollama serve')}
+                              className="shrink-0 px-2.5 py-2 rounded-lg bg-henry-hover border border-henry-border text-xs text-henry-text-dim hover:text-henry-text">
+                              {copiedCmd === 'OLLAMA_HOST=0.0.0.0 OLLAMA_ORIGINS=* ollama serve' ? '✓' : 'Copy'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex gap-3">
+                        <span className="shrink-0 w-5 h-5 rounded-full bg-henry-accent/15 text-henry-accent text-[10px] font-bold flex items-center justify-center">3</span>
+                        <div className="flex-1">
+                          <p className="text-xs text-henry-text mb-1.5">Pull a model</p>
+                          <div className="flex items-center gap-2">
+                            <code className="flex-1 bg-henry-surface border border-henry-border/50 rounded-lg px-3 py-2 text-[11px] text-henry-accent font-mono">
+                              ollama pull llama3.2
+                            </code>
+                            <button onClick={() => copyCmd('ollama pull llama3.2')}
+                              className="shrink-0 px-2.5 py-2 rounded-lg bg-henry-hover border border-henry-border text-xs text-henry-text-dim hover:text-henry-text">
+                              {copiedCmd === 'ollama pull llama3.2' ? '✓' : 'Copy'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <details className="group">
+                    <summary className="text-xs text-henry-text-muted cursor-pointer hover:text-henry-text-dim select-none list-none flex items-center gap-1.5">
+                      <span className="group-open:rotate-90 transition-transform inline-block">›</span>
+                      Connecting from another device?
+                    </summary>
+                    <div className="mt-3 space-y-2">
+                      <p className="text-xs text-henry-text-dim">Enter your Mac's local IP (System Settings → Wi-Fi → Details):</p>
+                      <div className="flex items-center gap-2">
+                        <input type="text" value={customUrlInput} onChange={(e) => setCustomUrlInput(e.target.value)}
+                          placeholder="http://192.168.x.x:11434"
+                          className="flex-1 bg-henry-bg border border-henry-border rounded-xl px-4 py-2.5 text-sm text-henry-text font-mono outline-none focus:border-henry-accent/50" />
+                        <button
+                          onClick={() => {
+                            const url = customUrlInput.trim().replace(/\/$/, '');
+                            void runDetection(url.startsWith('http') ? url : `http://${url}`);
+                          }}
+                          className="shrink-0 px-4 py-2.5 rounded-xl bg-henry-accent text-white text-sm font-medium hover:bg-henry-accent-hover transition-all">
+                          Try
+                        </button>
+                      </div>
+                    </div>
+                  </details>
+
+                  <button onClick={() => runDetection('http://localhost:11434')}
+                    className="w-full py-2.5 rounded-xl border border-henry-border text-sm text-henry-text-dim hover:text-henry-text hover:border-henry-text-dim transition-all">
+                    ↻ Try again at localhost
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
       )}
 
       {error && <p className="text-center text-xs text-henry-error mb-4">{error}</p>}
 
+      {/* Footer nav */}
       <div className="flex items-center justify-between">
-        <button
-          onClick={onBack}
-          className="px-6 py-2.5 text-henry-text-dim hover:text-henry-text transition-colors text-sm"
-        >
+        <button onClick={onBack}
+          className="px-6 py-2.5 text-henry-text-dim hover:text-henry-text transition-colors text-sm">
           ← Back
         </button>
-        {/* In Electron+Ollama mode, auto-setup calls onNext() — no button needed */}
-        {!(mode === 'ollama' && isElectron) && (
-          <div className="flex items-center gap-3">
-            {!canContinue && mode === 'ollama' && ollamaPhase === 'found' && (
-              <span className="text-xs text-henry-text-muted">Pick a model above</span>
+
+        {!(mode === 'ollama' && isElectron && !forceWebMode) && (
+          <button
+            onClick={() => void handleNext()}
+            disabled={!canContinue || saving}
+            className={`px-8 py-2.5 rounded-xl font-medium text-sm transition-all ${
+              canContinue && !saving
+                ? 'bg-henry-accent text-white hover:bg-henry-accent-hover'
+                : 'bg-henry-hover text-henry-text-muted cursor-not-allowed'
+            }`}
+          >
+            {saving ? (
+              <span className="flex items-center gap-2">
+                <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                Saving…
+              </span>
+            ) : mode === 'cloud' && keyPageOpened && apiKey.trim() ? (
+              'Continue →'
+            ) : mode === 'cloud' && keyPageOpened ? (
+              'Continue without key →'
+            ) : mode === 'cloud' ? (
+              'Continue →'
+            ) : (
+              'Continue →'
             )}
-            {mode === 'cloud' && !apiKey.trim() && (
-              <span className="text-xs text-henry-text-muted">Add your API key in Settings later</span>
-            )}
-            <button
-              onClick={handleNext}
-              disabled={!canContinue || saving}
-              className={`px-8 py-2.5 rounded-xl font-medium text-sm transition-all ${
-                canContinue && !saving
-                  ? 'bg-henry-accent text-white hover:bg-henry-accent-hover'
-                  : 'bg-henry-hover text-henry-text-muted cursor-not-allowed'
-              }`}
-            >
-              {saving ? 'Saving...' : 'Continue →'}
-            </button>
-          </div>
+          </button>
         )}
       </div>
     </div>
