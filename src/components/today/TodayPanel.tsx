@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { useStore } from '../../store';
-import { getTodayBriefing, saveBriefing, setGenerating, isGenerating, buildBriefingPrompt } from '../../henry/proactiveBriefing';
+import { getTodayBriefing, getTodayKey, saveBriefing, setGenerating, isGenerating, buildBriefingPrompt } from '../../henry/proactiveBriefing';
 import { getDueMacros, markMacroRun } from '../../henry/recurringMacros';
 import type { DailyBriefing } from '../../henry/proactiveBriefing';
 
@@ -39,11 +39,6 @@ function getTodayLabel(): string {
   return new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
 }
 
-function getTodayKey(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-}
-
 export default function TodayPanel() {
   const { setCurrentView, conversations, settings } = useStore();
   const [isNewDay, setIsNewDay] = useState(false);
@@ -74,6 +69,13 @@ export default function TodayPanel() {
 
     // Check due macros
     setDueMacros(getDueMacros());
+
+    return () => {
+      // Cancel any in-flight briefing stream so it doesn't update dead state
+      if (briefingStreamRef.current?.cancel) {
+        briefingStreamRef.current.cancel();
+      }
+    };
   }, []);
 
   async function tryGenerateBriefing() {
@@ -133,11 +135,7 @@ export default function TodayPanel() {
 
   function launchMode(mode: string, prompt?: string) {
     try { localStorage.setItem(HENRY_OPERATING_MODE_KEY, mode); } catch { /* ignore */ }
-    if (prompt) {
-      window.dispatchEvent(new CustomEvent('henry_secretary_prompt', { detail: { prompt } }));
-    } else {
-      window.dispatchEvent(new CustomEvent('henry_secretary_prompt', { detail: { prompt: '' } }));
-    }
+    window.dispatchEvent(new CustomEvent('henry_mode_launch', { detail: { mode, prompt: prompt || '' } }));
     setCurrentView('chat');
   }
 

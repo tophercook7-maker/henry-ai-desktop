@@ -41,7 +41,7 @@ export default function App() {
 
     firstContactDone.current = true;
     void triggerFirstContact();
-  }, [setupComplete, settings]);
+  }, [setupComplete, settings.henry_first_launch]);
 
   async function triggerFirstContact() {
     try {

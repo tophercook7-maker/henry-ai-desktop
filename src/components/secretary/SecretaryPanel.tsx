@@ -1,8 +1,5 @@
 import { useStore } from '../../store';
 
-const TODAY = new Date();
-const DAY_LABEL = TODAY.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
-
 interface QuickAction {
   icon: string;
   title: string;
@@ -11,60 +8,61 @@ interface QuickAction {
   color: string;
 }
 
-const QUICK_ACTIONS: QuickAction[] = [
-  {
-    icon: '🌅',
-    title: 'Daily Briefing',
-    description: "What's on my plate today",
-    prompt: `Give me my daily briefing for ${DAY_LABEL}. I'll share what's on my calendar and task list — organize it into: Schedule, Priority Tasks, Replies Needed, and Heads Up.`,
-    color: 'from-amber-500/10 to-orange-500/5 border-amber-500/20 hover:border-amber-400/40',
-  },
-  {
-    icon: '✉️',
-    title: 'Draft an Email',
-    description: 'BLUF-style, ready to send',
-    prompt: "I need to draft an email. I'll tell you who it's to and what I need to say — write it using BLUF format, concise and ready to send.",
-    color: 'from-blue-500/10 to-sky-500/5 border-blue-500/20 hover:border-blue-400/40',
-  },
-  {
-    icon: '📅',
-    title: 'Schedule Something',
-    description: 'Find a time, draft an invite',
-    prompt: "Help me schedule a meeting. I'll tell you who it's with and roughly what it's for — suggest 2–3 time slots, draft the invite, and flag any timezone or timing considerations.",
-    color: 'from-violet-500/10 to-purple-500/5 border-violet-500/20 hover:border-violet-400/40',
-  },
-  {
-    icon: '📋',
-    title: 'Review My Tasks',
-    description: 'Prioritize and clear the list',
-    prompt: "Let's review my tasks. I'll share what's on my list — sort them by urgency and importance, flag what I should do today vs. defer, and identify anything I should delegate or drop.",
-    color: 'from-emerald-500/10 to-teal-500/5 border-emerald-500/20 hover:border-emerald-400/40',
-  },
-  {
-    icon: '🤝',
-    title: 'Meeting Prep',
-    description: 'Quick brief before you walk in',
-    prompt: "Prep me for a meeting. I'll give you the details — attendees, topic, what I need to accomplish — and you'll give me a concise brief: what to know, what to ask, and what outcome I'm driving toward.",
-    color: 'from-rose-500/10 to-pink-500/5 border-rose-500/20 hover:border-rose-400/40',
-  },
-  {
-    icon: '📡',
-    title: 'Follow-Up Nudge',
-    description: "Who haven't I heard back from",
-    prompt: "Help me draft a follow-up message. I'll tell you who I'm waiting on, what I asked for, and how long it's been — write a nudge that's direct but not pushy, calibrated to the timeline.",
-    color: 'from-cyan-500/10 to-sky-500/5 border-cyan-500/20 hover:border-cyan-400/40',
-  },
-];
-
-function getGreeting(): string {
-  const hour = TODAY.getHours();
-  if (hour < 12) return 'Good morning.';
-  if (hour < 17) return 'Good afternoon.';
-  return 'Good evening.';
+function buildQuickActions(dayLabel: string): QuickAction[] {
+  return [
+    {
+      icon: '🌅',
+      title: 'Daily Briefing',
+      description: "What's on my plate today",
+      prompt: `Give me my daily briefing for ${dayLabel}. I'll share what's on my calendar and task list — organize it into: Schedule, Priority Tasks, Replies Needed, and Heads Up.`,
+      color: 'from-amber-500/10 to-orange-500/5 border-amber-500/20 hover:border-amber-400/40',
+    },
+    {
+      icon: '✉️',
+      title: 'Draft an Email',
+      description: 'BLUF-style, ready to send',
+      prompt: "I need to draft an email. I'll tell you who it's to and what I need to say — write it using BLUF format, concise and ready to send.",
+      color: 'from-blue-500/10 to-sky-500/5 border-blue-500/20 hover:border-blue-400/40',
+    },
+    {
+      icon: '📅',
+      title: 'Schedule Something',
+      description: 'Find a time, draft an invite',
+      prompt: "Help me schedule a meeting. I'll tell you who it's with and roughly what it's for — suggest 2–3 time slots, draft the invite, and flag any timezone or timing considerations.",
+      color: 'from-violet-500/10 to-purple-500/5 border-violet-500/20 hover:border-violet-400/40',
+    },
+    {
+      icon: '📋',
+      title: 'Review My Tasks',
+      description: 'Prioritize and clear the list',
+      prompt: "Let's review my tasks. I'll share what's on my list — sort them by urgency and importance, flag what I should do today vs. defer, and identify anything I should delegate or drop.",
+      color: 'from-emerald-500/10 to-teal-500/5 border-emerald-500/20 hover:border-emerald-400/40',
+    },
+    {
+      icon: '🤝',
+      title: 'Meeting Prep',
+      description: 'Quick brief before you walk in',
+      prompt: "Prep me for a meeting. I'll give you the details — attendees, topic, what I need to accomplish — and you'll give me a concise brief: what to know, what to ask, and what outcome I'm driving toward.",
+      color: 'from-rose-500/10 to-pink-500/5 border-rose-500/20 hover:border-rose-400/40',
+    },
+    {
+      icon: '📡',
+      title: 'Follow-Up Nudge',
+      description: "Who haven't I heard back from",
+      prompt: "Help me draft a follow-up message. I'll tell you who I'm waiting on, what I asked for, and how long it's been — write a nudge that's direct but not pushy, calibrated to the timeline.",
+      color: 'from-cyan-500/10 to-sky-500/5 border-cyan-500/20 hover:border-cyan-400/40',
+    },
+  ];
 }
 
 export default function SecretaryPanel() {
   const { setCurrentView } = useStore();
+
+  const now = new Date();
+  const dayLabel = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+  const hour = now.getHours();
+  const greeting = hour < 12 ? 'Good morning.' : hour < 17 ? 'Good afternoon.' : 'Good evening.';
+  const quickActions = buildQuickActions(dayLabel);
 
   function launchAction(action: QuickAction) {
     try {
@@ -74,7 +72,7 @@ export default function SecretaryPanel() {
     }
     window.dispatchEvent(
       new CustomEvent('henry_secretary_prompt', {
-        detail: { prompt: action.prompt },
+        detail: { prompt: action.prompt, mode: 'secretary' },
       })
     );
     setCurrentView('chat');
@@ -87,7 +85,7 @@ export default function SecretaryPanel() {
       /* ignore */
     }
     window.dispatchEvent(
-      new CustomEvent('henry_secretary_prompt', { detail: { prompt: '' } })
+      new CustomEvent('henry_secretary_prompt', { detail: { prompt: '', mode: 'secretary' } })
     );
     setCurrentView('chat');
   }
@@ -102,7 +100,7 @@ export default function SecretaryPanel() {
             <h1 className="text-lg font-semibold text-henry-text">Secretary</h1>
           </div>
           <p className="text-henry-text-dim text-sm leading-relaxed">
-            {getGreeting()} {DAY_LABEL}. What needs handling?
+            {greeting} {dayLabel}. What needs handling?
           </p>
         </div>
       </div>
@@ -115,7 +113,7 @@ export default function SecretaryPanel() {
           </p>
 
           <div className="grid grid-cols-2 gap-3 mb-8">
-            {QUICK_ACTIONS.map((action) => (
+            {quickActions.map((action) => (
               <button
                 key={action.title}
                 onClick={() => launchAction(action)}

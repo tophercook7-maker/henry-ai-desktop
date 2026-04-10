@@ -291,14 +291,27 @@ export default function ChatView() {
 
   useEffect(() => {
     function handleSecretaryPrompt(e: Event) {
-      const { prompt } = (e as CustomEvent<{ prompt: string }>).detail;
-      setOperatingMode('secretary');
-      if (prompt) {
-        setChatInject({ id: Date.now(), text: prompt });
+      const detail = (e as CustomEvent<{ prompt: string; mode?: string }>).detail;
+      const mode = detail.mode && isHenryOperatingMode(detail.mode) ? detail.mode : 'secretary';
+      setOperatingMode(mode);
+      if (detail.prompt) {
+        setChatInject({ id: Date.now(), text: detail.prompt });
+      }
+    }
+    function handleModeLaunch(e: Event) {
+      const detail = (e as CustomEvent<{ mode: string; prompt: string }>).detail;
+      const mode = detail.mode && isHenryOperatingMode(detail.mode) ? detail.mode : 'companion';
+      setOperatingMode(mode);
+      if (detail.prompt) {
+        setChatInject({ id: Date.now(), text: detail.prompt });
       }
     }
     window.addEventListener('henry_secretary_prompt', handleSecretaryPrompt);
-    return () => window.removeEventListener('henry_secretary_prompt', handleSecretaryPrompt);
+    window.addEventListener('henry_mode_launch', handleModeLaunch);
+    return () => {
+      window.removeEventListener('henry_secretary_prompt', handleSecretaryPrompt);
+      window.removeEventListener('henry_mode_launch', handleModeLaunch);
+    };
   }, []);
 
   // Worker Brain: inject Worker messages back into the active conversation

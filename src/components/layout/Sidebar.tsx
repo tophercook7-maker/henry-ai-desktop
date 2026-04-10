@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useStore } from '../../store';
 import type { Conversation } from '../../types';
 
@@ -33,19 +33,6 @@ export default function Sidebar() {
   } = useStore();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
-
-  useEffect(() => {
-    loadConversations();
-  }, []);
-
-  async function loadConversations() {
-    try {
-      const convos = await window.henryAPI.getConversations();
-      setConversations(convos);
-    } catch (err) {
-      console.error('Failed to load conversations:', err);
-    }
-  }
 
   async function selectConversation(id: string) {
     setActiveConversation(id);
