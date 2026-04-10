@@ -23,6 +23,7 @@ export default function App() {
     setCompanionStatus,
     setWorkerStatus,
     updateTask,
+    setCurrentView,
     settings,
   } = useStore();
 
@@ -60,6 +61,7 @@ export default function App() {
 
       await window.henryAPI.saveMessage(firstMsg);
       addMessage(firstMsg);
+      setCurrentView('chat');
 
       // Clear first launch flag
       await window.henryAPI.saveSetting('henry_first_launch', 'false');

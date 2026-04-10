@@ -12,7 +12,7 @@ import type {
 
 export const useStore = create<AppState>((set, get) => ({
   // UI
-  currentView: 'chat',
+  currentView: 'today',
   setupComplete: false,
 
   // Conversations

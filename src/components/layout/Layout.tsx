@@ -10,6 +10,8 @@ import CostDashboard from '../costs/CostDashboard';
 import ComputerPanel from '../computer/ComputerPanel';
 import PrinterPanel from '../computer/PrinterPanel';
 import SecretaryPanel from '../secretary/SecretaryPanel';
+import TodayPanel from '../today/TodayPanel';
+import ContactsPanel from '../contacts/ContactsPanel';
 import { useStore } from '../../store';
 
 export default function Layout() {
@@ -21,14 +23,16 @@ export default function Layout() {
       <div className="flex-1 flex overflow-hidden">
         <Sidebar />
         <main className="flex-1 overflow-hidden">
+          {currentView === 'today' && <TodayPanel />}
           {currentView === 'chat' && <ChatView />}
+          {currentView === 'secretary' && <SecretaryPanel />}
+          {currentView === 'contacts' && <ContactsPanel />}
           {currentView === 'tasks' && <TaskQueueView />}
           {currentView === 'files' && <FileBrowser />}
           {currentView === 'workspace' && <WorkspaceView />}
           {currentView === 'terminal' && <TerminalView />}
           {currentView === 'computer' && <ComputerPanel />}
           {currentView === 'printer' && <PrinterPanel />}
-          {currentView === 'secretary' && <SecretaryPanel />}
           {currentView === 'costs' && <CostDashboard />}
           {currentView === 'settings' && <SettingsView />}
         </main>

@@ -181,11 +181,26 @@ function detectModeFromMessage(text: string, currentMode: HenryOperatingMode): H
     'interior design','render','blueprint','furniture layout','kitchen layout',
     'bedroom layout','home office','workspace design','3d print','cad '];
 
+  const secretaryPhrases = ['draft an email','draft email','write an email','send an email',
+    'schedule a meeting','schedule meeting','book a meeting','my calendar','my schedule',
+    'daily briefing','morning briefing','weekly briefing','meeting prep','prep for',
+    'follow up','follow-up','action items','task list','triage my tasks','remind me',
+    'out of office','reschedule','cancel my','meeting agenda','who do i owe','waiting on'];
+
+  const computerPhrases = ['run a command','run the command','open the terminal','shell command',
+    'bash script','applescript','take a screenshot','screenshot my','open the app',
+    'launch the app','automate my','run this script','execute','system command',
+    'find the file','move the file','delete the file','computer control'];
+
   if (BIBLE_ABBR_PATTERN.test(text)) return 'biblical';
   if (BIBLICAL_BOOKS.some((b) => lower.includes(b))) return 'biblical';
   if (biblicalWords.some((w) => lower.includes(w))) return 'biblical';
 
   if (designKeywords.some((k) => lower.includes(k))) return 'design3d';
+
+  if (secretaryPhrases.some((p) => lower.includes(p))) return 'secretary';
+
+  if (computerPhrases.some((p) => lower.includes(p))) return 'computer';
 
   if (writerPhrases.some((p) => lower.includes(p))) return 'writer';
 
@@ -241,6 +256,10 @@ export default function ChatView() {
   );
   const [saveWorkspaceDraftBusy, setSaveWorkspaceDraftBusy] = useState(false);
   const [chatInject, setChatInject] = useState<{ id: number; text: string } | null>(null);
+  const [ttsEnabled, setTtsEnabled] = useState(() => {
+    try { return localStorage.getItem('henry_tts_enabled') === 'true'; } catch { return false; }
+  });
+  const lastSpokenMsgIdRef = useRef<string | null>(null);
   const [design3dRefPath, setDesign3dRefPath] = useState<string | null>(() =>
     readLastWorkspaceFilePath()
   );
@@ -278,6 +297,44 @@ export default function ChatView() {
     window.addEventListener('henry_secretary_prompt', handleSecretaryPrompt);
     return () => window.removeEventListener('henry_secretary_prompt', handleSecretaryPrompt);
   }, []);
+
+  // TTS: speak Henry's response when streaming ends
+  useEffect(() => {
+    if (!ttsEnabled || isStreaming) return;
+    const lastMsg = messages[messages.length - 1];
+    if (!lastMsg || lastMsg.role !== 'assistant') return;
+    if (lastSpokenMsgIdRef.current === lastMsg.id) return;
+    lastSpokenMsgIdRef.current = lastMsg.id;
+    window.speechSynthesis.cancel();
+    const clean = lastMsg.content
+      .replace(/```[\s\S]*?```/g, 'code block')
+      .replace(/`[^`]+`/g, '')
+      .replace(/#{1,6}\s+/g, '')
+      .replace(/\*\*([^*]+)\*\*/g, '$1')
+      .replace(/\*([^*]+)\*/g, '$1')
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      .replace(/>\s+/g, '')
+      .replace(/\n{2,}/g, '. ')
+      .replace(/\n/g, ' ')
+      .trim();
+    if (!clean) return;
+    const utterance = new SpeechSynthesisUtterance(clean);
+    utterance.rate = 0.92;
+    utterance.pitch = 1.05;
+    const voices = window.speechSynthesis.getVoices();
+    const preferred = voices.find(
+      (v) => v.name === 'Samantha' || v.name === 'Daniel' || v.name.includes('Google') || v.lang === 'en-US'
+    );
+    if (preferred) utterance.voice = preferred;
+    window.speechSynthesis.speak(utterance);
+  }, [isStreaming, ttsEnabled, messages]);
+
+  function toggleTts() {
+    const next = !ttsEnabled;
+    setTtsEnabled(next);
+    try { localStorage.setItem('henry_tts_enabled', String(next)); } catch { /* ignore */ }
+    if (!next) window.speechSynthesis.cancel();
+  }
 
   /** Restore active thread id before persistence effects run (avoids wiping saved conversation). */
   useLayoutEffect(() => {
@@ -1348,6 +1405,8 @@ export default function ChatView() {
                 injectDraft={chatInject}
                 onInjectConsumed={() => setChatInject(null)}
                 placeholder="Message Henry…"
+                ttsEnabled={ttsEnabled}
+                onToggleTts={toggleTts}
               />
             </div>
           </div>

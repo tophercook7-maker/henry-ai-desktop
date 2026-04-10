@@ -4,7 +4,19 @@
 
 Henry AI is Topher's personal AI presence — a local-first AI OS with a dual-engine architecture (Local Brain / Ollama + Second Brain / Cloud). He has warmth, memory, and a can-do philosophy: he always finds a way to help, never dead-ends a request.
 
-Supports OpenAI, Anthropic, Google Gemini, and Ollama. Modes: Chat (Companion), Writing, Code, Bible Study (Ethiopian Orthodox aware), 3D/Design, Secretary, Computer Control. Auto-detects mode from message content. Always knows current date/time.
+Supports OpenAI, Anthropic, Google Gemini, and Ollama. 7 modes — all auto-detected from message content:
+- **Companion** (chat) · **Writer** · **Developer** (code) · **Biblical** (Ethiopian Orthodox aware) · **3D/Design** · **Secretary** (email, scheduling, tasks) · **Computer** (Mac automation)
+
+### Features
+- **Today panel** — home screen with greeting, 7-mode launcher, recent conversations, quick asks
+- **Secretary panel** — quick-action hub: daily briefing, email drafts, scheduling, task review, meeting prep, follow-ups
+- **Contacts panel** — lightweight CRM stored locally; Henry uses contact context in conversation
+- **Voice input** — mic button in chat (Web Speech API, Chrome/Edge); speaks into the input
+- **Text-to-speech** — 🔊 toggle in chat bar; Henry reads his responses aloud with markdown stripped
+- **Computer panel** — Mac shell/AppleScript/app control (Electron desktop build only)
+- **3D Printer panel** — USB serial G-code terminal (Electron desktop build only)
+- **Memory panel** — Henry's known facts about Topher, editable in chat
+- **Mode auto-detection** — every keyword-driven mode switch including secretary and computer phrases
 
 Originally built as an Electron desktop app, it runs in Replit as a React web app with a browser-based mock layer replacing the Electron IPC bridge.
 
