@@ -1047,6 +1047,38 @@ const henryAPI: Window['henryAPI'] = {
   installUpdate: async () => {},
   onUpdateAvailable: () => () => {},
   onUpdateDownloaded: () => () => {},
+
+  createTask: async (params: { description: string; type: string; priority?: number; payload?: unknown }) => {
+    const { v4: uuid } = await import('uuid');
+    const task = {
+      id: uuid(),
+      description: params.description,
+      type: params.type,
+      priority: params.priority ?? 5,
+      status: 'pending' as const,
+      payload: params.payload ? JSON.stringify(params.payload) : undefined,
+      created_at: new Date().toISOString(),
+    };
+    const tasks = getStore<any[]>('henry:tasks', []);
+    tasks.unshift(task);
+    setStore('henry:tasks', tasks);
+    emit('task:update', task);
+    return { id: task.id };
+  },
+
+  whisperTranscribe: async (audioBlob: Blob, apiKey: string): Promise<string> => {
+    const form = new FormData();
+    form.append('file', audioBlob, 'audio.webm');
+    form.append('model', 'whisper-large-v3');
+    form.append('response_format', 'text');
+    const res = await proxyFetch('/proxy/groq/openai/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}` },
+      body: form,
+    });
+    if (!res.ok) throw new Error(`Whisper error ${res.status}`);
+    return await res.text();
+  },
 };
 
 window.henryAPI = henryAPI;

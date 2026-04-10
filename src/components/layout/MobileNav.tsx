@@ -2,19 +2,23 @@ import { useState } from 'react';
 import { useStore } from '../../store';
 import type { Conversation } from '../../types';
 
-type ViewType = 'today' | 'chat' | 'secretary' | 'contacts' | 'tasks' | 'files' | 'workspace' | 'terminal' | 'computer' | 'printer' | 'costs' | 'settings';
+type ViewType = 'today' | 'chat' | 'secretary' | 'contacts' | 'tasks' | 'files' | 'workspace' | 'terminal' | 'computer' | 'printer' | 'costs' | 'settings' | 'journal' | 'focus' | 'recorder' | 'modes';
 
 const BOTTOM_TABS: { id: ViewType; label: string; icon: string }[] = [
   { id: 'today', label: 'Today', icon: '🏠' },
   { id: 'chat', label: 'Chat', icon: '💬' },
-  { id: 'secretary', label: 'Secretary', icon: '🗓️' },
-  { id: 'contacts', label: 'People', icon: '👥' },
+  { id: 'journal', label: 'Journal', icon: '📔' },
+  { id: 'focus', label: 'Focus', icon: '🎯' },
 ];
 
 const MORE_NAV: { id: ViewType; label: string; icon: string }[] = [
+  { id: 'recorder', label: 'Recorder', icon: '🎙' },
+  { id: 'secretary', label: 'Secretary', icon: '🗓️' },
+  { id: 'contacts', label: 'People', icon: '👥' },
   { id: 'tasks', label: 'Tasks', icon: '📋' },
   { id: 'files', label: 'Files', icon: '📁' },
   { id: 'workspace', label: 'Workspace', icon: '🗂️' },
+  { id: 'modes', label: 'My Modes', icon: '✨' },
   { id: 'terminal', label: 'Terminal', icon: '💻' },
   { id: 'computer', label: 'Computer', icon: '🖥️' },
   { id: 'printer', label: '3D Printer', icon: '🖨️' },

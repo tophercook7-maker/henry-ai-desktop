@@ -4,10 +4,12 @@
 
 Henry AI is Topher's personal AI presence — a local-first AI OS with a dual-engine architecture (Local Brain / Ollama + Cloud Brain). He has warmth, memory, and a can-do philosophy: he always finds a way to help, never dead-ends a request.
 
-Supports OpenAI, Anthropic, Google Gemini, and Ollama. 8 modes — all auto-detected from message content:
+Supports OpenAI, Anthropic, Google Gemini, Groq, and Ollama. 8 built-in modes + unlimited custom modes:
 - **Companion** (chat) · **Writer** · **Developer** (code) · **Builder** (app builder) · **Biblical** (Ethiopian Orthodox aware) · **3D/Design** · **Secretary** (email, scheduling, tasks) · **Computer** (Mac automation)
+- **Custom Modes** — create and save your own modes with name, icon, description, system prompt, and launch with one tap
 
 ### Features
+- **Groq hardwired** — Groq is set as the permanent default engine for both companion and worker if configured; model: `llama-3.3-70b-versatile`
 - **Full web access** — auto-searches when needed; fetches any URL; supports Google CSE + Brave Search APIs
 - **⌘K Command Palette** — fuzzy search across all modes, quick actions, recent conversations, navigation
 - **Rich memory** — projects, goals, and people injected into Henry's system prompt (localStorage)
@@ -15,14 +17,22 @@ Supports OpenAI, Anthropic, Google Gemini, and Ollama. 8 modes — all auto-dete
 - **Builder mode live preview** — streaming partial HTML rendered live; viewport toggle; download HTML
 - **Today panel** — quick-ask input at top, 8-mode launcher, morning briefing, recent conversations
 - **Secretary panel** — daily briefing, email drafts, scheduling, task review, meeting prep
-- **Voice input + TTS** — mic button (Web Speech API); 🔊 toggle reads Henry's responses aloud
+- **Voice input (Groq Whisper)** — mic button records via MediaRecorder → sends to Groq Whisper STT → inserts transcript into chat input; TTS toggle reads responses aloud
+- **Document ingestion** — drag-and-drop or attach files in chat input; Henry gives multi-angle perspective + asks what to do
 - **Computer panel** — Mac shell/AppleScript/app control (Electron desktop build only)
 - **3D Printer panel** — USB serial G-code terminal (Electron desktop build only)
+- **Journal panel** — date-stamped journal entries with Henry reflection on demand; sidebar search
+- **Focus timer panel** — Pomodoro timer with customizable durations, AI check-ins between sessions
+- **Meeting Recorder panel** — record meetings via MediaRecorder → Groq Whisper transcription → AI summary + action items → save tasks
+- **Modes panel** — custom mode editor (icon, name, description, system prompt) + built-in mode launcher
 - **Conversation auto-naming** — after the first exchange, Henry silently generates a 4-6 word title
 - **Message copy button** — hover any message to copy it; code blocks get individual copy buttons
 - **Message timestamps** — visible on hover, subtle and right-aligned
 - **Syntax-highlighted code blocks** — highlight.js, language badge, one-click copy per block
 - **Auto-updater** — electron-updater wired; banner in app notifies when update is ready
+- **Proactive nudges** — context-aware nudge banners (morning briefing, evening journal, stale tasks, project inactivity)
+- **Clipboard AI** — detects clipboard content on focus; offers summarize/explain/improve/bullet/reply actions inline
+- **Custom mode system prompt** — `henry_custom_mode_override` in localStorage overrides the charter system prompt for fully custom personas
 
 ## Tech Stack
 

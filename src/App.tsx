@@ -2,8 +2,10 @@ import { useEffect, useState, useRef } from 'react';
 import Layout from './components/layout/Layout';
 import SetupWizard from './components/wizard/SetupWizard';
 import ElectronAutoSetup from './components/wizard/ElectronAutoSetup';
+import ClipboardAIToast from './components/ClipboardAIToast';
 import { useStore } from './store';
 import type { Task } from './types';
+import { startProactiveNudges, type HenryNudge } from './henry/proactiveNudges';
 
 const HENRY_FIRST_MESSAGE = `Hey. I'm up and running.
 
@@ -14,6 +16,7 @@ If you want to explore what I can do first, try saying something like "show me w
 export default function App() {
   const [loading, setLoading] = useState(true);
   const [updateState, setUpdateState] = useState<'none' | 'available' | 'downloaded'>('none');
+  const [nudge, setNudge] = useState<HenryNudge | null>(null);
   const firstContactDone = useRef(false);
   const {
     setupComplete,
@@ -32,7 +35,8 @@ export default function App() {
   useEffect(() => {
     void initApp();
     const cleanup = setupEventListeners();
-    return cleanup;
+    const stopNudges = startProactiveNudges((n) => setNudge(n));
+    return () => { cleanup(); stopNudges(); };
   }, []);
 
   // Henry's autonomous first contact — fires once after wizard completes
@@ -111,6 +115,25 @@ export default function App() {
         // Mark complete if only providers existed without the flag
         if (!isComplete && hasProviders) {
           await window.henryAPI.saveSetting('setup_complete', 'true');
+        }
+
+        // Hardwire Groq as permanent default for both engines if not already set
+        const groqProvider = lsProviders.find((p: any) => p.id === 'groq');
+        if (groqProvider && groqProvider.enabled) {
+          const needsCompanion = !settingsMap.companion_provider;
+          const needsWorker = !settingsMap.worker_provider;
+          if (needsCompanion) {
+            await window.henryAPI.saveSetting('companion_provider', 'groq');
+            await window.henryAPI.saveSetting('companion_model', 'llama-3.3-70b-versatile');
+            useStore.getState().updateSetting('companion_provider', 'groq');
+            useStore.getState().updateSetting('companion_model', 'llama-3.3-70b-versatile');
+          }
+          if (needsWorker) {
+            await window.henryAPI.saveSetting('worker_provider', 'groq');
+            await window.henryAPI.saveSetting('worker_model', 'llama-3.3-70b-versatile');
+            useStore.getState().updateSetting('worker_provider', 'groq');
+            useStore.getState().updateSetting('worker_model', 'llama-3.3-70b-versatile');
+          }
         }
 
         setSetupComplete(true);
@@ -254,6 +277,37 @@ export default function App() {
       <div className="flex-1 min-h-0">
         <Layout />
       </div>
+
+      {/* Proactive nudge banner */}
+      {nudge && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-fade-in">
+          <div className="flex items-center gap-3 bg-henry-surface/95 border border-henry-border/60 backdrop-blur-xl rounded-2xl shadow-xl px-5 py-3.5 max-w-sm">
+            <span className="text-xl shrink-0">{nudge.icon ?? '💡'}</span>
+            <p className="text-sm text-henry-text leading-snug flex-1">{nudge.message}</p>
+            <button
+              onClick={() => {
+                useStore.getState().setCurrentView('chat');
+                window.dispatchEvent(new CustomEvent('henry_inject_draft', { detail: { text: nudge.cta ?? nudge.message } }));
+                setNudge(null);
+              }}
+              className="shrink-0 px-3 py-1.5 rounded-xl text-xs font-semibold bg-henry-accent/15 text-henry-accent border border-henry-accent/20 hover:bg-henry-accent/25 transition-all"
+            >
+              Open
+            </button>
+            <button
+              onClick={() => setNudge(null)}
+              className="shrink-0 text-henry-text-muted hover:text-henry-text transition-colors"
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Clipboard AI toast */}
+      <ClipboardAIToast />
     </div>
   );
 }

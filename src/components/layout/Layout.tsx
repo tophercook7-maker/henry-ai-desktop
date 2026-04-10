@@ -15,6 +15,10 @@ import SecretaryPanel from '../secretary/SecretaryPanel';
 import TodayPanel from '../today/TodayPanel';
 import ContactsPanel from '../contacts/ContactsPanel';
 import CommandPalette from '../chat/CommandPalette';
+import JournalPanel from '../journal/JournalPanel';
+import FocusPanel from '../focus/FocusPanel';
+import MeetingRecorderPanel from '../recorder/MeetingRecorderPanel';
+import ModesPanel from '../modes/ModesPanel';
 import { useStore } from '../../store';
 import { isHenryOperatingMode, type HenryOperatingMode } from '../../henry/charter';
 import { useEffect } from 'react';
@@ -68,6 +72,10 @@ export default function Layout() {
         <main className="flex-1 overflow-hidden min-h-0">
           {currentView === 'today' && <TodayPanel />}
           {currentView === 'chat' && <ChatView />}
+          {currentView === 'journal' && <JournalPanel />}
+          {currentView === 'focus' && <FocusPanel />}
+          {currentView === 'recorder' && <MeetingRecorderPanel />}
+          {currentView === 'modes' && <ModesPanel />}
           {currentView === 'secretary' && <SecretaryPanel />}
           {currentView === 'contacts' && <ContactsPanel />}
           {currentView === 'tasks' && <TaskQueueView />}

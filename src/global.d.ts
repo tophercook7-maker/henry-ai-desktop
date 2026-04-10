@@ -287,6 +287,9 @@ declare global {
     installUpdate: () => Promise<void>;
     onUpdateAvailable: (cb: () => void) => () => void;
     onUpdateDownloaded: (cb: () => void) => () => void;
+
+    whisperTranscribe?: (audioBlob: Blob, apiKey: string) => Promise<string>;
+    createTask?: (params: { description: string; type: string; priority?: number; payload?: unknown }) => Promise<{ id: string }>;
   }
 
   interface Window {

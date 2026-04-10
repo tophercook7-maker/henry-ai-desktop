@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { useStore } from '../../store';
 
 interface ChatInputProps {
   onSend: (content: string) => void;
@@ -11,12 +12,8 @@ interface ChatInputProps {
   onToggleTts?: () => void;
   onSearch?: (query: string) => void;
   isSearching?: boolean;
+  onFileIngest?: (content: string, fileName: string) => void;
 }
-
-const SpeechRecognitionAPI =
-  typeof window !== 'undefined'
-    ? (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-    : null;
 
 export default function ChatInput({
   onSend,
@@ -29,13 +26,18 @@ export default function ChatInput({
   onToggleTts,
   onSearch,
   isSearching = false,
+  onFileIngest,
 }: ChatInputProps) {
   const [input, setInput] = useState('');
   const [listening, setListening] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const recognitionRef = useRef<any>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const settings = useStore((s) => s.settings);
 
-  // Auto-resize textarea
   useEffect(() => {
     const textarea = textareaRef.current;
     if (textarea) {
@@ -44,14 +46,12 @@ export default function ChatInput({
     }
   }, [input]);
 
-  // Focus on mount — skip on touch devices so mobile keyboard doesn't pop immediately
   useEffect(() => {
     if (!window.matchMedia('(pointer: coarse)').matches) {
       textareaRef.current?.focus();
     }
   }, []);
 
-  // Inject draft from parent
   useEffect(() => {
     if (!injectDraft?.text) return;
     setInput(injectDraft.text);
@@ -67,70 +67,89 @@ export default function ChatInput({
     });
   }, [injectDraft?.id, injectDraft?.text, onInjectConsumed]);
 
-  // Cleanup recognition on unmount
   useEffect(() => {
     return () => {
-      recognitionRef.current?.stop();
+      if (mediaRecorderRef.current?.state !== 'inactive') {
+        mediaRecorderRef.current?.stop();
+      }
     };
   }, []);
 
-  const stopListening = useCallback(() => {
-    recognitionRef.current?.stop();
-    recognitionRef.current = null;
+  async function startGroqWhisper() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mr = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      audioChunksRef.current = [];
+      mr.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
+      mr.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        transcribeAudio();
+      };
+      mr.start();
+      mediaRecorderRef.current = mr;
+      setListening(true);
+    } catch {
+      alert('Microphone access denied. Please allow microphone permission.');
+    }
+  }
+
+  async function stopGroqWhisper() {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
     setListening(false);
-  }, []);
+    setTranscribing(true);
+  }
+
+  async function transcribeAudio() {
+    try {
+      const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+      if (blob.size < 1000) {
+        setTranscribing(false);
+        return;
+      }
+
+      const providers = await window.henryAPI.getProviders();
+      const groqProvider = providers.find((p: any) => p.id === 'groq');
+      const apiKey = groqProvider?.api_key || groqProvider?.apiKey || '';
+
+      if (!apiKey || !window.henryAPI.whisperTranscribe) {
+        // Fallback: just stop — no transcription available
+        setTranscribing(false);
+        return;
+      }
+
+      const transcript = await window.henryAPI.whisperTranscribe(blob, apiKey);
+      if (transcript?.trim()) {
+        setInput((prev) => prev ? `${prev} ${transcript.trim()}` : transcript.trim());
+        requestAnimationFrame(() => {
+          const el = textareaRef.current;
+          if (el) {
+            el.style.height = 'auto';
+            el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+            el.focus();
+          }
+        });
+      }
+    } catch (err) {
+      console.warn('Whisper transcription failed:', err);
+    } finally {
+      setTranscribing(false);
+    }
+  }
 
   function toggleVoice() {
     if (listening) {
-      stopListening();
-      return;
+      stopGroqWhisper();
+    } else {
+      startGroqWhisper();
     }
-    if (!SpeechRecognitionAPI) {
-      alert('Voice input is not supported in this browser. Try Chrome or Edge.');
-      return;
-    }
-
-    const recognition = new SpeechRecognitionAPI();
-    recognition.continuous = false;
-    recognition.interimResults = true;
-    recognition.lang = 'en-US';
-
-    const baseText = input;
-
-    recognition.onresult = (event: any) => {
-      const transcript = Array.from(event.results as any[])
-        .map((r: any) => r[0].transcript)
-        .join('');
-      setInput(baseText ? `${baseText} ${transcript}` : transcript);
-    };
-
-    recognition.onerror = () => {
-      stopListening();
-    };
-
-    recognition.onend = () => {
-      setListening(false);
-      recognitionRef.current = null;
-      requestAnimationFrame(() => {
-        const el = textareaRef.current;
-        if (el) {
-          el.style.height = 'auto';
-          el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
-          el.focus();
-          el.setSelectionRange(el.value.length, el.value.length);
-        }
-      });
-    };
-
-    recognitionRef.current = recognition;
-    recognition.start();
-    setListening(true);
   }
 
   function handleSubmit() {
     const trimmed = input.trim();
     if (!trimmed || isStreaming) return;
-    stopListening();
+    if (listening) stopGroqWhisper();
     onSend(trimmed);
     setInput('');
     if (textareaRef.current) {
@@ -145,18 +164,55 @@ export default function ChatInput({
     }
   }
 
+  async function handleFileUpload(file: File) {
+    if (!onFileIngest) return;
+    const ext = file.name.split('.').pop()?.toLowerCase() || '';
+    if (!['txt', 'md', 'json', 'csv', 'js', 'ts', 'tsx', 'jsx', 'py', 'html', 'css', 'xml', 'yaml', 'yml'].includes(ext) && file.type !== 'text/plain') {
+      // For non-text, just pass metadata
+      onFileIngest(`[File: ${file.name} (${(file.size / 1024).toFixed(1)} KB) — binary or unsupported format. Describe what you'd like to do with it.]`, file.name);
+      return;
+    }
+    try {
+      const text = await file.text();
+      const preview = text.length > 12000 ? text.slice(0, 12000) + '\n\n[... file truncated at 12,000 chars]' : text;
+      onFileIngest(preview, file.name);
+    } catch {
+      onFileIngest(`[Could not read ${file.name}]`, file.name);
+    }
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files[0];
+    if (file && onFileIngest) handleFileUpload(file);
+  }
+
+  const micAvailable = !!navigator.mediaDevices?.getUserMedia;
+
   return (
-    <div className="relative">
+    <div
+      className={`relative transition-all ${dragOver ? 'ring-2 ring-henry-accent/50 rounded-xl' : ''}`}
+      onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={handleDrop}
+    >
+      {dragOver && (
+        <div className="absolute inset-0 rounded-xl bg-henry-accent/10 border-2 border-dashed border-henry-accent/50 flex items-center justify-center z-10 pointer-events-none">
+          <p className="text-sm text-henry-accent font-medium">Drop to send to Henry</p>
+        </div>
+      )}
+
       <div className="flex items-end gap-2 bg-henry-bg/80 border border-henry-border rounded-xl px-4 py-3 focus-within:border-henry-accent/50 transition-colors">
         <textarea
           ref={textareaRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={listening ? 'Listening...' : placeholder}
+          placeholder={listening ? 'Listening… tap mic to stop' : transcribing ? 'Transcribing…' : placeholder}
           rows={1}
           className="flex-1 bg-transparent text-sm text-henry-text placeholder-henry-text-muted outline-none resize-none max-h-[200px]"
-          disabled={isStreaming}
+          disabled={isStreaming || transcribing}
         />
 
         <div className="flex items-center gap-1.5 shrink-0">
@@ -187,13 +243,31 @@ export default function ChatInput({
             </button>
           )}
 
+          {/* File/Document ingest button */}
+          {onFileIngest && !isStreaming && (
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFileUpload(f); e.target.value = ''; }}
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                title="Send a file to Henry"
+                className="p-2 rounded-lg text-henry-text-muted hover:text-henry-text hover:bg-henry-hover/50 transition-all"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                </svg>
+              </button>
+            </>
+          )}
+
           {/* Web search button */}
           {onSearch && !isStreaming && (
             <button
-              onClick={() => {
-                const q = input.trim();
-                if (q) onSearch(q);
-              }}
+              onClick={() => { const q = input.trim(); if (q) onSearch(q); }}
               disabled={!input.trim() || isSearching}
               title="Search the web for this query"
               className={`p-2 rounded-lg transition-all ${
@@ -218,23 +292,33 @@ export default function ChatInput({
             </button>
           )}
 
-          {/* Mic button */}
-          {SpeechRecognitionAPI && !isStreaming && (
+          {/* Mic button — Groq Whisper */}
+          {micAvailable && !isStreaming && (
             <button
               onClick={toggleVoice}
-              title={listening ? 'Stop listening' : 'Voice input'}
+              disabled={transcribing}
+              title={listening ? 'Stop and transcribe' : transcribing ? 'Transcribing…' : 'Voice input (Groq Whisper)'}
               className={`p-2 rounded-lg transition-all ${
                 listening
                   ? 'bg-henry-error/20 text-henry-error animate-pulse hover:bg-henry-error/30'
+                  : transcribing
+                  ? 'text-henry-accent animate-pulse bg-henry-accent/10'
                   : 'text-henry-text-muted hover:text-henry-text hover:bg-henry-hover/50'
               }`}
             >
-              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                <line x1="12" y1="19" x2="12" y2="23" />
-                <line x1="8" y1="23" x2="16" y2="23" />
-              </svg>
+              {transcribing ? (
+                <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="10" strokeOpacity="0.3" />
+                  <path d="M12 2a10 10 0 0 1 10 10" />
+                </svg>
+              ) : (
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                  <line x1="12" y1="19" x2="12" y2="23" />
+                  <line x1="8" y1="23" x2="16" y2="23" />
+                </svg>
+              )}
             </button>
           )}
 
@@ -253,9 +337,9 @@ export default function ChatInput({
           ) : (
             <button
               onClick={handleSubmit}
-              disabled={!input.trim()}
+              disabled={!input.trim() || transcribing}
               className={`p-2 rounded-lg transition-all ${
-                input.trim()
+                input.trim() && !transcribing
                   ? 'bg-henry-accent text-white hover:bg-henry-accent-hover'
                   : 'bg-henry-hover text-henry-text-muted cursor-not-allowed'
               }`}
@@ -273,10 +357,12 @@ export default function ChatInput({
       <div className="flex items-center justify-between mt-2 px-1">
         <span className="text-[10px] text-henry-text-muted">
           {listening ? (
-            <span className="text-henry-error">● Recording — speak now</span>
+            <span className="text-henry-error">● Recording — tap mic to stop & transcribe</span>
+          ) : transcribing ? (
+            <span className="text-henry-accent">Transcribing with Whisper…</span>
           ) : (
             <>
-              <span className="hidden sm:inline">Enter to send · Shift+Enter for new line</span>
+              <span className="hidden sm:inline">Enter to send · Shift+Enter for new line · Drop files here</span>
               <span className="sm:hidden">Tap ↑ to send</span>
             </>
           )}

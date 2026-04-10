@@ -1088,8 +1088,14 @@ export default function ChatView() {
       return;
     }
 
+    // Check for custom mode system prompt override
+    const customModeRaw = (() => { try { return localStorage.getItem('henry_custom_mode_override'); } catch { return null; } })();
+    const customModeOverride = customModeRaw ? (() => { try { return JSON.parse(customModeRaw) as { systemPrompt?: string; name?: string }; } catch { return null; } })() : null;
+
     // Prepare the streaming call (Henry charter + mode + memory + mode-specific options)
-    const systemPrompt = buildCompanionStreamSystemPrompt(effectiveMode, memoryContext, {
+    const systemPrompt = customModeOverride?.systemPrompt
+      ? `${customModeOverride.systemPrompt}\n\n${memoryContext ? `## Memory Context\n${memoryContext}` : ''}`
+      : buildCompanionStreamSystemPrompt(effectiveMode, memoryContext, {
       ...(effectiveMode === 'biblical' ? { biblicalSourceProfileId: biblicalSourceProfileId } : {}),
       ...(effectiveMode === 'writer'
         ? {
@@ -1832,6 +1838,11 @@ export default function ChatView() {
                 onToggleTts={toggleTts}
                 onSearch={handleSearch}
                 isSearching={isSearching}
+                onFileIngest={(content, fileName) => {
+                  handleSend(
+                    `I'm sharing a file with you — **${fileName}**. Here's the content:\n\n\`\`\`\n${content}\n\`\`\`\n\nGive me your honest, multi-angle take on it. What stands out? What questions does it raise? And ask me what I'd like to do with it.`
+                  );
+                }}
               />
             </div>
           </div>

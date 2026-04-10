@@ -2,11 +2,14 @@ import { useState } from 'react';
 import { useStore } from '../../store';
 import type { Conversation } from '../../types';
 
-type ViewType = 'today' | 'chat' | 'secretary' | 'contacts' | 'tasks' | 'files' | 'workspace' | 'terminal' | 'computer' | 'printer' | 'costs' | 'settings';
+type ViewType = 'today' | 'chat' | 'secretary' | 'contacts' | 'tasks' | 'files' | 'workspace' | 'terminal' | 'computer' | 'printer' | 'costs' | 'settings' | 'journal' | 'focus' | 'recorder' | 'modes';
 
 const NAV_ITEMS: { id: ViewType; label: string; icon: string; badge?: string }[] = [
   { id: 'today', label: 'Today', icon: '🏠' },
   { id: 'chat', label: 'Chat', icon: '💬' },
+  { id: 'journal', label: 'Journal', icon: '📔' },
+  { id: 'focus', label: 'Focus', icon: '🎯' },
+  { id: 'recorder', label: 'Recorder', icon: '🎙' },
   { id: 'secretary', label: 'Secretary', icon: '🗓️' },
   { id: 'contacts', label: 'Contacts', icon: '👥' },
   { id: 'tasks', label: 'Tasks', icon: '📋' },
@@ -16,6 +19,7 @@ const NAV_ITEMS: { id: ViewType; label: string; icon: string; badge?: string }[]
   { id: 'computer', label: 'Computer', icon: '🖥️' },
   { id: 'printer', label: '3D Printer', icon: '🖨️' },
   { id: 'costs', label: 'Costs', icon: '💰' },
+  { id: 'modes', label: 'My Modes', icon: '✨' },
   { id: 'settings', label: 'Settings', icon: '⚙️' },
 ];
 
