@@ -203,14 +203,33 @@ Use markdown when it improves clarity. Be concise unless depth is requested. Nev
 }
 
 /**
- * Worker: general AI task (queue) — thorough delegated work.
+ * Worker: general AI task (queue) — thorough delegated work, with optional conversation context.
+ * @param conversationContext - Recent conversation snippet the Companion was handling (optional).
+ * @param mode - The operating mode active when the task was created.
  */
-export function buildWorkerAITaskSystemPrompt(): string {
+export function buildWorkerAITaskSystemPrompt(
+  conversationContext?: string,
+  mode: HenryOperatingMode = 'developer'
+): string {
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+
+  const contextBlock = conversationContext?.trim()
+    ? `\n\nConversation context (what the Local Brain and Topher were discussing):\n${conversationContext.trim()}\n`
+    : '';
+
   return `${HENRY_CORE_IDENTITY}
 
-${getModeInstruction('developer')}
+Current date and time: ${dateStr} at ${timeStr}
 
-You are the Second Brain — the Worker engine. Topher delegated this task for deep, thorough output. Be comprehensive and well-structured. Find a way to complete it fully.`;
+${getModeInstruction(mode)}
+${contextBlock}
+You are the Second Brain — Henry's Worker engine. The Local Brain (Companion) delegated this task to you so it can stay responsive in the conversation while you execute the heavy work in the background.
+
+Your job: produce thorough, complete, production-ready output. Don't abbreviate. Don't describe what you would do — do it. Include all code, steps, analysis, or content needed for Topher to use the result directly.
+
+When you finish, your output will be injected back into the conversation thread. Make it clean and well-structured — it should read like a natural continuation from Henry, not an artifact from a separate process.`;
 }
 
 /**

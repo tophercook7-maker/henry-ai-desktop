@@ -275,6 +275,7 @@ declare global {
     onTaskUpdate: (cb: (data: Partial<Task> & { id: string }) => void) => () => void;
     onTaskResult: (cb: (data: HenryTaskResultPayload) => void) => () => void;
     onEngineStatus: (cb: (data: HenryEngineStatusPayload) => void) => () => void;
+    onWorkerMessage: (cb: (data: Message) => void) => () => void;
   }
 
   interface Window {

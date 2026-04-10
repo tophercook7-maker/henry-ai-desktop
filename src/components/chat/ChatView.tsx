@@ -298,6 +298,18 @@ export default function ChatView() {
     return () => window.removeEventListener('henry_secretary_prompt', handleSecretaryPrompt);
   }, []);
 
+  // Worker Brain: inject Worker messages back into the active conversation
+  useEffect(() => {
+    if (!window.henryAPI.onWorkerMessage) return;
+    const unsub = window.henryAPI.onWorkerMessage((msg) => {
+      if (msg.conversation_id === activeConversationId) {
+        addMessage(msg);
+        setWorkerStatus({ status: 'idle' });
+      }
+    });
+    return unsub;
+  }, [activeConversationId]);
+
   // TTS: speak Henry's response when streaming ends
   useEffect(() => {
     if (!ttsEnabled || isStreaming) return;
@@ -956,7 +968,6 @@ export default function ChatView() {
 
         // Try to extract and save any facts from the conversation
         try {
-          // Simple fact extraction — save key user preferences mentioned
           if (content.length > 30) {
             await window.henryAPI.saveFact({
               conversation_id: convId,
@@ -967,6 +978,19 @@ export default function ChatView() {
           }
         } catch {
           // Fact extraction is optional
+        }
+
+        // Auto-delegate to Worker Brain if the task is heavy and Worker is configured
+        const heavyTaskType = detectTaskType(content);
+        const isHeavyTask = heavyTaskType === 'code_generate' || heavyTaskType === 'research';
+        if (isHeavyTask) {
+          const s = useStore.getState().settings;
+          const workerProvider = s.worker_provider;
+          const workerModel = s.worker_model;
+          if (workerProvider && workerModel) {
+            // Silent delegation — Companion already responded, Worker supplements with deep output
+            void handleWorkerRequest(content, convId, true);
+          }
         }
       });
 
@@ -1000,31 +1024,40 @@ export default function ChatView() {
     }
   }
 
-  async function handleWorkerRequest(content: string, convId: string) {
-    // Determine task type from content
+  async function handleWorkerRequest(content: string, convId: string, silent = false) {
     const taskType = detectTaskType(content);
 
-    // Add a "queued" indicator message
-    addMessage({
-      id: crypto.randomUUID(),
-      conversation_id: convId,
-      role: 'assistant',
-      content: `⚡ Queuing task for Worker engine...\n\n> ${content.slice(0, 100)}${content.length > 100 ? '...' : ''}\n\nType: \`${taskType}\` — Check the Tasks tab for progress.`,
-      engine: 'worker',
-      created_at: new Date().toISOString(),
-    });
+    // Get recent conversation messages so Worker has the same context as Companion
+    const threadMsgs = useStore.getState().messages.filter((m) => m.conversation_id === convId);
+    const contextMessages: HenryAIMessage[] = threadMsgs
+      .slice(-10)
+      .map((m) => ({ role: m.role as HenryAIMessage['role'], content: m.content.slice(0, 800) }));
 
-    // Submit to task queue
+    if (!silent) {
+      addMessage({
+        id: crypto.randomUUID(),
+        conversation_id: convId,
+        role: 'assistant',
+        content: `⚡ Worker Brain is on it...\n\n> ${content.slice(0, 100)}${content.length > 100 ? '...' : ''}\n\nRunning in background — result will appear here when done.`,
+        engine: 'worker',
+        created_at: new Date().toISOString(),
+      });
+    }
+
     try {
       const result = await window.henryAPI.submitTask({
         description: content.slice(0, 200),
         type: taskType,
-        payload: JSON.stringify({
+        payload: {
           prompt: content,
           conversationId: convId,
-        }),
+          context_messages: contextMessages,
+          current_mode: operatingMode,
+          auto_delegated: silent,
+        },
         sourceEngine: 'companion',
         conversationId: convId,
+        createdFromMode: operatingMode,
       });
 
       setWorkerStatus({
@@ -1033,14 +1066,16 @@ export default function ChatView() {
         taskDescription: content.slice(0, 100),
       });
     } catch (err: any) {
-      addMessage({
-        id: crypto.randomUUID(),
-        conversation_id: convId,
-        role: 'assistant',
-        content: `❌ Failed to queue task: ${err.message}`,
-        engine: 'worker',
-        created_at: new Date().toISOString(),
-      });
+      if (!silent) {
+        addMessage({
+          id: crypto.randomUUID(),
+          conversation_id: convId,
+          role: 'assistant',
+          content: `❌ Failed to start Worker: ${err.message}`,
+          engine: 'worker',
+          created_at: new Date().toISOString(),
+        });
+      }
     }
   }
 

@@ -31,6 +31,129 @@ function on<T>(event: string, cb: Listener<T>): () => void {
 
 const now = () => new Date().toISOString();
 
+// ── Worker Brain: actual AI execution in web mode ──────────────────────────
+// Runs in the background after submitTask; injects result back into the thread.
+async function runWorkerAI(params: {
+  taskId: string;
+  description: string;
+  contextMessages: HenryAIMessage[];
+  workerProvider: string;
+  workerModel: string;
+  apiKey: string;
+  ollamaBaseUrl: string;
+  conversationId?: string;
+  currentMode: string;
+}): Promise<void> {
+  const { taskId, description, contextMessages, workerProvider, workerModel, apiKey, ollamaBaseUrl, conversationId, currentMode } = params;
+
+  function updateTask(patch: Partial<import('./types').Task>) {
+    const tasks = getStore<import('./types').Task[]>('henry:tasks', []);
+    const idx = tasks.findIndex((t) => t.id === taskId);
+    if (idx < 0) return;
+    tasks[idx] = { ...tasks[idx], ...patch };
+    setStore('henry:tasks', tasks);
+    emit('task:update', tasks[idx]);
+  }
+
+  updateTask({ status: 'running', started_at: now() });
+
+  const modeName = (['companion','writer','developer','biblical','design3d','computer','secretary'] as const).includes(currentMode as any)
+    ? (currentMode as import('./henry/charter').HenryOperatingMode)
+    : 'developer';
+
+  let systemPrompt: string;
+  try {
+    const { buildWorkerAITaskSystemPrompt } = await import('./henry/charter');
+    const contextSummary = contextMessages
+      .filter((m) => m.role !== 'system')
+      .slice(-6)
+      .map((m) => `${m.role === 'user' ? 'Topher' : 'Henry'}: ${m.content.slice(0, 400)}`)
+      .join('\n');
+    systemPrompt = buildWorkerAITaskSystemPrompt(contextSummary || undefined, modeName);
+  } catch {
+    systemPrompt = `You are Henry's Worker Brain — a background AI engine running a delegated task. Be thorough and complete. Task: ${description}`;
+  }
+
+  const messages: HenryAIMessage[] = [
+    { role: 'system', content: systemPrompt },
+    ...contextMessages.filter((m) => m.role !== 'system').slice(-8),
+    { role: 'user', content: description },
+  ];
+
+  try {
+    let resultText = '';
+
+    if (workerProvider === 'openai') {
+      const res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({ model: workerModel, messages, temperature: 0.7, max_tokens: 4000 }),
+      });
+      const data = await res.json() as any;
+      resultText = data.choices?.[0]?.message?.content ?? '';
+    } else if (workerProvider === 'anthropic') {
+      const sysMsg = messages.find((m) => m.role === 'system');
+      const convMsgs = messages
+        .filter((m) => m.role !== 'system')
+        .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({ model: workerModel, max_tokens: 4000, system: sysMsg?.content ?? '', messages: convMsgs }),
+      });
+      const data = await res.json() as any;
+      resultText = data.content?.[0]?.text ?? '';
+    } else if (workerProvider === 'google') {
+      const convMsgs = messages
+        .filter((m) => m.role !== 'system')
+        .map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }));
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${workerModel}:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contents: convMsgs }),
+        }
+      );
+      const data = await res.json() as any;
+      resultText = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+    } else if (workerProvider === 'ollama') {
+      const base = (ollamaBaseUrl || 'http://localhost:11434').replace(/\/$/, '');
+      const res = await fetch(`${base}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: workerModel, messages, stream: false }),
+      });
+      const data = await res.json() as any;
+      resultText = data.message?.content ?? '';
+    }
+
+    if (!resultText.trim()) throw new Error('Worker returned empty response');
+
+    updateTask({ status: 'completed', result: resultText, completed_at: now() });
+
+    if (conversationId) {
+      const { v4: uuidv4 } = await import('uuid');
+      const workerMsg: import('./types').Message = {
+        id: uuidv4(),
+        conversation_id: conversationId,
+        role: 'assistant',
+        content: `*— Worker Brain*\n\n${resultText}`,
+        engine: 'worker',
+        model: workerModel,
+        provider: workerProvider,
+        created_at: now(),
+      };
+      const allMsgs = getStore<import('./types').Message[]>('henry:messages', []);
+      allMsgs.push(workerMsg);
+      setStore('henry:messages', allMsgs);
+      emit('worker:message', workerMsg);
+    }
+  } catch (err) {
+    updateTask({ status: 'failed', error: String(err), completed_at: now() });
+  }
+}
+
 const henryAPI: Window['henryAPI'] = {
   getSettings: async () => {
     return getStore<Record<string, string>>('henry:settings', {});
@@ -394,6 +517,47 @@ const henryAPI: Window['henryAPI'] = {
     tasks.unshift(newTask);
     setStore('henry:tasks', tasks);
     emit('task:update', newTask);
+
+    // Auto-execute with Worker AI if provider is configured
+    const settings = getStore<Record<string, string>>('henry:settings', {});
+    const workerProvider = settings['worker_provider'];
+    const workerModel = settings['worker_model'];
+
+    if (workerProvider && workerModel) {
+      let parsedPayload: Record<string, unknown> = {};
+      try {
+        parsedPayload = task.payload
+          ? (typeof task.payload === 'string' ? JSON.parse(task.payload) : (task.payload as Record<string, unknown>))
+          : {};
+      } catch { /* ignore */ }
+
+      const contextMessages: HenryAIMessage[] = Array.isArray(parsedPayload['context_messages'])
+        ? (parsedPayload['context_messages'] as HenryAIMessage[])
+        : [];
+      const prompt = typeof parsedPayload['prompt'] === 'string' ? parsedPayload['prompt'] : task.description;
+      const currentMode = typeof parsedPayload['current_mode'] === 'string' ? parsedPayload['current_mode'] : 'developer';
+
+      const providers = getStore<HenryProviderRecord[]>('henry:providers', []);
+      const providerRecord = providers.find((p) => p.id === workerProvider);
+      const apiKey = providerRecord?.api_key ?? providerRecord?.apiKey ?? '';
+      const ollamaBaseUrl = settings['ollama_base_url'] || 'http://localhost:11434';
+
+      // Schedule async — does not block task submission
+      setTimeout(() => {
+        void runWorkerAI({
+          taskId: newTask.id,
+          description: prompt,
+          contextMessages,
+          workerProvider,
+          workerModel,
+          apiKey,
+          ollamaBaseUrl,
+          conversationId: task.conversationId,
+          currentMode,
+        });
+      }, 200);
+    }
+
     return { id: newTask.id, status: newTask.status };
   },
   getTaskStatus: async (id) => {
@@ -728,6 +892,7 @@ const henryAPI: Window['henryAPI'] = {
   onTaskUpdate: (cb) => on('task:update', cb),
   onTaskResult: (cb) => on('task:result', cb),
   onEngineStatus: (cb) => on('engine:status', cb),
+  onWorkerMessage: (cb) => on('worker:message', cb),
 };
 
 window.henryAPI = henryAPI;

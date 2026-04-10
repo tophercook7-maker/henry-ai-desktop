@@ -247,8 +247,8 @@ function EnginesTab() {
           </div>
           <div className="text-xs text-henry-text-dim mb-4">
             {engine === 'companion'
-              ? 'Handles all chat, streaming, and operating modes (Writer, Biblical, Design3D…)'
-              : 'Background tasks from the task queue'}
+              ? 'Local Brain — always-on, streams every conversation. Automatically delegates heavy tasks (code, research) to the Worker Brain while staying alive.'
+              : 'Worker Brain — runs in background while Companion keeps talking. Takes over code generation and deep research; result flows back into the same thread automatically. ★ models below are recommended.'}
           </div>
 
           <div className="mb-2">
@@ -269,14 +269,23 @@ function EnginesTab() {
             className="w-full bg-henry-bg border border-henry-border rounded-lg px-3 py-2 text-sm text-henry-text outline-none focus:border-henry-accent/50 mb-3"
           >
             <option value="">Choose from list…</option>
-            {availableModels.map((model) => {
-              const provider = PROVIDERS[model.provider as ProviderId];
-              return (
-                <option key={model.id} value={model.id}>
-                  {provider?.icon} {model.name} — {model.local ? 'Free' : `$${model.inputPricePer1M}/$${model.outputPricePer1M} per 1M`}
-                </option>
-              );
-            })}
+            {/* Show models recommended for this brain first */}
+            {availableModels
+              .slice()
+              .sort((a, b) => {
+                const aMatch = a.recommended === engine || a.recommended === 'both' ? -1 : 0;
+                const bMatch = b.recommended === engine || b.recommended === 'both' ? -1 : 0;
+                return aMatch - bMatch;
+              })
+              .map((model) => {
+                const provider = PROVIDERS[model.provider as ProviderId];
+                const isRecommended = model.recommended === engine || model.recommended === 'both';
+                return (
+                  <option key={model.id} value={model.id}>
+                    {isRecommended ? '★ ' : ''}{provider?.icon} {model.name} — {model.local ? 'Free' : `$${model.inputPricePer1M}/$${model.outputPricePer1M} per 1M`}
+                  </option>
+                );
+              })}
           </select>
 
           {ollamaEnabled && (
