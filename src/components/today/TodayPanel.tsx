@@ -1,5 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useStore } from '../../store';
+import { getTodayBriefing, saveBriefing, setGenerating, isGenerating, buildBriefingPrompt } from '../../henry/proactiveBriefing';
+import { getDueMacros, markMacroRun } from '../../henry/recurringMacros';
+import type { DailyBriefing } from '../../henry/proactiveBriefing';
 
 const HENRY_OPERATING_MODE_KEY = 'henry_operating_mode';
 const HENRY_LAST_GREETING_KEY = 'henry_last_greeting_date';
@@ -14,62 +17,13 @@ interface ModeCard {
 }
 
 const MODE_CARDS: ModeCard[] = [
-  {
-    mode: 'companion',
-    icon: '💬',
-    label: 'Chat',
-    desc: 'Think out loud, ask anything, get unstuck',
-    border: 'border-henry-accent/20 hover:border-henry-accent/50',
-    glow: 'hover:shadow-henry-accent/10',
-  },
-  {
-    mode: 'secretary',
-    icon: '🗓️',
-    label: 'Secretary',
-    desc: 'Email, scheduling, task triage, briefings',
-    border: 'border-violet-500/20 hover:border-violet-400/50',
-    glow: 'hover:shadow-violet-500/10',
-  },
-  {
-    mode: 'writer',
-    icon: '✍️',
-    label: 'Writing',
-    desc: 'Draft, edit, shape anything worth keeping',
-    border: 'border-emerald-500/20 hover:border-emerald-400/50',
-    glow: 'hover:shadow-emerald-500/10',
-  },
-  {
-    mode: 'developer',
-    icon: '⚡',
-    label: 'Code',
-    desc: 'Debug, build, review — working code only',
-    border: 'border-amber-500/20 hover:border-amber-400/50',
-    glow: 'hover:shadow-amber-500/10',
-  },
-  {
-    mode: 'design3d',
-    icon: '🖨️',
-    label: '3D / Design',
-    desc: 'Spatial layouts, 3D printing, photo-to-3D',
-    border: 'border-rose-500/20 hover:border-rose-400/50',
-    glow: 'hover:shadow-rose-500/10',
-  },
-  {
-    mode: 'biblical',
-    icon: '📖',
-    label: 'Bible Study',
-    desc: 'Scripture-first, Ethiopian Orthodox aware',
-    border: 'border-sky-500/20 hover:border-sky-400/50',
-    glow: 'hover:shadow-sky-500/10',
-  },
-  {
-    mode: 'computer',
-    icon: '🖥️',
-    label: 'Computer',
-    desc: 'Run commands, control apps, automate tasks',
-    border: 'border-cyan-500/20 hover:border-cyan-400/50',
-    glow: 'hover:shadow-cyan-500/10',
-  },
+  { mode: 'companion', icon: '💬', label: 'Chat', desc: 'Think out loud, ask anything, get unstuck', border: 'border-henry-accent/20 hover:border-henry-accent/50', glow: 'hover:shadow-henry-accent/10' },
+  { mode: 'secretary', icon: '🗓️', label: 'Secretary', desc: 'Email, scheduling, task triage, briefings', border: 'border-violet-500/20 hover:border-violet-400/50', glow: 'hover:shadow-violet-500/10' },
+  { mode: 'writer', icon: '✍️', label: 'Writing', desc: 'Draft, edit, shape anything worth keeping', border: 'border-emerald-500/20 hover:border-emerald-400/50', glow: 'hover:shadow-emerald-500/10' },
+  { mode: 'developer', icon: '⚡', label: 'Code', desc: 'Debug, build, review — working code only', border: 'border-amber-500/20 hover:border-amber-400/50', glow: 'hover:shadow-amber-500/10' },
+  { mode: 'design3d', icon: '🖨️', label: '3D / Design', desc: 'Spatial layouts, 3D printing, photo-to-3D', border: 'border-rose-500/20 hover:border-rose-400/50', glow: 'hover:shadow-rose-500/10' },
+  { mode: 'biblical', icon: '📖', label: 'Bible Study', desc: 'Scripture-first, Ethiopian Orthodox aware', border: 'border-sky-500/20 hover:border-sky-400/50', glow: 'hover:shadow-sky-500/10' },
+  { mode: 'computer', icon: '🖥️', label: 'Computer', desc: 'Run commands, control apps, automate tasks', border: 'border-cyan-500/20 hover:border-cyan-400/50', glow: 'hover:shadow-cyan-500/10' },
 ];
 
 function getGreeting(): { line1: string; line2: string } {
@@ -82,12 +36,7 @@ function getGreeting(): { line1: string; line2: string } {
 }
 
 function getTodayLabel(): string {
-  return new Date().toLocaleDateString('en-US', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-  });
+  return new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
 }
 
 function getTodayKey(): string {
@@ -96,42 +45,106 @@ function getTodayKey(): string {
 }
 
 export default function TodayPanel() {
-  const { setCurrentView, conversations, messages: _msgs } = useStore();
+  const { setCurrentView, conversations, settings } = useStore();
   const [isNewDay, setIsNewDay] = useState(false);
+  const [briefing, setBriefing] = useState<DailyBriefing | null>(null);
+  const [generatingBriefing, setGeneratingBriefing] = useState(false);
+  const [briefingExpanded, setBriefingExpanded] = useState(true);
+  const [dueMacros, setDueMacros] = useState<ReturnType<typeof getDueMacros>>([]);
   const greeting = getGreeting();
+  const briefingStreamRef = useRef<any>(null);
 
   useEffect(() => {
     const last = localStorage.getItem(HENRY_LAST_GREETING_KEY);
     const today = getTodayKey();
-    if (last !== today) {
+    const isNew = last !== today;
+    if (isNew) {
       setIsNewDay(true);
       localStorage.setItem(HENRY_LAST_GREETING_KEY, today);
     }
+
+    // Load existing briefing
+    const existing = getTodayBriefing();
+    if (existing) {
+      setBriefing(existing);
+    } else if (isNew) {
+      // Auto-generate briefing on new day if model configured
+      setTimeout(() => tryGenerateBriefing(), 1500);
+    }
+
+    // Check due macros
+    setDueMacros(getDueMacros());
   }, []);
 
-  function launchMode(mode: string, prompt?: string) {
+  async function tryGenerateBriefing() {
+    if (generatingBriefing || isGenerating()) return;
+    const s = useStore.getState().settings;
+    if (!s.companion_model || !s.companion_provider) return;
+
+    setGeneratingBriefing(true);
+    setGenerating(true);
+
     try {
-      localStorage.setItem(HENRY_OPERATING_MODE_KEY, mode);
+      const providers = await window.henryAPI.getProviders();
+      const provider = providers.find((p: any) => p.id === s.companion_provider);
+      if (!provider) return;
+
+      let facts = '';
+      try {
+        const allFacts = await window.henryAPI.getAllFacts(20);
+        facts = allFacts.slice(0, 10).map((f: any) => f.fact).join('\n');
+      } catch { /* no facts */ }
+
+      const prompt = buildBriefingPrompt(facts);
+      let full = '';
+
+      const stream = window.henryAPI.streamMessage({
+        provider: s.companion_provider,
+        model: s.companion_model,
+        apiKey: provider.api_key || provider.apiKey || '',
+        messages: [
+          { role: 'system', content: 'You are Henry. Generate a concise, warm morning briefing. No greetings like "Good morning Topher" — start with the substance. Under 200 words. Use simple formatting.' },
+          { role: 'user', content: prompt },
+        ],
+        temperature: 0.7,
+      });
+
+      briefingStreamRef.current = stream;
+
+      stream.onChunk((chunk: string) => {
+        full += chunk;
+        setBriefing({ date: getTodayKey(), content: full, generatedAt: new Date().toISOString() });
+      });
+      stream.onDone((fullText: string) => {
+        const saved = saveBriefing(fullText, s.companion_model);
+        setBriefing(saved);
+        setGeneratingBriefing(false);
+        setGenerating(false);
+      });
+      stream.onError(() => {
+        setGeneratingBriefing(false);
+        setGenerating(false);
+      });
     } catch {
-      /* ignore */
+      setGeneratingBriefing(false);
+      setGenerating(false);
     }
+  }
+
+  function launchMode(mode: string, prompt?: string) {
+    try { localStorage.setItem(HENRY_OPERATING_MODE_KEY, mode); } catch { /* ignore */ }
     if (prompt) {
-      window.dispatchEvent(
-        new CustomEvent('henry_secretary_prompt', { detail: { prompt } })
-      );
+      window.dispatchEvent(new CustomEvent('henry_secretary_prompt', { detail: { prompt } }));
     } else {
-      window.dispatchEvent(
-        new CustomEvent('henry_secretary_prompt', { detail: { prompt: '' } })
-      );
+      window.dispatchEvent(new CustomEvent('henry_secretary_prompt', { detail: { prompt: '' } }));
     }
     setCurrentView('chat');
   }
 
-  function openMorningBriefing() {
-    launchMode(
-      'secretary',
-      `Give me my morning briefing for ${getTodayLabel()}. I'll share context — for now, start with a warm-up: what kind of day is ${new Date().toLocaleDateString('en-US', { weekday: 'long' })} usually good for, and what should I keep in mind to make it count?`
-    );
+  function runMacro(macro: { id: string; prompt: string; mode: string; name: string }) {
+    markMacroRun(macro.id);
+    setDueMacros((prev) => prev.filter((m) => m.id !== macro.id));
+    launchMode(macro.mode, macro.prompt);
   }
 
   const recentConvos = conversations.slice(0, 5);
@@ -144,28 +157,116 @@ export default function TodayPanel() {
           <p className="text-xs text-henry-text-muted mb-1 font-medium tracking-wide uppercase">
             {getTodayLabel()}
           </p>
-          <h1 className="text-2xl font-semibold text-henry-text mb-1">
-            {greeting.line1}
-          </h1>
+          <h1 className="text-2xl font-semibold text-henry-text mb-1">{greeting.line1}</h1>
           <p className="text-henry-text-dim text-base">{greeting.line2}</p>
-
-          {isNewDay && (
-            <button
-              onClick={openMorningBriefing}
-              className="mt-4 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-henry-accent/10 text-henry-accent text-sm font-medium hover:bg-henry-accent/20 transition-colors border border-henry-accent/20"
-            >
-              <span>🌅</span>
-              Morning briefing
-              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M5 12h14M12 5l7 7-7 7" />
-              </svg>
-            </button>
-          )}
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto px-8 pb-8">
         <div className="max-w-3xl space-y-8">
+
+          {/* Proactive Briefing */}
+          {(briefing || generatingBriefing || isNewDay) && (
+            <div className="rounded-xl border border-henry-accent/20 bg-henry-accent/5 overflow-hidden">
+              <div
+                className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-henry-accent/5 transition-colors"
+                onClick={() => setBriefingExpanded((v) => !v)}
+              >
+                <div className="flex items-center gap-2.5">
+                  <span className="text-base">🌅</span>
+                  <div>
+                    <span className="text-sm font-medium text-henry-text">Morning Briefing</span>
+                    {briefing && (
+                      <span className="ml-2 text-[10px] text-henry-text-muted">
+                        {new Date(briefing.generatedAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    )}
+                    {generatingBriefing && (
+                      <span className="ml-2 text-[10px] text-henry-accent animate-pulse">generating...</span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {!briefing && !generatingBriefing && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); tryGenerateBriefing(); }}
+                      className="text-[11px] px-3 py-1 rounded-lg bg-henry-accent/20 text-henry-accent hover:bg-henry-accent/30 transition-all"
+                    >
+                      Generate
+                    </button>
+                  )}
+                  {briefing && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setBriefing(null); tryGenerateBriefing(); }}
+                      disabled={generatingBriefing}
+                      className="text-[10px] text-henry-text-muted hover:text-henry-text transition-colors disabled:opacity-40"
+                      title="Regenerate briefing"
+                    >
+                      ↺
+                    </button>
+                  )}
+                  <svg
+                    className={`w-3.5 h-3.5 text-henry-text-muted transition-transform ${briefingExpanded ? 'rotate-180' : ''}`}
+                    viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                  >
+                    <path d="M6 9l6 6 6-6" />
+                  </svg>
+                </div>
+              </div>
+
+              {briefingExpanded && briefing && (
+                <div className="px-5 pb-4 border-t border-henry-accent/10">
+                  <p className="text-sm text-henry-text-dim leading-relaxed whitespace-pre-wrap pt-3">
+                    {briefing.content}
+                    {generatingBriefing && (
+                      <span className="inline-block w-[2px] h-[14px] bg-henry-accent ml-0.5 animate-pulse align-middle" />
+                    )}
+                  </p>
+                  <div className="mt-3 flex gap-2">
+                    <button
+                      onClick={() => launchMode('secretary', 'Continue my morning briefing. What are my top priorities for today and what should I tackle first?')}
+                      className="text-[11px] px-3 py-1.5 rounded-lg bg-henry-surface border border-henry-border/30 text-henry-text-dim hover:text-henry-text hover:border-henry-border/60 transition-all"
+                    >
+                      Continue in chat →
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Due Macros */}
+          {dueMacros.length > 0 && (
+            <div>
+              <p className="text-[11px] font-medium text-henry-text-muted uppercase tracking-wider mb-3">
+                Scheduled tasks ready
+              </p>
+              <div className="space-y-2">
+                {dueMacros.map((macro) => (
+                  <div key={macro.id} className="flex items-center justify-between px-4 py-3 rounded-xl border border-henry-border/20 bg-henry-surface/20">
+                    <div>
+                      <p className="text-sm font-medium text-henry-text">{macro.name}</p>
+                      <p className="text-xs text-henry-text-muted">{macro.description}</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => runMacro(macro)}
+                        className="text-xs px-3 py-1.5 rounded-lg bg-henry-accent/15 text-henry-accent hover:bg-henry-accent/25 transition-all border border-henry-accent/20"
+                      >
+                        Run now
+                      </button>
+                      <button
+                        onClick={() => { markMacroRun(macro.id); setDueMacros((p) => p.filter((m) => m.id !== macro.id)); }}
+                        className="text-xs px-3 py-1.5 rounded-lg bg-henry-surface text-henry-text-muted hover:text-henry-text transition-all border border-henry-border/30"
+                      >
+                        Skip
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Mode launcher */}
           <div>
@@ -183,17 +284,9 @@ export default function TodayPanel() {
                     <span className="text-lg leading-none mt-0.5">{card.icon}</span>
                     <div className="min-w-0 flex-1">
                       <div className="text-sm font-medium text-henry-text">{card.label}</div>
-                      <div className="text-xs text-henry-text-dim mt-0.5 leading-relaxed">
-                        {card.desc}
-                      </div>
+                      <div className="text-xs text-henry-text-dim mt-0.5 leading-relaxed">{card.desc}</div>
                     </div>
-                    <svg
-                      className="ml-auto w-3.5 h-3.5 text-henry-text-muted opacity-0 group-hover:opacity-100 transition-opacity shrink-0 mt-0.5"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                    >
+                    <svg className="ml-auto w-3.5 h-3.5 text-henry-text-muted opacity-0 group-hover:opacity-100 transition-opacity shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <path d="M5 12h14M12 5l7 7-7 7" />
                     </svg>
                   </div>
@@ -225,13 +318,7 @@ export default function TodayPanel() {
                     <span className="flex-1 text-sm text-henry-text-dim truncate group-hover:text-henry-text transition-colors">
                       {convo.title || 'New Chat'}
                     </span>
-                    <svg
-                      className="w-3.5 h-3.5 text-henry-text-muted opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                    >
+                    <svg className="w-3.5 h-3.5 text-henry-text-muted opacity-0 group-hover:opacity-100 transition-opacity shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <path d="M5 12h14M12 5l7 7-7 7" />
                     </svg>
                   </button>

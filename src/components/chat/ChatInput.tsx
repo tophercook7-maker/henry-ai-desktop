@@ -9,6 +9,8 @@ interface ChatInputProps {
   onInjectConsumed?: () => void;
   ttsEnabled?: boolean;
   onToggleTts?: () => void;
+  onSearch?: (query: string) => void;
+  isSearching?: boolean;
 }
 
 const SpeechRecognitionAPI =
@@ -25,6 +27,8 @@ export default function ChatInput({
   onInjectConsumed,
   ttsEnabled = false,
   onToggleTts,
+  onSearch,
+  isSearching = false,
 }: ChatInputProps) {
   const [input, setInput] = useState('');
   const [listening, setListening] = useState(false);
@@ -176,6 +180,37 @@ export default function ChatInput({
                   <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
                   <line x1="23" y1="9" x2="17" y2="15" />
                   <line x1="17" y1="9" x2="23" y2="15" />
+                </svg>
+              )}
+            </button>
+          )}
+
+          {/* Web search button */}
+          {onSearch && !isStreaming && (
+            <button
+              onClick={() => {
+                const q = input.trim();
+                if (q) onSearch(q);
+              }}
+              disabled={!input.trim() || isSearching}
+              title="Search the web for this query"
+              className={`p-2 rounded-lg transition-all ${
+                isSearching
+                  ? 'text-henry-accent animate-pulse bg-henry-accent/10'
+                  : input.trim()
+                  ? 'text-henry-text-muted hover:text-henry-accent hover:bg-henry-accent/10'
+                  : 'text-henry-text-muted opacity-40 cursor-not-allowed'
+              }`}
+            >
+              {isSearching ? (
+                <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="10" strokeOpacity="0.3" />
+                  <path d="M12 2a10 10 0 0 1 10 10" />
+                </svg>
+              ) : (
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="11" cy="11" r="8" />
+                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
                 </svg>
               )}
             </button>

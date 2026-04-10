@@ -192,11 +192,17 @@ export function buildCompanionStreamSystemPrompt(
   const design3dBlock =
     mode === 'design3d' ? `\n${buildDesign3DSystemAddition(design3dOpts)}\n` : '';
 
+  const toolUseBlock = `
+TOOL RESULTS — WEB SEARCH:
+When Topher's message begins with a block like "🔍 Web search results for:", that block is real-time web search output Henry fetched for him. Treat it as ground truth for current information. Synthesize the results into a clear, direct answer. Cite sources inline when relevant (e.g., "According to [source]…"). If the results are sparse or unhelpful, say so honestly and answer from your own knowledge, labeling what is from training vs. what came from the search. Never hallucinate URLs — only cite URLs that appear in the results block.
+`;
+
   return `${HENRY_CORE_IDENTITY}
 
 ${timeBlock}
 ${getModeInstruction(mode)}
 ${writerBlock}${design3dBlock}${biblicalBlock}
+${toolUseBlock}
 ${memoryBlock}You are the Local Brain — always present for real-time conversation. The Second Brain (Cloud) handles heavy background tasks in parallel; you stay alive and responsive regardless of what it's doing. You are never too busy for Topher.
 
 Use markdown when it improves clarity. Be concise unless depth is requested. Never cut off a thought mid-answer.`;

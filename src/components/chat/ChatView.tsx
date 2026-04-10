@@ -90,6 +90,8 @@ import {
 } from '@/henry/sessionResume';
 import { parseUserCommandLine, type HenryCommand } from '@/henry/commandLayer';
 import { resolveHenryCommand } from '@/henry/commandActions';
+import { webSearch, formatSearchResultsForHenry } from '@/henry/webSearch';
+import { logAction } from '@/henry/auditLog';
 
 const HENRY_OPERATING_MODE_KEY = 'henry_operating_mode';
 const HENRY_BIBLICAL_PROFILE_KEY = 'henry_biblical_source_profile';
@@ -256,6 +258,7 @@ export default function ChatView() {
   );
   const [saveWorkspaceDraftBusy, setSaveWorkspaceDraftBusy] = useState(false);
   const [chatInject, setChatInject] = useState<{ id: number; text: string } | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
   const [ttsEnabled, setTtsEnabled] = useState(() => {
     try { return localStorage.getItem('henry_tts_enabled') === 'true'; } catch { return false; }
   });
@@ -1202,6 +1205,26 @@ export default function ChatView() {
     return 'ai_generate';
   }
 
+  async function handleSearch(query: string) {
+    if (isSearching || isStreaming) return;
+    setIsSearching(true);
+    logAction({ type: 'search', description: `Web search: ${query}`, input: query, success: true });
+    try {
+      const sr = await webSearch(query);
+      const formatted = formatSearchResultsForHenry(sr);
+      const injected = `${formatted}\n\n---\nMy question: ${query}`;
+      setChatInject({ id: Date.now(), text: injected });
+    } catch (err) {
+      console.error('[Henry] web search failed:', err);
+      setChatInject({
+        id: Date.now(),
+        text: `Search failed for: ${query}\n\nMy question: ${query}`,
+      });
+    } finally {
+      setIsSearching(false);
+    }
+  }
+
   function cancelStream() {
     if (streamRef.current) {
       streamRef.current.cancel();
@@ -1551,6 +1574,8 @@ export default function ChatView() {
                 placeholder="Message Henry…"
                 ttsEnabled={ttsEnabled}
                 onToggleTts={toggleTts}
+                onSearch={handleSearch}
+                isSearching={isSearching}
               />
             </div>
           </div>
