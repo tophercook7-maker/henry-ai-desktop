@@ -6,6 +6,7 @@ import { registerAIHandlers } from './ipc/ai';
 import { registerFilesystemHandlers } from './ipc/filesystem';
 import { registerTaskBrokerHandlers } from './ipc/taskBroker';
 import { registerMemoryHandlers } from './ipc/memory';
+import { registerScriptureHandlers } from './ipc/scripture';
 import { registerOllamaHandlers } from './ipc/ollama';
 import { registerTerminalHandlers } from './ipc/terminal';
 
@@ -36,13 +37,15 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
     },
   });
 
   if (process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
-    mainWindow.webContents.openDevTools({ mode: 'detach' });
+    if (process.env.OPEN_DEVTOOLS === 'true') {
+      mainWindow.webContents.openDevTools({ mode: 'detach' });
+    }
   } else {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
@@ -73,8 +76,9 @@ app.whenReady().then(() => {
   registerSettingsHandlers(db);
   registerAIHandlers(db, getMainWindow);
   registerFilesystemHandlers(henryDir);
-  registerTaskBrokerHandlers(db, getMainWindow);
+  registerTaskBrokerHandlers(db, getMainWindow, henryDir);
   registerMemoryHandlers(db);
+  registerScriptureHandlers(db, getMainWindow);
   registerOllamaHandlers(getMainWindow);
   registerTerminalHandlers(getMainWindow, henryDir);
 

@@ -144,7 +144,7 @@ export default function ProviderStep({ onNext, onBack }: ProviderStepProps) {
               {isEnabled && (
                 <div className="px-4 pb-4 space-y-4">
                   {/* API Key input (not for Ollama) */}
-                  {!provider.local && (
+                  {providerId !== 'ollama' && (
                     <div>
                       <label className="block text-xs font-medium text-henry-text-dim mb-1.5">
                         API Key
@@ -174,7 +174,7 @@ export default function ProviderStep({ onNext, onBack }: ProviderStepProps) {
                     </div>
                   )}
 
-                  {provider.local && (
+                  {providerId === 'ollama' && (
                     <div className="p-3 rounded-lg bg-henry-bg/50 border border-henry-border/30">
                       <p className="text-xs text-henry-text-dim leading-relaxed">
                         Ollama runs models locally on your machine. Install it

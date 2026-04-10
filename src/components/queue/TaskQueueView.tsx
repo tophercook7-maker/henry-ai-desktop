@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useStore } from '../../store';
 import type { Task, TaskStatus } from '../../types';
+import { writerDraftDirForPath } from '@/henry/writerDraftIndex';
+import { requestFilesTabOpenRelativeDir } from '@/henry/writerDraftContext';
 
 const STATUS_CONFIG: Record<TaskStatus, { icon: string; label: string; color: string }> = {
   pending: { icon: '⏳', label: 'Pending', color: 'text-henry-text-muted' },
@@ -162,7 +164,15 @@ function TaskCard({
   onCancel: () => void;
   onRetry: () => void;
 }) {
+  const setCurrentView = useStore((s) => s.setCurrentView);
   const config = STATUS_CONFIG[task.status] || STATUS_CONFIG.pending;
+
+  function openRelatedInFiles() {
+    const p = task.related_file_path?.trim();
+    if (!p) return;
+    requestFilesTabOpenRelativeDir(writerDraftDirForPath(p));
+    setCurrentView('files');
+  }
 
   function formatTime(dateStr: string): string {
     const date = new Date(dateStr);
@@ -295,11 +305,31 @@ function TaskCard({
                 </pre>
               </div>
             )}
-            <div className="flex gap-4 text-[10px] text-henry-text-muted">
+            <div className="flex gap-4 text-[10px] text-henry-text-muted flex-wrap">
               <span>ID: {task.id.slice(0, 8)}...</span>
               <span>Priority: {task.priority}</span>
               {task.source_engine && <span>From: {task.source_engine}</span>}
+              {task.created_from_mode && (
+                <span>Chat mode: {task.created_from_mode}</span>
+              )}
             </div>
+            {task.related_file_path?.trim() && (
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <span className="text-[10px] text-henry-text-muted break-all">
+                  Linked: <code className="text-henry-text-dim">{task.related_file_path}</code>
+                </span>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openRelatedInFiles();
+                  }}
+                  className="text-[10px] px-2 py-1 rounded-lg border border-henry-border/40 text-henry-accent hover:bg-henry-accent/10"
+                >
+                  Open in Files
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

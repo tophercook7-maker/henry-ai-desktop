@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import Layout from './components/layout/Layout';
 import SetupWizard from './components/wizard/SetupWizard';
 import { useStore } from './store';
+import type { Task } from './types';
 
 export default function App() {
   const [loading, setLoading] = useState(true);
@@ -17,8 +18,9 @@ export default function App() {
   } = useStore();
 
   useEffect(() => {
-    initApp();
-    setupEventListeners();
+    void initApp();
+    const cleanup = setupEventListeners();
+    return cleanup;
   }, []);
 
   async function initApp() {
@@ -42,7 +44,7 @@ export default function App() {
         ]);
         setConversations(convos);
         setProviders(
-          providers.map((p: any) => ({
+          providers.map((p: HenryProviderRecord) => ({
             id: p.id,
             name: p.name,
             apiKey: p.api_key || p.apiKey || '',
@@ -75,22 +77,40 @@ export default function App() {
 
     // Task result events (when a Worker task completes and result should appear in chat)
     const unsubResult = window.henryAPI.onTaskResult((data) => {
-      if (data.conversationId) {
-        const result = typeof data.result === 'string'
-          ? data.result
-          : data.result?.content || JSON.stringify(data.result);
+      updateTask(data.taskId, {
+        id: data.taskId,
+        ...(data.error !== undefined ? { error: data.error } : {}),
+        ...(data.result !== undefined ? { result: typeof data.result === 'string' ? data.result : JSON.stringify(data.result) } : {}),
+      } as Partial<Task>);
 
+      if (!data.conversationId) return;
+
+      if (data.error) {
         addMessage({
-          id: `task-result-${data.taskId}`,
+          id: `task-result-${data.taskId}-error`,
           conversation_id: data.conversationId,
           role: 'assistant',
-          content: `⚡ *Worker task completed:*\n\n${result}`,
+          content: `⚠️ *Worker task failed:*\n\n${data.error}`,
           engine: 'worker',
-          model: data.result?.model,
-          cost: data.result?.cost,
           created_at: new Date().toISOString(),
         });
+        return;
       }
+
+      const result = typeof data.result === 'string'
+        ? data.result
+        : data.result?.content || JSON.stringify(data.result ?? {});
+
+      addMessage({
+        id: `task-result-${data.taskId}`,
+        conversation_id: data.conversationId,
+        role: 'assistant',
+        content: `⚡ *Worker task completed:*\n\n${result}`,
+        engine: 'worker',
+        model: typeof data.result === 'object' && data.result ? data.result.model : undefined,
+        cost: typeof data.result === 'object' && data.result ? data.result.cost : undefined,
+        created_at: new Date().toISOString(),
+      });
     });
 
     return () => {

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useStore } from '../../store';
+import { setActiveWorkspaceContext } from '@/henry/workspaceContext';
 
 interface WorkspaceFolder {
   name: string;
@@ -170,28 +171,49 @@ export default function WorkspaceView() {
           {/* Folder grid */}
           <div className="grid grid-cols-2 gap-4 mb-8">
             {folders.map((folder) => (
-              <button
+              <div
                 key={folder.name}
-                onClick={() => openFolder(folder.path)}
                 className={`text-left p-5 rounded-xl border transition-all ${
                   selectedFolder === folder.path
                     ? 'bg-henry-accent/5 border-henry-accent/30'
                     : 'bg-henry-surface/30 border-henry-border/30 hover:border-henry-border/60 hover:bg-henry-surface/50'
                 }`}
               >
-                <div className="flex items-start justify-between mb-2">
+                <div className="flex items-start justify-between gap-2 mb-2">
                   <span className="text-2xl">{folder.icon}</span>
-                  <span className="text-[10px] text-henry-text-muted bg-henry-bg/50 px-2 py-0.5 rounded-full">
-                    {folder.fileCount} files
-                  </span>
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    <span className="text-[10px] text-henry-text-muted bg-henry-bg/50 px-2 py-0.5 rounded-full">
+                      {folder.fileCount} files
+                    </span>
+                    <button
+                      type="button"
+                      title="Use folder as chat workspace context"
+                      onClick={() =>
+                        setActiveWorkspaceContext({
+                          path: folder.path,
+                          kind: 'folder',
+                          label: folder.name,
+                        })
+                      }
+                      className="text-[9px] px-2 py-0.5 rounded-md border border-henry-border/40 text-henry-text-muted hover:text-henry-accent"
+                    >
+                      Use as context
+                    </button>
+                  </div>
                 </div>
-                <h3 className="text-sm font-medium text-henry-text mb-1">
-                  {folder.name}
-                </h3>
-                <p className="text-xs text-henry-text-dim leading-relaxed">
-                  {folder.description}
-                </p>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => openFolder(folder.path)}
+                  className="w-full text-left"
+                >
+                  <h3 className="text-sm font-medium text-henry-text mb-1">
+                    {folder.name}
+                  </h3>
+                  <p className="text-xs text-henry-text-dim leading-relaxed">
+                    {folder.description}
+                  </p>
+                </button>
+              </div>
             ))}
           </div>
 
@@ -227,16 +249,30 @@ export default function WorkspaceView() {
                       <span className="text-sm">
                         {file.isDirectory ? '📁' : '📄'}
                       </span>
-                      <span className="text-xs text-henry-text flex-1">
+                      <span className="text-xs text-henry-text flex-1 truncate">
                         {file.name}
                       </span>
+                      <button
+                        type="button"
+                        title="Use as chat workspace context"
+                        onClick={() =>
+                          setActiveWorkspaceContext({
+                            path: file.path || `${selectedFolder}/${file.name}`,
+                            kind: file.isDirectory ? 'folder' : 'file',
+                            label: file.name,
+                          })
+                        }
+                        className="text-[10px] text-henry-text-muted hover:text-henry-accent shrink-0"
+                      >
+                        Context
+                      </button>
                       {!file.isDirectory && (
                         <button
+                          type="button"
                           onClick={() => {
                             useStore.getState().setCurrentView('files');
-                            // TODO: navigate to file in file browser
                           }}
-                          className="text-[10px] text-henry-accent hover:text-henry-accent-hover"
+                          className="text-[10px] text-henry-accent hover:text-henry-accent-hover shrink-0"
                         >
                           Open →
                         </button>

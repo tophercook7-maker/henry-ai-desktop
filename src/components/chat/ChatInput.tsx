@@ -5,6 +5,9 @@ interface ChatInputProps {
   isStreaming: boolean;
   onCancel?: () => void;
   placeholder?: string;
+  /** Parent bumps `id` to replace the textarea value (e.g. “Use in chat” from scripture tools). */
+  injectDraft?: { id: number; text: string } | null;
+  onInjectConsumed?: () => void;
 }
 
 export default function ChatInput({
@@ -12,6 +15,8 @@ export default function ChatInput({
   isStreaming,
   onCancel,
   placeholder = 'Message Henry...',
+  injectDraft,
+  onInjectConsumed,
 }: ChatInputProps) {
   const [input, setInput] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -29,6 +34,21 @@ export default function ChatInput({
   useEffect(() => {
     textareaRef.current?.focus();
   }, []);
+
+  useEffect(() => {
+    if (!injectDraft?.text) return;
+    setInput(injectDraft.text);
+    onInjectConsumed?.();
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (el) {
+        el.style.height = 'auto';
+        el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+        el.focus();
+        el.setSelectionRange(el.value.length, el.value.length);
+      }
+    });
+  }, [injectDraft?.id, injectDraft?.text, onInjectConsumed]);
 
   function handleSubmit() {
     const trimmed = input.trim();

@@ -10,11 +10,12 @@
  */
 
 import { ipcMain, BrowserWindow } from 'electron';
+import type Database from 'better-sqlite3';
 
 type WindowGetter = () => BrowserWindow | null;
 
 /** Safely send to renderer — skips if window is destroyed (Vite HMR). */
-function safeSend(getWin: WindowGetter, channel: string, data: any) {
+function safeSend(getWin: WindowGetter, channel: string, data: unknown) {
   const win = getWin();
   if (win && !win.isDestroyed()) {
     win.webContents.send(channel, data);
@@ -252,12 +253,90 @@ export async function callAI(params: {
 
 // ── Streaming Helpers ─────────────────────────────────────────
 
+type StreamTokenUsage = { input: number; output: number };
+
+/**
+ * Accumulates SSE bytes, splits on blank lines, joins multi-line `data:` payloads.
+ * Handles chunks split mid-event across TCP reads.
+ */
+async function readSSEStream(response: Response, onEvent: (payload: string) => void): Promise<void> {
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error('No response body');
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  const processEventBlock = (block: string) => {
+    const lines = block.split(/\r?\n/);
+    const dataLines: string[] = [];
+    for (const line of lines) {
+      if (line.startsWith('data:')) {
+        dataLines.push(line.slice(5).replace(/^\s/, ''));
+      }
+    }
+    if (dataLines.length === 0) return;
+    const payload = dataLines.join('\n');
+    if (payload) onEvent(payload);
+  };
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        buffer += decoder.decode();
+        break;
+      }
+      buffer += decoder.decode(value, { stream: true });
+
+      const parts = buffer.split(/\r?\n\r?\n/);
+      buffer = parts.pop() ?? '';
+      for (const block of parts) {
+        if (block.trim()) processEventBlock(block);
+      }
+    }
+
+    const tailParts = buffer.split(/\r?\n\r?\n/);
+    buffer = tailParts.pop() ?? '';
+    for (const block of tailParts) {
+      if (block.trim()) processEventBlock(block);
+    }
+    if (buffer.trim()) {
+      processEventBlock(buffer);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+/** Normalize streamed `choices[0].delta.content` (string or structured parts). */
+function extractOpenAIChatDeltaContent(delta: unknown): string {
+  if (delta == null || typeof delta !== 'object') return '';
+  const d = delta as Record<string, unknown>;
+  const c = d.content;
+  if (typeof c === 'string' && c.length > 0) return c;
+  if (Array.isArray(c)) {
+    let out = '';
+    for (const part of c) {
+      if (typeof part === 'string') out += part;
+      else if (part && typeof part === 'object') {
+        const p = part as Record<string, unknown>;
+        if (typeof p.text === 'string') out += p.text;
+      }
+    }
+    return out;
+  }
+  return '';
+}
+
 async function streamOpenAI(
   params: AiRequest,
   onChunk: (text: string) => void,
-  onDone: (fullText: string, usage?: any) => void,
+  onDone: (fullText: string, usage?: StreamTokenUsage) => void,
   onError: (error: string) => void
 ) {
+  let fullText = '';
+  let usage: StreamTokenUsage | undefined;
+
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -273,57 +352,57 @@ async function streamOpenAI(
         stream: true,
         stream_options: { include_usage: true },
       }),
+      signal: params.signal,
     });
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
+      const error = (await response.json().catch(() => ({}))) as { error?: { message?: string } };
       onError(error.error?.message || `OpenAI API error: ${response.status}`);
       return;
     }
 
-    const reader = response.body?.getReader();
-    const decoder = new TextDecoder();
-    let fullText = '';
-    let usage: any = null;
-
-    while (reader) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      const chunk = decoder.decode(value);
-      const lines = chunk.split('\n').filter((l) => l.startsWith('data: '));
-
-      for (const line of lines) {
-        const data = line.slice(6);
-        if (data === '[DONE]') continue;
-        try {
-          const parsed = JSON.parse(data);
-          const content = parsed.choices?.[0]?.delta?.content;
-          if (content) {
-            fullText += content;
-            onChunk(content);
-          }
-          if (parsed.usage) {
-            usage = { input: parsed.usage.prompt_tokens, output: parsed.usage.completion_tokens };
-          }
-        } catch {
-          // Skip malformed chunks
-        }
+    await readSSEStream(response, (data) => {
+      if (data === '[DONE]') return;
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(data);
+      } catch {
+        return;
       }
-    }
+      if (!parsed || typeof parsed !== 'object') return;
+      const p = parsed as {
+        choices?: Array<{ delta?: unknown }>;
+        usage?: { prompt_tokens?: number; completion_tokens?: number };
+      };
+      const delta = p.choices?.[0]?.delta;
+      const piece = extractOpenAIChatDeltaContent(delta);
+      if (piece.length > 0) {
+        fullText += piece;
+        onChunk(piece);
+      }
+      if (p.usage) {
+        usage = {
+          input: p.usage.prompt_tokens ?? 0,
+          output: p.usage.completion_tokens ?? 0,
+        };
+      }
+    });
 
     onDone(fullText, usage);
-  } catch (err: any) {
-    onError(err.message || 'Stream error');
+  } catch (err: unknown) {
+    onError(err instanceof Error ? err.message : 'Stream error');
   }
 }
 
 async function streamAnthropic(
   params: AiRequest,
   onChunk: (text: string) => void,
-  onDone: (fullText: string, usage?: any) => void,
+  onDone: (fullText: string, usage?: StreamTokenUsage) => void,
   onError: (error: string) => void
 ) {
+  let fullText = '';
+  let usage: StreamTokenUsage | undefined;
+
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -340,51 +419,50 @@ async function streamAnthropic(
         temperature: params.temperature ?? 0.7,
         stream: true,
       }),
+      signal: params.signal,
     });
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
+      const error = (await response.json().catch(() => ({}))) as { error?: { message?: string } };
       onError(error.error?.message || `Anthropic API error: ${response.status}`);
       return;
     }
 
-    const reader = response.body?.getReader();
-    const decoder = new TextDecoder();
-    let fullText = '';
-    let usage: any = null;
-
-    while (reader) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      const chunk = decoder.decode(value);
-      const lines = chunk.split('\n').filter((l) => l.startsWith('data: '));
-
-      for (const line of lines) {
-        try {
-          const parsed = JSON.parse(line.slice(6));
-          if (parsed.type === 'content_block_delta') {
-            const text = parsed.delta?.text;
-            if (text) {
-              fullText += text;
-              onChunk(text);
-            }
-          }
-          if (parsed.type === 'message_start' && parsed.message?.usage) {
-            usage = { input: parsed.message.usage.input_tokens, output: 0 };
-          }
-          if (parsed.type === 'message_delta' && parsed.usage) {
-            usage = { ...usage, output: parsed.usage.output_tokens };
-          }
-        } catch {
-          // Skip
+    await readSSEStream(response, (data) => {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(data);
+      } catch {
+        return;
+      }
+      if (!parsed || typeof parsed !== 'object') return;
+      const p = parsed as {
+        type?: string;
+        delta?: { text?: string };
+        message?: { usage?: { input_tokens?: number } };
+        usage?: { output_tokens?: number };
+      };
+      if (p.type === 'content_block_delta') {
+        const text = p.delta?.text;
+        if (typeof text === 'string' && text.length > 0) {
+          fullText += text;
+          onChunk(text);
         }
       }
-    }
+      if (p.type === 'message_start' && p.message?.usage) {
+        usage = { input: p.message.usage.input_tokens ?? 0, output: usage?.output ?? 0 };
+      }
+      if (p.type === 'message_delta' && p.usage) {
+        usage = {
+          input: usage?.input ?? 0,
+          output: p.usage.output_tokens ?? 0,
+        };
+      }
+    });
 
     onDone(fullText, usage);
-  } catch (err: any) {
-    onError(err.message || 'Stream error');
+  } catch (err: unknown) {
+    onError(err instanceof Error ? err.message : 'Stream error');
   }
 }
 
@@ -394,7 +472,7 @@ const activeStreams = new Map<string, AbortController>();
 
 // ── Register IPC Handlers ─────────────────────────────────────
 
-export function registerAIHandlers(db: any, getWindow: WindowGetter) {
+export function registerAIHandlers(_db: Database.Database, getWindow: WindowGetter) {
   // Non-streaming request
   ipcMain.handle('ai:send', async (_, params: AiRequest) => {
     return callAI(params);
@@ -403,12 +481,16 @@ export function registerAIHandlers(db: any, getWindow: WindowGetter) {
   // Streaming request — preload sends { ...params, channelId }
   // Uses ipcMain.handle (preload calls ipcRenderer.invoke)
   ipcMain.handle('ai:stream', async (_, params: AiRequest & { channelId: string }) => {
-    const { channelId } = params;
+    const { channelId, ...aiBase } = params;
+    const controller = new AbortController();
+    activeStreams.set(channelId, controller);
+
+    const paramsWithSignal: AiRequest = { ...aiBase, signal: controller.signal };
 
     const onChunk = (text: string) => {
       safeSend(getWindow, 'ai:stream:chunk', { channelId, chunk: text });
     };
-    const onDone = (fullText: string, usage?: any) => {
+    const onDone = (fullText: string, usage?: StreamTokenUsage) => {
       const cost = usage ? calculateCost(params.model, usage.input || 0, usage.output || 0) : 0;
       safeSend(getWindow, 'ai:stream:done', {
         channelId,
@@ -420,29 +502,32 @@ export function registerAIHandlers(db: any, getWindow: WindowGetter) {
           cost,
         },
       });
-      activeStreams.delete(channelId);
     };
     const onError = (error: string) => {
       safeSend(getWindow, 'ai:stream:error', { channelId, error });
-      activeStreams.delete(channelId);
     };
 
-    switch (params.provider) {
-      case 'openai':
-        await streamOpenAI(params, onChunk, onDone, onError);
-        break;
-      case 'anthropic':
-        await streamAnthropic(params, onChunk, onDone, onError);
-        break;
-      default:
-        // For providers without streaming, fall back to non-streaming
-        try {
-          const result = await callAI(params);
-          onChunk(result.content);
-          onDone(result.content, result.usage);
-        } catch (err: any) {
-          onError(err.message);
-        }
+    try {
+      switch (params.provider) {
+        case 'openai':
+          await streamOpenAI(paramsWithSignal, onChunk, onDone, onError);
+          break;
+        case 'anthropic':
+          await streamAnthropic(paramsWithSignal, onChunk, onDone, onError);
+          break;
+        default:
+          try {
+            const result = await callAI({ ...aiBase, signal: controller.signal });
+            onChunk(result.content);
+            onDone(result.content, result.usage);
+          } catch (err: unknown) {
+            onError(err instanceof Error ? err.message : 'Stream error');
+          }
+      }
+    } catch (err: unknown) {
+      onError(err instanceof Error ? err.message : 'Stream error');
+    } finally {
+      activeStreams.delete(channelId);
     }
 
     return { started: true, channelId };

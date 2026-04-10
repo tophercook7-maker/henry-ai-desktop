@@ -1,6 +1,6 @@
 /**
  * Task Broker — The brain of the dual-engine architecture.
- * 
+ *
  * Manages the queue between Companion and Worker engines.
  * The Companion can submit tasks, the Worker picks them up.
  * Both engines can check status independently.
@@ -8,12 +8,18 @@
 
 import { ipcMain, BrowserWindow } from 'electron';
 import type Database from 'better-sqlite3';
+import fs from 'fs/promises';
+import path from 'path';
 import { callAI } from './ai';
+import {
+  buildWorkerAITaskSystemPrompt,
+  buildWorkerCodeGenSystemPrompt,
+} from '../../src/henry/charter';
 
 type WindowGetter = () => BrowserWindow | null;
 
 /** Safely send to renderer — skips if window is destroyed (Vite HMR). */
-function safeSend(getWin: WindowGetter, channel: string, data: any) {
+function safeSend(getWin: WindowGetter, channel: string, data: unknown) {
   const win = getWin();
   if (win && !win.isDestroyed()) {
     win.webContents.send(channel, data);
@@ -25,53 +31,162 @@ interface TaskExecution {
   abortController?: AbortController;
 }
 
+interface ProviderRow {
+  id: string;
+  name: string;
+  api_key: string;
+}
+
 let db: Database.Database;
 let activeExecutions: Map<string, TaskExecution> = new Map();
 let getWindow: WindowGetter;
+let workspaceRoot: string;
 
-export function registerTaskBrokerHandlers(database: Database.Database, winGetter: WindowGetter) {
+function serializeTaskPayload(payload: unknown): string | null {
+  if (payload === undefined || payload === null) return null;
+  if (typeof payload === 'string') return payload;
+  return JSON.stringify(payload);
+}
+
+/** Parse stored task payload for execution — never throws. */
+function safeParsePayload(payload: unknown): Record<string, unknown> {
+  if (payload == null) return {};
+  if (typeof payload === 'object' && !Array.isArray(payload)) {
+    return payload as Record<string, unknown>;
+  }
+  if (typeof payload === 'string') {
+    try {
+      const parsed = JSON.parse(payload) as unknown;
+      if (parsed != null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+      return { raw: payload };
+    } catch {
+      return { raw: payload };
+    }
+  }
+  return {};
+}
+
+function normalizeTaskError(error: unknown): string {
+  if (error && typeof error === 'object' && 'message' in error) {
+    const m = (error as { message?: unknown }).message;
+    if (typeof m === 'string' && m.length > 0) return m;
+  }
+  if (typeof error === 'string') return error;
+  return 'Task failed';
+}
+
+function resolveWorkspacePath(requestedPath: string): string {
+  const resolved = path.resolve(workspaceRoot, requestedPath);
+  const root = path.resolve(workspaceRoot);
+  if (!resolved.startsWith(root)) {
+    throw new Error('Access denied: path is outside workspace.');
+  }
+  return resolved;
+}
+
+function getWorkerEngineConfig(): { workerProviderId: string; workerModel: string; provider: ProviderRow } {
+  const workerProviderRow = db.prepare("SELECT value FROM settings WHERE key = 'worker_provider'").get() as
+    | { value?: string }
+    | undefined;
+  const workerModelRow = db.prepare("SELECT value FROM settings WHERE key = 'worker_model'").get() as
+    | { value?: string }
+    | undefined;
+
+  const workerProviderId = workerProviderRow?.value?.trim() ?? '';
+  const workerModel = workerModelRow?.value?.trim() ?? '';
+
+  if (!workerProviderId) {
+    throw new Error('Worker engine is not configured. Open Settings and choose a Worker provider/model.');
+  }
+  if (!workerModel) {
+    throw new Error('Worker engine is not configured. Open Settings and choose a Worker provider/model.');
+  }
+
+  const provider = db.prepare('SELECT * FROM providers WHERE id = ?').get(workerProviderId) as ProviderRow | undefined;
+  if (!provider) {
+    throw new Error('Worker engine is not configured. Open Settings and choose a Worker provider/model.');
+  }
+
+  const idLower = (provider.id || '').toLowerCase();
+  const nameLower = (provider.name || '').toLowerCase();
+  const isOllama = idLower === 'ollama' || nameLower === 'ollama';
+
+  if (!isOllama && (!provider.api_key || provider.api_key === '')) {
+    throw new Error('Worker provider is missing an API key.');
+  }
+
+  return { workerProviderId, workerModel, provider };
+}
+
+export function registerTaskBrokerHandlers(
+  database: Database.Database,
+  winGetter: WindowGetter,
+  workspacePath: string
+) {
   db = database;
   getWindow = winGetter;
+  workspaceRoot = workspacePath;
 
   // Submit a new task to the queue
-  ipcMain.handle('task:submit', async (_event, task: {
-    description: string;
-    type: string;
-    priority?: number;
-    payload?: string;
-    sourceEngine?: string;
-    conversationId?: string;
-  }) => {
-    const id = crypto.randomUUID();
-    const now = new Date().toISOString();
+  ipcMain.handle(
+    'task:submit',
+    async (
+      _event,
+      task: {
+        description: string;
+        type: string;
+        priority?: number;
+        payload?: unknown;
+        sourceEngine?: string;
+        conversationId?: string;
+        createdFromMode?: string;
+        relatedFilePath?: string;
+        createdFromMessageId?: string;
+      }
+    ) => {
+      const id = crypto.randomUUID();
+      const now = new Date().toISOString();
+      const storedPayload = serializeTaskPayload(task.payload);
 
-    db.prepare(`
-      INSERT INTO tasks (id, description, type, status, priority, payload, source_engine, conversation_id, created_at)
-      VALUES (?, ?, ?, 'queued', ?, ?, ?, ?, ?)
+      db.prepare(`
+      INSERT INTO tasks (
+        id, description, type, status, priority, payload, source_engine, conversation_id, created_at,
+        created_from_mode, related_file_path, created_from_message_id
+      )
+      VALUES (?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
-      id,
-      task.description,
-      task.type,
-      task.priority || 1,
-      task.payload || null,
-      task.sourceEngine || 'companion',
-      task.conversationId || null,
-      now
-    );
+        id,
+        task.description,
+        task.type,
+        task.priority ?? 5,
+        storedPayload,
+        task.sourceEngine || 'companion',
+        task.conversationId || null,
+        now,
+        task.createdFromMode?.trim() || null,
+        task.relatedFilePath?.trim() || null,
+        task.createdFromMessageId?.trim() || null
+      );
 
-    // Notify renderer about new task
-    safeSend(getWindow, 'task:update', {
-      id,
-      status: 'queued',
-      description: task.description,
-      type: task.type,
-    });
+      // Notify renderer about new task
+      safeSend(getWindow, 'task:update', {
+        id,
+        status: 'queued',
+        description: task.description,
+        type: task.type,
+        created_from_mode: task.createdFromMode?.trim() || undefined,
+        related_file_path: task.relatedFilePath?.trim() || undefined,
+        created_from_message_id: task.createdFromMessageId?.trim() || undefined,
+      });
 
-    // Auto-process queue
-    processNextTask();
+      // Auto-process queue
+      processNextTask();
 
-    return { id, status: 'queued' };
-  });
+      return { id, status: 'queued' };
+    }
+  );
 
   // Get task status
   ipcMain.handle('task:status', async (_event, taskId: string) => {
@@ -80,31 +195,37 @@ export function registerTaskBrokerHandlers(database: Database.Database, winGette
   });
 
   // Get all tasks with optional filter
-  ipcMain.handle('task:list', async (_event, filter?: {
-    status?: string;
-    limit?: number;
-  }) => {
-    let query = 'SELECT * FROM tasks';
-    const params: any[] = [];
+  ipcMain.handle(
+    'task:list',
+    async (
+      _event,
+      filter?: {
+        status?: string;
+        limit?: number;
+      }
+    ) => {
+      let query = 'SELECT * FROM tasks';
+      const params: unknown[] = [];
 
-    if (filter?.status) {
-      query += ' WHERE status = ?';
-      params.push(filter.status);
+      if (filter?.status) {
+        query += ' WHERE status = ?';
+        params.push(filter.status);
+      }
+
+      query += ' ORDER BY priority DESC, created_at ASC';
+
+      if (filter?.limit) {
+        query += ' LIMIT ?';
+        params.push(filter.limit);
+      }
+
+      return db.prepare(query).all(...params);
     }
-
-    query += ' ORDER BY priority DESC, created_at ASC';
-
-    if (filter?.limit) {
-      query += ' LIMIT ?';
-      params.push(filter.limit);
-    }
-
-    return db.prepare(query).all(...params);
-  });
+  );
 
   // Cancel a task
   ipcMain.handle('task:cancel', async (_event, taskId: string) => {
-    const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as any;
+    const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as { status?: string } | undefined;
     if (!task) return { error: 'Task not found' };
 
     if (task.status === 'running') {
@@ -126,7 +247,7 @@ export function registerTaskBrokerHandlers(database: Database.Database, winGette
 
   // Retry a failed task
   ipcMain.handle('task:retry', async (_event, taskId: string) => {
-    const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as any;
+    const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as { status?: string } | undefined;
     if (!task || (task.status !== 'failed' && task.status !== 'cancelled')) {
       return { error: 'Can only retry failed or cancelled tasks' };
     }
@@ -155,7 +276,7 @@ export function registerTaskBrokerHandlers(database: Database.Database, winGette
 
     const totalCost = db.prepare(`
       SELECT COALESCE(SUM(cost), 0) as total FROM tasks WHERE cost > 0
-    `).get() as any;
+    `).get() as { total?: number };
 
     return {
       byStatus: stats,
@@ -174,18 +295,20 @@ async function processNextTask() {
     SELECT * FROM tasks WHERE status = 'queued' 
     ORDER BY priority DESC, created_at ASC 
     LIMIT 1
-  `).get() as any;
+  `).get() as Record<string, unknown> | undefined;
 
   if (!nextTask) return;
+
+  const taskId = nextTask.id as string;
 
   // Mark as running
   const now = new Date().toISOString();
   db.prepare(`
     UPDATE tasks SET status = 'running', started_at = ? WHERE id = ?
-  `).run(now, nextTask.id);
+  `).run(now, taskId);
 
   safeSend(getWindow, 'task:update', {
-    id: nextTask.id,
+    id: taskId,
     status: 'running',
     description: nextTask.description,
   });
@@ -194,13 +317,13 @@ async function processNextTask() {
   safeSend(getWindow, 'engine:status', {
     engine: 'worker',
     status: 'working',
-    taskId: nextTask.id,
+    taskId,
     taskDescription: nextTask.description,
   });
 
   const abortController = new AbortController();
-  activeExecutions.set(nextTask.id, {
-    taskId: nextTask.id,
+  activeExecutions.set(taskId, {
+    taskId,
     abortController,
   });
 
@@ -208,14 +331,18 @@ async function processNextTask() {
     // Execute the task based on type
     const result = await executeTask(nextTask, abortController.signal);
 
-    // Mark as completed
+    const costArg =
+      result && typeof result === 'object' && 'cost' in result && typeof (result as { cost: unknown }).cost === 'number'
+        ? (result as { cost: number }).cost
+        : null;
+
     db.prepare(`
-      UPDATE tasks SET status = 'completed', completed_at = ?, result = ?
+      UPDATE tasks SET status = 'completed', completed_at = ?, result = ?, cost = COALESCE(?, cost)
       WHERE id = ?
-    `).run(new Date().toISOString(), JSON.stringify(result), nextTask.id);
+    `).run(new Date().toISOString(), JSON.stringify(result), costArg, taskId);
 
     safeSend(getWindow, 'task:update', {
-      id: nextTask.id,
+      id: taskId,
       status: 'completed',
       result,
     });
@@ -223,29 +350,38 @@ async function processNextTask() {
     // Send result back to conversation if there is one
     if (nextTask.conversation_id) {
       safeSend(getWindow, 'task:result', {
-        taskId: nextTask.id,
+        taskId,
         conversationId: nextTask.conversation_id,
         result,
       });
     }
-  } catch (error: any) {
-    if (error.name === 'AbortError') {
-      // Task was cancelled
+  } catch (error: unknown) {
+    if (error instanceof Error && error.name === 'AbortError') {
       return;
     }
+
+    const errMsg = normalizeTaskError(error);
 
     db.prepare(`
       UPDATE tasks SET status = 'failed', completed_at = ?, error = ?
       WHERE id = ?
-    `).run(new Date().toISOString(), error.message, nextTask.id);
+    `).run(new Date().toISOString(), errMsg, taskId);
 
     safeSend(getWindow, 'task:update', {
-      id: nextTask.id,
+      id: taskId,
       status: 'failed',
-      error: error.message,
+      error: errMsg,
     });
+
+    if (nextTask.conversation_id) {
+      safeSend(getWindow, 'task:result', {
+        taskId,
+        conversationId: nextTask.conversation_id,
+        error: errMsg,
+      });
+    }
   } finally {
-    activeExecutions.delete(nextTask.id);
+    activeExecutions.delete(taskId);
 
     safeSend(getWindow, 'engine:status', {
       engine: 'worker',
@@ -258,8 +394,8 @@ async function processNextTask() {
 }
 
 // Execute a task based on its type
-async function executeTask(task: any, signal: AbortSignal): Promise<any> {
-  const payload = task.payload ? JSON.parse(task.payload) : {};
+async function executeTask(task: Record<string, unknown>, signal: AbortSignal): Promise<Record<string, unknown>> {
+  const payload = safeParsePayload(task.payload);
 
   switch (task.type) {
     case 'ai_generate':
@@ -281,33 +417,27 @@ async function executeTask(task: any, signal: AbortSignal): Promise<any> {
 }
 
 // AI generation task
-async function executeAITask(task: any, payload: any, signal: AbortSignal): Promise<any> {
-  // Get worker engine config from settings
-  const workerProvider = db.prepare("SELECT value FROM settings WHERE key = 'worker_provider'").get() as any;
-  const workerModel = db.prepare("SELECT value FROM settings WHERE key = 'worker_model'").get() as any;
-  const provider = db.prepare("SELECT * FROM providers WHERE id = ?").get(workerProvider?.value) as any;
+async function executeAITask(
+  task: Record<string, unknown>,
+  payload: Record<string, unknown>,
+  signal: AbortSignal
+): Promise<Record<string, unknown>> {
+  const { workerProviderId, workerModel, provider } = getWorkerEngineConfig();
 
-  if (!provider || !workerModel) {
-    throw new Error('Worker engine not configured. Set up a Worker model in Settings.');
-  }
-
-  // Build the prompt
   const messages = [
     {
       role: 'system',
-      content: `You are Henry AI Worker engine. You handle complex, resource-intensive tasks with thorough, detailed output. The user has delegated this task to you for deep work. Be comprehensive.`,
+      content: buildWorkerAITaskSystemPrompt(),
     },
     {
       role: 'user',
-      content: payload.prompt || task.description,
+      content: (typeof payload.prompt === 'string' ? payload.prompt : null) || String(task.description ?? ''),
     },
   ];
 
-  // Make AI call (non-streaming for background tasks)
-  // callAI is imported at top of file
   const result = await callAI({
-    provider: workerProvider.value,
-    model: workerModel.value,
+    provider: workerProviderId,
+    model: workerModel,
     apiKey: provider.api_key,
     messages,
     temperature: 0.7,
@@ -317,92 +447,106 @@ async function executeAITask(task: any, payload: any, signal: AbortSignal): Prom
   return {
     type: 'ai_response',
     content: result.content,
-    model: workerModel.value,
+    model: workerModel,
     tokens: result.usage,
     cost: result.cost,
   };
 }
 
 // File operation task
-async function executeFileTask(task: any, payload: any, signal: AbortSignal): Promise<any> {
-  const fs = require('fs').promises;
-  const path = require('path');
+async function executeFileTask(
+  _task: Record<string, unknown>,
+  payload: Record<string, unknown>,
+  _signal: AbortSignal
+): Promise<Record<string, unknown>> {
+  const operation = payload.operation;
+  const rawPath = typeof payload.path === 'string' ? payload.path : '';
 
-  switch (payload.operation) {
-    case 'read':
-      const content = await fs.readFile(payload.path, 'utf-8');
-      return { type: 'file_content', path: payload.path, content };
+  switch (operation) {
+    case 'read': {
+      const target = resolveWorkspacePath(rawPath);
+      const content = await fs.readFile(target, 'utf-8');
+      return { type: 'file_content', path: rawPath, content };
+    }
 
-    case 'write':
-      await fs.mkdir(path.dirname(payload.path), { recursive: true });
-      await fs.writeFile(payload.path, payload.content, 'utf-8');
-      return { type: 'file_written', path: payload.path };
+    case 'write': {
+      const target = resolveWorkspacePath(rawPath);
+      await fs.mkdir(path.dirname(target), { recursive: true });
+      await fs.writeFile(target, String(payload.content ?? ''), 'utf-8');
+      return { type: 'file_written', path: rawPath };
+    }
 
-    case 'list':
-      const entries = await fs.readdir(payload.path, { withFileTypes: true });
+    case 'list': {
+      const target = resolveWorkspacePath(rawPath || '.');
+      const entries = await fs.readdir(target, { withFileTypes: true });
       return {
         type: 'file_list',
-        path: payload.path,
-        entries: entries.map((e: any) => ({
+        path: rawPath || '.',
+        entries: entries.map((e) => ({
           name: e.name,
           isDirectory: e.isDirectory(),
         })),
       };
+    }
 
     default:
-      throw new Error(`Unknown file operation: ${payload.operation}`);
+      throw new Error(`Unknown file operation: ${String(operation)}`);
   }
 }
 
 // Code generation task
-async function executeCodeGenTask(task: any, payload: any, signal: AbortSignal): Promise<any> {
-  // Use AI with code-specific system prompt
-  const workerProvider = db.prepare("SELECT value FROM settings WHERE key = 'worker_provider'").get() as any;
-  const workerModel = db.prepare("SELECT value FROM settings WHERE key = 'worker_model'").get() as any;
-  const provider = db.prepare("SELECT * FROM providers WHERE id = ?").get(workerProvider?.value) as any;
-
-  if (!provider || !workerModel) {
-    throw new Error('Worker engine not configured.');
-  }
+async function executeCodeGenTask(
+  task: Record<string, unknown>,
+  payload: Record<string, unknown>,
+  signal: AbortSignal
+): Promise<Record<string, unknown>> {
+  const { workerProviderId, workerModel, provider } = getWorkerEngineConfig();
 
   const messages = [
     {
       role: 'system',
-      content: `You are Henry AI Worker — a code generation engine. Produce clean, production-quality code. Include proper types, error handling, and comments. Output complete files, never partial snippets.
-
-Language: ${payload.language || 'TypeScript'}
-Framework: ${payload.framework || 'Not specified'}
-${payload.context ? `Context:\n${payload.context}` : ''}`,
+      content: buildWorkerCodeGenSystemPrompt({
+        language: typeof payload.language === 'string' ? payload.language : 'TypeScript',
+        framework: typeof payload.framework === 'string' ? payload.framework : 'Not specified',
+        context: typeof payload.context === 'string' ? payload.context : '',
+      }),
     },
     {
       role: 'user',
-      content: payload.prompt || task.description,
+      content: (typeof payload.prompt === 'string' ? payload.prompt : null) || String(task.description ?? ''),
     },
   ];
 
-  // callAI is imported at top of file
   const result = await callAI({
-    provider: workerProvider.value,
-    model: workerModel.value,
+    provider: workerProviderId,
+    model: workerModel,
     apiKey: provider.api_key,
     messages,
-    temperature: 0.3, // Lower temp for code gen
+    temperature: 0.3,
     signal,
   });
 
   return {
     type: 'code_generation',
     content: result.content,
-    model: workerModel.value,
+    model: workerModel,
     tokens: result.usage,
     cost: result.cost,
   };
 }
 
 // Research task
-async function executeResearchTask(task: any, payload: any, signal: AbortSignal): Promise<any> {
-  return executeAITask(task, {
-    ...payload,
-    prompt: `Research the following thoroughly and provide a comprehensive summary with sources and key findings:\n\n${payload.prompt || task.description}`,
-  }, signal);
+async function executeResearchTask(
+  task: Record<string, unknown>,
+  payload: Record<string, unknown>,
+  signal: AbortSignal
+): Promise<Record<string, unknown>> {
+  return executeAITask(
+    task,
+    {
+      ...payload,
+      prompt: `Research the following thoroughly and provide a comprehensive summary with sources and key findings:\n\n${(typeof payload.prompt === 'string' ? payload.prompt : null) || String(task.description ?? '')}`,
+    },
+    signal
+  );
 }

@@ -6,6 +6,9 @@ import type {
   MemoryFact,
   MemoryContext,
   DirectoryResult,
+  ScriptureLookupResult,
+  ScriptureImportRow,
+  ScriptureImportResult,
 } from './types';
 
 declare global {
@@ -29,15 +32,19 @@ declare global {
     description: string;
     type: string;
     priority?: number;
-    payload?: string;
+    payload?: unknown;
     sourceEngine?: string;
     conversationId?: string;
+    createdFromMode?: string;
+    relatedFilePath?: string;
+    createdFromMessageId?: string;
   }
 
   interface HenryTaskResultPayload {
     taskId: string;
     conversationId?: string;
-    result: {
+    error?: string;
+    result?: {
       type?: string;
       content?: string;
       model?: string;
@@ -108,15 +115,16 @@ declare global {
   interface HenryBuildContextInput {
     conversationId?: string;
     query?: string;
-    maxFacts?: number;
+    /** Optional: rows to read before renderer-side dedupe (default 40) */
+    maxFactsFetch?: number;
   }
 
+  /** Matches `memory:saveSummary` IPC (camelCase). */
   interface HenrySummaryInput {
-    conversation_id: string;
+    conversationId: string;
     summary: string;
-    message_count?: number;
-    token_count?: number;
-    created_at?: string;
+    messageCount?: number;
+    tokenCount?: number;
   }
 
   interface HenryTerminalRequest {
@@ -139,7 +147,7 @@ declare global {
     saveSetting: (key: string, value: string) => Promise<boolean>;
 
     getProviders: () => Promise<HenryProviderRecord[]>;
-    saveProvider: (provider: AIProvider) => Promise<boolean>;
+    saveProvider: (provider: Omit<AIProvider, 'models'> & { models: string }) => Promise<boolean>;
 
     getConversations: () => Promise<Conversation[]>;
     createConversation: (title: string) => Promise<Conversation>;
@@ -167,11 +175,20 @@ declare global {
     searchFacts: (query: HenrySearchFactsInput) => Promise<MemoryFact[]>;
     getAllFacts: (limit?: number) => Promise<MemoryFact[]>;
     buildContext: (params: HenryBuildContextInput) => Promise<MemoryContext>;
-    saveSummary: (summary: HenrySummaryInput) => Promise<boolean>;
+    saveSummary: (summary: HenrySummaryInput) => Promise<{ id: string | null; error?: string }>;
     getSummary: (conversationId: string) => Promise<string | null>;
+
+    scriptureLookup: (reference: string) => Promise<ScriptureLookupResult>;
+    scriptureImport: (entries: ScriptureImportRow[]) => Promise<ScriptureImportResult>;
+    scriptureCount: () => Promise<number>;
+    pickScriptureImportJson: () => Promise<
+      | { canceled: true; content: null }
+      | { canceled: false; content: string | null; error?: string }
+    >;
 
     readDirectory: (path?: string) => Promise<DirectoryResult>;
     readFile: (path: string) => Promise<string>;
+    pathExists: (path: string) => Promise<boolean>;
     writeFile: (path: string, content: string) => Promise<boolean>;
 
     ollamaStatus: (baseUrl?: string) => Promise<unknown>;

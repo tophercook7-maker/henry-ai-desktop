@@ -32,7 +32,7 @@ export default function CostDashboard() {
   async function loadCosts() {
     setLoading(true);
     try {
-      const rows: CostLogRow[] = await window.henryAPI.getCostLog(period);
+      const rows = (await window.henryAPI.getCostLog(period)) as CostLogRow[];
       const entries: CostEntry[] = rows.map((row) => ({
         provider: row.provider,
         model: row.model,

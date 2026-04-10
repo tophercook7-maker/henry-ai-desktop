@@ -44,6 +44,11 @@ interface HenryAPI {
   saveSummary: (summary: any) => Promise<{ id: string }>;
   getSummary: (conversationId: string) => Promise<any>;
 
+  scriptureLookup: (reference: string) => Promise<any>;
+  scriptureImport: (entries: any[]) => Promise<any>;
+  scriptureCount: () => Promise<number>;
+  pickScriptureImportJson: () => Promise<any>;
+
   // File System
   readDirectory: (path?: string) => Promise<any>;
   readFile: (path: string) => Promise<string>;

@@ -1,8 +1,152 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { useStore } from '../../store';
+import type { HenryLeanMemoryParts, Message } from '../../types';
 import ChatInput from './ChatInput';
 import EngineSelector from './EngineSelector';
+import ScriptureToolsPanel from './ScriptureToolsPanel';
+import MemoryAwarenessPanel from './MemoryAwarenessPanel';
+import Design3DReferencePanel from './Design3DReferencePanel';
+import WriterDraftLibrary from './WriterDraftLibrary';
+import CreateTaskFromMessageModal from './CreateTaskFromMessageModal';
+import WorkspaceContextStrip from './WorkspaceContextStrip';
+import ExportPackBuilder from './ExportPackBuilder';
 import MessageBubble from './MessageBubble';
+import {
+  buildCompanionStreamSystemPrompt,
+  HENRY_OPERATING_MODES,
+  type HenryOperatingMode,
+  isHenryOperatingMode,
+} from '@/henry/charter';
+import {
+  buildHenryMemoryContextBlock,
+  capMessageContent,
+  HENRY_MEMORY_CAPS,
+  sliceRecentThreadMessages,
+} from '@/henry/memoryContext';
+import {
+  BIBLE_SOURCE_PROFILES,
+  DEFAULT_BIBLICAL_SOURCE_PROFILE_ID,
+  type BibleSourceProfileId,
+  getBibleSourceProfile,
+  isBibleSourceProfileId,
+} from '@/henry/biblicalProfiles';
+import {
+  DEFAULT_WRITER_DOCUMENT_TYPE_ID,
+  WRITER_DOCUMENT_TYPES,
+  type WriterDocumentTypeId,
+  getWriterDocumentType,
+  isWriterDocumentTypeId,
+} from '@/henry/documentTypes';
+import { defaultWriterDraftRelativePath } from '@/henry/documentFilename';
+import { prependWriterDraftMetadata } from '@/henry/writerDraftMetadata';
+import {
+  HENRY_WRITER_CONTEXT_CHANGED_EVENT,
+  readWriterActiveDraftPath,
+  setWriterActiveDraftPath,
+} from '@/henry/writerDraftContext';
+import {
+  DEFAULT_DESIGN3D_WORKFLOW_TYPE_ID,
+  DESIGN3D_WORKFLOW_TYPES,
+  type Design3DWorkflowTypeId,
+  getDesign3DWorkflowType,
+  isDesign3DWorkflowTypeId,
+} from '@/henry/design3dTypes';
+import { defaultDesign3DPlanRelativePath } from '@/henry/design3dFilename';
+import { prependDesign3dPlanMetadata } from '@/henry/design3dPlanMetadata';
+import {
+  buildDesign3dReferenceFilesNote,
+  clearDesign3dReferencePath,
+  HENRY_DESIGN3D_REF_CHANGED_EVENT,
+  readLastWorkspaceFilePath,
+} from '@/henry/design3dReferenceContext';
+import {
+  formatScriptureLookupForPrompt,
+  lookupScriptureFromUserMessage,
+} from '@/henry/scriptureLookup';
+import {
+  buildSuggestedTaskFromMessage,
+  resolveWorkspaceLinkageForTask,
+  shouldOfferCreateTaskFromMessage,
+} from '@/henry/taskFromMessage';
+import type { ActiveWorkspaceContext } from '@/henry/workspaceContext';
+import {
+  buildWorkspaceContextPromptSection,
+  clearActiveWorkspaceContext,
+  findIndexHintForContext,
+  HENRY_WORKSPACE_CONTEXT_CHANGED_EVENT,
+  readActiveWorkspaceContext,
+} from '@/henry/workspaceContext';
+import type { ExportPresetId } from '@/henry/exportBundle';
+import {
+  checkSessionPathsStale,
+  clearRecoveryBannerDismissedThisSession,
+  clearSavedSessionResume,
+  readSavedSessionResume,
+  recoveryBannerDismissedThisAppSession,
+  saveSessionResumeSnapshot,
+  setRecoveryBannerDismissedThisSession,
+  type SavedSessionStateV1,
+  type SessionPathStaleReport,
+} from '@/henry/sessionResume';
+import { parseUserCommandLine, type HenryCommand } from '@/henry/commandLayer';
+import { resolveHenryCommand } from '@/henry/commandActions';
+
+const HENRY_OPERATING_MODE_KEY = 'henry_operating_mode';
+const HENRY_BIBLICAL_PROFILE_KEY = 'henry_biblical_source_profile';
+const HENRY_WRITER_DOCUMENT_TYPE_KEY = 'henry_writer_document_type';
+const HENRY_DESIGN3D_WORKFLOW_KEY = 'henry_design3d_workflow_type';
+
+function readStoredOperatingMode(): HenryOperatingMode {
+  try {
+    const raw = localStorage.getItem(HENRY_OPERATING_MODE_KEY);
+    if (raw && isHenryOperatingMode(raw)) return raw;
+  } catch {
+    /* ignore */
+  }
+  return 'companion';
+}
+
+function readStoredBiblicalProfile(): BibleSourceProfileId {
+  try {
+    const raw = localStorage.getItem(HENRY_BIBLICAL_PROFILE_KEY);
+    if (raw && isBibleSourceProfileId(raw)) return raw;
+  } catch {
+    /* ignore */
+  }
+  return DEFAULT_BIBLICAL_SOURCE_PROFILE_ID;
+}
+
+function readStoredWriterDocumentType(): WriterDocumentTypeId {
+  try {
+    const raw = localStorage.getItem(HENRY_WRITER_DOCUMENT_TYPE_KEY);
+    if (raw && isWriterDocumentTypeId(raw)) return raw;
+  } catch {
+    /* ignore */
+  }
+  return DEFAULT_WRITER_DOCUMENT_TYPE_ID;
+}
+
+function readStoredDesign3dWorkflow(): Design3DWorkflowTypeId {
+  try {
+    const raw = localStorage.getItem(HENRY_DESIGN3D_WORKFLOW_KEY);
+    if (raw && isDesign3DWorkflowTypeId(raw)) return raw;
+  } catch {
+    /* ignore */
+  }
+  return DEFAULT_DESIGN3D_WORKFLOW_TYPE_ID;
+}
+
+function exportPresetForOperatingMode(mode: HenryOperatingMode): ExportPresetId {
+  if (mode === 'writer') return 'writer_handoff';
+  if (mode === 'design3d') return 'design3d_handoff';
+  if (mode === 'biblical') return 'biblical_study_pack';
+  return 'mixed_workspace';
+}
+
+function resumeModeLabel(m: HenryOperatingMode): string {
+  if (m === 'design3d') return '3D / design';
+  return m.charAt(0).toUpperCase() + m.slice(1);
+}
 
 export default function ChatView() {
   const {
@@ -21,18 +165,408 @@ export default function ChatView() {
     setCompanionStatus,
     setWorkerStatus,
     settings,
+    conversations,
+    tasks,
   } = useStore();
 
   const [selectedEngine, setSelectedEngine] = useState<'companion' | 'worker'>('companion');
+  const [operatingMode, setOperatingMode] = useState<HenryOperatingMode>(readStoredOperatingMode);
+  const [biblicalSourceProfileId, setBiblicalSourceProfileId] =
+    useState<BibleSourceProfileId>(readStoredBiblicalProfile);
+  const [writerDocumentTypeId, setWriterDocumentTypeId] = useState<WriterDocumentTypeId>(
+    readStoredWriterDocumentType
+  );
+  const [design3dWorkflowTypeId, setDesign3dWorkflowTypeId] = useState<Design3DWorkflowTypeId>(
+    readStoredDesign3dWorkflow
+  );
+  const [saveWorkspaceDraftBusy, setSaveWorkspaceDraftBusy] = useState(false);
+  const [chatInject, setChatInject] = useState<{ id: number; text: string } | null>(null);
+  const [design3dRefPath, setDesign3dRefPath] = useState<string | null>(() =>
+    readLastWorkspaceFilePath()
+  );
+  const [writerActiveDraftPath, setWriterActiveDraftPathState] = useState<string | null>(() =>
+    readWriterActiveDraftPath()
+  );
+  const [createTaskFromMessage, setCreateTaskFromMessage] = useState<Message | null>(null);
+  const [activeWorkspaceContext, setActiveWorkspaceContextState] = useState<ActiveWorkspaceContext | null>(
+    () => readActiveWorkspaceContext()
+  );
+  const [workspaceContextIndexHint, setWorkspaceContextIndexHint] = useState<string | null>(null);
+  const [exportPackOpen, setExportPackOpen] = useState(false);
+  const [exportPackPreset, setExportPackPreset] = useState<ExportPresetId>('mixed_workspace');
+  const [exportPackSession, setExportPackSession] = useState(0);
+  const [recoverySnapshot, setRecoverySnapshot] = useState<SavedSessionStateV1 | null>(null);
+  const [recoveryBannerOpen, setRecoveryBannerOpen] = useState(false);
+  const [recoveryStale, setRecoveryStale] = useState<SessionPathStaleReport | null>(null);
+  const [recoveryConvRestored, setRecoveryConvRestored] = useState(false);
+  const [recoveryConvMissing, setRecoveryConvMissing] = useState(false);
+  const [memoryPanelSessionHint, setMemoryPanelSessionHint] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const streamRef = useRef<any>(null);
+  const sessionAsyncResumeStartedRef = useRef(false);
+
+  /** Restore active thread id before persistence effects run (avoids wiping saved conversation). */
+  useLayoutEffect(() => {
+    if (!conversations.length) return;
+    const saved = readSavedSessionResume();
+    if (!saved?.lastConversationId) return;
+    if (!conversations.some((c) => c.id === saved.lastConversationId)) return;
+    const cur = useStore.getState().activeConversationId;
+    if (cur && cur !== saved.lastConversationId) return;
+    useStore.getState().setActiveConversation(saved.lastConversationId);
+  }, [conversations]);
+
+  useEffect(() => {
+    saveSessionResumeSnapshot({
+      lastConversationId: activeConversationId,
+      operatingMode,
+      biblicalSourceProfileId,
+      writerDocumentTypeId,
+      design3dWorkflowTypeId,
+      writerActiveDraftPath,
+      design3dReferencePath: design3dRefPath,
+      activeWorkspaceContext,
+    });
+  }, [
+    activeConversationId,
+    operatingMode,
+    biblicalSourceProfileId,
+    writerDocumentTypeId,
+    design3dWorkflowTypeId,
+    writerActiveDraftPath,
+    design3dRefPath,
+    activeWorkspaceContext,
+  ]);
+
+  useEffect(() => {
+    if (!conversations.length) return;
+    if (sessionAsyncResumeStartedRef.current) return;
+    sessionAsyncResumeStartedRef.current = true;
+
+    void (async () => {
+      const saved = readSavedSessionResume();
+      if (!saved) return;
+
+      const stale = await checkSessionPathsStale(saved, (p) => window.henryAPI.pathExists(p));
+      setRecoveryStale(stale);
+
+      const st = useStore.getState();
+      let restored = false;
+      let missing = false;
+      if (saved.lastConversationId) {
+        if (st.conversations.some((c) => c.id === saved.lastConversationId)) {
+          try {
+            const msgs = await window.henryAPI.getMessages(saved.lastConversationId);
+            st.setMessages(msgs);
+            restored = true;
+          } catch {
+            missing = true;
+          }
+        } else {
+          missing = true;
+        }
+      }
+
+      setRecoveryConvRestored(restored);
+      setRecoveryConvMissing(missing);
+      setRecoverySnapshot(saved);
+      setMemoryPanelSessionHint(true);
+      if (!recoveryBannerDismissedThisAppSession()) {
+        setRecoveryBannerOpen(true);
+      }
+    })();
+  }, [conversations.length]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, streamingContent]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem(HENRY_OPERATING_MODE_KEY, operatingMode);
+    } catch {
+      /* ignore */
+    }
+  }, [operatingMode]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(HENRY_BIBLICAL_PROFILE_KEY, biblicalSourceProfileId);
+    } catch {
+      /* ignore */
+    }
+  }, [biblicalSourceProfileId]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(HENRY_WRITER_DOCUMENT_TYPE_KEY, writerDocumentTypeId);
+    } catch {
+      /* ignore */
+    }
+  }, [writerDocumentTypeId]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(HENRY_DESIGN3D_WORKFLOW_KEY, design3dWorkflowTypeId);
+    } catch {
+      /* ignore */
+    }
+  }, [design3dWorkflowTypeId]);
+
+  useEffect(() => {
+    const sync = () => setDesign3dRefPath(readLastWorkspaceFilePath());
+    window.addEventListener(HENRY_DESIGN3D_REF_CHANGED_EVENT, sync);
+    window.addEventListener('focus', sync);
+    return () => {
+      window.removeEventListener(HENRY_DESIGN3D_REF_CHANGED_EVENT, sync);
+      window.removeEventListener('focus', sync);
+    };
+  }, []);
+
+  useEffect(() => {
+    const sync = () => setWriterActiveDraftPathState(readWriterActiveDraftPath());
+    window.addEventListener(HENRY_WRITER_CONTEXT_CHANGED_EVENT, sync);
+    window.addEventListener('focus', sync);
+    return () => {
+      window.removeEventListener(HENRY_WRITER_CONTEXT_CHANGED_EVENT, sync);
+      window.removeEventListener('focus', sync);
+    };
+  }, []);
+
+  useEffect(() => {
+    const sync = () => setActiveWorkspaceContextState(readActiveWorkspaceContext());
+    window.addEventListener(HENRY_WORKSPACE_CONTEXT_CHANGED_EVENT, sync);
+    window.addEventListener('focus', sync);
+    return () => {
+      window.removeEventListener(HENRY_WORKSPACE_CONTEXT_CHANGED_EVENT, sync);
+      window.removeEventListener('focus', sync);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!activeWorkspaceContext) setWorkspaceContextIndexHint(null);
+  }, [activeWorkspaceContext]);
+
+  function openExportPack(preset: ExportPresetId) {
+    setExportPackPreset(preset);
+    setExportPackSession((k) => k + 1);
+    setExportPackOpen(true);
+  }
+
+  const exportPackChatActionVisible =
+    !!settings.workspace_path?.trim() ||
+    !!activeWorkspaceContext ||
+    !!writerActiveDraftPath ||
+    !!design3dRefPath ||
+    operatingMode !== 'companion' ||
+    messages.length > 0;
+
+  function handleRecoveryDismiss() {
+    setRecoveryBannerOpen(false);
+    setRecoveryBannerDismissedThisSession();
+  }
+
+  async function handleResumeLastThread() {
+    const saved = readSavedSessionResume() ?? recoverySnapshot;
+    const id = saved?.lastConversationId;
+    if (!id || !conversations.some((c) => c.id === id)) return;
+    setActiveConversation(id);
+    try {
+      const msgs = await window.henryAPI.getMessages(id);
+      setMessages(msgs);
+      setRecoveryConvMissing(false);
+      setRecoveryConvRestored(true);
+    } catch {
+      /* keep banner honest */
+    }
+    setRecoveryBannerOpen(false);
+    setRecoveryBannerDismissedThisSession();
+  }
+
+  function handleSessionStartClean() {
+    clearSavedSessionResume();
+    clearRecoveryBannerDismissedThisSession();
+    setActiveConversation(null);
+    setMessages([]);
+    setOperatingMode('companion');
+    setBiblicalSourceProfileId(DEFAULT_BIBLICAL_SOURCE_PROFILE_ID);
+    setWriterDocumentTypeId(DEFAULT_WRITER_DOCUMENT_TYPE_ID);
+    setDesign3dWorkflowTypeId(DEFAULT_DESIGN3D_WORKFLOW_TYPE_ID);
+    clearActiveWorkspaceContext();
+    clearDesign3dReferencePath();
+    setWriterActiveDraftPath(null);
+    setDesign3dRefPath(null);
+    setWriterActiveDraftPathState(null);
+    setActiveWorkspaceContextState(null);
+    setRecoveryBannerOpen(false);
+    setRecoverySnapshot(null);
+    setRecoveryStale(null);
+    setRecoveryConvRestored(false);
+    setRecoveryConvMissing(false);
+    setMemoryPanelSessionHint(false);
+  }
+
+  const recoveryThreadTitle =
+    (activeConversationId && conversations.find((c) => c.id === activeConversationId)?.title) ||
+    (recoverySnapshot?.lastConversationId &&
+      conversations.find((c) => c.id === recoverySnapshot.lastConversationId)?.title) ||
+    null;
+
+  const bibleProfileRecovery = getBibleSourceProfile(biblicalSourceProfileId);
+
+  async function handleSaveWriterDraft(markdown: string) {
+    const root = settings.workspace_path?.trim();
+    if (!root) {
+      window.alert('Set a workspace folder in Settings before saving drafts.');
+      return;
+    }
+    const suggested = defaultWriterDraftRelativePath(writerDocumentTypeId);
+    const input = window.prompt('Save as path (relative to workspace):', suggested);
+    if (input === null) return;
+    const relPath = input.trim() || suggested;
+    setSaveWorkspaceDraftBusy(true);
+    try {
+      const writerType = getWriterDocumentType(writerDocumentTypeId);
+      const withMeta = prependWriterDraftMetadata(markdown, {
+        documentTypeId: writerDocumentTypeId,
+        documentTypeLabel: writerType?.label ?? writerDocumentTypeId,
+        relativePath: relPath,
+        workspaceHint: root,
+      });
+      await window.henryAPI.writeFile(relPath, withMeta);
+      window.alert(`Saved to workspace:\n${relPath}`);
+    } catch (e: unknown) {
+      window.alert(`Save failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setSaveWorkspaceDraftBusy(false);
+    }
+  }
+
+  async function handleSaveDesign3dPlan(markdown: string) {
+    const root = settings.workspace_path?.trim();
+    if (!root) {
+      window.alert('Set a workspace folder in Settings before saving plans.');
+      return;
+    }
+    const suggested = defaultDesign3DPlanRelativePath(design3dWorkflowTypeId);
+    const input = window.prompt('Save as path (relative to workspace):', suggested);
+    if (input === null) return;
+    const relPath = input.trim() || suggested;
+    setSaveWorkspaceDraftBusy(true);
+    try {
+      const withMeta = prependDesign3dPlanMetadata(markdown, {
+        workflowId: design3dWorkflowTypeId,
+        referencePath: design3dRefPath,
+      });
+      await window.henryAPI.writeFile(relPath, withMeta);
+      window.alert(`Saved to workspace:\n${relPath}`);
+    } catch (e: unknown) {
+      window.alert(`Save failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setSaveWorkspaceDraftBusy(false);
+    }
+  }
+
+  async function handleOperatorCommand(content: string, parsed: HenryCommand) {
+    const outcome = resolveHenryCommand(parsed, {
+      operatingMode,
+      writerDocumentTypeId,
+      design3dWorkflowTypeId,
+      workspaceReady: !!settings.workspace_path?.trim(),
+      activeWorkspaceContext,
+    });
+
+    let convId = activeConversationId;
+
+    if (outcome.effects.newChat) {
+      try {
+        const convo = await window.henryAPI.createConversation('New conversation');
+        convId = convo.id;
+        setActiveConversation(convId);
+        setMessages([]);
+        const convos = await window.henryAPI.getConversations();
+        useStore.getState().setConversations(convos);
+      } catch (err) {
+        console.error('Failed to start new conversation:', err);
+        return;
+      }
+    } else if (!convId) {
+      try {
+        const convo = await window.henryAPI.createConversation(
+          content.slice(0, 50) + (content.length > 50 ? '...' : '')
+        );
+        convId = convo.id;
+        setActiveConversation(convId);
+        const convos = await window.henryAPI.getConversations();
+        useStore.getState().setConversations(convos);
+      } catch (err) {
+        console.error('Failed to create conversation:', err);
+        return;
+      }
+    }
+
+    if (outcome.effects.setOperatingMode) {
+      setOperatingMode(outcome.effects.setOperatingMode);
+    }
+    if (outcome.effects.clearWriterDraft) {
+      setWriterActiveDraftPath(null);
+      setWriterActiveDraftPathState(null);
+    }
+    if (outcome.effects.clearDesign3dRef) {
+      clearDesign3dReferencePath();
+      setDesign3dRefPath(null);
+    }
+    if (outcome.effects.clearWorkspaceContext) {
+      clearActiveWorkspaceContext();
+      setActiveWorkspaceContextState(null);
+    }
+    if (outcome.effects.composerSeed) {
+      setChatInject({ id: Date.now(), text: outcome.effects.composerSeed });
+    }
+    if (outcome.effects.openExportPackPreset) {
+      openExportPack(outcome.effects.openExportPackPreset);
+    }
+
+    const userMsg: Message = {
+      id: crypto.randomUUID(),
+      conversation_id: convId!,
+      role: 'user',
+      content,
+      engine: selectedEngine,
+      created_at: new Date().toISOString(),
+    };
+    addMessage(userMsg);
+    try {
+      await window.henryAPI.saveMessage(userMsg);
+    } catch (err) {
+      console.error('Failed to save command message:', err);
+    }
+
+    const ackContent = `*Henry (command)*\n\n${outcome.acknowledgement}`;
+    const assistantMsg: Message = {
+      id: crypto.randomUUID(),
+      conversation_id: convId!,
+      role: 'assistant',
+      content: ackContent,
+      engine: 'companion',
+      created_at: new Date().toISOString(),
+    };
+    addMessage(assistantMsg);
+    try {
+      await window.henryAPI.saveMessage(assistantMsg);
+    } catch (err) {
+      console.error('Failed to save command acknowledgement:', err);
+    }
+  }
+
   async function handleSend(content: string) {
     if (!content.trim() || isStreaming) return;
+
+    const parsedCmd = parseUserCommandLine(content);
+    if (parsedCmd) {
+      await handleOperatorCommand(content, parsedCmd);
+      return;
+    }
 
     const engine = selectedEngine;
 
@@ -88,26 +622,95 @@ export default function ChatView() {
     setStreamingContent('');
     setCompanionStatus({ status: 'thinking' });
 
-    // Build context from memory
-    let memoryContext = '';
+    // Lean memory slices from DB (summary, facts, workspace hints); format in memoryContext.ts
+    const emptyLean: HenryLeanMemoryParts = {
+      conversationSummary: null,
+      facts: [],
+      workspaceHints: [],
+    };
+    let lean: HenryLeanMemoryParts = emptyLean;
     try {
       const ctx = await window.henryAPI.buildContext({
         conversationId: convId,
         query: content,
       });
-      memoryContext = ctx.context;
+      lean = ctx.lean;
     } catch {
-      // Memory context is optional
+      /* Memory context is optional */
     }
 
-    // Build message history for API call
-    const history = messages
-      .filter((m) => m.conversation_id === convId)
-      .slice(-20) // Last 20 messages for context
-      .map((m) => ({
+    const convTitle = conversations.find((c) => c.id === convId)?.title ?? null;
+    const workspacePath = settings.workspace_path?.trim() || null;
+    const bibleProfile = getBibleSourceProfile(biblicalSourceProfileId);
+    const writerType = getWriterDocumentType(writerDocumentTypeId);
+    const design3dType = getDesign3DWorkflowType(design3dWorkflowTypeId);
+    const lastFile = operatingMode === 'design3d' ? design3dRefPath : null;
+    const design3dRefNote =
+      operatingMode === 'design3d' && lastFile
+        ? buildDesign3dReferenceFilesNote([lastFile])
+        : null;
+
+    const wsCtx = activeWorkspaceContext;
+    const wsIndexHint = wsCtx ? findIndexHintForContext(wsCtx, lean.workspaceHints) : null;
+    setWorkspaceContextIndexHint(wsIndexHint);
+    const wsBlock =
+      wsCtx != null
+        ? buildWorkspaceContextPromptSection(wsCtx, { indexSummaryHint: wsIndexHint })
+        : '';
+
+    let memoryContext = buildHenryMemoryContextBlock({
+      mode: operatingMode,
+      lean,
+      workspacePathHint: workspacePath,
+      conversationTitle: convTitle,
+      biblicalSourceProfileLabel:
+        operatingMode === 'biblical' ? bibleProfile?.label ?? null : null,
+      writerDocumentTypeLabel:
+        operatingMode === 'writer' ? writerType?.label ?? null : null,
+      design3dWorkflowLabel:
+        operatingMode === 'design3d' ? design3dType?.label ?? null : null,
+      design3dReferenceNote: design3dRefNote,
+      activeWorkspaceContextBlock: wsBlock || null,
+    });
+
+    if (operatingMode === 'biblical') {
+      try {
+        const sl = await lookupScriptureFromUserMessage(content);
+        if (sl) {
+          const bp = getBibleSourceProfile(biblicalSourceProfileId);
+          const scriptureBlock = formatScriptureLookupForPrompt(sl, {
+            activeBibleProfileLabel: bp?.label ?? null,
+            activeBibleProfileId: biblicalSourceProfileId,
+          });
+          memoryContext = [memoryContext.trim(), scriptureBlock].filter(Boolean).join('\n\n');
+        }
+      } catch {
+        /* Local scripture lookup is optional */
+      }
+    }
+
+    // Recent transcript only — capped count and per-message length (no full history dump).
+    // Must read from the store here: `messages` from the hook is stale right after addMessage(userMsg).
+    const threadMessagesLive = useStore.getState().messages.filter((m) => m.conversation_id === convId);
+    const history = sliceRecentThreadMessages(
+      threadMessagesLive.map((m) => ({
         role: m.role,
-        content: m.content,
-      }));
+        content: capMessageContent(m.content, HENRY_MEMORY_CAPS.maxMessageCharsEach),
+      })),
+      HENRY_MEMORY_CAPS.maxRecentMessagesInTranscript
+    );
+
+    if (import.meta.env.DEV) {
+      const last = history[history.length - 1];
+      console.debug('[Henry] companion stream', {
+        convId,
+        historyCount: history.length,
+        lastRole: last?.role,
+        lastMessageMatchesSend: last?.role === 'user' && last?.content === content,
+        provider: useStore.getState().settings.companion_provider,
+        model: useStore.getState().settings.companion_model,
+      });
+    }
 
     // Get companion engine settings
     const providers = await window.henryAPI.getProviders();
@@ -129,18 +732,32 @@ export default function ChatView() {
       return;
     }
 
-    // Prepare the streaming call
-    const systemPrompt = `You are Henry AI — a calm, capable, focused AI assistant. You are the Companion engine: always available, conversational, and helpful. You handle everyday tasks, answer questions, and manage the user's workflow.
+    // Prepare the streaming call (Henry charter + mode + memory + mode-specific options)
+    const systemPrompt = buildCompanionStreamSystemPrompt(operatingMode, memoryContext, {
+      ...(operatingMode === 'biblical' ? { biblicalSourceProfileId: biblicalSourceProfileId } : {}),
+      ...(operatingMode === 'writer'
+        ? {
+            writerDocumentTypeId: writerDocumentTypeId,
+            writerActiveDraftRelativePath: writerActiveDraftPath,
+          }
+        : {}),
+      ...(operatingMode === 'design3d'
+        ? {
+            design3dWorkflowTypeId: design3dWorkflowTypeId,
+            design3dReferencePath: design3dRefPath,
+          }
+        : {}),
+    });
 
-${memoryContext ? `Here's what you know:\n${memoryContext}\n` : ''}
-When the user needs heavy work (code generation, long research, file operations), suggest delegating to the Worker engine.
-
-Be concise but thorough. Use markdown for formatting. Be direct, not flowery.`;
-
-    const messagesPayload = [
+    const messagesPayload: HenryAIMessage[] = [
       { role: 'system', content: systemPrompt },
-      ...history,
+      ...history.map((m) => ({
+        role: m.role as HenryAIMessage['role'],
+        content: m.content,
+      })),
     ];
+
+    const apiKey = provider.api_key || provider.apiKey || '';
 
     try {
       setCompanionStatus({ status: 'streaming' });
@@ -148,7 +765,7 @@ Be concise but thorough. Use markdown for formatting. Be direct, not flowery.`;
       const stream = window.henryAPI.streamMessage({
         provider: companionProvider,
         model: companionModel,
-        apiKey: provider.api_key,
+        apiKey,
         messages: messagesPayload,
         temperature: 0.7,
       });
@@ -156,10 +773,16 @@ Be concise but thorough. Use markdown for formatting. Be direct, not flowery.`;
       streamRef.current = stream;
 
       stream.onChunk((chunk: string) => {
+        if (import.meta.env.DEV && chunk) {
+          console.debug('[Henry] stream chunk', { len: chunk.length });
+        }
         appendStreamingContent(chunk);
       });
 
       stream.onDone(async (fullText: string, usage?: any) => {
+        if (import.meta.env.DEV) {
+          console.debug('[Henry] stream done', { fullLen: fullText?.length ?? 0, usage });
+        }
         // Save assistant message
         const assistantMsg = {
           id: crypto.randomUUID(),
@@ -190,7 +813,7 @@ Be concise but thorough. Use markdown for formatting. Be direct, not flowery.`;
           // Simple fact extraction — save key user preferences mentioned
           if (content.length > 30) {
             await window.henryAPI.saveFact({
-              conversationId: convId,
+              conversation_id: convId,
               fact: content.slice(0, 200),
               category: 'conversation',
               importance: 1,
@@ -300,19 +923,162 @@ Be concise but thorough. Use markdown for formatting. Be direct, not flowery.`;
   }
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex min-h-0">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0">
       {/* Messages area */}
       <div className="flex-1 overflow-y-auto px-6 py-4">
+        {recoveryBannerOpen && recoverySnapshot && (
+          <div className="max-w-3xl mx-auto mb-4 rounded-lg border border-henry-accent/25 bg-henry-surface/30 px-3 py-2.5 text-xs text-henry-text">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-henry-accent/90">
+                  Recovered session
+                </p>
+                <p className="text-[10px] text-henry-text-muted mt-1 leading-relaxed">
+                  Henry restores selected context and summary state, not full hidden replay.
+                </p>
+                <ul className="mt-2 space-y-0.5 text-[10px] text-henry-text-dim">
+                  <li>
+                    <span className="text-henry-text-muted">Thread:</span>{' '}
+                    {recoveryConvMissing ? (
+                      <span className="text-amber-400/90">Previous conversation no longer available</span>
+                    ) : recoveryThreadTitle ? (
+                      <span className="text-henry-text">{recoveryThreadTitle}</span>
+                    ) : (
+                      <span className="text-henry-text-dim">None selected last time</span>
+                    )}
+                    {recoveryConvRestored && (
+                      <span className="text-henry-text-muted"> — messages loaded</span>
+                    )}
+                  </li>
+                  <li>
+                    <span className="text-henry-text-muted">Mode:</span> {resumeModeLabel(operatingMode)}
+                  </li>
+                  {operatingMode === 'biblical' && bibleProfileRecovery && (
+                    <li>
+                      <span className="text-henry-text-muted">Bible source:</span> {bibleProfileRecovery.label}
+                    </li>
+                  )}
+                  {writerActiveDraftPath?.trim() && (
+                    <li className="break-all">
+                      <span className="text-henry-text-muted">Writer draft:</span>{' '}
+                      {writerActiveDraftPath.trim()}
+                      {recoveryStale?.writerDraftStale && (
+                        <span className="text-amber-400/90"> — path not found in workspace</span>
+                      )}
+                    </li>
+                  )}
+                  {design3dRefPath?.trim() && (
+                    <li className="break-all">
+                      <span className="text-henry-text-muted">Design3D reference:</span>{' '}
+                      {design3dRefPath.trim()}
+                      {recoveryStale?.design3dRefStale && (
+                        <span className="text-amber-400/90"> — path not found in workspace</span>
+                      )}
+                    </li>
+                  )}
+                  {activeWorkspaceContext && (
+                    <li className="break-all">
+                      <span className="text-henry-text-muted">Workspace context:</span>{' '}
+                      {activeWorkspaceContext.label} ({activeWorkspaceContext.path})
+                      {recoveryStale?.workspaceContextStale && (
+                        <span className="text-amber-400/90"> — path not found in workspace</span>
+                      )}
+                    </li>
+                  )}
+                  {recoverySnapshot.lastExportPackRelativeDir && (
+                    <li className="break-all">
+                      <span className="text-henry-text-muted">Last export pack:</span>{' '}
+                      {recoverySnapshot.lastExportPackRelativeDir}
+                      {recoveryStale?.exportPackStale && (
+                        <span className="text-amber-400/90"> — manifest missing (folder may have moved)</span>
+                      )}
+                    </li>
+                  )}
+                </ul>
+              </div>
+              <button
+                type="button"
+                onClick={handleRecoveryDismiss}
+                className="shrink-0 text-[10px] text-henry-text-muted hover:text-henry-text"
+                aria-label="Dismiss recovery notice"
+              >
+                ×
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-2 mt-2.5">
+              {recoverySnapshot.lastConversationId &&
+                conversations.some((c) => c.id === recoverySnapshot.lastConversationId) && (
+                  <button
+                    type="button"
+                    disabled={isStreaming}
+                    onClick={() => void handleResumeLastThread()}
+                    className="px-2.5 py-1 rounded-md bg-henry-accent/85 text-white text-[10px] font-medium hover:bg-henry-accent disabled:opacity-40"
+                  >
+                    Resume last thread
+                  </button>
+                )}
+              <button
+                type="button"
+                disabled={isStreaming}
+                onClick={handleSessionStartClean}
+                className="px-2.5 py-1 rounded-md border border-henry-border/50 text-[10px] text-henry-text-muted hover:text-henry-text disabled:opacity-40"
+              >
+                Start clean
+              </button>
+            </div>
+          </div>
+        )}
         {messages.length === 0 && !isStreaming ? (
           <EmptyChat />
         ) : (
           <div className="max-w-3xl mx-auto space-y-4">
-            {messages.map((msg) => (
-              <MessageBubble key={msg.id} message={msg} />
-            ))}
+            {messages.map((msg) => {
+              const head = msg.content.trimStart();
+              const isErrorBubble =
+                msg.role === 'assistant' && (head.startsWith('⚠️') || head.startsWith('❌'));
+              const showWorkspaceSave =
+                (operatingMode === 'writer' || operatingMode === 'design3d') &&
+                msg.role === 'assistant' &&
+                msg.engine !== 'worker' &&
+                !isErrorBubble;
+              const showCreateTask =
+                shouldOfferCreateTaskFromMessage(operatingMode, msg, isErrorBubble) &&
+                msg.engine !== 'worker';
 
-            {/* Streaming indicator */}
-            {isStreaming && streamingContent && (
+              return (
+                <MessageBubble
+                  key={msg.id}
+                  message={msg}
+                  workspaceSaveDraft={
+                    showWorkspaceSave
+                      ? {
+                          enabled: true,
+                          workspaceReady: !!settings.workspace_path?.trim(),
+                          busy: saveWorkspaceDraftBusy,
+                          label:
+                            operatingMode === 'design3d' ? 'Save design plan' : 'Save draft',
+                          onSave: () =>
+                            operatingMode === 'design3d'
+                              ? handleSaveDesign3dPlan(msg.content)
+                              : handleSaveWriterDraft(msg.content),
+                        }
+                      : undefined
+                  }
+                  createTask={
+                    showCreateTask
+                      ? {
+                          onClick: () => setCreateTaskFromMessage(msg),
+                          disabled: isStreaming,
+                        }
+                      : undefined
+                  }
+                />
+              );
+            })}
+
+            {/* Streaming indicator — show as soon as streaming starts (content may be empty until first chunk) */}
+            {isStreaming && (
               <MessageBubble
                 message={{
                   id: 'streaming',
@@ -335,21 +1101,290 @@ Be concise but thorough. Use markdown for formatting. Be direct, not flowery.`;
       {/* Input area */}
       <div className="shrink-0 border-t border-henry-border/30 bg-henry-surface/20 px-6 py-4">
         <div className="max-w-3xl mx-auto">
+          {operatingMode === 'biblical' && (
+            <ScriptureToolsPanel
+              disabled={isStreaming}
+              onInjectChat={(text) => setChatInject({ id: Date.now(), text })}
+              onRequestExportPack={() => openExportPack('biblical_study_pack')}
+            />
+          )}
+          {operatingMode === 'design3d' && (
+            <Design3DReferencePanel
+              referencePath={design3dRefPath}
+              workflowTypeId={design3dWorkflowTypeId}
+              onWorkflowChange={setDesign3dWorkflowTypeId}
+              onInjectChat={(text) => setChatInject({ id: Date.now(), text })}
+              disabled={isStreaming}
+              onRequestExportPack={() => openExportPack('design3d_handoff')}
+            />
+          )}
+          {operatingMode === 'writer' && (
+            <WriterDraftLibrary
+              writerDocumentTypeId={writerDocumentTypeId}
+              activeDraftPath={writerActiveDraftPath}
+              onInjectChat={(text) => setChatInject({ id: Date.now(), text })}
+              disabled={isStreaming}
+              onRequestExportPack={() => openExportPack('writer_handoff')}
+            />
+          )}
+          {!!settings.workspace_path?.trim() && (
+            <WorkspaceContextStrip
+              context={activeWorkspaceContext}
+              indexHintForCopy={workspaceContextIndexHint}
+              onInjectChat={(text) => setChatInject({ id: Date.now(), text })}
+              disabled={isStreaming}
+            />
+          )}
+          {exportPackChatActionVisible && (
+            <div className="flex justify-end mb-2">
+              <button
+                type="button"
+                disabled={isStreaming}
+                onClick={() => openExportPack(exportPresetForOperatingMode(operatingMode))}
+                className="text-[10px] uppercase tracking-wide text-henry-accent/90 hover:text-henry-accent disabled:opacity-40"
+              >
+                Create export pack
+              </button>
+            </div>
+          )}
           <div className="flex items-end gap-3">
             <EngineSelector
               selectedEngine={selectedEngine}
               onSelect={setSelectedEngine}
             />
+            <label className="flex flex-col gap-1 shrink-0 text-[10px] text-henry-text-muted uppercase tracking-wide">
+              Mode
+              <select
+                className="text-xs font-medium normal-case tracking-normal rounded-lg border border-henry-border/40 bg-henry-surface/40 text-henry-text px-2 py-1.5 min-w-[8.5rem] focus:outline-none focus:ring-1 focus:ring-henry-accent/50"
+                value={operatingMode}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (isHenryOperatingMode(v)) setOperatingMode(v);
+                }}
+                aria-label="Henry operating mode"
+              >
+                {HENRY_OPERATING_MODES.map((m) => (
+                  <option key={m} value={m}>
+                    {m === 'design3d' ? '3D / design' : m.charAt(0).toUpperCase() + m.slice(1)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {operatingMode === 'design3d' && (
+              <label className="flex flex-col gap-1 shrink-0 text-[10px] text-henry-text-muted uppercase tracking-wide">
+                Workflow
+                <select
+                  className="text-xs font-medium normal-case tracking-normal rounded-lg border border-henry-border/40 bg-henry-surface/40 text-henry-text px-2 py-1.5 max-w-[10.5rem] focus:outline-none focus:ring-1 focus:ring-henry-accent/50"
+                  value={design3dWorkflowTypeId}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (isDesign3DWorkflowTypeId(v)) setDesign3dWorkflowTypeId(v);
+                  }}
+                  aria-label="Design3D workflow type"
+                >
+                  {DESIGN3D_WORKFLOW_TYPES.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {operatingMode === 'writer' && (
+              <label className="flex flex-col gap-1 shrink-0 text-[10px] text-henry-text-muted uppercase tracking-wide">
+                Doc type
+                <select
+                  className="text-xs font-medium normal-case tracking-normal rounded-lg border border-henry-border/40 bg-henry-surface/40 text-henry-text px-2 py-1.5 max-w-[10rem] focus:outline-none focus:ring-1 focus:ring-henry-accent/50"
+                  value={writerDocumentTypeId}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (isWriterDocumentTypeId(v)) setWriterDocumentTypeId(v);
+                  }}
+                  aria-label="Writer document type"
+                >
+                  {WRITER_DOCUMENT_TYPES.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {operatingMode === 'biblical' && (
+              <label className="flex flex-col gap-1 shrink-0 text-[10px] text-henry-text-muted uppercase tracking-wide">
+                Bible source
+                <select
+                  className="text-xs font-medium normal-case tracking-normal rounded-lg border border-henry-border/40 bg-henry-surface/40 text-henry-text px-2 py-1.5 max-w-[11rem] focus:outline-none focus:ring-1 focus:ring-henry-accent/50"
+                  value={biblicalSourceProfileId}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (isBibleSourceProfileId(v)) setBiblicalSourceProfileId(v);
+                  }}
+                  aria-label="Bible source profile for Biblical mode"
+                >
+                  {BIBLE_SOURCE_PROFILES.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <div className="flex-1">
               <ChatInput
                 onSend={handleSend}
                 isStreaming={isStreaming}
                 onCancel={isStreaming ? cancelStream : undefined}
+                injectDraft={chatInject}
+                onInjectConsumed={() => setChatInject(null)}
+                placeholder="Message Henry…  Commands: /help, /mode writer, /new, /export-pack, and more."
               />
             </div>
           </div>
+          {operatingMode === 'biblical' && (
+            <p className="text-[10px] text-henry-text-muted mt-2 leading-relaxed">
+              Local scripture lookup is available for imported references; missing references are labeled
+              honestly. Scripture-first mode: scripture, commentary, interpretation, and speculation are
+              labeled distinctly. First line e.g.{' '}
+              <span className="text-henry-text-dim">John 3:16</span> or{' '}
+              <span className="text-henry-text-dim">Read Psalm 23:1</span>. Sample import:{' '}
+              <code className="text-henry-text-dim">src/henry/sampleScripture.json</code>.
+            </p>
+          )}
+          {operatingMode === 'writer' && (
+            <p className="text-[10px] text-henry-text-muted mt-2 leading-relaxed">
+              Writer mode: structured markdown you can save. Use &quot;Save draft&quot; on assistant replies
+              (metadata is added on save). Pick a prior draft with <span className="text-henry-text-dim">Use as context</span> for lean continuity — Henry does not auto-load file contents.
+            </p>
+          )}
+          {operatingMode === 'design3d' && (
+            <p className="text-[10px] text-henry-text-muted mt-2 leading-relaxed">
+              Design3D mode: label measured vs estimated dimensions clearly. In Files, use{' '}
+              <span className="text-henry-text-dim">Ref</span> on a file to set the active reference (path only
+              — not file contents). Reference files guide the plan; exact dimensions still require direct
+              measurement. Use &quot;Save design plan&quot; for markdown under{' '}
+              <code className="text-henry-text-dim">Henry-Design3D/</code> (metadata is added automatically).
+            </p>
+          )}
         </div>
       </div>
+      </div>
+      <MemoryAwarenessPanel
+        operatingMode={operatingMode}
+        biblicalSourceProfileId={biblicalSourceProfileId}
+        writerDocumentTypeId={writerDocumentTypeId}
+        design3dWorkflowTypeId={design3dWorkflowTypeId}
+        design3dReferencePath={design3dRefPath}
+        writerActiveDraftPath={writerActiveDraftPath}
+        activeWorkspaceContext={activeWorkspaceContext}
+        sessionContextRestored={memoryPanelSessionHint}
+        disabled={isStreaming}
+      />
+
+      <ExportPackBuilder
+        key={exportPackSession}
+        open={exportPackOpen}
+        initialPreset={exportPackPreset}
+        workspaceReady={!!settings.workspace_path?.trim()}
+        context={{
+          operatingMode,
+          writerActiveDraftPath,
+          design3dRefPath,
+          activeWorkspaceContext,
+          activeConversationId,
+          tasks,
+        }}
+        onClose={() => setExportPackOpen(false)}
+        onExportCreated={(baseDir) => {
+          const st = useStore.getState();
+          saveSessionResumeSnapshot({
+            lastConversationId: st.activeConversationId,
+            operatingMode,
+            biblicalSourceProfileId,
+            writerDocumentTypeId,
+            design3dWorkflowTypeId,
+            writerActiveDraftPath,
+            design3dReferencePath: design3dRefPath,
+            activeWorkspaceContext,
+            lastExportPackRelativeDir: baseDir,
+          });
+          setRecoverySnapshot((prev) =>
+            prev
+              ? { ...prev, lastExportPackRelativeDir: baseDir, savedAt: new Date().toISOString() }
+              : readSavedSessionResume()
+          );
+        }}
+      />
+
+      <CreateTaskFromMessageModal
+        open={!!createTaskFromMessage}
+        suggestion={
+          createTaskFromMessage
+            ? buildSuggestedTaskFromMessage({
+                message: createTaskFromMessage,
+                operatingMode,
+                linkage: resolveWorkspaceLinkageForTask(operatingMode, {
+                  writerActiveDraftPath,
+                  design3dRefPath,
+                }),
+              })
+            : null
+        }
+        onClose={() => setCreateTaskFromMessage(null)}
+        onSubmit={async (title, body) => {
+          const msg = createTaskFromMessage;
+          if (!msg) return;
+          const sug = buildSuggestedTaskFromMessage({
+            message: msg,
+            operatingMode,
+            linkage: resolveWorkspaceLinkageForTask(operatingMode, {
+              writerActiveDraftPath,
+              design3dRefPath,
+            }),
+          });
+          const result = await window.henryAPI.submitTask({
+            description: title,
+            type: sug.taskType,
+            priority: 6,
+            sourceEngine: 'companion',
+            conversationId: msg.conversation_id,
+            payload: {
+              prompt: body,
+              henryOrigin: {
+                createdFromMode: sug.sourceMode,
+                relatedFilePath: sug.relatedFilePath,
+                createdFromMessageId: sug.createdFromMessageId,
+                relatedConversationId: sug.relatedConversationId,
+              },
+            },
+            createdFromMode: sug.sourceMode,
+            relatedFilePath: sug.relatedFilePath,
+            createdFromMessageId: sug.createdFromMessageId,
+          });
+          const st = useStore.getState();
+          if (!st.tasks.some((t) => t.id === result.id)) {
+            const now = new Date().toISOString();
+            st.addTask({
+              id: result.id,
+              description: title,
+              type: sug.taskType,
+              status: 'queued',
+              priority: 6,
+              created_at: now,
+              created_from_mode: sug.sourceMode,
+              related_file_path: sug.relatedFilePath,
+              created_from_message_id: sug.createdFromMessageId,
+              source_engine: 'companion',
+              conversation_id: msg.conversation_id,
+            });
+          }
+          setWorkerStatus({
+            status: 'working',
+            taskId: result.id,
+            taskDescription: title.slice(0, 100),
+          });
+        }}
+      />
     </div>
   );
 }

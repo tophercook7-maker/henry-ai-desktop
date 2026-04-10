@@ -64,15 +64,24 @@ export interface Task {
   started_at?: string;
   completed_at?: string;
   created_at: string;
+  /** Operating mode when task was created from chat (follow-up bridge). */
+  created_from_mode?: string;
+  /** Workspace-relative path linked at creation (draft / Design3D ref). */
+  related_file_path?: string;
+  /** Source assistant message id when created from “Create task”. */
+  created_from_message_id?: string;
 }
 
 export interface TaskSubmission {
   description: string;
   type: TaskType;
   priority?: number;
-  payload?: any;
+  payload?: unknown;
   sourceEngine?: string;
   conversationId?: string;
+  createdFromMode?: string;
+  relatedFilePath?: string;
+  createdFromMessageId?: string;
 }
 
 // ── Engine Types ──────────────────────────────────────────────
@@ -120,11 +129,24 @@ export interface WorkspaceFile {
   size_bytes: number;
 }
 
+/** Raw slices from SQLite for the lean memory builder (see `henry/memoryContext.ts`). */
+export interface HenryLeanMemoryParts {
+  conversationSummary: string | null;
+  facts: ReadonlyArray<{ fact: string; category: string }>;
+  workspaceHints: ReadonlyArray<{ file_path: string; summary: string }>;
+}
+
 export interface MemoryContext {
-  context: string;
+  lean: HenryLeanMemoryParts;
   estimatedTokens: number;
   factCount: number;
 }
+
+// ── Scripture (re-export from henry for API / global typings) ─
+export type { ScriptureEntry } from '../henry/scriptureStore';
+export type { ScriptureLookupResult } from '../henry/scriptureLookup';
+export type { ScriptureImportRow, ScriptureImportResult } from '../henry/scriptureImport';
+export type { ParsedScriptureReference, ParseScriptureResult } from '../henry/scriptureReference';
 
 // ── File System Types ─────────────────────────────────────────
 

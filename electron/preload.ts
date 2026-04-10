@@ -1,4 +1,35 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
+import type { AIProvider, Message, Task, TaskSubmission } from '../src/types';
+
+type ProviderSavePayload = Omit<AIProvider, 'models'> & { models: string };
+
+type TaskListFilter = { status?: string; limit?: number };
+
+type AIInvokeParams = {
+  provider: string;
+  model: string;
+  apiKey: string;
+  messages: Array<{ role: string; content: string }>;
+  temperature?: number;
+  maxTokens?: number;
+};
+
+type TaskUpdatePayload = Partial<Task> & { id: string };
+
+type TaskResultEventPayload = {
+  taskId: string;
+  conversationId?: string;
+  error?: string;
+  result?: unknown;
+};
+
+type EngineStatusEventPayload = {
+  engine: 'companion' | 'worker';
+  status: string;
+  taskId?: string;
+  taskDescription?: string;
+  message?: string;
+};
 
 contextBridge.exposeInMainWorld('henryAPI', {
   // ── Settings ──────────────────────────────────────────────
@@ -7,7 +38,7 @@ contextBridge.exposeInMainWorld('henryAPI', {
 
   // ── Providers ─────────────────────────────────────────────
   getProviders: () => ipcRenderer.invoke('providers:getAll'),
-  saveProvider: (provider: any) => ipcRenderer.invoke('providers:save', provider),
+  saveProvider: (provider: ProviderSavePayload) => ipcRenderer.invoke('providers:save', provider),
 
   // ── Conversations ─────────────────────────────────────────
   getConversations: () => ipcRenderer.invoke('conversations:getAll'),
@@ -17,24 +48,38 @@ contextBridge.exposeInMainWorld('henryAPI', {
 
   // ── Messages ──────────────────────────────────────────────
   getMessages: (conversationId: string) => ipcRenderer.invoke('messages:getAll', conversationId),
-  saveMessage: (message: any) => ipcRenderer.invoke('messages:save', message),
+  saveMessage: (message: Message) => ipcRenderer.invoke('messages:save', message),
 
   // ── AI ────────────────────────────────────────────────────
-  sendMessage: (params: any) => ipcRenderer.invoke('ai:send', params),
-  streamMessage: (params: any) => {
+  sendMessage: (params: AIInvokeParams) => ipcRenderer.invoke('ai:send', params),
+  streamMessage: (params: AIInvokeParams) => {
     const channelId = `ai-stream-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    ipcRenderer.invoke('ai:stream', { ...params, channelId });
     let onChunkCb: ((chunk: string) => void) | null = null;
-    let onDoneCb: ((fullText: string, usage?: any) => void) | null = null;
+    let onDoneCb: ((fullText: string, usage?: Record<string, unknown>) => void) | null = null;
     let onErrorCb: ((error: string) => void) | null = null;
 
-    const chunkHandler = (_: any, data: any) => { if (data.channelId === channelId && onChunkCb) onChunkCb(data.chunk); };
-    const doneHandler = (_: any, data: any) => { if (data.channelId === channelId && onDoneCb) { onDoneCb(data.fullText, data.usage); cleanup(); } };
-    const errorHandler = (_: any, data: any) => { if (data.channelId === channelId && onErrorCb) { onErrorCb(data.error); cleanup(); } };
+    const chunkHandler = (_: IpcRendererEvent, data: { channelId: string; chunk: string }) => {
+      if (data.channelId === channelId && onChunkCb) onChunkCb(data.chunk);
+    };
+    const doneHandler = (_: IpcRendererEvent, data: { channelId: string; fullText: string; usage?: Record<string, unknown> }) => {
+      if (data.channelId === channelId && onDoneCb) {
+        onDoneCb(data.fullText, data.usage);
+        cleanup();
+      }
+    };
+    const errorHandler = (_: IpcRendererEvent, data: { channelId: string; error: string }) => {
+      if (data.channelId === channelId && onErrorCb) {
+        onErrorCb(data.error);
+        cleanup();
+      }
+    };
 
+    // Register listeners before starting IPC so ultra-fast streams (local) never miss events.
     ipcRenderer.on('ai:stream:chunk', chunkHandler);
     ipcRenderer.on('ai:stream:done', doneHandler);
     ipcRenderer.on('ai:stream:error', errorHandler);
+
+    void ipcRenderer.invoke('ai:stream', { ...params, channelId });
 
     function cleanup() {
       ipcRenderer.removeListener('ai:stream:chunk', chunkHandler);
@@ -43,65 +88,82 @@ contextBridge.exposeInMainWorld('henryAPI', {
     }
 
     return {
-      onChunk: (cb: (chunk: string) => void) => { onChunkCb = cb; },
-      onDone: (cb: (fullText: string, usage?: any) => void) => { onDoneCb = cb; },
-      onError: (cb: (error: string) => void) => { onErrorCb = cb; },
-      cancel: () => { ipcRenderer.invoke('ai:cancel', channelId); cleanup(); },
+      onChunk: (cb: (chunk: string) => void) => {
+        onChunkCb = cb;
+      },
+      onDone: (cb: (fullText: string, usage?: Record<string, unknown>) => void) => {
+        onDoneCb = cb;
+      },
+      onError: (cb: (error: string) => void) => {
+        onErrorCb = cb;
+      },
+      cancel: () => {
+        ipcRenderer.invoke('ai:cancel', channelId);
+        cleanup();
+      },
     };
   },
 
   // ── Tasks ─────────────────────────────────────────────────
-  getTasks: (filter?: any) => ipcRenderer.invoke('task:list', filter),
-  submitTask: (task: any) => ipcRenderer.invoke('task:submit', task),
+  getTasks: (filter?: TaskListFilter) => ipcRenderer.invoke('task:list', filter),
+  submitTask: (task: TaskSubmission) => ipcRenderer.invoke('task:submit', task),
   getTaskStatus: (id: string) => ipcRenderer.invoke('task:status', id),
   cancelTask: (id: string) => ipcRenderer.invoke('task:cancel', id),
   retryTask: (id: string) => ipcRenderer.invoke('task:retry', id),
   getTaskStats: () => ipcRenderer.invoke('task:stats'),
 
   // ── Memory ────────────────────────────────────────────────
-  saveFact: (fact: any) => ipcRenderer.invoke('memory:saveFact', fact),
-  searchFacts: (query: any) => ipcRenderer.invoke('memory:searchFacts', query),
+  saveFact: (fact: Record<string, unknown>) => ipcRenderer.invoke('memory:saveFact', fact),
+  searchFacts: (query: Record<string, unknown>) => ipcRenderer.invoke('memory:searchFacts', query),
   getAllFacts: (limit?: number) => ipcRenderer.invoke('memory:getAllFacts', limit),
-  buildContext: (params: any) => ipcRenderer.invoke('memory:buildContext', params),
-  saveSummary: (summary: any) => ipcRenderer.invoke('memory:saveSummary', summary),
+  buildContext: (params: Record<string, unknown>) => ipcRenderer.invoke('memory:buildContext', params),
+  saveSummary: (summary: Record<string, unknown>) => ipcRenderer.invoke('memory:saveSummary', summary),
   getSummary: (conversationId: string) => ipcRenderer.invoke('memory:getSummary', conversationId),
 
+  // ── Scripture (local store) ───────────────────────────────
+  scriptureLookup: (reference: string) => ipcRenderer.invoke('scripture:lookup', reference),
+  scriptureImport: (entries: Array<Record<string, unknown>>) =>
+    ipcRenderer.invoke('scripture:import', { entries }),
+  scriptureCount: () => ipcRenderer.invoke('scripture:count'),
+  pickScriptureImportJson: () => ipcRenderer.invoke('scripture:pickImportJson'),
+
   // ── File System ───────────────────────────────────────────
-  readDirectory: (path?: string) => ipcRenderer.invoke('fs:readDirectory', path),
-  readFile: (path: string) => ipcRenderer.invoke('fs:readFile', path),
-  writeFile: (path: string, content: string) => ipcRenderer.invoke('fs:writeFile', { path, content }),
+  readDirectory: (dirPath?: string) => ipcRenderer.invoke('fs:readDirectory', dirPath),
+  readFile: (filePath: string) => ipcRenderer.invoke('fs:readFile', filePath),
+  pathExists: (filePath: string) => ipcRenderer.invoke('fs:pathExists', filePath) as Promise<boolean>,
+  writeFile: (filePath: string, content: string) => ipcRenderer.invoke('fs:writeFile', { path: filePath, content }),
 
   // ── Ollama ────────────────────────────────────────────────
   ollamaStatus: (baseUrl?: string) => ipcRenderer.invoke('ollama:status', baseUrl),
   ollamaModels: (baseUrl?: string) => ipcRenderer.invoke('ollama:models', baseUrl),
   ollamaPull: (model: string, baseUrl?: string) => ipcRenderer.invoke('ollama:pull', model, baseUrl),
   ollamaDelete: (model: string, baseUrl?: string) => ipcRenderer.invoke('ollama:delete', model, baseUrl),
-  onOllamaPullProgress: (cb: (data: any) => void) => {
-    const handler = (_: any, data: any) => cb(data);
+  onOllamaPullProgress: (cb: (data: unknown) => void) => {
+    const handler = (_: IpcRendererEvent, data: unknown) => cb(data);
     ipcRenderer.on('ollama:pull:progress', handler);
     return () => ipcRenderer.removeListener('ollama:pull:progress', handler);
   },
 
   // ── Terminal ──────────────────────────────────────────────
-  execTerminal: (params: any) => ipcRenderer.invoke('terminal:exec', params),
+  execTerminal: (params: Record<string, unknown>) => ipcRenderer.invoke('terminal:exec', params),
   killTerminal: (execId: string) => ipcRenderer.invoke('terminal:kill', execId),
 
   // ── Cost Tracking ─────────────────────────────────────────
   getCostLog: (period?: string) => ipcRenderer.invoke('cost:getAll', period),
 
   // ── Events ────────────────────────────────────────────────
-  onTaskUpdate: (cb: (data: any) => void) => {
-    const handler = (_: any, data: any) => cb(data);
+  onTaskUpdate: (cb: (data: TaskUpdatePayload) => void) => {
+    const handler = (_: IpcRendererEvent, data: TaskUpdatePayload) => cb(data);
     ipcRenderer.on('task:update', handler);
     return () => ipcRenderer.removeListener('task:update', handler);
   },
-  onTaskResult: (cb: (data: any) => void) => {
-    const handler = (_: any, data: any) => cb(data);
+  onTaskResult: (cb: (data: TaskResultEventPayload) => void) => {
+    const handler = (_: IpcRendererEvent, data: TaskResultEventPayload) => cb(data);
     ipcRenderer.on('task:result', handler);
     return () => ipcRenderer.removeListener('task:result', handler);
   },
-  onEngineStatus: (cb: (data: any) => void) => {
-    const handler = (_: any, data: any) => cb(data);
+  onEngineStatus: (cb: (data: EngineStatusEventPayload) => void) => {
+    const handler = (_: IpcRendererEvent, data: EngineStatusEventPayload) => cb(data);
     ipcRenderer.on('engine:status', handler);
     return () => ipcRenderer.removeListener('engine:status', handler);
   },

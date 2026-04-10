@@ -10,6 +10,7 @@
 
 import { ipcMain } from 'electron';
 import type Database from 'better-sqlite3';
+import type { HenryLeanMemoryParts } from '../../src/types';
 
 let db: Database.Database;
 
@@ -82,24 +83,32 @@ export function registerMemoryHandlers(database: Database.Database) {
   });
 
   // Save conversation summary
-  ipcMain.handle('memory:saveSummary', async (_event, summary: {
-    conversationId: string;
-    summary: string;
-    messageCount: number;
-    tokenCount: number;
-  }) => {
+  ipcMain.handle('memory:saveSummary', async (_event, payload: Record<string, unknown>) => {
+    const conversationId =
+      (typeof payload.conversationId === 'string' && payload.conversationId) ||
+      (typeof payload.conversation_id === 'string' && payload.conversation_id) ||
+      '';
+    const summaryText = typeof payload.summary === 'string' ? payload.summary : '';
+    if (!conversationId.trim() || !summaryText.trim()) {
+      return { id: null as string | null, error: 'conversationId and summary are required.' };
+    }
+    const messageCount =
+      typeof payload.messageCount === 'number'
+        ? payload.messageCount
+        : typeof payload.message_count === 'number'
+          ? payload.message_count
+          : 0;
+    const tokenCount =
+      typeof payload.tokenCount === 'number'
+        ? payload.tokenCount
+        : typeof payload.token_count === 'number'
+          ? payload.token_count
+          : Math.ceil(summaryText.length / 4);
     const id = crypto.randomUUID();
     db.prepare(`
       INSERT INTO conversation_summaries (id, conversation_id, summary, message_count, token_count, created_at)
       VALUES (?, ?, ?, ?, ?, ?)
-    `).run(
-      id,
-      summary.conversationId,
-      summary.summary,
-      summary.messageCount,
-      summary.tokenCount,
-      new Date().toISOString()
-    );
+    `).run(id, conversationId, summaryText, messageCount, tokenCount, new Date().toISOString());
     return { id };
   });
 
@@ -138,65 +147,96 @@ export function registerMemoryHandlers(database: Database.Database) {
     `).all(`%${query}%`, `%${query}%`);
   });
 
-  // Build context for AI calls — combines recent facts, conversation history, and relevant workspace files
+  // Build lean context for AI — structured slices only; formatting is `src/henry/memoryContext.ts`
   ipcMain.handle('memory:buildContext', async (_event, params: {
     conversationId?: string;
     query?: string;
-    maxTokens?: number;
+    /** Soft cap on fact rows read from DB before renderer dedupes */
+    maxFactsFetch?: number;
   }) => {
-    const context: string[] = [];
-    const maxTokens = params.maxTokens || 2000;
+    const conversationId = params.conversationId;
+    const q = typeof params.query === 'string' ? params.query.trim() : '';
+    const factFetchCap = Math.min(Math.max(params.maxFactsFetch ?? 40, 10), 80);
 
-    // 1. Get high-importance facts
-    const facts = db.prepare(`
-      SELECT fact, category FROM memory_facts 
-      ORDER BY importance DESC, created_at DESC 
-      LIMIT 10
-    `).all() as any[];
+    type FactRow = { fact: string; category: string };
+    let factRows: FactRow[] = [];
 
-    if (facts.length > 0) {
-      context.push('## Known Facts');
-      facts.forEach((f: any) => {
-        context.push(`- [${f.category}] ${f.fact}`);
-      });
+    if (conversationId) {
+      factRows = db
+        .prepare(
+          `
+        SELECT fact, category FROM memory_facts 
+        WHERE conversation_id IS NULL OR conversation_id = ?
+        ORDER BY 
+          CASE WHEN conversation_id = ? THEN 0 ELSE 1 END,
+          importance DESC,
+          created_at DESC
+        LIMIT ?
+      `
+        )
+        .all(conversationId, conversationId, factFetchCap) as FactRow[];
+    } else {
+      factRows = db
+        .prepare(
+          `
+        SELECT fact, category FROM memory_facts 
+        ORDER BY importance DESC, created_at DESC
+        LIMIT ?
+      `
+        )
+        .all(factFetchCap) as FactRow[];
     }
 
-    // 2. Get conversation summary if available
-    if (params.conversationId) {
-      const summary = db.prepare(`
+    const facts: HenryLeanMemoryParts['facts'] = factRows.map((r) => ({
+      fact: r.fact,
+      category: r.category || 'general',
+    }));
+
+    let conversationSummary: string | null = null;
+    if (conversationId) {
+      const summary = db
+        .prepare(
+          `
         SELECT summary FROM conversation_summaries 
         WHERE conversation_id = ? 
         ORDER BY created_at DESC LIMIT 1
-      `).get(params.conversationId) as any;
-
-      if (summary) {
-        context.push('\n## Conversation Context');
-        context.push(summary.summary);
-      }
+      `
+        )
+        .get(conversationId) as { summary: string } | undefined;
+      conversationSummary = summary?.summary ?? null;
     }
 
-    // 3. Search workspace for relevant files
-    if (params.query) {
-      const files = db.prepare(`
+    let workspaceHints: Array<{ file_path: string; summary: string }> = [];
+    if (q) {
+      const like = `%${q}%`;
+      const files = db
+        .prepare(
+          `
         SELECT file_path, summary FROM workspace_index 
         WHERE file_path LIKE ? OR summary LIKE ?
+        ORDER BY last_indexed DESC
         LIMIT 5
-      `).all(`%${params.query}%`, `%${params.query}%`) as any[];
+      `
+        )
+        .all(like, like) as { file_path: string; summary: string }[];
 
-      if (files.length > 0) {
-        context.push('\n## Relevant Workspace Files');
-        files.forEach((f: any) => {
-          context.push(`- ${f.file_path}: ${f.summary}`);
-        });
-      }
+      workspaceHints = files.slice(0, 3).map((f) => ({
+        file_path: f.file_path,
+        summary: f.summary || '',
+      }));
     }
 
-    const contextStr = context.join('\n');
-    // Rough token estimate (4 chars ≈ 1 token)
-    const estimatedTokens = Math.ceil(contextStr.length / 4);
+    const lean: HenryLeanMemoryParts = {
+      conversationSummary,
+      facts,
+      workspaceHints,
+    };
+
+    const blob = JSON.stringify(lean);
+    const estimatedTokens = Math.ceil(blob.length / 4);
 
     return {
-      context: contextStr,
+      lean,
       estimatedTokens,
       factCount: facts.length,
     };

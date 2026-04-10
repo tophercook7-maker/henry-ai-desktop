@@ -1,16 +1,33 @@
 import ReactMarkdown from 'react-markdown';
 import type { Message } from '../../types';
 
+/** Save markdown to workspace (Writer mode, Design3D mode, etc.) */
+export interface WorkspaceSaveDraftProps {
+  enabled: boolean;
+  workspaceReady: boolean;
+  busy?: boolean;
+  onSave: () => void | Promise<void>;
+  label: string;
+}
+
 interface MessageBubbleProps {
   message: Message;
   isStreaming?: boolean;
   streamingContent?: string;
+  workspaceSaveDraft?: WorkspaceSaveDraftProps;
+  /** Follow-up Worker task from this assistant reply (chat → queue bridge). */
+  createTask?: {
+    onClick: () => void;
+    disabled?: boolean;
+  };
 }
 
 export default function MessageBubble({
   message,
   isStreaming: isStreamingProp,
   streamingContent,
+  workspaceSaveDraft,
+  createTask,
 }: MessageBubbleProps) {
   const isUser = message.role === 'user';
   // Support both the explicit prop and the message flag
@@ -70,6 +87,8 @@ export default function MessageBubble({
             <p className="whitespace-pre-wrap">{content}</p>
           ) : content ? (
             <ReactMarkdown>{content}</ReactMarkdown>
+          ) : isStreaming ? (
+            <p className="text-henry-text-muted text-sm italic">Thinking…</p>
           ) : null}
 
           {/* Streaming indicator */}
@@ -85,6 +104,40 @@ export default function MessageBubble({
             <span>${message.cost.toFixed(6)}</span>
           </div>
         )}
+
+        {!isUser &&
+          !isStreaming &&
+          (message.content || '').trim().length > 0 &&
+          ((workspaceSaveDraft?.enabled || createTask) && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {workspaceSaveDraft?.enabled && (
+                <button
+                  type="button"
+                  disabled={workspaceSaveDraft.busy || !workspaceSaveDraft.workspaceReady}
+                  title={
+                    !workspaceSaveDraft.workspaceReady
+                      ? 'Set a workspace folder in Settings to save files'
+                      : 'Save this reply as markdown in the workspace'
+                  }
+                  onClick={() => void workspaceSaveDraft.onSave()}
+                  className="text-xs font-medium px-2.5 py-1 rounded-lg border border-henry-border/50 bg-henry-surface/30 text-henry-text hover:border-henry-accent/40 hover:bg-henry-surface/50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  {workspaceSaveDraft.busy ? 'Saving…' : workspaceSaveDraft.label}
+                </button>
+              )}
+              {createTask && (
+                <button
+                  type="button"
+                  disabled={createTask.disabled}
+                  title="Queue a Worker follow-up linked to this reply"
+                  onClick={createTask.onClick}
+                  className="text-xs font-medium px-2.5 py-1 rounded-lg border border-henry-worker/35 bg-henry-worker/10 text-henry-worker hover:bg-henry-worker/20 disabled:opacity-40 transition-colors"
+                >
+                  Create task
+                </button>
+              )}
+            </div>
+          ))}
       </div>
 
       {/* User avatar */}

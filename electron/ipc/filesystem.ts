@@ -55,6 +55,12 @@ export function registerFilesystemHandlers(workspacePath: string) {
     return fs.readFileSync(target, 'utf-8');
   });
 
+  /** Lightweight existence check (file or directory) under workspace — no content read. */
+  ipcMain.handle('fs:pathExists', async (_, filePath: string) => {
+    const target = safePath(filePath);
+    return fs.existsSync(target);
+  });
+
   // Write file — preload sends { path, content }
   ipcMain.handle('fs:writeFile', async (_, data: { path: string; content: string }) => {
     const target = safePath(data.path);

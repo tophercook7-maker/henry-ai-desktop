@@ -1,5 +1,8 @@
 import { useState, useEffect } from 'react';
 import CodeEditor from './CodeEditor';
+import { setDesign3dReferencePath } from '@/henry/design3dReferenceContext';
+import { HENRY_FILES_NAVIGATE_DIR_KEY } from '@/henry/writerDraftContext';
+import { setActiveWorkspaceContext } from '@/henry/workspaceContext';
 
 interface FileEntry {
   name: string;
@@ -20,6 +23,18 @@ export default function FileBrowser() {
   const [editedContent, setEditedContent] = useState<string>('');
   const [hasChanges, setHasChanges] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    try {
+      const dir = localStorage.getItem(HENRY_FILES_NAVIGATE_DIR_KEY)?.trim();
+      if (dir) {
+        localStorage.removeItem(HENRY_FILES_NAVIGATE_DIR_KEY);
+        setCurrentPath(dir);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   useEffect(() => {
     loadDirectory(currentPath);
@@ -178,21 +193,52 @@ export default function FileBrowser() {
                   return a.name.localeCompare(b.name);
                 })
                 .map((entry) => (
-                  <button
+                  <div
                     key={entry.path}
-                    onClick={() => navigateToDirectory(entry)}
-                    className={`w-full flex items-center gap-2 px-4 py-2 text-xs transition-colors ${
-                      selectedFile === entry.path
-                        ? 'bg-henry-accent/10 text-henry-accent'
-                        : 'text-henry-text hover:bg-henry-hover/50'
+                    className={`flex items-stretch border-b border-henry-border/15 last:border-b-0 ${
+                      selectedFile === entry.path ? 'bg-henry-accent/10' : ''
                     }`}
                   >
-                    <span className="text-sm">{getFileIcon(entry)}</span>
-                    <span className="truncate">{entry.name}</span>
-                    {entry.isDirectory && (
-                      <span className="ml-auto text-henry-text-muted">→</span>
+                    <button
+                      type="button"
+                      onClick={() => navigateToDirectory(entry)}
+                      className={`flex-1 min-w-0 flex items-center gap-2 px-3 py-2 text-xs text-left transition-colors ${
+                        selectedFile === entry.path
+                          ? 'text-henry-accent'
+                          : 'text-henry-text hover:bg-henry-hover/50'
+                      }`}
+                    >
+                      <span className="text-sm shrink-0">{getFileIcon(entry)}</span>
+                      <span className="truncate">{entry.name}</span>
+                      {entry.isDirectory && (
+                        <span className="ml-auto shrink-0 text-henry-text-muted">→</span>
+                      )}
+                    </button>
+                    {!entry.isDirectory && (
+                      <button
+                        type="button"
+                        title="Use as Design3D reference (path only)"
+                        onClick={() => setDesign3dReferencePath(entry.path)}
+                        className="shrink-0 px-2 py-2 text-[9px] font-semibold uppercase tracking-wide text-henry-text-muted hover:text-henry-accent hover:bg-henry-hover/40 border-l border-henry-border/20"
+                      >
+                        Ref
+                      </button>
                     )}
-                  </button>
+                    <button
+                      type="button"
+                      title="Use as chat workspace context (path only; does not load file contents)"
+                      onClick={() =>
+                        setActiveWorkspaceContext({
+                          path: entry.path,
+                          kind: entry.isDirectory ? 'folder' : 'file',
+                          label: entry.name,
+                        })
+                      }
+                      className="shrink-0 px-2 py-2 text-[9px] font-medium text-henry-text-muted hover:text-henry-accent hover:bg-henry-hover/40 border-l border-henry-border/20"
+                    >
+                      Context
+                    </button>
+                  </div>
                 ))}
             </div>
           )}

@@ -123,7 +123,7 @@ function ProvidersTab() {
               )}
             </div>
 
-            {!provider.local ? (
+            {id !== 'ollama' ? (
               <div className="flex gap-2">
                 <input
                   type="password"
@@ -191,14 +191,14 @@ function EnginesTab() {
         >
           <div className="flex items-center gap-2 mb-4">
             <span className="text-lg">{engine === 'companion' ? '🧠' : '⚡'}</span>
-            <div>
-              <div className="font-medium text-henry-text capitalize">
+          <div>
+            <div className="font-medium text-henry-text capitalize">
                 {engine} Engine
               </div>
               <div className="text-xs text-henry-text-dim">
                 {engine === 'companion'
-                  ? 'Fast model for chat and status'
-                  : 'Powerful model for deep work'}
+                  ? 'Chat, streaming replies, and chat operating modes (Writer, Biblical, Design3D, etc.)'
+                  : 'Background tasks from the task queue'}
               </div>
             </div>
           </div>
@@ -263,6 +263,29 @@ function GeneralTab() {
             </div>
           </div>
         </div>
+      </div>
+
+      <div className="rounded-xl border border-henry-border/50 bg-henry-surface/30 p-5">
+        <h3 className="font-medium text-henry-text mb-2">Workspace hint</h3>
+        <p className="text-xs text-henry-text-dim leading-relaxed mb-3">
+          Optional path you treat as your project root (paste an absolute path). Henry uses it to enable the
+          workspace context strip, Writer draft library, export packs, and clearer memory prompts. The in-app
+          file tree still lives under Henry’s managed data directory; this setting is your honest label for
+          where you anchor work.
+        </p>
+        <label className="block text-xs font-medium text-henry-text-dim mb-1.5">
+          Project / workspace path
+        </label>
+        <input
+          type="text"
+          value={settings.workspace_path || ''}
+          onChange={(e) => void updateSetting('workspace_path', e.target.value)}
+          placeholder="/Users/you/Projects/my-app"
+          className="w-full bg-henry-bg border border-henry-border rounded-lg px-3 py-2 text-sm text-henry-text outline-none focus:border-henry-accent/50 font-mono"
+        />
+        <p className="text-[10px] text-henry-text-muted mt-2">
+          Leave empty to disable workspace-dependent chat affordances until you set this.
+        </p>
       </div>
 
       <div className="rounded-xl border border-henry-border/50 bg-henry-surface/30 p-5">

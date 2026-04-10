@@ -120,6 +120,23 @@ export function initDatabase(dataDir: string): Database.Database {
       size_bytes INTEGER DEFAULT 0
     );
 
+    -- Local scripture text (imported JSON / bundles)
+    CREATE TABLE IF NOT EXISTS scripture_entries (
+      id TEXT PRIMARY KEY,
+      normalized_reference TEXT NOT NULL UNIQUE,
+      reference TEXT NOT NULL,
+      book TEXT NOT NULL,
+      book_slug TEXT NOT NULL,
+      chapter INTEGER NOT NULL,
+      verse_start INTEGER NOT NULL,
+      verse_end INTEGER NOT NULL,
+      text TEXT NOT NULL,
+      source_profile_id TEXT,
+      source_label TEXT,
+      notes TEXT,
+      created_at TEXT NOT NULL
+    );
+
     -- Initialize default settings if empty
     INSERT OR IGNORE INTO settings (key, value) VALUES
       ('setup_complete', 'false'),
@@ -132,7 +149,28 @@ export function initDatabase(dataDir: string): Database.Database {
       ('workspace_path', '');
   `);
 
+  migrateDatabaseSchema(db);
+
   return db;
+}
+
+/** Additive columns for task → workspace bridge (idempotent). */
+function migrateDatabaseSchema(db: Database.Database) {
+  const cols = db.prepare(`PRAGMA table_info(tasks)`).all() as { name: string }[];
+  const has = (n: string) => cols.some((c) => c.name === n);
+  try {
+    if (!has('created_from_mode')) {
+      db.exec(`ALTER TABLE tasks ADD COLUMN created_from_mode TEXT`);
+    }
+    if (!has('related_file_path')) {
+      db.exec(`ALTER TABLE tasks ADD COLUMN related_file_path TEXT`);
+    }
+    if (!has('created_from_message_id')) {
+      db.exec(`ALTER TABLE tasks ADD COLUMN created_from_message_id TEXT`);
+    }
+  } catch {
+    /* ignore migration errors on unusual DB states */
+  }
 }
 
 export function getDb(): Database.Database {

@@ -1,49 +1,35 @@
-# 🧠 Henry AI Desktop
+# Henry AI (Desktop)
 
-Your personal AI operating system — local-first, multi-provider, dual-engine.
+Henry is a **local-first AI operating system** built with **Electron**, **React**, and **TypeScript**.
 
-**Henry AI** is an installable desktop application that combines the best of ChatGPT (reasoning), Cursor (code generation), and Viktor (structured workflows) into a single, privacy-first tool that runs on your machine.
+## What Henry does
 
-## ✨ Features
+- Companion AI
+- Biblical study system (Ethiopian Orthodox aware)
+- Writer / document system
+- Design3D / STL / 3MF planning assistant
+- Memory-aware assistant
+- Workspace-aware operator
+- Task + export bundle system
 
-### Dual-Engine Architecture
-- **🧠 Companion** — Always-on, fast, conversational. Handles chat, quick answers, and workflow management.
-- **⚡ Worker** — Powerful, focused. Handles code generation, research, file operations, and heavy tasks through a managed task queue.
+Chat **slash commands** (`/help`, `/mode`, `/new`, `/export-pack`, etc.) live in `src/henry/commandLayer.ts` and `src/henry/commandActions.ts`.
 
-### Multi-Provider AI
-- **OpenAI** — GPT-4o, GPT-4o Mini, o1, o3-mini
-- **Anthropic** — Claude Sonnet 4, Claude Haiku, Opus
-- **Google** — Gemini 2.5 Pro, Flash, Ultra
-- **Ollama** — Run local models free (Llama 3.1, Codestral, Mistral, etc.)
-- Transparent per-token pricing with cost tracking
-
-### Full Desktop Experience
-- 📁 **File Browser** — Navigate, view, and edit workspace files
-- 💻 **Terminal** — Execute shell commands with safety guards
-- 🗂️ **Workspace** — 5-folder business structure (Product, Business, Marketing, Operations, Meetings)
-- 📋 **Task Queue** — Submit, track, cancel, and retry Worker tasks
-- 💰 **Cost Dashboard** — Monitor spending across providers and engines
-- 🧠 **Memory** — Facts, summaries, and context that persist across conversations
-
-### Setup Wizard
-Guided 4-step setup with model selection, transparent pricing, and cost estimation before you spend a cent.
-
-## 🚀 Quick Start
+## Run locally
 
 ```bash
-git clone https://github.com/tophercook7-maker/henry-ai-desktop.git
-cd henry-ai-desktop
 npm install
 npm run dev
 ```
 
-**Requirements:**
-- Node.js 18+
-- macOS, Windows, or Linux
+**First time from git:** clone the repo, then the same commands.
 
-**For local models:**
-- Install [Ollama](https://ollama.ai)
-- Pull a model: `ollama pull llama3.1:70b`
+**Requirements:** Node.js 18+ · macOS, Windows, or Linux
+
+**Dual engines:** **Companion** (chat + modes above) and **Worker** (task queue). **Providers:** OpenAI, Anthropic, Google, Ollama — configure in the setup wizard and Settings.
+
+**Local models:** install [Ollama](https://ollama.ai), e.g. `ollama pull llama3.1:70b`
+
+**Desktop shell:** file browser, terminal, workspace folders, task queue, cost dashboard, setup wizard.
 
 ## 🏗️ Architecture
 
@@ -79,6 +65,16 @@ npm run dev
 - **Database:** better-sqlite3
 - **AI SDKs:** OpenAI, Anthropic, Google AI, Ollama (REST)
 
+## ✅ Smoke test (CI-friendly)
+
+```bash
+npm run smoke   # typecheck + vite build (no electron-pack)
+```
+
+## 🤝 Handoff / Replit
+
+See **[REPLIT.md](./REPLIT.md)** for collaborator notes, constraints, and what not to break.
+
 ## 📦 Building Installers
 
 ```bash
@@ -109,6 +105,7 @@ henry-ai-desktop/
 │   ├── store/index.ts       # Zustand global state
 │   ├── types/               # TypeScript types
 │   ├── providers/models.ts  # All models with pricing
+│   ├── henry/               # Modes, memory, commands, export, session, scripture
 │   └── components/
 │       ├── chat/            # Chat UI, streaming, engine selector
 │       ├── costs/           # Cost tracking dashboard
