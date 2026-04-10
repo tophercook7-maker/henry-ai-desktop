@@ -205,7 +205,15 @@ export function buildCompanionStreamSystemPrompt(
     day: 'numeric',
   });
   const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-  const timeBlock = `Current date and time: ${dateStr} at ${timeStr}\n`;
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const hour = now.getHours();
+  const partOfDay =
+    hour >= 5 && hour < 12 ? 'morning' :
+    hour >= 12 && hour < 17 ? 'afternoon' :
+    hour >= 17 && hour < 21 ? 'evening' :
+    'night';
+  const timeBlock = `Current date/time: ${dateStr} · ${timeStr} (${tz}) — ${partOfDay}
+Let this shape how you show up. If it's early morning, Topher might be starting his day; late evening, winding down. Match the energy naturally — don't announce it, just carry it.\n`;
 
   const memoryBlock = memoryContext.trim()
     ? `What you already know about this workspace / thread (use lightly; do not pretend to recall raw logs):\n${memoryContext.trim()}\n`
@@ -271,6 +279,9 @@ export function buildWorkerAITaskSystemPrompt(
   const now = new Date();
   const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const wHour = now.getHours();
+  const wPartOfDay = wHour >= 5 && wHour < 12 ? 'morning' : wHour >= 12 && wHour < 17 ? 'afternoon' : wHour >= 17 && wHour < 21 ? 'evening' : 'night';
 
   const contextBlock = conversationContext?.trim()
     ? `\n\nConversation context (what the Local Brain and Topher were discussing):\n${conversationContext.trim()}\n`
@@ -278,7 +289,7 @@ export function buildWorkerAITaskSystemPrompt(
 
   return `${HENRY_CORE_IDENTITY}
 
-Current date and time: ${dateStr} at ${timeStr}
+Current date/time: ${dateStr} · ${timeStr} (${tz}) — ${wPartOfDay}
 
 ${getModeInstruction(mode)}
 ${contextBlock}
