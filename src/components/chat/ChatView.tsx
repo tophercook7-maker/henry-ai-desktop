@@ -310,6 +310,47 @@ export default function ChatView() {
     return unsub;
   }, [activeConversationId]);
 
+  // Startup: auto-detect best Ollama models if none are set yet
+  useEffect(() => {
+    void (async () => {
+      try {
+        const s = useStore.getState().settings;
+        const provs = await window.henryAPI.getProviders();
+        const ollamaEnabled = provs.some((p: any) => p.id === 'ollama' && p.enabled);
+        if (!ollamaEnabled) return;
+        if (s.companion_model) return; // already configured, don't override
+
+        const { autoSelectModels } = await import('@/henry/modelPriority');
+        const ollamaUrl = s.ollama_base_url || 'http://localhost:11434';
+        const raw = await window.henryAPI.ollamaModels(ollamaUrl) as any;
+        const installed: string[] = (raw?.models ?? []).map((m: any) => m.name as string);
+        if (!installed.length) return;
+
+        const best = autoSelectModels(installed);
+        if (best.companion) {
+          await window.henryAPI.saveSetting('companion_model', best.companion.id);
+          await window.henryAPI.saveSetting('companion_provider', 'ollama');
+          useStore.getState().updateSetting('companion_model', best.companion.id);
+          useStore.getState().updateSetting('companion_provider', 'ollama');
+        }
+        if (best.companionFallback) {
+          await window.henryAPI.saveSetting('companion_model_2', best.companionFallback.id);
+          await window.henryAPI.saveSetting('companion_provider_2', 'ollama');
+          useStore.getState().updateSetting('companion_model_2', best.companionFallback.id);
+          useStore.getState().updateSetting('companion_provider_2', 'ollama');
+        }
+        if (best.worker) {
+          await window.henryAPI.saveSetting('worker_model', best.worker.id);
+          await window.henryAPI.saveSetting('worker_provider', 'ollama');
+          useStore.getState().updateSetting('worker_model', best.worker.id);
+          useStore.getState().updateSetting('worker_provider', 'ollama');
+        }
+      } catch {
+        // Auto-detect is best-effort — silently skip if Ollama isn't reachable
+      }
+    })();
+  }, []);
+
   // TTS: speak Henry's response when streaming ends
   useEffect(() => {
     if (!ttsEnabled || isStreaming) return;
@@ -870,18 +911,28 @@ export default function ChatView() {
       });
     }
 
-    // Get companion engine settings
+    // Get companion engine settings — try primary, fall back to companion_model_2 if set
     const providers = await window.henryAPI.getProviders();
-    const companionProvider = useStore.getState().settings.companion_provider;
-    const companionModel = useStore.getState().settings.companion_model;
-    const provider = providers.find((p: any) => p.id === companionProvider);
+    const s = useStore.getState().settings;
+    let companionProvider = s.companion_provider;
+    let companionModel = s.companion_model;
+    const fallbackModel = s.companion_model_2;
+    const fallbackProvider = s.companion_provider_2 || s.companion_provider;
+    let provider = providers.find((p: any) => p.id === companionProvider);
+
+    // If primary isn't configured but fallback is, use it
+    if ((!provider || !companionModel) && fallbackModel && fallbackProvider) {
+      companionProvider = fallbackProvider;
+      companionModel = fallbackModel;
+      provider = providers.find((p: any) => p.id === companionProvider);
+    }
 
     if (!provider || !companionModel) {
       addMessage({
         id: crypto.randomUUID(),
         conversation_id: convId,
         role: 'assistant',
-        content: '⚠️ Companion engine not configured. Please set up your AI provider in Settings.',
+        content: '⚠️ No model configured. Go to Settings → Engines, click **Auto-detect** if you have Ollama running, or set a model manually.',
         engine: 'companion',
         created_at: new Date().toISOString(),
       });
@@ -994,7 +1045,67 @@ export default function ChatView() {
         }
       });
 
-      stream.onError((error: string) => {
+      stream.onError(async (error: string) => {
+        // Try fallback model before showing error
+        const curSettings = useStore.getState().settings;
+        const fallbackM = curSettings.companion_model_2;
+        const fallbackP = curSettings.companion_provider_2 || curSettings.companion_provider;
+        const usedFallback = companionModel !== curSettings.companion_model; // already on fallback
+
+        if (fallbackM && fallbackP && !usedFallback && fallbackM !== companionModel) {
+          setStreamingContent('');
+          setCompanionStatus({ status: 'thinking' });
+          // Swap to fallback and retry the exact same call
+          const fallbackProviders = await window.henryAPI.getProviders();
+          const fbProvider = fallbackProviders.find((p: any) => p.id === fallbackP);
+          const fbApiKey = fbProvider?.api_key || fbProvider?.apiKey || '';
+
+          const fbStream = window.henryAPI.streamMessage({
+            provider: fallbackP,
+            model: fallbackM,
+            apiKey: fbApiKey,
+            messages: messagesPayload,
+            temperature: 0.7,
+          });
+
+          streamRef.current = fbStream;
+          setCompanionStatus({ status: 'streaming' });
+
+          fbStream.onChunk((chunk: string) => { appendStreamingContent(chunk); });
+          fbStream.onDone(async (fullText: string) => {
+            const fbMsg = {
+              id: crypto.randomUUID(),
+              conversation_id: convId,
+              role: 'assistant' as const,
+              content: fullText,
+              engine: 'companion' as const,
+              model: fallbackM,
+              provider: fallbackP,
+              created_at: new Date().toISOString(),
+            };
+            addMessage(fbMsg);
+            setStreamingContent('');
+            setIsStreaming(false);
+            setCompanionStatus({ status: 'idle' });
+            try { await window.henryAPI.saveMessage(fbMsg); } catch { /* optional */ }
+          });
+          fbStream.onError((fbError: string) => {
+            addMessage({
+              id: crypto.randomUUID(),
+              conversation_id: convId,
+              role: 'assistant',
+              content: `❌ Both models failed.\nPrimary (${companionModel}): ${error}\nFallback (${fallbackM}): ${fbError}`,
+              engine: 'companion',
+              created_at: new Date().toISOString(),
+            });
+            setStreamingContent('');
+            setIsStreaming(false);
+            setCompanionStatus({ status: 'error', message: fbError });
+            setTimeout(() => setCompanionStatus({ status: 'idle' }), 3000);
+          });
+          return;
+        }
+
         addMessage({
           id: crypto.randomUUID(),
           conversation_id: convId,
@@ -1006,8 +1117,6 @@ export default function ChatView() {
         setStreamingContent('');
         setIsStreaming(false);
         setCompanionStatus({ status: 'error', message: error });
-
-        // Reset to idle after 3 seconds
         setTimeout(() => setCompanionStatus({ status: 'idle' }), 3000);
       });
     } catch (err: any) {

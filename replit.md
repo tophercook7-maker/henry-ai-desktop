@@ -70,6 +70,27 @@ The original app uses `window.henryAPI` (Electron IPC bridge) for all backend op
 - File picker for scripture import (disabled — returns canceled)
 - Ollama requires CORS headers on the local Ollama instance
 
+## Engine Configuration
+
+### Two-Brain Architecture
+- **Companion (Local Brain):** primary + fallback model slots (`companion_model` / `companion_model_2`). If the primary model fails during streaming, the fallback is tried automatically before showing an error.
+- **Worker (Second Brain):** for code/research tasks; runs async, injects result back into the active conversation via `worker:message` IPC event.
+
+### Startup Auto-Detect
+On first load (when no model is configured), Henry auto-queries Ollama and picks the best installed models for Companion, Companion Fallback, and Worker using `autoSelectModels()` from `src/henry/modelPriority.ts`. Silent best-effort — no error if Ollama is unreachable.
+
+### Model Priority Order
+- **Companion:** Llama 3.3 70B → Qwen 2.5 7B → Phi-4 → Mistral Nemo → Gemma 2 9B
+- **Worker:** DeepSeek-R1 14B → DeepSeek-R1 7B → Qwen 2.5 72B → Llama 3.3 70B
+
+## Computer Control + 3D Printer (Desktop Only)
+
+All wiring is in place for the Electron build:
+- `electron/ipc/computer.ts` — screenshot, shell, AppleScript, app launcher, mouse/keyboard
+- `electron/ipc/printer.ts` — pyserial bridge, serial port discovery, G-code terminal, print job streaming
+- `electron/preload.ts` — exposes all APIs including `onWorkerMessage` for two-brain sync
+- Web stubs in `webMock.ts` show friendly "requires desktop app" messages
+
 ## Deployment
 
 Configured as a static site deployment:

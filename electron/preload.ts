@@ -194,4 +194,9 @@ contextBridge.exposeInMainWorld('henryAPI', {
     ipcRenderer.on('engine:status', handler);
     return () => ipcRenderer.removeListener('engine:status', handler);
   },
+  onWorkerMessage: (cb: (data: unknown) => void) => {
+    const handler = (_: IpcRendererEvent, data: unknown) => cb(data);
+    ipcRenderer.on('worker:message', handler);
+    return () => ipcRenderer.removeListener('worker:message', handler);
+  },
 });

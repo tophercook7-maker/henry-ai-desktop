@@ -6,6 +6,7 @@ import {
   formatPrice,
   type ProviderId,
 } from '../../providers/models';
+import { autoSelectModels } from '@/henry/modelPriority';
 
 export default function SettingsView() {
   const [activeTab, setActiveTab] = useState<'providers' | 'engines' | 'general'>('providers');
@@ -206,23 +207,25 @@ function ProvidersTab() {
 
 function EnginesTab() {
   const { settings, providers } = useStore();
-  const [customModels, setCustomModels] = useState({
-    companion: '',
-    worker: '',
-  });
+  const [customModel, setCustomModel] = useState({ companion: '', worker: '' });
   const [saving, setSaving] = useState<string | null>(null);
+  const [autoDetecting, setAutoDetecting] = useState(false);
+  const [autoDetectResult, setAutoDetectResult] = useState<string | null>(null);
 
   const enabledProviders = providers.filter((p) => p.enabled).map((p) => p.id);
   const availableModels = AVAILABLE_MODELS.filter((m) => enabledProviders.includes(m.provider));
   const ollamaEnabled = enabledProviders.includes('ollama');
 
+  async function saveSetting(key: string, value: string) {
+    await window.henryAPI.saveSetting(key, value);
+    useStore.getState().updateSetting(key, value);
+  }
+
   async function updateEngine(engine: 'companion' | 'worker', modelId: string, provider: string) {
     setSaving(engine);
     try {
-      await window.henryAPI.saveSetting(`${engine}_model`, modelId);
-      await window.henryAPI.saveSetting(`${engine}_provider`, provider);
-      useStore.getState().updateSetting(`${engine}_model`, modelId);
-      useStore.getState().updateSetting(`${engine}_provider`, provider);
+      await saveSetting(`${engine}_model`, modelId);
+      await saveSetting(`${engine}_provider`, provider);
     } catch (err) {
       console.error('Failed to update engine:', err);
     } finally {
@@ -230,90 +233,260 @@ function EnginesTab() {
     }
   }
 
+  async function updateCompanionFallback(modelId: string) {
+    setSaving('companion_2');
+    try {
+      await saveSetting('companion_model_2', modelId);
+      await saveSetting('companion_provider_2', 'ollama');
+    } finally {
+      setSaving(null);
+    }
+  }
+
   async function saveCustomModel(engine: 'companion' | 'worker') {
-    const name = customModels[engine].trim();
+    const name = customModel[engine].trim();
     if (!name) return;
     await updateEngine(engine, name, 'ollama');
-    setCustomModels((prev) => ({ ...prev, [engine]: '' }));
+    setCustomModel((p) => ({ ...p, [engine]: '' }));
+  }
+
+  /** Query Ollama for installed models and auto-select the best ones. */
+  async function autoDetect() {
+    setAutoDetecting(true);
+    setAutoDetectResult(null);
+    try {
+      const ollamaUrl = settings.ollama_base_url || 'http://localhost:11434';
+      const raw = await window.henryAPI.ollamaModels(ollamaUrl) as any;
+      const installedNames: string[] = (raw?.models ?? []).map((m: any) => m.name as string);
+
+      if (installedNames.length === 0) {
+        setAutoDetectResult('No models found in Ollama. Pull one with: ollama pull llama3.3');
+        return;
+      }
+
+      const best = autoSelectModels(installedNames);
+      const lines: string[] = [];
+
+      if (best.companion) {
+        await saveSetting('companion_model', best.companion.id);
+        await saveSetting('companion_provider', 'ollama');
+        lines.push(`Local Brain → ${best.companion.label}`);
+      }
+      if (best.companionFallback) {
+        await saveSetting('companion_model_2', best.companionFallback.id);
+        await saveSetting('companion_provider_2', 'ollama');
+        lines.push(`Local Brain fallback → ${best.companionFallback.label}`);
+      }
+      if (best.worker) {
+        await saveSetting('worker_model', best.worker.id);
+        await saveSetting('worker_provider', 'ollama');
+        lines.push(`Worker Brain → ${best.worker.label}`);
+      }
+
+      if (lines.length === 0) {
+        setAutoDetectResult(`No priority models found among: ${installedNames.join(', ')}. Pull llama3.3, qwen2.5, or deepseek-r1.`);
+      } else {
+        setAutoDetectResult('✓ Auto-selected: ' + lines.join(' · '));
+      }
+    } catch (err) {
+      setAutoDetectResult(`Could not reach Ollama: ${(err as Error).message}. Make sure it's running with OLLAMA_ORIGINS=*`);
+    } finally {
+      setAutoDetecting(false);
+    }
+  }
+
+  function ModelSelect({ engine }: { engine: 'companion' | 'worker' }) {
+    const sorted = availableModels.slice().sort((a, b) => {
+      const aR = a.recommended === engine || a.recommended === 'both' ? -1 : 0;
+      const bR = b.recommended === engine || b.recommended === 'both' ? -1 : 0;
+      return aR - bR;
+    });
+    return (
+      <select
+        value={settings[`${engine}_model`] || ''}
+        onChange={(e) => {
+          const m = AVAILABLE_MODELS.find((x) => x.id === e.target.value);
+          if (m) void updateEngine(engine, e.target.value, m.provider);
+        }}
+        className="w-full bg-henry-bg border border-henry-border rounded-lg px-3 py-2 text-sm text-henry-text outline-none focus:border-henry-accent/50"
+      >
+        <option value="">Choose from list…</option>
+        {sorted.map((m) => {
+          const prov = PROVIDERS[m.provider as ProviderId];
+          const rec = m.recommended === engine || m.recommended === 'both';
+          return (
+            <option key={m.id} value={m.id}>
+              {rec ? '★ ' : ''}{prov?.icon} {m.name} — {m.local ? 'Free' : `$${m.inputPricePer1M}/$${m.outputPricePer1M}/1M`}
+            </option>
+          );
+        })}
+      </select>
+    );
   }
 
   return (
-    <div className="space-y-6">
-      {(['companion', 'worker'] as const).map((engine) => (
-        <div key={engine} className="rounded-xl border border-henry-border/50 bg-henry-surface/30 p-5">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-lg">{engine === 'companion' ? '🧠' : '⚡'}</span>
-            <div className="font-medium text-henry-text capitalize">{engine} Engine</div>
-          </div>
-          <div className="text-xs text-henry-text-dim mb-4">
-            {engine === 'companion'
-              ? 'Local Brain — always-on, streams every conversation. Automatically delegates heavy tasks (code, research) to the Worker Brain while staying alive.'
-              : 'Worker Brain — runs in background while Companion keeps talking. Takes over code generation and deep research; result flows back into the same thread automatically. ★ models below are recommended.'}
-          </div>
+    <div className="space-y-5">
 
-          <div className="mb-2">
-            <div className="text-[10px] text-henry-text-muted uppercase tracking-wide mb-1.5">Current model</div>
-            <div className="text-sm font-medium text-henry-text">
-              {settings[`${engine}_model`]
-                ? <><span className="text-henry-accent">{settings[`${engine}_model`]}</span> <span className="text-henry-text-muted text-xs">via {settings[`${engine}_provider`] || 'unknown'}</span></>
-                : <span className="text-henry-text-muted italic">Not set</span>}
+      {/* ── Auto-detect banner ── */}
+      {ollamaEnabled && (
+        <div className="rounded-xl border border-henry-accent/20 bg-henry-accent/5 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="text-sm font-medium text-henry-text mb-0.5">Auto-select Best Models</div>
+              <div className="text-xs text-henry-text-dim leading-relaxed">
+                Henry checks what's installed in Ollama and picks the strongest model for each brain automatically.
+                Run this again after pulling a new model — it will upgrade itself.
+              </div>
+              {autoDetectResult && (
+                <div className="mt-2 text-xs text-henry-text bg-henry-bg/60 rounded-lg px-3 py-2 leading-relaxed">
+                  {autoDetectResult}
+                </div>
+              )}
             </div>
+            <button
+              onClick={() => void autoDetect()}
+              disabled={autoDetecting}
+              className="shrink-0 px-4 py-2 bg-henry-accent text-white rounded-lg text-xs font-semibold hover:bg-henry-accent/90 transition-colors disabled:opacity-50"
+            >
+              {autoDetecting ? 'Scanning…' : 'Auto-detect'}
+            </button>
           </div>
+        </div>
+      )}
 
+      {/* ── Local Brain (Companion) ── */}
+      <div className="rounded-xl border border-henry-border/50 bg-henry-surface/30 p-5">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="text-lg">🧠</span>
+          <div className="font-medium text-henry-text">Local Brain</div>
+          <span className="text-[10px] bg-henry-companion/10 text-henry-companion px-2 py-0.5 rounded-full font-medium">Primary</span>
+        </div>
+        <div className="text-xs text-henry-text-dim mb-4">
+          Always-on — streams every conversation in real time. Delegates heavy tasks to Worker automatically.
+          Set a <strong className="text-henry-text">Primary</strong> and a <strong className="text-henry-text">Fallback</strong> — Henry uses both and falls back automatically if the primary is unavailable.
+        </div>
+
+        {/* Primary */}
+        <div className="mb-3">
+          <div className="text-[10px] font-medium text-henry-text-muted uppercase tracking-wide mb-1.5 flex items-center gap-2">
+            Primary
+            {settings.companion_model && (
+              <span className="text-henry-accent normal-case tracking-normal">
+                {settings.companion_model} <span className="text-henry-text-muted">via {settings.companion_provider || 'unknown'}</span>
+              </span>
+            )}
+          </div>
+          <ModelSelect engine="companion" />
+          {ollamaEnabled && (
+            <div className="flex gap-2 mt-2">
+              <input
+                type="text"
+                value={customModel.companion}
+                onChange={(e) => setCustomModel((p) => ({ ...p, companion: e.target.value }))}
+                onKeyDown={(e) => { if (e.key === 'Enter') void saveCustomModel('companion'); }}
+                placeholder="Custom Ollama model (e.g. llama3.3)"
+                className="flex-1 bg-henry-bg border border-henry-border rounded-lg px-3 py-2 text-sm text-henry-text outline-none focus:border-henry-accent/50"
+              />
+              <button
+                onClick={() => void saveCustomModel('companion')}
+                disabled={!customModel.companion.trim() || saving === 'companion'}
+                className="px-3 py-2 bg-henry-accent/10 text-henry-accent rounded-lg text-xs font-medium hover:bg-henry-accent/20 transition-colors disabled:opacity-40"
+              >
+                {saving === 'companion' ? 'Saving…' : 'Use'}
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Fallback / Secondary */}
+        <div className="border-t border-henry-border/30 pt-3">
+          <div className="text-[10px] font-medium text-henry-text-muted uppercase tracking-wide mb-1.5 flex items-center gap-2">
+            Fallback (Secondary)
+            {settings.companion_model_2 && (
+              <span className="text-henry-text-dim normal-case tracking-normal">{settings.companion_model_2}</span>
+            )}
+          </div>
+          <div className="text-[10px] text-henry-text-muted mb-2">
+            Henry tries this if the primary fails or times out. Recommended: Qwen 2.5 14B or Phi-4.
+          </div>
           <select
-            value={settings[`${engine}_model`] || ''}
+            value={settings.companion_model_2 || ''}
             onChange={(e) => {
-              const model = AVAILABLE_MODELS.find((m) => m.id === e.target.value);
-              if (model) updateEngine(engine, e.target.value, model.provider);
+              const m = AVAILABLE_MODELS.find((x) => x.id === e.target.value);
+              if (m) void updateCompanionFallback(e.target.value);
+              else if (!e.target.value) void updateCompanionFallback('');
             }}
-            className="w-full bg-henry-bg border border-henry-border rounded-lg px-3 py-2 text-sm text-henry-text outline-none focus:border-henry-accent/50 mb-3"
+            className="w-full bg-henry-bg border border-henry-border rounded-lg px-3 py-2 text-sm text-henry-text outline-none focus:border-henry-accent/50"
           >
-            <option value="">Choose from list…</option>
-            {/* Show models recommended for this brain first */}
+            <option value="">None (no fallback)</option>
             {availableModels
-              .slice()
-              .sort((a, b) => {
-                const aMatch = a.recommended === engine || a.recommended === 'both' ? -1 : 0;
-                const bMatch = b.recommended === engine || b.recommended === 'both' ? -1 : 0;
-                return aMatch - bMatch;
-              })
-              .map((model) => {
-                const provider = PROVIDERS[model.provider as ProviderId];
-                const isRecommended = model.recommended === engine || model.recommended === 'both';
+              .filter((m) => m.local)
+              .map((m) => {
+                const rec = m.recommended === 'companion' || m.recommended === 'both';
                 return (
-                  <option key={model.id} value={model.id}>
-                    {isRecommended ? '★ ' : ''}{provider?.icon} {model.name} — {model.local ? 'Free' : `$${model.inputPricePer1M}/$${model.outputPricePer1M} per 1M`}
+                  <option key={m.id} value={m.id}>
+                    {rec ? '★ ' : ''}🏠 {m.name} — Free
                   </option>
                 );
               })}
           </select>
+        </div>
+      </div>
 
-          {ollamaEnabled && (
-            <div>
-              <label className="block text-[10px] font-medium text-henry-text-muted uppercase tracking-wide mb-1.5">
-                Or type an Ollama model name
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={customModels[engine]}
-                  onChange={(e) => setCustomModels((prev) => ({ ...prev, [engine]: e.target.value }))}
-                  onKeyDown={(e) => { if (e.key === 'Enter') void saveCustomModel(engine); }}
-                  placeholder="e.g. llama3, mistral, phi4, qwen2.5"
-                  className="flex-1 bg-henry-bg border border-henry-border rounded-lg px-3 py-2 text-sm text-henry-text outline-none focus:border-henry-accent/50"
-                />
-                <button
-                  onClick={() => void saveCustomModel(engine)}
-                  disabled={!customModels[engine].trim() || saving === engine}
-                  className="px-3 py-2 bg-henry-accent/10 text-henry-accent rounded-lg text-xs font-medium hover:bg-henry-accent/20 transition-colors disabled:opacity-40"
-                >
-                  {saving === engine ? 'Saving…' : 'Use'}
-                </button>
-              </div>
-            </div>
+      {/* ── Worker Brain ── */}
+      <div className="rounded-xl border border-henry-border/50 bg-henry-surface/30 p-5">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="text-lg">⚡</span>
+          <div className="font-medium text-henry-text">Worker Brain</div>
+          <span className="text-[10px] bg-henry-worker/10 text-henry-worker px-2 py-0.5 rounded-full font-medium">Background</span>
+        </div>
+        <div className="text-xs text-henry-text-dim mb-4">
+          Runs in the background while Local Brain keeps talking. Best models: DeepSeek R1 (reasoning) or Qwen 2.5 32B+.
+          Result appears in the same thread automatically.
+        </div>
+
+        <div className="text-[10px] font-medium text-henry-text-muted uppercase tracking-wide mb-1.5 flex items-center gap-2">
+          Model
+          {settings.worker_model && (
+            <span className="text-henry-worker normal-case tracking-normal">
+              {settings.worker_model} <span className="text-henry-text-muted">via {settings.worker_provider || 'unknown'}</span>
+            </span>
           )}
         </div>
-      ))}
+        <ModelSelect engine="worker" />
+
+        {ollamaEnabled && (
+          <div className="flex gap-2 mt-2">
+            <input
+              type="text"
+              value={customModel.worker}
+              onChange={(e) => setCustomModel((p) => ({ ...p, worker: e.target.value }))}
+              onKeyDown={(e) => { if (e.key === 'Enter') void saveCustomModel('worker'); }}
+              placeholder="Custom Ollama model (e.g. deepseek-r1:32b)"
+              className="flex-1 bg-henry-bg border border-henry-border rounded-lg px-3 py-2 text-sm text-henry-text outline-none focus:border-henry-accent/50"
+            />
+            <button
+              onClick={() => void saveCustomModel('worker')}
+              disabled={!customModel.worker.trim() || saving === 'worker'}
+              className="px-3 py-2 bg-henry-accent/10 text-henry-accent rounded-lg text-xs font-medium hover:bg-henry-accent/20 transition-colors disabled:opacity-40"
+            >
+              {saving === 'worker' ? 'Saving…' : 'Use'}
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* ── Recommend pull commands ── */}
+      {ollamaEnabled && (
+        <div className="rounded-xl border border-henry-border/30 bg-henry-bg/30 p-4">
+          <div className="text-[10px] font-medium text-henry-text-muted uppercase tracking-wide mb-2">Recommended pull commands</div>
+          <div className="space-y-1 font-mono text-xs text-henry-text-dim">
+            <div><span className="text-henry-companion">Local Brain: </span>ollama pull llama3.3 &amp;&amp; ollama pull qwen2.5:14b</div>
+            <div><span className="text-henry-worker">Worker Brain: </span>ollama pull deepseek-r1:14b</div>
+            <div className="text-henry-text-muted/60 pt-1">After pulling, click Auto-detect above — Henry upgrades itself.</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
