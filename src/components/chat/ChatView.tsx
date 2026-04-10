@@ -311,6 +311,7 @@ export default function ChatView() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const streamRef = useRef<any>(null);
   const sessionAsyncResumeStartedRef = useRef(false);
+  const wakeHandleSendRef = useRef<((content: string) => void) | null>(null);
 
   useEffect(() => {
     function handleSecretaryPrompt(e: Event) {
@@ -338,13 +339,25 @@ export default function ChatView() {
       setRecoveryBannerOpen(false);
       setRecoverySnapshot(null);
     }
+    function handleWakeWord(e: Event) {
+      const { query } = (e as CustomEvent<{ query: string }>).detail;
+      useStore.getState().setCurrentView('chat');
+      setOperatingMode('companion');
+      const text = query?.trim() || 'Hey.';
+      setTimeout(() => {
+        wakeHandleSendRef.current?.(text);
+      }, 80);
+    }
+
     window.addEventListener('henry_secretary_prompt', handleSecretaryPrompt);
     window.addEventListener('henry_mode_launch', handleModeLaunch);
     window.addEventListener('henry_new_chat', handleNewChat);
+    window.addEventListener('henry_wake_word', handleWakeWord);
     return () => {
       window.removeEventListener('henry_secretary_prompt', handleSecretaryPrompt);
       window.removeEventListener('henry_mode_launch', handleModeLaunch);
       window.removeEventListener('henry_new_chat', handleNewChat);
+      window.removeEventListener('henry_wake_word', handleWakeWord);
     };
   }, []);
 
@@ -1455,6 +1468,9 @@ export default function ChatView() {
     setIsStreaming(false);
     setCompanionStatus({ status: 'idle' });
   }
+
+  // Keep wake word ref always pointing to latest handleSend (safe to assign during render)
+  wakeHandleSendRef.current = handleSend;
 
   return (
     <div className="h-full flex min-h-0">
