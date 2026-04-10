@@ -73,6 +73,17 @@ export default function App() {
 
   async function initApp() {
     try {
+      // URL bypass: ?enter or #enter skips wizard immediately
+      const urlBypass =
+        window.location.search.includes('enter') ||
+        window.location.hash === '#enter' ||
+        window.location.hash === '#henry';
+      if (urlBypass) {
+        await window.henryAPI.saveSetting('setup_complete', 'true');
+        // Clean the URL without reload
+        history.replaceState(null, '', window.location.pathname);
+      }
+
       const settingsMap = (await window.henryAPI.getSettings()) as Record<string, string>;
 
       Object.entries(settingsMap).forEach(([key, value]) => {
