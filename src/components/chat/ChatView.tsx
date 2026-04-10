@@ -1237,7 +1237,7 @@ export default function ChatView() {
                 onCancel={isStreaming ? cancelStream : undefined}
                 injectDraft={chatInject}
                 onInjectConsumed={() => setChatInject(null)}
-                placeholder="Message Henry…  Commands: /help, /mode writer, /new, /export-pack, and more."
+                placeholder="Message Henry…"
               />
             </div>
           </div>
@@ -1396,8 +1396,9 @@ function EmptyChat({ onSend }: { onSend: (content: string) => void }) {
         <div className="text-6xl mb-6">🧠</div>
         <h2 className="text-2xl font-bold text-henry-text mb-3">Henry AI</h2>
         <p className="text-henry-text-dim mb-6 leading-relaxed">
-          Your personal AI. Use the <span className="text-henry-companion font-medium">Mode</span> dropdown
-          below to switch between Companion, Writer, Biblical, and Design modes.
+          Your personal AI. Use the <span className="text-henry-companion font-medium">Local Brain</span> for
+          free private chat, or switch to your <span className="text-henry-worker font-medium">Second Brain</span> for
+          more power. Pick a Mode below to get started.
         </p>
         <div className="grid grid-cols-2 gap-3 text-xs">
           <SuggestionCard

@@ -16,24 +16,24 @@ export default function WelcomeStep({ onNext }: WelcomeStepProps) {
 
       <div className="grid grid-cols-2 gap-4 mb-8 max-w-lg mx-auto text-left">
         <Feature
-          icon="🧠"
-          title="Dual-Engine Architecture"
-          desc="A Companion for conversation and a Worker for heavy tasks"
+          icon="🏠"
+          title="Local Brain (Ollama)"
+          desc="Free forever. Runs privately on your machine — no account needed"
         />
         <Feature
-          icon="🔌"
-          title="Multi-Provider AI"
-          desc="Connect OpenAI, Anthropic, Google, or run models locally"
+          icon="☁️"
+          title="Second Brain (Cloud)"
+          desc="Optional GPT-4, Claude, or Gemini for when you need more power"
         />
         <Feature
           icon="🔒"
-          title="Local-First"
-          desc="Everything stored on your machine. Your data, your control"
+          title="Private by Default"
+          desc="Your conversations stay on your machine. No data leaves without you"
         />
         <Feature
-          icon="⚡"
-          title="Always Available"
-          desc="The Companion never stops responding, even during heavy work"
+          icon="🎭"
+          title="Multiple Modes"
+          desc="Companion chat, Biblical study, Writer, Developer, and 3D design"
         />
       </div>
 

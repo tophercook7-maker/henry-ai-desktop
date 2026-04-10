@@ -19,15 +19,13 @@ export default function TitleBar() {
 
   return (
     <div className="titlebar-drag h-12 flex items-center justify-between px-4 bg-henry-surface/50 border-b border-henry-border/50 shrink-0">
-      {/* macOS traffic lights spacing */}
       <div className="w-20" />
 
-      {/* Center: Engine status */}
       <div className="titlebar-no-drag flex items-center gap-6 text-xs">
         <div className="flex items-center gap-2">
           <div className={`w-2 h-2 rounded-full ${statusColor(companionStatus.status)}`} />
           <span className="text-henry-text-dim">
-            Companion{' '}
+            Local{' '}
             <span className="text-henry-text-muted">
               {companionStatus.status === 'idle' ? 'ready' : companionStatus.status}
             </span>
@@ -37,7 +35,7 @@ export default function TitleBar() {
         <div className="flex items-center gap-2">
           <div className={`w-2 h-2 rounded-full ${statusColor(workerStatus.status)}`} />
           <span className="text-henry-text-dim">
-            Worker{' '}
+            Cloud{' '}
             <span className="text-henry-text-muted">
               {workerStatus.status === 'idle'
                 ? 'ready'
@@ -49,10 +47,7 @@ export default function TitleBar() {
         </div>
       </div>
 
-      {/* Right: Window controls (hidden on macOS, shown on Windows/Linux) */}
-      <div className="titlebar-no-drag flex items-center gap-1 w-20 justify-end">
-        {/* Platform-specific controls would go here */}
-      </div>
+      <div className="titlebar-no-drag flex items-center gap-1 w-20 justify-end" />
     </div>
   );
 }

@@ -67,7 +67,7 @@ export default function MessageBubble({
                   : 'bg-henry-worker/10 text-henry-worker'
               }`}
             >
-              {message.engine === 'companion' ? 'Companion' : 'Worker'}
+              {message.engine === 'companion' ? 'Local' : 'Cloud'}
             </span>
             {message.model && (
               <span className="text-[10px] text-henry-text-muted">

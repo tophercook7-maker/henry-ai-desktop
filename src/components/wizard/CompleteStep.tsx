@@ -9,6 +9,11 @@ export default function CompleteStep({ onBack }: CompleteStepProps) {
   const { settings, updateSetting, setSetupComplete } = useStore();
   const [completing, setCompleting] = useState(false);
 
+  const localModel = settings.companion_model || 'Not set';
+  const cloudModel = settings.worker_model && settings.worker_provider !== 'ollama'
+    ? settings.worker_model
+    : null;
+
   async function handleComplete() {
     setCompleting(true);
     try {
@@ -25,48 +30,47 @@ export default function CompleteStep({ onBack }: CompleteStepProps) {
   return (
     <div className="text-center animate-slide-up">
       <div className="text-6xl mb-6">✨</div>
-      <h2 className="text-2xl font-bold text-henry-text mb-3">
-        You're all set.
-      </h2>
+      <h2 className="text-2xl font-bold text-henry-text mb-3">You're all set.</h2>
       <p className="text-henry-text-dim mb-8 max-w-md mx-auto leading-relaxed">
-        Henry is ready to work. Your AI engines are configured, your workspace
-        is set up, and everything runs locally on your machine.
+        Henry is ready. Your engines are configured — start talking.
       </p>
 
       <div className="bg-henry-surface/50 rounded-xl border border-henry-border/30 p-6 mb-8 max-w-md mx-auto text-left">
-        <h3 className="text-sm font-semibold text-henry-text mb-4">
-          Quick Reference
-        </h3>
+        <h3 className="text-sm font-semibold text-henry-text mb-4">Your setup</h3>
         <div className="space-y-3 text-xs">
           <div className="flex items-start gap-3">
-            <span className="text-henry-companion">🧠</span>
+            <span>🏠</span>
             <div>
-              <div className="font-medium text-henry-text">
-                Companion Engine
-              </div>
+              <div className="font-medium text-henry-text">Local Brain</div>
               <div className="text-henry-text-dim">
-                Always available for chat. Quick answers, status updates, and
-                planning.
+                <code className="text-henry-accent">{localModel}</code> — free, private, runs on your machine.
+                This is Henry's default for all chat.
               </div>
             </div>
           </div>
           <div className="flex items-start gap-3">
-            <span className="text-henry-worker">⚡</span>
+            <span>☁️</span>
             <div>
-              <div className="font-medium text-henry-text">Worker Engine</div>
-              <div className="text-henry-text-dim">
-                Handles heavy tasks in the background. Code, research, and deep
-                work.
-              </div>
+              <div className="font-medium text-henry-text">Second Brain</div>
+              {cloudModel ? (
+                <div className="text-henry-text-dim">
+                  <code className="text-henry-accent">{cloudModel}</code> — available for when you need
+                  more power. Switch to it per message using the engine toggle.
+                </div>
+              ) : (
+                <div className="text-henry-text-dim">
+                  Not configured. Add a cloud API key in Settings anytime to unlock this.
+                </div>
+              )}
             </div>
           </div>
           <div className="flex items-start gap-3">
             <span>💡</span>
             <div>
-              <div className="font-medium text-henry-text">Pro Tip</div>
+              <div className="font-medium text-henry-text">Switching engines</div>
               <div className="text-henry-text-dim">
-                Switch between engines in the chat header. The Companion keeps
-                talking while the Worker executes.
+                Use the toggle at the top of the chat area. Local Brain is always free.
+                Second Brain uses cloud tokens.
               </div>
             </div>
           </div>

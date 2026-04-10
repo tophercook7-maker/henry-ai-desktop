@@ -12,8 +12,14 @@ export default function EngineSelector({
 }: EngineSelectorProps) {
   const { settings, companionStatus, workerStatus } = useStore();
 
-  const companionModel = getModel(settings.companion_model);
-  const workerModel = getModel(settings.worker_model);
+  const localModel = getModel(settings.companion_model);
+  const cloudModel = getModel(settings.worker_model);
+
+  const localName = localModel?.name || settings.companion_model || 'Not configured';
+  const cloudName = cloudModel?.name || settings.worker_model || 'Not configured';
+
+  const localIsCloud = settings.companion_provider !== 'ollama' && !!settings.companion_provider;
+  const cloudIsLocal = settings.worker_provider === 'ollama';
 
   return (
     <div className="shrink-0 flex items-center gap-2 px-4 py-2 border-b border-henry-border/30 bg-henry-surface/20">
@@ -25,12 +31,10 @@ export default function EngineSelector({
             : 'text-henry-text-dim hover:text-henry-text hover:bg-henry-hover/50'
         }`}
       >
-        <span className="text-sm">🧠</span>
+        <span className="text-sm">{localIsCloud ? '☁️' : '🏠'}</span>
         <div className="text-left">
-          <div className="font-medium">Companion</div>
-          <div className="text-[10px] opacity-70">
-            {companionModel?.name || 'Not configured'}
-          </div>
+          <div className="font-medium">Local Brain</div>
+          <div className="text-[10px] opacity-70 truncate max-w-[100px]">{localName}</div>
         </div>
         {companionStatus.status !== 'idle' && (
           <div className="w-1.5 h-1.5 rounded-full bg-henry-companion animate-pulse" />
@@ -45,12 +49,10 @@ export default function EngineSelector({
             : 'text-henry-text-dim hover:text-henry-text hover:bg-henry-hover/50'
         }`}
       >
-        <span className="text-sm">⚡</span>
+        <span className="text-sm">{cloudIsLocal ? '🏠' : '☁️'}</span>
         <div className="text-left">
-          <div className="font-medium">Worker</div>
-          <div className="text-[10px] opacity-70">
-            {workerModel?.name || 'Not configured'}
-          </div>
+          <div className="font-medium">Second Brain</div>
+          <div className="text-[10px] opacity-70 truncate max-w-[100px]">{cloudName}</div>
         </div>
         {workerStatus.status !== 'idle' && (
           <div className="w-1.5 h-1.5 rounded-full bg-henry-worker animate-pulse" />
@@ -61,8 +63,8 @@ export default function EngineSelector({
 
       <span className="text-[10px] text-henry-text-muted">
         {selectedEngine === 'companion'
-          ? 'Fast responses, always available'
-          : 'Deep work, thorough output'}
+          ? 'Local · free · private'
+          : 'Cloud · more power · costs tokens'}
       </span>
     </div>
   );

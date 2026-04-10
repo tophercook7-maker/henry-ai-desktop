@@ -10,45 +10,34 @@ interface EngineAssignStepProps {
 
 export default function EngineAssignStep({ onNext, onBack }: EngineAssignStepProps) {
   const { providers, settings, updateSetting } = useStore();
-  const [companionModel, setCompanionModel] = useState(settings.companion_model || '');
-  const [workerModel, setWorkerModel] = useState(settings.worker_model || '');
-  const [companionCustom, setCompanionCustom] = useState('');
-  const [workerCustom, setWorkerCustom] = useState('');
+  const [localModel, setLocalModel] = useState(settings.companion_model || '');
+  const [cloudModel, setCloudModel] = useState(settings.worker_model || '');
+  const [localCustom, setLocalCustom] = useState('');
 
   const enabledProviderIds = providers.filter((p) => p.enabled).map((p) => p.id);
-  const availableModels = AVAILABLE_MODELS.filter((m) => enabledProviderIds.includes(m.provider));
   const ollamaEnabled = enabledProviderIds.includes('ollama');
+  const cloudProviders = enabledProviderIds.filter((id) => id !== 'ollama');
 
-  const effectiveCompanion = companionCustom.trim() || companionModel;
-  const effectiveWorker = workerCustom.trim() || workerModel || effectiveCompanion;
+  const localModels = AVAILABLE_MODELS.filter((m) => m.provider === 'ollama' && enabledProviderIds.includes('ollama'));
+  const cloudModels = AVAILABLE_MODELS.filter((m) => cloudProviders.includes(m.provider));
 
-  const companionProvider = companionCustom.trim()
-    ? 'ollama'
-    : (AVAILABLE_MODELS.find((m) => m.id === companionModel)?.provider ?? '');
-  const workerProvider = workerCustom.trim()
-    ? 'ollama'
-    : workerModel
-      ? (AVAILABLE_MODELS.find((m) => m.id === workerModel)?.provider ?? '')
-      : companionProvider;
+  const effectiveLocal = localCustom.trim() || localModel;
+  const effectiveCloud = cloudModel;
 
-  const recommendedCompanion = availableModels.filter(
-    (m) => m.recommended === 'companion' || m.recommended === 'both'
-  );
-  const recommendedWorker = availableModels.filter(
-    (m) => m.recommended === 'worker' || m.recommended === 'both'
-  );
+  const localProvider = 'ollama';
+  const cloudProvider = AVAILABLE_MODELS.find((m) => m.id === cloudModel)?.provider ?? '';
 
   async function handleNext() {
     try {
-      await window.henryAPI.saveSetting('companion_model', effectiveCompanion);
-      await window.henryAPI.saveSetting('companion_provider', companionProvider);
-      await window.henryAPI.saveSetting('worker_model', effectiveWorker);
-      await window.henryAPI.saveSetting('worker_provider', workerProvider);
+      await window.henryAPI.saveSetting('companion_model', effectiveLocal);
+      await window.henryAPI.saveSetting('companion_provider', effectiveLocal ? localProvider : '');
+      await window.henryAPI.saveSetting('worker_model', effectiveCloud || effectiveLocal);
+      await window.henryAPI.saveSetting('worker_provider', effectiveCloud ? cloudProvider : (effectiveLocal ? localProvider : ''));
 
-      updateSetting('companion_model', effectiveCompanion);
-      updateSetting('companion_provider', companionProvider);
-      updateSetting('worker_model', effectiveWorker);
-      updateSetting('worker_provider', workerProvider);
+      updateSetting('companion_model', effectiveLocal);
+      updateSetting('companion_provider', effectiveLocal ? localProvider : '');
+      updateSetting('worker_model', effectiveCloud || effectiveLocal);
+      updateSetting('worker_provider', effectiveCloud ? cloudProvider : (effectiveLocal ? localProvider : ''));
 
       onNext();
     } catch (err) {
@@ -56,70 +45,116 @@ export default function EngineAssignStep({ onNext, onBack }: EngineAssignStepPro
     }
   }
 
-  const canContinue = !!(effectiveCompanion);
+  const canContinue = !!(effectiveLocal) || cloudModels.length > 0 && !!effectiveCloud;
 
   return (
     <div className="animate-slide-up">
       <div className="text-center mb-8">
-        <h2 className="text-2xl font-bold text-henry-text mb-2">
-          Assign Your Engines
-        </h2>
+        <h2 className="text-2xl font-bold text-henry-text mb-2">Pick Your Brains</h2>
         <p className="text-henry-text-dim max-w-md mx-auto">
-          Henry uses two engines. The <span className="text-henry-companion font-medium">Companion</span> handles
-          chat. The <span className="text-henry-worker font-medium">Worker</span> handles heavy tasks.
-          You only need one model — both can share it.
+          Henry uses two engines. Your <span className="text-henry-companion font-medium">Local Brain</span> runs
+          free on your machine. Your <span className="text-henry-worker font-medium">Second Brain</span> is
+          a cloud AI you call in when you want more power.
         </p>
       </div>
 
-      {ollamaEnabled && (
-        <div className="mb-5 rounded-xl bg-henry-surface/40 border border-henry-border/30 px-4 py-3 text-xs text-henry-text-dim leading-relaxed">
-          <span className="font-medium text-henry-text">Using Ollama locally?</span> Type your model name below
-          (e.g. <code className="text-henry-text-dim">llama3</code>, <code className="text-henry-text-dim">mistral</code>,
-          <code className="text-henry-text-dim">phi4</code>). Run <code className="text-henry-text-dim">ollama list</code> in
-          your terminal to see what you have. Ollama must be started with <code className="text-henry-text-dim">OLLAMA_ORIGINS=*</code> so
-          the browser can reach it.
+      <div className="grid grid-cols-2 gap-5 mb-8">
+        {/* Local Brain */}
+        <div className="rounded-xl border border-henry-companion/30 bg-henry-companion/5 p-5">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-xl">🏠</span>
+            <h3 className="font-semibold text-henry-text">Local Brain</h3>
+            <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-henry-success/15 text-henry-success font-medium">Free</span>
+          </div>
+          <p className="text-xs text-henry-text-dim mb-4 leading-relaxed">
+            Ollama runs on your computer. Private, free, always available — even offline.
+          </p>
+
+          {ollamaEnabled ? (
+            <>
+              <div className="mb-3">
+                <div className="text-[10px] font-medium text-henry-text-muted uppercase tracking-wider mb-2">
+                  Type your model name
+                </div>
+                <input
+                  type="text"
+                  value={localCustom}
+                  onChange={(e) => { setLocalCustom(e.target.value); setLocalModel(''); }}
+                  placeholder="e.g. llama3, mistral, phi4"
+                  className="w-full text-xs rounded-lg border border-henry-border/50 bg-henry-bg/60 text-henry-text px-3 py-2 focus:outline-none focus:ring-1 focus:ring-henry-accent/50 placeholder:text-henry-text-muted/60 mb-2"
+                />
+                {localCustom.trim() && (
+                  <p className="text-[10px] text-henry-success">
+                    Will use: <code>{localCustom.trim()}</code>
+                  </p>
+                )}
+              </div>
+
+              {localModels.length > 0 && (
+                <div>
+                  <div className="text-[10px] font-medium text-henry-text-muted uppercase tracking-wider mb-2">
+                    Or pick from list
+                  </div>
+                  <div className="space-y-1.5 max-h-44 overflow-y-auto">
+                    {localModels.map((model) => (
+                      <ModelOption
+                        key={model.id}
+                        model={model}
+                        selected={!localCustom.trim() && localModel === model.id}
+                        onSelect={() => { setLocalModel(model.id); setLocalCustom(''); }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="rounded-lg bg-henry-bg/50 border border-henry-border/30 p-3 text-xs text-henry-text-dim">
+              Enable Ollama on the previous step to use local models.
+            </div>
+          )}
         </div>
-      )}
 
-      <div className="grid grid-cols-2 gap-6 mb-8">
-        <EngineCard
-          engine="companion"
-          icon="🧠"
-          title="Companion Engine"
-          description="Always responsive. Chat, quick answers, and all modes. Use a fast model here."
-          selectedModel={companionModel}
-          onSelect={(id) => { setCompanionModel(id); setCompanionCustom(''); }}
-          customValue={companionCustom}
-          onCustomChange={setCompanionCustom}
-          recommendedModels={recommendedCompanion}
-          allModels={availableModels}
-          color="companion"
-          showCustom={ollamaEnabled}
-        />
+        {/* Second Brain */}
+        <div className="rounded-xl border border-henry-worker/30 bg-henry-worker/5 p-5">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-xl">☁️</span>
+            <h3 className="font-semibold text-henry-text">Second Brain</h3>
+            <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-henry-hover text-henry-text-muted font-medium">optional</span>
+          </div>
+          <p className="text-xs text-henry-text-dim mb-4 leading-relaxed">
+            A cloud AI (GPT-4, Claude, Gemini) for when you want sharper, more powerful answers.
+            You pick which one to use for each message.
+          </p>
 
-        <EngineCard
-          engine="worker"
-          icon="⚡"
-          title="Worker Engine"
-          description="Heavy lifting — code, research, long tasks. Leave empty to share Companion's model."
-          selectedModel={workerModel}
-          onSelect={(id) => { setWorkerModel(id); setWorkerCustom(''); }}
-          customValue={workerCustom}
-          onCustomChange={setWorkerCustom}
-          recommendedModels={recommendedWorker}
-          allModels={availableModels}
-          color="worker"
-          showCustom={ollamaEnabled}
-          optional
-          placeholder={effectiveCompanion ? `Defaults to: ${effectiveCompanion}` : 'Same as Companion'}
-        />
+          {cloudModels.length > 0 ? (
+            <div className="space-y-1.5 max-h-64 overflow-y-auto">
+              {cloudModels.map((model) => (
+                <ModelOption
+                  key={model.id}
+                  model={model}
+                  selected={cloudModel === model.id}
+                  onSelect={() => setCloudModel(model.id)}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-lg bg-henry-bg/50 border border-henry-border/30 p-3 text-xs text-henry-text-dim leading-relaxed">
+              Add a cloud provider (OpenAI, Anthropic, Google) on the previous step to unlock the Second Brain.
+              <br /><br />
+              You can also skip this and add one later in Settings.
+            </div>
+          )}
+        </div>
       </div>
 
-      {effectiveCompanion && effectiveWorker && !companionCustom && !workerCustom && (
-        <CostEstimate companionModelId={effectiveCompanion} workerModelId={effectiveWorker} />
+      {!effectiveLocal && cloudModels.length > 0 && effectiveCloud && (
+        <p className="text-xs text-henry-text-muted text-center mb-4">
+          No local model set — cloud will handle all requests.
+        </p>
       )}
 
-      <div className="flex items-center justify-between mt-6">
+      <div className="flex items-center justify-between">
         <button
           onClick={onBack}
           className="px-6 py-2.5 text-henry-text-dim hover:text-henry-text transition-colors text-sm"
@@ -137,110 +172,6 @@ export default function EngineAssignStep({ onNext, onBack }: EngineAssignStepPro
         >
           Continue →
         </button>
-      </div>
-    </div>
-  );
-}
-
-function EngineCard({
-  engine,
-  icon,
-  title,
-  description,
-  selectedModel,
-  onSelect,
-  customValue,
-  onCustomChange,
-  recommendedModels,
-  allModels,
-  color,
-  showCustom,
-  optional,
-  placeholder,
-}: {
-  engine: string;
-  icon: string;
-  title: string;
-  description: string;
-  selectedModel: string;
-  onSelect: (id: string) => void;
-  customValue: string;
-  onCustomChange: (v: string) => void;
-  recommendedModels: AIModel[];
-  allModels: AIModel[];
-  color: 'companion' | 'worker';
-  showCustom?: boolean;
-  optional?: boolean;
-  placeholder?: string;
-}) {
-  const borderColor = color === 'companion' ? 'border-henry-companion/30' : 'border-henry-worker/30';
-  const bgColor = color === 'companion' ? 'bg-henry-companion/5' : 'bg-henry-worker/5';
-
-  return (
-    <div className={`rounded-xl border ${borderColor} ${bgColor} p-5`}>
-      <div className="flex items-center gap-2 mb-1">
-        <span className="text-xl">{icon}</span>
-        <h3 className="font-semibold text-henry-text">{title}</h3>
-        {optional && (
-          <span className="ml-auto text-[10px] text-henry-text-muted bg-henry-hover px-1.5 py-0.5 rounded">optional</span>
-        )}
-      </div>
-      <p className="text-xs text-henry-text-dim mb-4 leading-relaxed">{description}</p>
-
-      {showCustom && (
-        <div className="mb-4">
-          <label className="text-[10px] font-medium text-henry-text-muted uppercase tracking-wider block mb-1.5">
-            Custom Ollama model name
-          </label>
-          <input
-            type="text"
-            value={customValue}
-            onChange={(e) => onCustomChange(e.target.value)}
-            placeholder={placeholder || 'e.g. llama3, mistral, phi4'}
-            className="w-full text-xs rounded-lg border border-henry-border/50 bg-henry-bg/60 text-henry-text px-3 py-2 focus:outline-none focus:ring-1 focus:ring-henry-accent/50 placeholder:text-henry-text-muted/60"
-          />
-          {customValue.trim() && (
-            <p className="text-[10px] text-henry-text-muted mt-1">
-              Will use: <code className="text-henry-text-dim">{customValue.trim()}</code> via Ollama
-            </p>
-          )}
-        </div>
-      )}
-
-      {recommendedModels.length > 0 && (
-        <div className="mb-3">
-          <div className="text-[10px] font-medium text-henry-text-muted uppercase tracking-wider mb-2">
-            Recommended
-          </div>
-          <div className="space-y-1.5">
-            {recommendedModels.map((model) => (
-              <ModelOption
-                key={model.id}
-                model={model}
-                selected={!customValue.trim() && selectedModel === model.id}
-                onSelect={() => onSelect(model.id)}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div>
-        <div className="text-[10px] font-medium text-henry-text-muted uppercase tracking-wider mb-2">
-          {allModels.filter((m) => !recommendedModels.includes(m)).length > 0 ? 'All Available' : ''}
-        </div>
-        <div className="space-y-1.5 max-h-40 overflow-y-auto">
-          {allModels
-            .filter((m) => !recommendedModels.includes(m))
-            .map((model) => (
-              <ModelOption
-                key={model.id}
-                model={model}
-                selected={!customValue.trim() && selectedModel === model.id}
-                onSelect={() => onSelect(model.id)}
-              />
-            ))}
-        </div>
       </div>
     </div>
   );
@@ -279,52 +210,9 @@ function ModelOption({
           <span className="text-xs font-medium text-henry-text truncate">{model.name}</span>
         </div>
         <div className="text-[10px] text-henry-text-muted">
-          {model.local
-            ? 'Free (local)'
-            : `${formatPrice(model.inputPricePer1M)} in / ${formatPrice(model.outputPricePer1M)} out per 1M tokens`}
+          {model.local ? 'Free (local)' : `${formatPrice(model.inputPricePer1M)} in / ${formatPrice(model.outputPricePer1M)} out per 1M`}
         </div>
       </div>
     </button>
-  );
-}
-
-function CostEstimate({
-  companionModelId,
-  workerModelId,
-}: {
-  companionModelId: string;
-  workerModelId: string;
-}) {
-  const companion = AVAILABLE_MODELS.find((m) => m.id === companionModelId);
-  const worker = AVAILABLE_MODELS.find((m) => m.id === workerModelId);
-  if (!companion || !worker) return null;
-  if (companion.local && worker.local) return null;
-
-  const companionDaily =
-    (100 * 500 * companion.inputPricePer1M) / 1_000_000 +
-    (100 * 500 * companion.outputPricePer1M) / 1_000_000;
-  const workerDaily =
-    (20 * 2000 * worker.inputPricePer1M) / 1_000_000 +
-    (20 * 2000 * worker.outputPricePer1M) / 1_000_000;
-  const totalDaily = companionDaily + workerDaily;
-  const totalMonthly = totalDaily * 30;
-
-  return (
-    <div className="rounded-xl bg-henry-surface/50 border border-henry-border/30 p-4">
-      <div className="text-xs font-medium text-henry-text mb-2">
-        Estimated Cost (heavy usage)
-      </div>
-      <div className="flex items-center gap-6 text-xs text-henry-text-dim">
-        <div>
-          <span className="text-henry-text font-medium">~${totalDaily.toFixed(2)}</span> / day
-        </div>
-        <div>
-          <span className="text-henry-text font-medium">~${totalMonthly.toFixed(2)}</span> / month
-        </div>
-        <div className="flex-1 text-right text-[10px] text-henry-text-muted">
-          ~100 companion + ~20 worker interactions/day
-        </div>
-      </div>
-    </div>
   );
 }
