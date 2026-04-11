@@ -383,14 +383,15 @@ const henryAPI: Window['henryAPI'] = {
         const readOpenAIStream = async (res: Response) => {
           const reader = res.body!.getReader();
           const decoder = new TextDecoder();
-          while (!aborted) {
+          let streamDone = false;
+          while (!aborted && !streamDone) {
             const { done, value } = await reader.read();
             if (done) break;
             const text = decoder.decode(value);
             const lines = text.split('\n').filter((l) => l.startsWith('data: '));
             for (const line of lines) {
               const json = line.slice(6).trim();
-              if (json === '[DONE]') break;
+              if (json === '[DONE]') { streamDone = true; break; }
               try {
                 const parsed = JSON.parse(json) as { choices: Array<{ delta: { content?: string } }> };
                 const chunk = parsed.choices[0]?.delta?.content || '';
@@ -743,6 +744,43 @@ const henryAPI: Window['henryAPI'] = {
       tasks[idx] = { ...tasks[idx], status: 'pending', error: undefined };
       setStore('henry:tasks', tasks);
       emit('task:update', tasks[idx]);
+
+      // Re-trigger Worker AI execution so the task doesn't sit at pending forever
+      const settings = getStore<Record<string, string>>('henry:settings', {});
+      const workerProvider = settings['worker_provider'];
+      const workerModel = settings['worker_model'];
+      if (workerProvider && workerModel) {
+        const task = tasks[idx];
+        let parsedPayload: Record<string, unknown> = {};
+        try {
+          parsedPayload = task.payload
+            ? (typeof task.payload === 'string' ? JSON.parse(task.payload as string) : (task.payload as Record<string, unknown>))
+            : {};
+        } catch { /* ignore */ }
+        const contextMessages: HenryAIMessage[] = Array.isArray(parsedPayload['context_messages'])
+          ? (parsedPayload['context_messages'] as HenryAIMessage[])
+          : [];
+        const prompt = typeof parsedPayload['prompt'] === 'string' ? parsedPayload['prompt'] : task.description;
+        const currentMode = typeof parsedPayload['current_mode'] === 'string' ? parsedPayload['current_mode'] : 'developer';
+        const providers = getStore<HenryProviderRecord[]>('henry:providers', []);
+        const providerRecord = providers.find((p) => p.id === workerProvider);
+        const apiKey = providerRecord?.api_key ?? providerRecord?.apiKey ?? '';
+        const ollamaBaseUrl = settings['ollama_base_url'] || 'http://localhost:11434';
+        setTimeout(() => {
+          void runWorkerAI({
+            taskId: task.id,
+            description: prompt,
+            contextMessages,
+            workerProvider,
+            workerModel,
+            apiKey,
+            ollamaBaseUrl,
+            conversationId: task.conversation_id,
+            currentMode,
+          });
+        }, 200);
+      }
+
       return { id, status: 'pending' };
     }
     return { error: 'Task not found' };

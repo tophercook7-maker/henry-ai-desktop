@@ -5,6 +5,8 @@
 
 const BRIEFING_KEY_PREFIX = 'henry:briefing:';
 const BRIEFING_GENERATING_KEY = 'henry:briefing:generating';
+const BRIEFING_GENERATING_TS_KEY = 'henry:briefing:generating_ts';
+const BRIEFING_GENERATING_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 export interface DailyBriefing {
   date: string;
@@ -39,12 +41,24 @@ export function saveBriefing(content: string, model?: string): DailyBriefing {
 }
 
 export function isGenerating(): boolean {
-  return localStorage.getItem(BRIEFING_GENERATING_KEY) === 'true';
+  if (localStorage.getItem(BRIEFING_GENERATING_KEY) !== 'true') return false;
+  const ts = Number(localStorage.getItem(BRIEFING_GENERATING_TS_KEY) ?? '0');
+  if (Date.now() - ts > BRIEFING_GENERATING_TTL_MS) {
+    localStorage.removeItem(BRIEFING_GENERATING_KEY);
+    localStorage.removeItem(BRIEFING_GENERATING_TS_KEY);
+    return false;
+  }
+  return true;
 }
 
 export function setGenerating(v: boolean): void {
-  if (v) localStorage.setItem(BRIEFING_GENERATING_KEY, 'true');
-  else localStorage.removeItem(BRIEFING_GENERATING_KEY);
+  if (v) {
+    localStorage.setItem(BRIEFING_GENERATING_KEY, 'true');
+    localStorage.setItem(BRIEFING_GENERATING_TS_KEY, String(Date.now()));
+  } else {
+    localStorage.removeItem(BRIEFING_GENERATING_KEY);
+    localStorage.removeItem(BRIEFING_GENERATING_TS_KEY);
+  }
 }
 
 export function buildBriefingPrompt(facts: string): string {

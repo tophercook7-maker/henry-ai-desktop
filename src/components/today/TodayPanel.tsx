@@ -100,7 +100,11 @@ export default function TodayPanel() {
     try {
       const providers = await window.henryAPI.getProviders();
       const provider = providers.find((p: any) => p.id === s.companion_provider);
-      if (!provider) return;
+      if (!provider) {
+        setGeneratingBriefing(false);
+        setGenerating(false);
+        return;
+      }
 
       let facts = '';
       try {
