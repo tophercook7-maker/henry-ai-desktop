@@ -26,6 +26,9 @@ const MODE_CARDS: ModeCard[] = [
   { mode: 'design3d', icon: '🖨️', label: '3D / Design', desc: 'Spatial layouts, 3D printing, photo-to-3D', border: 'border-rose-500/20 hover:border-rose-400/50', glow: 'hover:shadow-rose-500/10' },
   { mode: 'biblical', icon: '📖', label: 'Bible Study', desc: 'Scripture-first, Ethiopian Orthodox aware', border: 'border-sky-500/20 hover:border-sky-400/50', glow: 'hover:shadow-sky-500/10' },
   { mode: 'computer', icon: '🖥️', label: 'Computer', desc: 'Run commands, control apps, automate tasks', border: 'border-cyan-500/20 hover:border-cyan-400/50', glow: 'hover:shadow-cyan-500/10' },
+  { mode: 'coach', icon: '🎯', label: 'Coach', desc: 'Clarity, accountability, follow-through', border: 'border-purple-500/20 hover:border-purple-400/50', glow: 'hover:shadow-purple-500/10' },
+  { mode: 'strategic', icon: '♟️', label: 'Strategic', desc: 'Big picture, priorities, tradeoffs, roadmaps', border: 'border-blue-500/20 hover:border-blue-400/50', glow: 'hover:shadow-blue-500/10' },
+  { mode: 'business', icon: '🚀', label: 'Business Builder', desc: 'Idea → offer → plan → first revenue', border: 'border-green-500/20 hover:border-green-400/50', glow: 'hover:shadow-green-500/10' },
 ];
 
 function getGreeting(): { line1: string; line2: string } {

@@ -158,6 +158,9 @@ const MODE_HUMAN_LABELS: Record<HenryOperatingMode, string> = {
   design3d: '3D / Design',
   computer: 'Computer',
   secretary: 'Secretary',
+  coach: 'Coach',
+  strategic: 'Strategic',
+  business: 'Business',
 };
 
 const BIBLICAL_BOOKS = [
@@ -1645,6 +1648,11 @@ export default function ChatView() {
                           }
                         : undefined
                     }
+                    onQuickAction={
+                      msg.role === 'assistant' && !isStreaming
+                        ? (prompt) => void handleSend(prompt)
+                        : undefined
+                    }
                   />
                   {isAuthError && (
                     <div className="flex items-center gap-2 mt-1 ml-11 pb-1">
@@ -2097,6 +2105,39 @@ const DISCOVERY_MODES: Array<{
       'Help me plan a small kitchen layout',
       'What are the steps to model a chair in Blender?',
       'Describe a cozy home office setup for me',
+    ],
+  },
+  {
+    mode: 'coach',
+    icon: '🎯',
+    title: 'Coach Me',
+    desc: 'Accountability, clarity, follow-through. Henry asks the question you need to hear.',
+    examples: [
+      'I keep procrastinating on a big project — help me figure out why',
+      'What should I actually focus on this week?',
+      'I feel overwhelmed. Help me think through this.',
+    ],
+  },
+  {
+    mode: 'strategic',
+    icon: '♟️',
+    title: 'Think Strategically',
+    desc: 'Big picture thinking. Priorities, tradeoffs, leverage points, and clear roadmaps.',
+    examples: [
+      'Help me think through my biggest priorities for the next 90 days',
+      'I have three opportunities — help me choose the right one',
+      'Map out the risks in what I\'m planning to do',
+    ],
+  },
+  {
+    mode: 'business',
+    icon: '🚀',
+    title: 'Business Builder',
+    desc: 'Turn an idea into an offer, a plan, and a path to first revenue.',
+    examples: [
+      'I have a business idea — help me turn it into a real offer',
+      'Who is the ideal customer for what I\'m building?',
+      'What\'s the fastest path to a first paying customer?',
     ],
   },
 ];

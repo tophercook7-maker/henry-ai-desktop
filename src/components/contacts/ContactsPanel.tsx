@@ -191,7 +191,9 @@ export default function ContactsPanel() {
               <h1 className="text-lg font-semibold text-henry-text">Contacts</h1>
             </div>
             <p className="text-henry-text-dim text-xs">
-              {contacts.length} {contacts.length === 1 ? 'person' : 'people'} — Henry uses this when you mention them in chat.
+              {contacts.length > 0
+                ? `${contacts.length} ${contacts.length === 1 ? 'person' : 'people'} — Henry uses this when you mention them in chat.`
+                : 'Henry uses this when you mention someone in chat.'}
             </p>
           </div>
           <button

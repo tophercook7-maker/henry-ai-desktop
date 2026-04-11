@@ -20,7 +20,15 @@ interface MessageBubbleProps {
     onClick: () => void;
     disabled?: boolean;
   };
+  onQuickAction?: (prompt: string) => void;
 }
+
+const QUICK_ACTIONS = [
+  { label: 'Summarize', prompt: 'Summarize the above response in 3–5 concise bullet points.' },
+  { label: '→ Tasks', prompt: 'Extract all action items and next steps from the above as a numbered checklist.' },
+  { label: 'Shorter', prompt: 'Rewrite the above in half the words. Keep the key points, cut everything else.' },
+  { label: 'Simpler', prompt: 'Rewrite the above in plain, everyday language — like you\'re explaining it to a friend.' },
+];
 
 function CodeBlock({ language, code }: { language: string; code: string }) {
   const [copied, setCopied] = useState(false);
@@ -125,6 +133,7 @@ export default function MessageBubble({
   streamingContent,
   workspaceSaveDraft,
   createTask,
+  onQuickAction,
 }: MessageBubbleProps) {
   const [copied, setCopied] = useState(false);
   const [hovered, setHovered] = useState(false);
@@ -225,34 +234,49 @@ export default function MessageBubble({
 
         {/* Hover actions row: copy + timestamp */}
         {!isStreaming && (message.content || '').trim().length > 0 && (
-          <div className={`flex items-center gap-3 mt-1.5 transition-opacity duration-150 ${hovered ? 'opacity-100' : 'opacity-0'}`}>
-            <button
-              onClick={copyMessage}
-              title="Copy to clipboard"
-              className="flex items-center gap-1 text-[10px] text-henry-text-muted hover:text-henry-text transition-colors"
-            >
-              {copied ? (
-                <>
-                  <svg className="w-3 h-3 text-henry-success" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                    <path d="M20 6L9 17l-5-5" />
-                  </svg>
-                  <span className="text-henry-success">Copied</span>
-                </>
-              ) : (
-                <>
-                  <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
-                  </svg>
-                  Copy
-                </>
-              )}
-            </button>
-            {message.created_at && (
-              <span className="text-[10px] text-henry-text-muted/60">
-                {formatTime(message.created_at)}
-              </span>
+          <div className={`mt-2 transition-opacity duration-150 ${hovered ? 'opacity-100' : 'opacity-0'}`}>
+            {!isUser && onQuickAction && (
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {QUICK_ACTIONS.map(({ label, prompt }) => (
+                  <button
+                    key={label}
+                    onClick={() => onQuickAction(prompt)}
+                    className="text-[10px] font-medium px-2 py-0.5 rounded-full border border-henry-border/40 bg-henry-surface/40 text-henry-text-muted hover:text-henry-text hover:border-henry-accent/40 hover:bg-henry-surface/70 transition-all"
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             )}
+            <div className="flex items-center gap-3">
+              <button
+                onClick={copyMessage}
+                title="Copy to clipboard"
+                className="flex items-center gap-1 text-[10px] text-henry-text-muted hover:text-henry-text transition-colors"
+              >
+                {copied ? (
+                  <>
+                    <svg className="w-3 h-3 text-henry-success" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <path d="M20 6L9 17l-5-5" />
+                    </svg>
+                    <span className="text-henry-success">Copied</span>
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                      <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+                    </svg>
+                    Copy
+                  </>
+                )}
+              </button>
+              {message.created_at && (
+                <span className="text-[10px] text-henry-text-muted/60">
+                  {formatTime(message.created_at)}
+                </span>
+              )}
+            </div>
           </div>
         )}
       </div>

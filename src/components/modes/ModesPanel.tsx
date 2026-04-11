@@ -14,6 +14,9 @@ const BUILT_IN_MODES = [
   { id: 'design3d', name: '3D / Design', icon: '🖨️', description: 'Spatial layouts, 3D printing, photo-to-3D', color: 'cyan' },
   { id: 'secretary', name: 'Secretary', icon: '🗓️', description: 'Email, scheduling, task triage, briefings', color: 'orange' },
   { id: 'computer', name: 'Computer', icon: '🖥️', description: 'Run commands, control apps, automate tasks', color: 'pink' },
+  { id: 'coach', name: 'Coach', icon: '🎯', description: 'Accountability, clarity, follow-through — one question at a time', color: 'violet' },
+  { id: 'strategic', name: 'Strategic', icon: '♟️', description: 'Big picture thinking, priorities, tradeoffs, roadmaps', color: 'sky' },
+  { id: 'business', name: 'Business Builder', icon: '🚀', description: 'Idea → offer → plan → first revenue', color: 'emerald' },
 ];
 
 const ICON_OPTIONS = ['✨', '🚀', '🎯', '🧪', '📚', '💡', '🌿', '🔥', '🎨', '🧘', '⚔️', '🏗️', '🔬', '🎭', '🌍', '💪', '📝', '🧩', '🎵', '🏋️'];

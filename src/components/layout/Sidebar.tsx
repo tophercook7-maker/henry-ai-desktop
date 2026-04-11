@@ -177,9 +177,11 @@ export default function Sidebar() {
             <span className="text-[10px] font-medium text-henry-text-muted uppercase tracking-wider">
               Recent Chats
             </span>
-            <span className="text-[10px] text-henry-text-muted">
-              {conversations.length}
-            </span>
+            {conversations.length > 0 && (
+              <span className="text-[10px] text-henry-text-muted">
+                {conversations.length}
+              </span>
+            )}
           </div>
 
         <div className="space-y-0.5">

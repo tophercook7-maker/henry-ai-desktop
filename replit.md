@@ -4,8 +4,8 @@
 
 Henry AI is Topher's personal AI presence — a local-first AI OS with a dual-engine architecture (Local Brain / Ollama + Cloud Brain). He has warmth, memory, and a can-do philosophy: he always finds a way to help, never dead-ends a request.
 
-Supports OpenAI, Anthropic, Google Gemini, Groq, and Ollama. 8 built-in modes + unlimited custom modes:
-- **Companion** (chat) · **Writer** · **Developer** (code) · **Builder** (app builder) · **Biblical** (Ethiopian Orthodox aware) · **3D/Design** · **Secretary** (email, scheduling, tasks) · **Computer** (Mac automation)
+Supports OpenAI, Anthropic, Google Gemini, Groq, and Ollama. 11 built-in modes + unlimited custom modes:
+- **Companion** (chat) · **Writer** · **Developer** (code) · **Builder** (app builder) · **Biblical** (Ethiopian Orthodox aware) · **3D/Design** · **Secretary** (email, scheduling, tasks) · **Computer** (Mac automation) · **Coach** · **Strategic** · **Business Builder**
 - **Custom Modes** — create and save your own modes with name, icon, description, system prompt, and launch with one tap
 
 ### Features
@@ -27,6 +27,14 @@ Supports OpenAI, Anthropic, Google Gemini, Groq, and Ollama. 8 built-in modes + 
 - **Rich memory** — projects, goals, and people injected into Henry's system prompt (localStorage)
 - **Voice input (Groq Whisper)** — mic button → MediaRecorder → Groq Whisper STT → inserts transcript into chat
 - **Document ingestion** — drag-and-drop or attach files in chat input; Henry gives multi-angle perspective
+
+**Three New Modes**
+- **Coach mode** — executive coaching approach: one focused question at a time, reflects back, challenges excuses, accountability focus, ends each session with one clear next action
+- **Strategic mode** — senior advisor thinking: outcomes-first, leverage points, tradeoffs, 2-3 options, scenario planning, structured output with clear recommendations
+- **Business Builder mode** — idea → offer → customer avatar → revenue model → launch plan → first customer pipeline; bias toward action and revenue
+
+**Chat Quick Actions**
+- **Message action chips** — hover any Henry response to see "Summarize", "→ Tasks", "Shorter", "Simpler" buttons; clicking any fires a follow-up prompt automatically; wired into the main handleSend flow
 
 **Personal Assistant**
 - **Reminders panel** — timed reminders with browser notifications, categories (personal/work/household/health/maker), repeat options; enabled by notification permission prompt

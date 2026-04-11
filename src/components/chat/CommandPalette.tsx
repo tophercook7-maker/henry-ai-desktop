@@ -29,6 +29,9 @@ const MODE_ICONS: Record<HenryOperatingMode, string> = {
   design3d: '🖨️',
   secretary: '🗓️',
   computer: '🖥️',
+  coach: '🎯',
+  strategic: '♟️',
+  business: '🚀',
 };
 
 const MODE_LABELS: Record<HenryOperatingMode, string> = {
@@ -40,6 +43,9 @@ const MODE_LABELS: Record<HenryOperatingMode, string> = {
   design3d: '3D / Design mode',
   secretary: 'Secretary mode',
   computer: 'Computer Control mode',
+  coach: 'Coach mode',
+  strategic: 'Strategic mode',
+  business: 'Business Builder mode',
 };
 
 const QUICK_ACTIONS: Array<{ icon: string; label: string; mode: HenryOperatingMode; prompt: string }> = [
@@ -51,6 +57,9 @@ const QUICK_ACTIONS: Array<{ icon: string; label: string; mode: HenryOperatingMo
   { icon: '✍️', label: 'Start a draft', mode: 'writer', prompt: 'Help me draft something. I\'ll tell you what I need to write.' },
   { icon: '📖', label: 'Study a passage', mode: 'biblical', prompt: 'Walk me through a scripture passage. Tell me the reference.' },
   { icon: '💡', label: 'Think through a decision', mode: 'companion', prompt: 'I need to think through a decision. Let me walk you through it.' },
+  { icon: '🎯', label: 'Coach session', mode: 'coach', prompt: 'I want to work through something I\'ve been stuck on. Help me get clear.' },
+  { icon: '♟️', label: 'Strategic review', mode: 'strategic', prompt: 'Help me think strategically about what I\'m working on. I\'ll give you the context.' },
+  { icon: '🚀', label: 'Build a business', mode: 'business', prompt: 'I have a business idea I want to develop. Let\'s work through the offer and plan.' },
 ];
 
 interface StoredContact {
