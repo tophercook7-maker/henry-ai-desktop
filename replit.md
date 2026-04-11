@@ -9,30 +9,51 @@ Supports OpenAI, Anthropic, Google Gemini, Groq, and Ollama. 8 built-in modes + 
 - **Custom Modes** — create and save your own modes with name, icon, description, system prompt, and launch with one tap
 
 ### Features
-- **Groq hardwired** — Groq is set as the permanent default engine for both companion and worker if configured; model: `llama-3.3-70b-versatile`
+
+**Core AI**
+- **Groq hardwired** — Groq is set as the permanent default engine; model: `llama-3.3-70b-versatile`
 - **Full web access** — auto-searches when needed; fetches any URL; supports Google CSE + Brave Search APIs
 - **⌘K Command Palette** — fuzzy search across all modes, quick actions, recent conversations, navigation
 - **Rich memory** — projects, goals, and people injected into Henry's system prompt (localStorage)
-- **Contacts with interaction history** — log meetings/calls/emails; "Brief me" launches secretary chat
-- **Builder mode live preview** — streaming partial HTML rendered live; viewport toggle; download HTML
-- **Today panel** — quick-ask input at top, 8-mode launcher, morning briefing, recent conversations
-- **Secretary panel** — daily briefing, email drafts, scheduling, task review, meeting prep
-- **Voice input (Groq Whisper)** — mic button records via MediaRecorder → sends to Groq Whisper STT → inserts transcript into chat input; TTS toggle reads responses aloud
-- **Document ingestion** — drag-and-drop or attach files in chat input; Henry gives multi-angle perspective + asks what to do
-- **Computer panel** — Mac shell/AppleScript/app control (Electron desktop build only)
-- **3D Printer panel** — USB serial G-code terminal (Electron desktop build only)
-- **Journal panel** — date-stamped journal entries with Henry reflection on demand; sidebar search
-- **Focus timer panel** — Pomodoro timer with customizable durations, AI check-ins between sessions
-- **Meeting Recorder panel** — record meetings via MediaRecorder → Groq Whisper transcription → AI summary + action items → save tasks
-- **Modes panel** — custom mode editor (icon, name, description, system prompt) + built-in mode launcher
-- **Conversation auto-naming** — after the first exchange, Henry silently generates a 4-6 word title
-- **Message copy button** — hover any message to copy it; code blocks get individual copy buttons
-- **Message timestamps** — visible on hover, subtle and right-aligned
-- **Syntax-highlighted code blocks** — highlight.js, language badge, one-click copy per block
-- **Auto-updater** — electron-updater wired; banner in app notifies when update is ready
+- **Voice input (Groq Whisper)** — mic button → MediaRecorder → Groq Whisper STT → inserts transcript into chat
+- **Document ingestion** — drag-and-drop or attach files in chat input; Henry gives multi-angle perspective
+
+**Personal Assistant**
+- **Reminders panel** — timed reminders with browser notifications, categories (personal/work/household/health/maker), repeat options; enabled by notification permission prompt
+- **Lists panel** — grocery, hardware, household, ideas lists + custom lists with icon picker; check off items; copy full list
+- **Today panel** — quick-ask input, 8-mode launcher, auto-generates morning briefing on first launch each day
 - **Proactive nudges** — context-aware nudge banners (morning briefing, evening journal, stale tasks, project inactivity)
 - **Clipboard AI** — detects clipboard content on focus; offers summarize/explain/improve/bullet/reply actions inline
-- **Custom mode system prompt** — `henry_custom_mode_override` in localStorage overrides the charter system prompt for fully custom personas
+
+**Business / Secretary**
+- **Secretary panel** — daily briefing, email drafts, scheduling, task review, meeting prep
+- **CRM panel** — clients with status (prospect/active/paused/closed), projects with pipeline, interaction log, "Brief me before meeting" button launches Henry in secretary mode with full client context
+- **Finance panel** — income/expense tracker, monthly summaries (net P&L), category breakdown, CSV export, "Ask Henry to analyze" this month
+- **Contacts panel** — contacts with interaction history; "Brief me" launches secretary chat
+
+**Maker / 3D**
+- **Print Studio panel** — 3 tabs: Gallery (print job log with material/settings/success), Filament tracker (spools with remaining % bar, color hex, brand), BOM (bill of materials grouped by project with status tracking)
+- **Image Gen panel** — DALL-E 3 via OpenAI; size/style options; generated image gallery with download and reuse; requires OpenAI API key
+- **3D Printer panel** — USB serial G-code terminal (Electron desktop build only)
+- **3D/Design mode** — comprehensive slicer knowledge: material guide (PLA/PETG/ABS/ASA/TPU/Nylon/Resin), settings by use-case, failure diagnosis, Bambu/PrusaSlicer/Cura specifics, design-to-print pipeline, photo-to-3D workflows, OpenSCAD + Blender Python generation
+
+**Dev Tools**
+- **Builder mode live preview** — streaming partial HTML rendered live; viewport toggle; download HTML
+- **Terminal panel** — shell access (desktop), AI-driven command suggestions
+- **Computer panel** — Mac shell/AppleScript/app control (Electron desktop build only)
+- **Workspace panel** — file workspace with context injection
+
+**UX / Quality**
+- **Journal panel** — date-stamped entries with Henry reflection on demand; sidebar search
+- **Focus timer panel** — Pomodoro timer with AI check-ins
+- **Meeting Recorder panel** — record → Groq Whisper → AI summary + action items → save tasks
+- **Modes panel** — custom mode editor (icon, name, description, system prompt)
+- **Conversation auto-naming** — 4-6 word title generated after first exchange
+- **Message copy + code blocks** — hover to copy; syntax-highlighted code with language badge
+- **Message timestamps** — visible on hover
+- **Auto-updater** — electron-updater wired; banner notifies when update ready
+- **Custom mode system prompt** — `henry_custom_mode_override` in localStorage overrides charter
+- **Sidebar grouped navigation** — Home / Business / Maker / Tools sections for all 22 views
 
 ## Tech Stack
 

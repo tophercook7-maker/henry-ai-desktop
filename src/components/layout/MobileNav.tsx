@@ -2,26 +2,32 @@ import { useState } from 'react';
 import { useStore } from '../../store';
 import type { Conversation } from '../../types';
 
-type ViewType = 'today' | 'chat' | 'secretary' | 'contacts' | 'tasks' | 'files' | 'workspace' | 'terminal' | 'computer' | 'printer' | 'costs' | 'settings' | 'journal' | 'focus' | 'recorder' | 'modes';
+type ViewType = 'today' | 'chat' | 'secretary' | 'contacts' | 'tasks' | 'files' | 'workspace' | 'terminal' | 'computer' | 'printer' | 'costs' | 'settings' | 'journal' | 'focus' | 'recorder' | 'modes' | 'reminders' | 'crm' | 'finance' | 'lists' | 'printstudio' | 'imagegen';
 
 const BOTTOM_TABS: { id: ViewType; label: string; icon: string }[] = [
   { id: 'today', label: 'Today', icon: '🏠' },
   { id: 'chat', label: 'Chat', icon: '💬' },
-  { id: 'journal', label: 'Journal', icon: '📔' },
-  { id: 'focus', label: 'Focus', icon: '🎯' },
+  { id: 'reminders', label: 'Reminders', icon: '🔔' },
+  { id: 'lists', label: 'Lists', icon: '📝' },
 ];
 
 const MORE_NAV: { id: ViewType; label: string; icon: string }[] = [
+  { id: 'journal', label: 'Journal', icon: '📔' },
+  { id: 'focus', label: 'Focus', icon: '🎯' },
   { id: 'recorder', label: 'Recorder', icon: '🎙' },
   { id: 'secretary', label: 'Secretary', icon: '🗓️' },
+  { id: 'crm', label: 'Clients', icon: '🤝' },
+  { id: 'finance', label: 'Finance', icon: '💵' },
   { id: 'contacts', label: 'People', icon: '👥' },
   { id: 'tasks', label: 'Tasks', icon: '📋' },
+  { id: 'printstudio', label: 'Print Studio', icon: '🖨️' },
+  { id: 'imagegen', label: 'Image Gen', icon: '🎨' },
   { id: 'files', label: 'Files', icon: '📁' },
   { id: 'workspace', label: 'Workspace', icon: '🗂️' },
   { id: 'modes', label: 'My Modes', icon: '✨' },
+  { id: 'printer', label: '3D Control', icon: '🔧' },
   { id: 'terminal', label: 'Terminal', icon: '💻' },
   { id: 'computer', label: 'Computer', icon: '🖥️' },
-  { id: 'printer', label: '3D Printer', icon: '🖨️' },
   { id: 'costs', label: 'Costs', icon: '💰' },
   { id: 'settings', label: 'Settings', icon: '⚙️' },
 ];

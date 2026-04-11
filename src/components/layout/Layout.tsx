@@ -19,6 +19,12 @@ import JournalPanel from '../journal/JournalPanel';
 import FocusPanel from '../focus/FocusPanel';
 import MeetingRecorderPanel from '../recorder/MeetingRecorderPanel';
 import ModesPanel from '../modes/ModesPanel';
+import RemindersPanel from '../reminders/RemindersPanel';
+import CRMPanel from '../crm/CRMPanel';
+import FinancePanel from '../finance/FinancePanel';
+import ListsPanel from '../lists/ListsPanel';
+import PrintStudioPanel from '../printstudio/PrintStudioPanel';
+import ImageGenPanel from '../imagegen/ImageGenPanel';
 import { useStore } from '../../store';
 import { isHenryOperatingMode, type HenryOperatingMode } from '../../henry/charter';
 import { useEffect } from 'react';
@@ -86,6 +92,12 @@ export default function Layout() {
           {currentView === 'printer' && <PrinterPanel />}
           {currentView === 'costs' && <CostDashboard />}
           {currentView === 'settings' && <SettingsView />}
+          {currentView === 'reminders' && <RemindersPanel />}
+          {currentView === 'crm' && <CRMPanel />}
+          {currentView === 'finance' && <FinancePanel />}
+          {currentView === 'lists' && <ListsPanel />}
+          {currentView === 'printstudio' && <PrintStudioPanel />}
+          {currentView === 'imagegen' && <ImageGenPanel />}
         </main>
       </div>
 
