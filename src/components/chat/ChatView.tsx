@@ -103,6 +103,12 @@ import {
   extractUrlsFromText,
   getSearchApiKeys,
 } from '@/henry/webSearch';
+import {
+  shouldUseWebTools,
+  runWebTools,
+  formatSourceCitations,
+  type WebSource,
+} from '@/henry/webTools';
 import { logAction } from '@/henry/auditLog';
 import { extractHtmlFromMessage } from '@/henry/builderPreview';
 import BuilderPreviewPanel from './BuilderPreviewPanel';
@@ -287,6 +293,7 @@ export default function ChatView() {
   const [saveWorkspaceDraftBusy, setSaveWorkspaceDraftBusy] = useState(false);
   const [chatInject, setChatInject] = useState<{ id: number; text: string } | null>(null);
   const [isSearching, setIsSearching] = useState(false);
+  const [lastWebSources, setLastWebSources] = useState<WebSource[]>([]);
   const [currentWeather, setCurrentWeather] = useState<WeatherSnapshot | null>(null);
   const [ttsEnabled, setTtsEnabled] = useState(() => {
     try { return localStorage.getItem('henry_tts_enabled') === 'true'; } catch { return false; }
@@ -979,6 +986,35 @@ export default function ChatView() {
       if (phrase) void speakPresence(phrase, settings, []);
     }
 
+    // ── Web tool auto-routing ───────────────────────────────────────────────
+    // Detect if this message needs live web access, execute the right tools,
+    // and inject results into the system prompt as enriched context.
+    setLastWebSources([]);
+    let webContextBlock = '';
+    if (shouldUseWebTools(content)) {
+      setIsSearching(true);
+      try {
+        const apiKeys = getSearchApiKeys();
+        const toolResult = await runWebTools(content, {
+          ...apiKeys,
+          onStatus: (msg) =>
+            setCompanionStatus({ status: 'thinking', taskDescription: msg }),
+        });
+        webContextBlock = toolResult.contextBlock;
+        if (toolResult.sources.length > 0) {
+          setLastWebSources(toolResult.sources);
+        }
+      } catch {
+        // Web tools failed — Henry answers from training knowledge
+      } finally {
+        setIsSearching(false);
+        setCompanionStatus({
+          status: 'thinking',
+          taskDescription: tierLabel ? `Thinking… (${tierLabel})` : 'Thinking…',
+        });
+      }
+    }
+
     // Lean memory slices from DB (summary, facts, workspace hints); format in memoryContext.ts
     const emptyLean: HenryLeanMemoryParts = {
       conversationSummary: null,
@@ -1127,8 +1163,13 @@ export default function ChatView() {
           : {}),
       });
 
+    // Enrich system prompt with live web context if tools were used
+    const enrichedSystemPrompt = webContextBlock
+      ? `${systemPrompt}\n\n${webContextBlock}`
+      : systemPrompt;
+
     const messagesPayload: HenryAIMessage[] = [
-      { role: 'system', content: systemPrompt },
+      { role: 'system', content: enrichedSystemPrompt },
       ...history.map((m) => ({
         role: m.role as HenryAIMessage['role'],
         content: m.content,
@@ -1688,6 +1729,29 @@ export default function ChatView() {
                 isStreaming={true}
                 streamingContent={streamingContent}
               />
+            )}
+
+            {/* Web sources — shown after Henry responds with live web data */}
+            {!isStreaming && lastWebSources.length > 0 && (
+              <div className="flex flex-wrap gap-2 px-2 pt-1 pb-2 animate-fade-in">
+                <span className="text-[10px] uppercase tracking-wide text-henry-text-muted self-center shrink-0">Sources</span>
+                {lastWebSources.slice(0, 6).map((s, i) => (
+                  <a
+                    key={i}
+                    href={s.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-henry-border/40 bg-henry-surface/30 text-[11px] text-henry-text-muted hover:text-henry-accent hover:border-henry-accent/30 transition-colors max-w-[220px] truncate"
+                    title={s.title}
+                  >
+                    <svg className="w-2.5 h-2.5 shrink-0 opacity-60" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <circle cx="12" cy="12" r="10" />
+                      <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+                    </svg>
+                    <span className="truncate">{s.title.slice(0, 45) || s.url}</span>
+                  </a>
+                ))}
+              </div>
             )}
 
             <div ref={messagesEndRef} />
