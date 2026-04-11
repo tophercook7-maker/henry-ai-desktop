@@ -66,6 +66,18 @@ function aiProxyPlugin(): Plugin {
             },
           };
 
+          // Handle CORS preflight from sandboxed iframes
+          if (req.method === 'OPTIONS') {
+            res.writeHead(204, {
+              'Access-Control-Allow-Origin': '*',
+              'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+              'Access-Control-Allow-Headers': '*',
+              'Access-Control-Max-Age': '86400',
+            });
+            res.end();
+            return;
+          }
+
           const upstream = https.request(options, (upRes) => {
             // Strip hop-by-hop headers that cause the browser to see raw
             // chunked-encoding framing (the "0\r\n\r\n" terminator shows up
@@ -74,6 +86,10 @@ function aiProxyPlugin(): Plugin {
             delete outHeaders['transfer-encoding'];
             delete outHeaders['content-encoding'];
             delete outHeaders['content-length'];
+            // Always allow cross-origin access (Replit workspace iframes run
+            // with opaque origins so every request looks cross-origin)
+            outHeaders['access-control-allow-origin'] = '*';
+            outHeaders['access-control-allow-headers'] = '*';
             res.writeHead(upRes.statusCode ?? 200, outHeaders);
             upRes.pipe(res);
           });
@@ -81,7 +97,7 @@ function aiProxyPlugin(): Plugin {
           upstream.on('error', (err) => {
             console.error('[henry-ai-proxy] upstream error:', err.message);
             if (!res.headersSent) {
-              res.writeHead(502);
+              res.writeHead(502, { 'Access-Control-Allow-Origin': '*' });
               res.end(JSON.stringify({ error: err.message }));
             }
           });
@@ -165,8 +181,10 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 5000,
     allowedHosts: true,
-    hmr: process.env.REPLIT_DEV_DOMAIN
-      ? { clientPort: 443, host: process.env.REPLIT_DEV_DOMAIN, protocol: 'wss' }
-      : true,
+    hmr: true,
+    headers: {
+      'Cache-Control': 'no-store, no-cache, must-revalidate',
+      'Pragma': 'no-cache',
+    },
   },
 });
