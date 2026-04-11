@@ -2,6 +2,26 @@ import { useState, useEffect } from 'react';
 import { slackListChannels, slackGetHistory, slackPostMessage, isConnected, type SlackChannel, type SlackMessage } from '../../henry/integrations';
 import { useStore } from '../../store';
 
+function buildSlackPrompt(channel: SlackChannel, messages: SlackMessage[]): string {
+  const recent = [...messages].reverse().slice(-30);
+  const transcript = recent
+    .map((m) => `${m.username || m.user || 'Unknown'}: ${m.text}`)
+    .join('\n');
+  return [
+    `I need you to summarize and surface what matters from my Slack channel #${channel.name}.`,
+    ``,
+    `Here are the most recent messages:`,
+    `---`,
+    transcript,
+    `---`,
+    `Give me:`,
+    `1. A 2-sentence summary of what's being discussed`,
+    `2. Any decisions made or action items I should be aware of`,
+    `3. Anything that requires my response or attention`,
+    `Keep it tight — I'm scanning, not reading.`,
+  ].join('\n');
+}
+
 export default function SlackPanel() {
   const setCurrentView = useStore((s) => s.setCurrentView);
   const connected = isConnected('slack');
@@ -149,9 +169,21 @@ export default function SlackPanel() {
             <div className="shrink-0 px-4 py-3 border-b border-henry-border/30 flex items-center gap-2">
               <span className="text-sm text-henry-text-muted">#</span>
               <h2 className="text-sm font-semibold text-henry-text">{selected.name}</h2>
+              {messages.length > 0 && (
+                <button
+                  onClick={() => {
+                    const prompt = buildSlackPrompt(selected, messages);
+                    window.dispatchEvent(new CustomEvent('henry_mode_launch', { detail: { mode: 'secretary', prompt } }));
+                    setCurrentView('chat');
+                  }}
+                  className="ml-auto mr-1 px-3 py-1 text-[11px] font-medium bg-henry-accent/10 text-henry-accent border border-henry-accent/20 rounded-lg hover:bg-henry-accent/20 transition-colors"
+                >
+                  Ask Henry
+                </button>
+              )}
               <button
                 onClick={() => loadMessages(selected.id)}
-                className="ml-auto p-1.5 rounded-lg text-henry-text-muted hover:text-henry-text hover:bg-henry-hover/50 transition-colors"
+                className={messages.length > 0 ? 'p-1.5 rounded-lg text-henry-text-muted hover:text-henry-text hover:bg-henry-hover/50 transition-colors' : 'ml-auto p-1.5 rounded-lg text-henry-text-muted hover:text-henry-text hover:bg-henry-hover/50 transition-colors'}
                 title="Refresh"
               >
                 <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

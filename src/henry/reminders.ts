@@ -51,7 +51,22 @@ export function newReminder(): Reminder {
 export function toggleDone(id: string) {
   const all = loadReminders();
   const r = all.find((x) => x.id === id);
-  if (r) { r.done = !r.done; save(all); }
+  if (!r) return;
+
+  if (!r.done && r.repeat !== 'none') {
+    // Repeating reminder: checking it off advances to the next occurrence
+    // instead of killing it. The reminder stays active and unread.
+    const next = new Date(r.dueAt);
+    if (r.repeat === 'daily') next.setDate(next.getDate() + 1);
+    else if (r.repeat === 'weekly') next.setDate(next.getDate() + 7);
+    else if (r.repeat === 'monthly') next.setMonth(next.getMonth() + 1);
+    r.dueAt = next.toISOString().slice(0, 16);
+    r.notifiedAt = undefined;
+    // Leave r.done = false — repeat reminders never "die"
+  } else {
+    r.done = !r.done;
+  }
+  save(all);
 }
 
 /** Check for due reminders and fire browser notifications. Returns fired count. */

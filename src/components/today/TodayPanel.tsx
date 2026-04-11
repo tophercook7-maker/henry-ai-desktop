@@ -210,8 +210,8 @@ export default function TodayPanel() {
       <div className="flex-1 overflow-y-auto px-4 sm:px-8 pb-6 sm:pb-8">
         <div className="max-w-3xl space-y-8">
 
-          {/* Proactive Briefing */}
-          {(briefing || generatingBriefing || isNewDay) && (
+          {/* Proactive Briefing — always show when a companion model is configured */}
+          {(briefing || generatingBriefing || isNewDay || !!(settings.companion_provider && settings.companion_model)) && (
             <div className="rounded-xl border border-henry-accent/20 bg-henry-accent/5 overflow-hidden">
               <div
                 className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-henry-accent/5 transition-colors"

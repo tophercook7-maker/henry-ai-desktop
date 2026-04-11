@@ -1357,8 +1357,19 @@ const henryAPI: Window['henryAPI'] = {
   },
 
   whisperTranscribe: async (audioBlob: Blob, apiKey: string): Promise<string> => {
+    // Groq Whisper validates by file extension — derive correct one from MIME type
+    const MIME_TO_EXT: Record<string, string> = {
+      'audio/webm': 'webm',
+      'audio/mp4': 'mp4',
+      'audio/mpeg': 'mp3',
+      'audio/ogg': 'ogg',
+      'audio/wav': 'wav',
+      'audio/x-m4a': 'm4a',
+    };
+    const baseType = audioBlob.type.split(';')[0].trim();
+    const ext = MIME_TO_EXT[baseType] || 'webm';
     const form = new FormData();
-    form.append('file', audioBlob, 'audio.webm');
+    form.append('file', audioBlob, `recording.${ext}`);
     form.append('model', 'whisper-large-v3');
     form.append('response_format', 'text');
     const res = await groqFetch('/openai/v1/audio/transcriptions', {
@@ -1366,7 +1377,10 @@ const henryAPI: Window['henryAPI'] = {
       headers: { Authorization: `Bearer ${apiKey}` },
       body: form,
     });
-    if (!res.ok) throw new Error(`Whisper error ${res.status}`);
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      throw new Error(`Whisper error ${res.status}${errText ? ': ' + errText.slice(0, 200) : ''}`);
+    }
     return await res.text();
   },
 };

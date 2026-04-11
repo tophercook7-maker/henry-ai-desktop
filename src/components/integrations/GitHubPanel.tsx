@@ -6,6 +6,39 @@ import {
 } from '../../henry/integrations';
 import { useStore } from '../../store';
 
+function buildIssuesPrompt(repo: GHRepo, issues: GHIssue[], filter: 'open' | 'closed'): string {
+  const lines = issues.slice(0, 20).map((i) => {
+    const labels = i.labels.map((l) => l.name).join(', ');
+    return `#${i.number} [${i.state}${labels ? ` · ${labels}` : ''}] ${i.title}`;
+  });
+  return [
+    `Help me triage the ${filter} issues in my GitHub repo "${repo.full_name}".`,
+    ``,
+    `Issues:`,
+    ...lines,
+    ``,
+    `Please:`,
+    `1. Group them by theme or area (bug, feature, chore, etc.)`,
+    `2. Flag any that look urgent or blocking`,
+    `3. Suggest which 3 I should tackle first and why`,
+  ].join('\n');
+}
+
+function buildPRsPrompt(repo: GHRepo, prs: GHPR[]): string {
+  const lines = prs.slice(0, 15).map((pr) => {
+    const status = pr.draft ? 'draft' : 'open';
+    return `#${pr.number} [${status}] "${pr.title}" by @${pr.user.login} (${pr.head.ref} → ${pr.base.ref})`;
+  });
+  return [
+    `Give me a quick read on the open pull requests in "${repo.full_name}".`,
+    ``,
+    `PRs:`,
+    ...lines,
+    ``,
+    `Flag any that look stale, risky, or need immediate review. Which one should I look at first?`,
+  ].join('\n');
+}
+
 type Tab = 'repos' | 'issues' | 'prs';
 
 function timeAgo(iso: string): string {
@@ -304,6 +337,20 @@ export default function GitHubPanel() {
         {/* Issues */}
         {selectedRepo && tab === 'issues' && !loading && (
           <div className="p-4 space-y-2">
+            {issues.length > 0 && (
+              <div className="flex justify-end mb-1">
+                <button
+                  onClick={() => {
+                    const prompt = buildIssuesPrompt(selectedRepo, issues, issueFilter);
+                    window.dispatchEvent(new CustomEvent('henry_mode_launch', { detail: { mode: 'developer', prompt } }));
+                    useStore.getState().setCurrentView('chat');
+                  }}
+                  className="px-3 py-1 text-[11px] font-medium bg-henry-accent/10 text-henry-accent border border-henry-accent/20 rounded-lg hover:bg-henry-accent/20 transition-colors"
+                >
+                  Triage with Henry
+                </button>
+              </div>
+            )}
             {issues.map((issue) => (
               <a
                 key={issue.id}
@@ -344,6 +391,20 @@ export default function GitHubPanel() {
         {/* PRs */}
         {selectedRepo && tab === 'prs' && !loading && (
           <div className="p-4 space-y-2">
+            {prs.length > 0 && (
+              <div className="flex justify-end mb-1">
+                <button
+                  onClick={() => {
+                    const prompt = buildPRsPrompt(selectedRepo, prs);
+                    window.dispatchEvent(new CustomEvent('henry_mode_launch', { detail: { mode: 'developer', prompt } }));
+                    useStore.getState().setCurrentView('chat');
+                  }}
+                  className="px-3 py-1 text-[11px] font-medium bg-henry-accent/10 text-henry-accent border border-henry-accent/20 rounded-lg hover:bg-henry-accent/20 transition-colors"
+                >
+                  Review with Henry
+                </button>
+              </div>
+            )}
             {prs.map((pr) => (
               <a
                 key={pr.id}
