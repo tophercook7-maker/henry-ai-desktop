@@ -15,11 +15,12 @@ import {
 } from '../../henry/richMemory';
 
 export default function SettingsView() {
-  const [activeTab, setActiveTab] = useState<'providers' | 'engines' | 'general' | 'memory'>('providers');
+  const [activeTab, setActiveTab] = useState<'providers' | 'engines' | 'voice' | 'general' | 'memory'>('providers');
 
   const tabs = [
     { id: 'providers' as const, label: 'AI Providers' },
     { id: 'engines' as const, label: 'Engines' },
+    { id: 'voice' as const, label: 'Voice & Model' },
     { id: 'general' as const, label: 'General' },
     { id: 'memory' as const, label: 'Memory' },
   ];
@@ -49,6 +50,7 @@ export default function SettingsView() {
         <div className="max-w-2xl mx-auto">
           {activeTab === 'providers' && <ProvidersTab />}
           {activeTab === 'engines' && <EnginesTab />}
+          {activeTab === 'voice' && <VoiceModelTab />}
           {activeTab === 'general' && <GeneralTab />}
           {activeTab === 'memory' && <MemoryTab />}
         </div>
@@ -631,6 +633,156 @@ function EnginesTab() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Voice & Model Tab ─────────────────────────────────────────────────────────
+
+const GROQ_TTS_VOICES = [
+  { id: 'Fritz-PlayAI', label: 'Fritz (warm, American male)' },
+  { id: 'Celeste-PlayAI', label: 'Celeste (clear, American female)' },
+  { id: 'Calum-PlayAI', label: 'Calum (British male)' },
+  { id: 'Deedee-PlayAI', label: 'Deedee (bright female)' },
+  { id: 'Mason-PlayAI', label: 'Mason (deep male)' },
+  { id: 'Eleanor-PlayAI', label: 'Eleanor (elegant female)' },
+  { id: 'Atlas-PlayAI', label: 'Atlas (neutral male)' },
+  { id: 'Nia-PlayAI', label: 'Nia (warm female)' },
+  { id: 'Quinn-PlayAI', label: 'Quinn (androgynous)' },
+  { id: 'George-PlayAI', label: 'George (authoritative male)' },
+  { id: 'Hades-PlayAI', label: 'Hades (deep, dramatic)' },
+  { id: 'Thunder-PlayAI', label: 'Thunder (powerful)' },
+];
+
+const GROQ_STT_MODELS = [
+  { id: 'whisper-large-v3-turbo', label: 'Whisper Large v3 Turbo (fast, default)' },
+  { id: 'whisper-large-v3', label: 'Whisper Large v3 (highest accuracy)' },
+  { id: 'distil-whisper-large-v3-en', label: 'Distil Whisper Large v3 (English-only, fastest)' },
+];
+
+function VoiceModelTab() {
+  const { settings } = useStore();
+
+  async function set(key: string, value: string) {
+    try {
+      await window.henryAPI.saveSetting(key, value);
+      useStore.getState().updateSetting(key, value);
+    } catch (err) {
+      console.error('Failed to save setting:', err);
+    }
+  }
+
+  const qualityPref = settings.model_quality_preference || 'balanced';
+  const ttsVoice = settings.tts_voice_groq || 'Fritz-PlayAI';
+  const sttModel = settings.stt_model || 'whisper-large-v3-turbo';
+  const ambientMode = settings.ambient_mode === 'on';
+
+  return (
+    <div className="space-y-6">
+
+      {/* Model quality preference */}
+      <div className="rounded-xl border border-henry-border/50 bg-henry-surface/30 p-5 space-y-4">
+        <div>
+          <h3 className="font-medium text-henry-text">Response Quality</h3>
+          <p className="text-xs text-henry-text-dim mt-1 leading-relaxed">
+            Controls which model Henry reaches for during normal chat. Fast uses your quickest configured model; Quality uses the most capable one.
+          </p>
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          {(['fast', 'balanced', 'quality'] as const).map((opt) => (
+            <button
+              key={opt}
+              onClick={() => set('model_quality_preference', opt)}
+              className={`py-2.5 rounded-lg text-xs font-medium capitalize transition-all border ${
+                qualityPref === opt
+                  ? 'bg-henry-accent/10 border-henry-accent/40 text-henry-accent'
+                  : 'border-henry-border/50 text-henry-text-dim hover:text-henry-text hover:border-henry-border'
+              }`}
+            >
+              {opt}
+            </button>
+          ))}
+        </div>
+        <p className="text-[11px] text-henry-text-muted leading-relaxed">
+          <span className="text-henry-text-dim font-medium">Fast</span> — your <code className="bg-henry-surface px-1 rounded">chat_fast_model</code> setting (set in Engines tab).<br/>
+          <span className="text-henry-text-dim font-medium">Balanced</span> — primary companion model (default).<br/>
+          <span className="text-henry-text-dim font-medium">Quality</span> — companion model 2, or primary if only one is configured.
+        </p>
+      </div>
+
+      {/* TTS voice */}
+      <div className="rounded-xl border border-henry-border/50 bg-henry-surface/30 p-5 space-y-4">
+        <div>
+          <h3 className="font-medium text-henry-text">Henry's Voice</h3>
+          <p className="text-xs text-henry-text-dim mt-1 leading-relaxed">
+            Choose the voice Henry speaks in. Requires Groq API key. Enable the speaker icon in chat to hear it.
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-henry-text-dim mb-1.5">Voice</label>
+          <select
+            value={ttsVoice}
+            onChange={(e) => set('tts_voice_groq', e.target.value)}
+            className="w-full bg-henry-surface border border-henry-border/50 rounded-lg px-3 py-2 text-sm text-henry-text focus:outline-none focus:border-henry-accent/50"
+          >
+            {GROQ_TTS_VOICES.map((v) => (
+              <option key={v.id} value={v.id}>{v.label}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="rounded-lg border border-henry-border/30 bg-henry-bg/30 p-3 text-[11px] text-henry-text-muted leading-relaxed">
+          All voices are Groq PlayAI — ultra-low latency, high quality. Fritz is Henry's default: warm and conversational.
+        </div>
+      </div>
+
+      {/* STT model */}
+      <div className="rounded-xl border border-henry-border/50 bg-henry-surface/30 p-5 space-y-4">
+        <div>
+          <h3 className="font-medium text-henry-text">Speech-to-Text Model</h3>
+          <p className="text-xs text-henry-text-dim mt-1 leading-relaxed">
+            The Groq Whisper model used when you tap the mic in chat.
+          </p>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-henry-text-dim mb-1.5">Model</label>
+          <select
+            value={sttModel}
+            onChange={(e) => set('stt_model', e.target.value)}
+            className="w-full bg-henry-surface border border-henry-border/50 rounded-lg px-3 py-2 text-sm text-henry-text focus:outline-none focus:border-henry-accent/50"
+          >
+            {GROQ_STT_MODELS.map((m) => (
+              <option key={m.id} value={m.id}>{m.label}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Ambient mode */}
+      <div className="rounded-xl border border-henry-border/50 bg-henry-surface/30 p-5">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h3 className="font-medium text-henry-text">Ambient Mode</h3>
+            <p className="text-xs text-henry-text-dim mt-1 leading-relaxed">
+              After Henry finishes speaking, the mic automatically activates so you can reply hands-free. Requires voice (TTS) to be on in chat.
+            </p>
+          </div>
+          <button
+            onClick={() => set('ambient_mode', ambientMode ? 'off' : 'on')}
+            className={`shrink-0 relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+              ambientMode ? 'bg-henry-accent' : 'bg-henry-border'
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                ambientMode ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
+      </div>
+
     </div>
   );
 }

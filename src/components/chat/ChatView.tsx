@@ -18,6 +18,8 @@ import {
   isHenryOperatingMode,
 } from '@/henry/charter';
 import { getWeather, type WeatherSnapshot } from '@/henry/weatherContext';
+import { resolveChat } from '@/henry/modelRouter';
+import { speak as ttsSpeakFn, cancelTTS } from '@/henry/ttsService';
 import {
   buildHenryMemoryContextBlock,
   capMessageContent,
@@ -426,35 +428,19 @@ export default function ChatView() {
     if (!lastMsg || lastMsg.role !== 'assistant') return;
     if (lastSpokenMsgIdRef.current === lastMsg.id) return;
     lastSpokenMsgIdRef.current = lastMsg.id;
-    window.speechSynthesis.cancel();
-    const clean = lastMsg.content
-      .replace(/```[\s\S]*?```/g, 'code block')
-      .replace(/`[^`]+`/g, '')
-      .replace(/#{1,6}\s+/g, '')
-      .replace(/\*\*([^*]+)\*\*/g, '$1')
-      .replace(/\*([^*]+)\*/g, '$1')
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-      .replace(/>\s+/g, '')
-      .replace(/\n{2,}/g, '. ')
-      .replace(/\n/g, ' ')
-      .trim();
-    if (!clean) return;
-    const utterance = new SpeechSynthesisUtterance(clean);
-    utterance.rate = 0.92;
-    utterance.pitch = 1.05;
-    const voices = window.speechSynthesis.getVoices();
-    const preferred = voices.find(
-      (v) => v.name === 'Samantha' || v.name === 'Daniel' || v.name.includes('Google') || v.lang === 'en-US'
-    );
-    if (preferred) utterance.voice = preferred;
-    window.speechSynthesis.speak(utterance);
+    const s = useStore.getState().settings;
+    window.henryAPI?.getProviders?.().then((providers: any[]) => {
+      void ttsSpeakFn(lastMsg.content, s, providers);
+    }).catch(() => {
+      void ttsSpeakFn(lastMsg.content, s, []);
+    });
   }, [isStreaming, ttsEnabled, messages]);
 
   function toggleTts() {
     const next = !ttsEnabled;
+    if (!next) cancelTTS();
     setTtsEnabled(next);
     try { localStorage.setItem('henry_tts_enabled', String(next)); } catch { /* ignore */ }
-    if (!next) window.speechSynthesis.cancel();
   }
 
   /** Restore active thread id before persistence effects run (avoids wiping saved conversation). */
@@ -818,6 +804,7 @@ export default function ChatView() {
 
   async function handleSend(content: string) {
     if (!content.trim() || isStreaming) return;
+    cancelTTS();
 
     const parsedCmd = parseUserCommandLine(content);
     if (parsedCmd) {
@@ -1068,20 +1055,24 @@ export default function ChatView() {
       });
     }
 
-    // Get companion engine settings — try primary, fall back to companion_model_2 if set
+    // Get companion engine settings — use model router to pick the right provider/model
     const providers = await window.henryAPI.getProviders();
     const s = useStore.getState().settings;
-    let companionProvider = s.companion_provider;
-    let companionModel = s.companion_model;
-    const fallbackModel = s.companion_model_2;
-    const fallbackProvider = s.companion_provider_2 || s.companion_provider;
+
+    const route = resolveChat(content, s, providers);
+    let companionProvider = route.provider;
+    let companionModel = route.model;
     let provider = providers.find((p: any) => p.id === companionProvider);
 
-    // If primary isn't configured but fallback is, use it
-    if ((!provider || !companionModel) && fallbackModel && fallbackProvider) {
-      companionProvider = fallbackProvider;
-      companionModel = fallbackModel;
-      provider = providers.find((p: any) => p.id === companionProvider);
+    // If router's choice has no provider object, fall back to companion_model_2 or raw companion
+    if (!provider || !companionModel) {
+      const fallbackModel = s.companion_model_2;
+      const fallbackProvider = s.companion_provider_2 || s.companion_provider;
+      if (fallbackModel && fallbackProvider) {
+        companionProvider = fallbackProvider;
+        companionModel = fallbackModel;
+        provider = providers.find((p: any) => p.id === companionProvider);
+      }
     }
 
     if (!provider || !companionModel) {
@@ -1854,6 +1845,7 @@ export default function ChatView() {
                 onToggleTts={toggleTts}
                 onSearch={handleSearch}
                 isSearching={isSearching}
+                ambientMode={settings.ambient_mode === 'on'}
                 onFileIngest={(content, fileName) => {
                   handleSend(
                     `I'm sharing a file with you — **${fileName}**. Here's the content:\n\n\`\`\`\n${content}\n\`\`\`\n\nGive me your honest, multi-angle take on it. What stands out? What questions does it raise? And ask me what I'd like to do with it.`

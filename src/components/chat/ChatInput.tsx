@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useStore } from '../../store';
+import { transcribeWithGroq } from '../../henry/ttsService';
 
 interface ChatInputProps {
   onSend: (content: string) => void;
@@ -13,6 +14,7 @@ interface ChatInputProps {
   onSearch?: (query: string) => void;
   isSearching?: boolean;
   onFileIngest?: (content: string, fileName: string) => void;
+  ambientMode?: boolean;
 }
 
 export default function ChatInput({
@@ -27,6 +29,7 @@ export default function ChatInput({
   onSearch,
   isSearching = false,
   onFileIngest,
+  ambientMode = false,
 }: ChatInputProps) {
   const [input, setInput] = useState('');
   const [listening, setListening] = useState(false);
@@ -75,6 +78,18 @@ export default function ChatInput({
     };
   }, []);
 
+  // Ambient mode: auto-start mic when TTS finishes speaking
+  useEffect(() => {
+    if (!ambientMode || !ttsEnabled) return;
+    function onTtsDone() {
+      if (!isStreaming) {
+        startGroqWhisper();
+      }
+    }
+    window.addEventListener('henry_tts_done', onTtsDone);
+    return () => window.removeEventListener('henry_tts_done', onTtsDone);
+  }, [ambientMode, ttsEnabled, isStreaming]);
+
   async function startGroqWhisper() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -110,18 +125,26 @@ export default function ChatInput({
       }
 
       const providers = await window.henryAPI.getProviders();
-      const groqProvider = providers.find((p: any) => p.id === 'groq');
-      const apiKey = groqProvider?.api_key || groqProvider?.apiKey || '';
+      const s = useStore.getState().settings;
 
-      if (!apiKey || !window.henryAPI.whisperTranscribe) {
-        // Fallback: just stop — no transcription available
-        setTranscribing(false);
-        return;
+      let transcript: string | undefined;
+
+      if (window.henryAPI.whisperTranscribe) {
+        // Electron desktop path — uses native IPC
+        const groqProvider = providers.find((p: any) => p.id === 'groq');
+        const apiKey = groqProvider?.api_key || groqProvider?.apiKey || '';
+        if (apiKey) {
+          transcript = await window.henryAPI.whisperTranscribe(blob, apiKey);
+        }
       }
 
-      const transcript = await window.henryAPI.whisperTranscribe(blob, apiKey);
+      if (!transcript) {
+        // Web path — call Groq Whisper directly via proxy
+        transcript = await transcribeWithGroq(blob, s, providers);
+      }
+
       if (transcript?.trim()) {
-        setInput((prev) => prev ? `${prev} ${transcript.trim()}` : transcript.trim());
+        setInput((prev) => prev ? `${prev} ${transcript!.trim()}` : transcript!.trim());
         requestAnimationFrame(() => {
           const el = textareaRef.current;
           if (el) {
