@@ -117,6 +117,8 @@ declare global {
     query?: string;
     /** Optional: rows to read before renderer-side dedupe (default 40) */
     maxFactsFetch?: number;
+    /** Memory bandwidth mode (shallow/normal/deep/maximum) */
+    bandwidth?: string;
   }
 
   /** Matches `memory:saveSummary` IPC (camelCase). */

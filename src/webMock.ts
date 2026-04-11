@@ -806,6 +806,246 @@ const henryAPI: Window['henryAPI'] = {
     return summaries[conversationId] || null;
   },
 
+  // ── Memory Layer 2: Session ────────────────────────────────────────────────
+  saveSessionMemory: async (session) => {
+    const id = (session.conversationId as string) || uuidv4();
+    const sessions = getStore<Record<string, unknown>>('henry:sessions', {});
+    const existing = sessions[id] as Record<string, unknown> | undefined;
+    sessions[id] = { ...session, id, updated_at: new Date().toISOString() };
+    setStore('henry:sessions', sessions);
+    return { id, created: !existing, updated: !!existing };
+  },
+  getSessionMemory: async (conversationId) => {
+    const sessions = getStore<Record<string, unknown>>('henry:sessions', {});
+    return (sessions[conversationId] as Record<string, unknown>) || null;
+  },
+  compressSession: async (opts) => {
+    const summaryId = uuidv4();
+    const summaries = getStore<Record<string, string>>('henry:summaries', {});
+    if (opts.conversationId && opts.summary) {
+      summaries[opts.conversationId as string] = opts.summary as string;
+      setStore('henry:summaries', summaries);
+    }
+    return { compressed: true, summaryId };
+  },
+
+  // ── Memory Layer 3: Working Memory ────────────────────────────────────────
+  getWorkingMemory: async (_userId?) => {
+    return getStore<Record<string, unknown> | null>('henry:working_memory:v1', null);
+  },
+  updateWorkingMemory: async (updates) => {
+    const current = getStore<Record<string, unknown>>('henry:working_memory:v1', {});
+    setStore('henry:working_memory:v1', { ...current, ...updates, updated_at: new Date().toISOString() });
+    return { updated: true };
+  },
+
+  // ── Memory Layer 4: Personal Memory ───────────────────────────────────────
+  savePersonalMemory: async (item) => {
+    const id = uuidv4();
+    const items = getStore<Record<string, unknown>[]>('henry:personal_memory', []);
+    items.push({ ...item, id, created_at: new Date().toISOString() });
+    setStore('henry:personal_memory', items);
+    return { id };
+  },
+  getPersonalMemory: async (opts?) => {
+    const items = getStore<Record<string, unknown>[]>('henry:personal_memory', []);
+    const limit = (opts?.limit as number) || 50;
+    return items.slice(-limit).reverse();
+  },
+  updatePersonalMemory: async (id, updates) => {
+    const items = getStore<Record<string, unknown>[]>('henry:personal_memory', []);
+    const idx = items.findIndex((i) => i.id === id);
+    if (idx >= 0) { items[idx] = { ...items[idx], ...updates }; setStore('henry:personal_memory', items); }
+    return { updated: idx >= 0 };
+  },
+  deletePersonalMemory: async (id) => {
+    const items = getStore<Record<string, unknown>[]>('henry:personal_memory', []);
+    const filtered = items.filter((i) => i.id !== id);
+    setStore('henry:personal_memory', filtered);
+    return { deleted: filtered.length < items.length };
+  },
+  recallPersonalMemory: async (id) => {
+    const items = getStore<Record<string, unknown>[]>('henry:personal_memory', []);
+    const idx = items.findIndex((i) => i.id === id);
+    if (idx >= 0) { items[idx] = { ...items[idx], last_recalled: new Date().toISOString() }; setStore('henry:personal_memory', items); }
+  },
+
+  // ── Memory Layer 5: Projects ───────────────────────────────────────────────
+  saveProject: async (project) => {
+    const id = (project.id as string) || uuidv4();
+    const projects = getStore<Record<string, unknown>[]>('henry:projects', []);
+    const idx = projects.findIndex((p) => p.id === id);
+    if (idx >= 0) { projects[idx] = { ...projects[idx], ...project, id }; } else { projects.push({ ...project, id, created_at: new Date().toISOString() }); }
+    setStore('henry:projects', projects);
+    return { id };
+  },
+  getProjects: async (opts?) => {
+    const projects = getStore<Record<string, unknown>[]>('henry:projects', []);
+    if (opts?.active_only) return projects.filter((p) => p.status === 'active');
+    return projects;
+  },
+  updateProject: async (id, updates) => {
+    const projects = getStore<Record<string, unknown>[]>('henry:projects', []);
+    const idx = projects.findIndex((p) => p.id === id);
+    if (idx >= 0) { projects[idx] = { ...projects[idx], ...updates }; setStore('henry:projects', projects); }
+    return { updated: idx >= 0 };
+  },
+  saveProjectMemory: async (item) => {
+    const id = uuidv4();
+    const items = getStore<Record<string, unknown>[]>('henry:project_memory', []);
+    items.push({ ...item, id, created_at: new Date().toISOString() });
+    setStore('henry:project_memory', items);
+    return { id };
+  },
+  getProjectMemory: async (projectId) => {
+    const items = getStore<Record<string, unknown>[]>('henry:project_memory', []);
+    return items.filter((i) => i.project_id === projectId);
+  },
+
+  // ── Memory — Goals ─────────────────────────────────────────────────────────
+  saveGoal: async (goal) => {
+    const id = (goal.id as string) || uuidv4();
+    const goals = getStore<Record<string, unknown>[]>('henry:goals', []);
+    const idx = goals.findIndex((g) => g.id === id);
+    if (idx >= 0) { goals[idx] = { ...goals[idx], ...goal, id }; } else { goals.push({ ...goal, id, created_at: new Date().toISOString() }); }
+    setStore('henry:goals', goals);
+    return { id };
+  },
+  getGoals: async (opts?) => {
+    const goals = getStore<Record<string, unknown>[]>('henry:goals', []);
+    if (opts?.active_only) return goals.filter((g) => g.status !== 'done');
+    return goals;
+  },
+  updateGoal: async (id, updates) => {
+    const goals = getStore<Record<string, unknown>[]>('henry:goals', []);
+    const idx = goals.findIndex((g) => g.id === id);
+    if (idx >= 0) { goals[idx] = { ...goals[idx], ...updates }; setStore('henry:goals', goals); }
+    return { updated: idx >= 0 };
+  },
+
+  // ── Memory — Commitments ───────────────────────────────────────────────────
+  saveCommitment: async (c) => {
+    const id = (c.id as string) || uuidv4();
+    const items = getStore<Record<string, unknown>[]>('henry:commitments', []);
+    const idx = items.findIndex((i) => i.id === id);
+    if (idx >= 0) { items[idx] = { ...items[idx], ...c, id }; } else { items.push({ ...c, id, created_at: new Date().toISOString() }); }
+    setStore('henry:commitments', items);
+    return { id };
+  },
+  getCommitments: async (opts?) => {
+    const items = getStore<Record<string, unknown>[]>('henry:commitments', []);
+    if (opts?.resolved === false) return items.filter((i) => !i.resolved_at);
+    return items;
+  },
+  resolveCommitment: async (id) => {
+    const items = getStore<Record<string, unknown>[]>('henry:commitments', []);
+    const idx = items.findIndex((i) => i.id === id);
+    if (idx >= 0) { items[idx] = { ...items[idx], resolved_at: new Date().toISOString() }; setStore('henry:commitments', items); }
+    return { resolved: idx >= 0 };
+  },
+  updateCommitment: async (id, updates) => {
+    const items = getStore<Record<string, unknown>[]>('henry:commitments', []);
+    const idx = items.findIndex((i) => i.id === id);
+    if (idx >= 0) { items[idx] = { ...items[idx], ...updates }; setStore('henry:commitments', items); }
+    return { updated: idx >= 0 };
+  },
+
+  // ── Memory — Milestones ────────────────────────────────────────────────────
+  saveMilestone: async (m) => {
+    const id = uuidv4();
+    const items = getStore<Record<string, unknown>[]>('henry:milestones', []);
+    items.push({ ...m, id, created_at: new Date().toISOString() });
+    setStore('henry:milestones', items);
+    return { id };
+  },
+  getMilestones: async (opts?) => {
+    const items = getStore<Record<string, unknown>[]>('henry:milestones', []);
+    const limit = (opts?.limit as number) || 30;
+    return items.slice(-limit).reverse();
+  },
+
+  // ── Memory Layer 6: Relationship Memory ───────────────────────────────────
+  saveRelationshipMemory: async (item) => {
+    const id = uuidv4();
+    const items = getStore<Record<string, unknown>[]>('henry:relationship_memory', []);
+    items.push({ ...item, id, created_at: new Date().toISOString() });
+    setStore('henry:relationship_memory', items);
+    return { id };
+  },
+  getRelationshipMemory: async (opts?) => {
+    const items = getStore<Record<string, unknown>[]>('henry:relationship_memory', []);
+    const limit = (opts?.limit as number) || 30;
+    return items.slice(-limit).reverse();
+  },
+
+  // ── Memory Layer 7: Narrative Memory ──────────────────────────────────────
+  saveNarrativeMemory: async (arc) => {
+    const id = (arc.id as string) || uuidv4();
+    const items = getStore<Record<string, unknown>[]>('henry:narrative_memory', []);
+    const idx = items.findIndex((i) => i.id === id);
+    if (idx >= 0) { items[idx] = { ...items[idx], ...arc, id }; } else { items.push({ ...arc, id, created_at: new Date().toISOString() }); }
+    setStore('henry:narrative_memory', items);
+    return { id, created: idx < 0, updated: idx >= 0 };
+  },
+  getNarrativeMemory: async (opts?) => {
+    const items = getStore<Record<string, unknown>[]>('henry:narrative_memory', []);
+    const limit = (opts?.limit as number) || 10;
+    return items.slice(-limit).reverse();
+  },
+
+  // ── Memory — Summaries + Graph ─────────────────────────────────────────────
+  saveMemorySummary: async (s) => {
+    const id = uuidv4();
+    const items = getStore<Record<string, unknown>[]>('henry:memory_summaries', []);
+    items.push({ ...s, id, created_at: new Date().toISOString() });
+    setStore('henry:memory_summaries', items);
+    return { id };
+  },
+  getMemorySummaries: async (opts?) => {
+    const items = getStore<Record<string, unknown>[]>('henry:memory_summaries', []);
+    const limit = (opts?.limit as number) || 20;
+    return items.slice(-limit).reverse();
+  },
+  saveGraphEdge: async (edge) => {
+    const id = uuidv4();
+    const edges = getStore<Record<string, unknown>[]>('henry:graph_edges', []);
+    edges.push({ ...edge, id, created_at: new Date().toISOString() });
+    setStore('henry:graph_edges', edges);
+    return { id };
+  },
+  getGraphEdges: async (opts?) => {
+    const edges = getStore<Record<string, unknown>[]>('henry:graph_edges', []);
+    if (opts?.from_id) return edges.filter((e) => e.from_id === opts.from_id || e.to_id === opts.from_id);
+    return edges;
+  },
+
+  // ── Memory — Deep Context + Where-We-Left-Off ──────────────────────────────
+  buildDeepContext: async (params) => {
+    const sessions = getStore<Record<string, unknown>>('henry:sessions', {});
+    const goals = getStore<Record<string, unknown>[]>('henry:goals', []);
+    const commitments = getStore<Record<string, unknown>[]>('henry:commitments', []);
+    const narrative = getStore<Record<string, unknown>[]>('henry:narrative_memory', []);
+    return {
+      params,
+      sessions: Object.values(sessions).slice(-5),
+      activeGoals: goals.filter((g) => g.status !== 'done').slice(0, 5),
+      openCommitments: commitments.filter((c) => !c.resolved_at).slice(0, 5),
+      narrative: narrative.slice(-3),
+    };
+  },
+  getWhereWeLeftOff: async () => {
+    const items = getStore<Record<string, unknown>[]>('henry:narrative_memory', []);
+    const last = items[items.length - 1];
+    return last || { summary: 'No previous sessions recorded yet.' };
+  },
+  saveWhereWeLeftOff: async (summary) => {
+    const id = uuidv4();
+    const items = getStore<Record<string, unknown>[]>('henry:narrative_memory', []);
+    items.push({ id, type: 'where_we_left_off', summary, created_at: new Date().toISOString() });
+    setStore('henry:narrative_memory', items);
+    return { id };
+  },
+
   scriptureLookup: async (reference) => {
     const scriptureStore = getStore<Record<string, import('./henry/scriptureStore').ScriptureEntry>>('henry:scripture', {});
     const key = reference.toLowerCase().trim();

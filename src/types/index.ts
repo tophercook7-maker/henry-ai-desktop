@@ -140,6 +140,8 @@ export interface MemoryContext {
   lean: HenryLeanMemoryParts;
   estimatedTokens: number;
   factCount: number;
+  /** Extended deep-context layers (Layer 3–7) — present when bandwidth ≥ normal */
+  extended?: Record<string, unknown>;
 }
 
 // ── Scripture (re-export from henry for API / global typings) ─

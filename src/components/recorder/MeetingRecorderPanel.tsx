@@ -156,7 +156,7 @@ export default function MeetingRecorderPanel() {
       if (actionItems.length > 0 && s.companion_provider) {
         for (const item of actionItems.slice(0, 5)) {
           try {
-            await window.henryAPI.createTask({
+            await window.henryAPI.createTask?.({
               description: item,
               type: 'custom',
               priority: 5,

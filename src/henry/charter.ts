@@ -17,6 +17,7 @@ import { buildRichMemoryBlock, buildContactsContextBlock } from './richMemory';
 import { formatWeatherBlock, type WeatherSnapshot } from './weatherContext';
 import { buildIntegrationsContextBlock } from './integrations';
 import { buildWorkingMemoryBlock, buildNarrativeBlock } from './workingMemory';
+import { buildPersonalityBlock } from './personality';
 
 export const HENRY_OPERATING_MODES = [
   'companion',
@@ -419,6 +420,8 @@ When search results are sparse or unhelpful, say so honestly and supplement from
   const continuityBlock = [narrativeBlock, workingMemoryBlock].filter(Boolean).join('\n\n');
 
   return `${buildCoreIdentity()}
+
+${buildPersonalityBlock()}
 
 ${timeBlock}
 ${getModeInstruction(mode)}

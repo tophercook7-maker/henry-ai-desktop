@@ -6,6 +6,7 @@ import ClipboardAIToast from './components/ClipboardAIToast';
 import { useStore } from './store';
 import type { Task } from './types';
 import { startProactiveNudges, type HenryNudge } from './henry/proactiveNudges';
+import { seedWorkspace } from './henry/workspaceSeeder';
 
 const HENRY_FIRST_MESSAGE = `Hey. I'm up and running.
 
@@ -137,6 +138,9 @@ export default function App() {
         }
 
         setSetupComplete(true);
+
+        // Seed workspace on first run (idempotent — safe to call every launch)
+        try { seedWorkspace(); } catch { /* non-critical */ }
 
         const [convos, providers] = await Promise.all([
           window.henryAPI.getConversations(),

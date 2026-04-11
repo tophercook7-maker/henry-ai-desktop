@@ -38,7 +38,7 @@ export default function ImageGenPanel() {
   const [selectedImage, setSelectedImage] = useState<GeneratedImage | null>(null);
 
   const openaiProvider = providers.find((p) => p.id === 'openai');
-  const openaiKey = openaiProvider?.api_key || openaiProvider?.apiKey || '';
+  const openaiKey = openaiProvider?.apiKey || '';
 
   async function generate() {
     if (!prompt.trim() || generating) return;
