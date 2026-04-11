@@ -406,15 +406,15 @@ function EnginesTab() {
     setSaving('groq_defaults');
     setGroqDefaultsResult(null);
     try {
-      await saveSetting('companion_model', 'llama-3.3-70b-versatile');
+      await saveSetting('companion_model', 'llama-3.1-8b-instant');
       await saveSetting('companion_provider', 'groq');
-      await saveSetting('companion_model_2', 'mixtral-8x7b-32768');
+      await saveSetting('companion_model_2', 'llama-3.3-70b-versatile');
       await saveSetting('companion_provider_2', 'groq');
-      await saveSetting('worker_model', 'deepseek-r1-distill-llama-70b');
+      await saveSetting('worker_model', 'llama-3.3-70b-versatile');
       await saveSetting('worker_provider', 'groq');
       await saveSetting('chat_fast_model', 'llama-3.1-8b-instant');
       await saveSetting('chat_fast_provider', 'groq');
-      setGroqDefaultsResult('✓ Set — LLaMA 3.3 70B primary · Mixtral fallback · DeepSeek R1 for deep work · 8B for fast mode');
+      setGroqDefaultsResult('✓ Set — 8B Instant as everyday brain · 70B Versatile as deeper second brain');
     } catch (err) {
       setGroqDefaultsResult(`Error: ${(err as Error).message}`);
     } finally {

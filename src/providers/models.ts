@@ -109,24 +109,24 @@ export const AVAILABLE_MODELS: AIModel[] = [
 
   // ── Groq — ultra-fast inference (LPU) ─────────────
   {
-    id: 'llama-3.3-70b-versatile',
-    name: 'LLaMA 3.3 70B ⚡',
-    provider: 'groq',
-    contextWindow: 128000,
-    inputPricePer1M: 0.59,
-    outputPricePer1M: 0.79,
-    capabilities: ['chat', 'code', 'reasoning'],
-    recommended: 'companion',
-  },
-  {
     id: 'llama-3.1-8b-instant',
-    name: 'LLaMA 3.1 8B Instant',
+    name: 'LLaMA 3.1 8B Instant ⚡',
     provider: 'groq',
     contextWindow: 128000,
     inputPricePer1M: 0.05,
     outputPricePer1M: 0.08,
     capabilities: ['chat', 'code'],
     recommended: 'companion',
+  },
+  {
+    id: 'llama-3.3-70b-versatile',
+    name: 'LLaMA 3.3 70B',
+    provider: 'groq',
+    contextWindow: 128000,
+    inputPricePer1M: 0.59,
+    outputPricePer1M: 0.79,
+    capabilities: ['chat', 'code', 'reasoning'],
+    recommended: 'worker',
   },
   {
     id: 'llama-3.1-70b-versatile',

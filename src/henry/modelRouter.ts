@@ -67,11 +67,11 @@ export function resolveChat(
 
   // Tier configs — fall through to primary if tier not configured
   const primaryProvider = settings.companion_provider || 'groq';
-  const primaryModel = settings.companion_model || 'llama-3.3-70b-versatile';
+  const primaryModel = settings.companion_model || 'llama-3.1-8b-instant';
   const fastProvider = settings.chat_fast_provider || primaryProvider;
-  const fastModel = settings.chat_fast_model || 'llama-3.1-8b-instant';
+  const fastModel = settings.chat_fast_model || primaryModel;
   const qualityProvider = settings.worker_provider || settings.companion_provider || 'groq';
-  const qualityModel = settings.worker_model || primaryModel;
+  const qualityModel = settings.worker_model || 'llama-3.3-70b-versatile';
 
   let chosenProvider: string;
   let chosenModel: string;

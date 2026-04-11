@@ -37,9 +37,9 @@ const CLOUD_OPTIONS: CloudOption[] = [
     icon: '⚡',
     free: true,
     freeLabel: 'Completely free',
-    desc: 'Llama 3.3 70B & Mistral — fast, no credit card needed',
+    desc: 'LLaMA 3.1 8B everyday · 70B second brain — no credit card',
     placeholder: 'gsk_…',
-    defaultModel: 'llama-3.3-70b-versatile',
+    defaultModel: 'llama-3.1-8b-instant',
     keyUrl: 'https://console.groq.com/keys',
     recommended: true,
   },
@@ -250,16 +250,16 @@ function DesktopProviderStep({ onNext, onBack }: ProviderStepProps) {
         updateSetting('companion_provider', selectedCloud.id);
 
         if (selectedCloud.id === 'groq') {
-          // Set all four Groq engine slots for cross-platform coverage
-          await window.henryAPI.saveSetting('companion_model_2', 'mixtral-8x7b-32768');
+          // 8B = everyday primary, 70B = deeper second brain / worker
+          await window.henryAPI.saveSetting('companion_model_2', 'llama-3.3-70b-versatile');
           await window.henryAPI.saveSetting('companion_provider_2', 'groq');
-          await window.henryAPI.saveSetting('worker_model', 'deepseek-r1-distill-llama-70b');
+          await window.henryAPI.saveSetting('worker_model', 'llama-3.3-70b-versatile');
           await window.henryAPI.saveSetting('worker_provider', 'groq');
           await window.henryAPI.saveSetting('chat_fast_model', 'llama-3.1-8b-instant');
           await window.henryAPI.saveSetting('chat_fast_provider', 'groq');
-          updateSetting('companion_model_2', 'mixtral-8x7b-32768');
+          updateSetting('companion_model_2', 'llama-3.3-70b-versatile');
           updateSetting('companion_provider_2', 'groq');
-          updateSetting('worker_model', 'deepseek-r1-distill-llama-70b');
+          updateSetting('worker_model', 'llama-3.3-70b-versatile');
           updateSetting('worker_provider', 'groq');
           updateSetting('chat_fast_model', 'llama-3.1-8b-instant');
           updateSetting('chat_fast_provider', 'groq');
