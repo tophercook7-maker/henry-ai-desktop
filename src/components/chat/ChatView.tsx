@@ -18,8 +18,9 @@ import {
   isHenryOperatingMode,
 } from '@/henry/charter';
 import { getWeather, type WeatherSnapshot } from '@/henry/weatherContext';
-import { resolveChat } from '@/henry/modelRouter';
+import { resolveChat, requiresQualityModel, modelShortName } from '@/henry/modelRouter';
 import { speak as ttsSpeakFn, cancelTTS } from '@/henry/ttsService';
+import { getPresencePhrase, speakPresence, detectPresenceTier } from '@/henry/ambientBrain';
 import {
   buildHenryMemoryContextBlock,
   capMessageContent,
@@ -963,7 +964,20 @@ export default function ChatView() {
     const effectiveMode = modeOverride ?? operatingMode;
     setIsStreaming(true);
     setStreamingContent('');
-    setCompanionStatus({ status: 'thinking' });
+
+    // Detect tier before resolving model (for presence phrase and status label)
+    const presenceTier = detectPresenceTier(content, settings);
+    const tierLabel = presenceTier === 'quality' ? '70B' : presenceTier === 'fast' ? '8B' : '';
+    setCompanionStatus({
+      status: 'thinking',
+      taskDescription: tierLabel ? `Thinking… (${tierLabel})` : 'Thinking…',
+    });
+
+    // Presence behavior — speak a short ack before heavy tasks so Henry feels responsive
+    if (presenceTier === 'quality' && ttsEnabled) {
+      const phrase = getPresencePhrase('quality', content);
+      if (phrase) void speakPresence(phrase, settings, []);
+    }
 
     // Lean memory slices from DB (summary, facts, workspace hints); format in memoryContext.ts
     const emptyLean: HenryLeanMemoryParts = {
@@ -1195,7 +1209,8 @@ export default function ChatView() {
         addMessage(assistantMsg);
         setStreamingContent('');
         setIsStreaming(false);
-        setCompanionStatus({ status: 'idle' });
+        setCompanionStatus({ status: 'done' });
+        setTimeout(() => setCompanionStatus({ status: 'idle' }), 1500);
 
         // Builder mode: extract HTML and show live preview
         if (effectiveMode === 'builder') {
@@ -1729,6 +1744,63 @@ export default function ChatView() {
               </button>
             </div>
           )}
+          {/* Henry state indicator */}
+          {companionStatus.status !== 'idle' && !isSearching && (
+            <div className={`flex items-center gap-2 mb-2 px-3 py-1.5 rounded-lg text-xs animate-fade-in border ${
+              companionStatus.status === 'thinking'
+                ? 'bg-henry-accent/6 border-henry-accent/15 text-henry-accent/80'
+                : companionStatus.status === 'streaming'
+                ? 'bg-henry-companion/6 border-henry-companion/15 text-henry-companion/80'
+                : companionStatus.status === 'working'
+                ? 'bg-henry-worker/6 border-henry-worker/15 text-henry-worker/80'
+                : companionStatus.status === 'done'
+                ? 'bg-henry-success/6 border-henry-success/20 text-henry-success/80'
+                : companionStatus.status === 'error'
+                ? 'bg-henry-error/6 border-henry-error/20 text-henry-error/80'
+                : 'bg-henry-surface/30 border-henry-border/30 text-henry-text-dim'
+            }`}>
+              {companionStatus.status === 'thinking' && (
+                <>
+                  <svg className="w-3 h-3 animate-spin shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <circle cx="12" cy="12" r="10" strokeOpacity="0.2" />
+                    <path d="M12 2a10 10 0 0 1 10 10" />
+                  </svg>
+                  <span>{companionStatus.taskDescription || 'Thinking…'}</span>
+                </>
+              )}
+              {companionStatus.status === 'streaming' && (
+                <>
+                  <span className="inline-flex gap-0.5 items-end h-3">
+                    <span className="w-0.5 h-1.5 bg-current rounded-full animate-bounce [animation-delay:0ms]" />
+                    <span className="w-0.5 h-2.5 bg-current rounded-full animate-bounce [animation-delay:150ms]" />
+                    <span className="w-0.5 h-1.5 bg-current rounded-full animate-bounce [animation-delay:300ms]" />
+                  </span>
+                  <span>Responding…</span>
+                </>
+              )}
+              {companionStatus.status === 'working' && (
+                <>
+                  <svg className="w-3 h-3 animate-spin shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <circle cx="12" cy="12" r="10" strokeOpacity="0.2" />
+                    <path d="M12 2a10 10 0 0 1 10 10" />
+                  </svg>
+                  <span>{companionStatus.taskDescription || 'Working…'}</span>
+                </>
+              )}
+              {companionStatus.status === 'done' && (
+                <>
+                  <svg className="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <path d="M20 6L9 17l-5-5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  <span>Done</span>
+                </>
+              )}
+              {companionStatus.status === 'error' && (
+                <span>{companionStatus.message || 'Something went wrong'}</span>
+              )}
+            </div>
+          )}
+
           {isSearching && (
             <div className="flex items-center gap-2 mb-2 px-3 py-1.5 rounded-lg bg-henry-accent/8 border border-henry-accent/15 text-xs text-henry-accent/80 animate-fade-in">
               <svg className="w-3.5 h-3.5 animate-spin shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

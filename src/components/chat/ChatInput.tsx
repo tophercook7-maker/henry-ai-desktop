@@ -34,11 +34,13 @@ export default function ChatInput({
   const [input, setInput] = useState('');
   const [listening, setListening] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
+  const [interimTranscript, setInterimTranscript] = useState('');
   const [dragOver, setDragOver] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const speechRecRef = useRef<any>(null);
   const settings = useStore((s) => s.settings);
 
   useEffect(() => {
@@ -75,6 +77,7 @@ export default function ChatInput({
       if (mediaRecorderRef.current?.state !== 'inactive') {
         mediaRecorderRef.current?.stop();
       }
+      speechRecRef.current?.stop();
     };
   }, []);
 
@@ -92,17 +95,51 @@ export default function ChatInput({
 
   async function startGroqWhisper() {
     try {
+      // Detect supported audio MIME type
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : MediaRecorder.isTypeSupported('audio/webm')
+        ? 'audio/webm'
+        : MediaRecorder.isTypeSupported('audio/mp4')
+        ? 'audio/mp4'
+        : '';
+
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mr = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      const mr = mimeType
+        ? new MediaRecorder(stream, { mimeType })
+        : new MediaRecorder(stream);
       audioChunksRef.current = [];
       mr.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
       mr.onstop = () => {
         stream.getTracks().forEach((t) => t.stop());
+        speechRecRef.current?.stop();
         transcribeAudio();
       };
       mr.start();
       mediaRecorderRef.current = mr;
       setListening(true);
+      setInterimTranscript('');
+
+      // Start SpeechRecognition for live interim display (Chrome/Edge/Android)
+      const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SR) {
+        try {
+          const rec = new SR();
+          rec.continuous = true;
+          rec.interimResults = true;
+          rec.lang = 'en-US';
+          rec.onresult = (e: any) => {
+            let interim = '';
+            for (let i = e.resultIndex; i < e.results.length; i++) {
+              if (!e.results[i].isFinal) interim += e.results[i][0].transcript;
+            }
+            if (interim) setInterimTranscript(interim);
+          };
+          rec.onerror = () => { /* ignore — Groq transcription is the source of truth */ };
+          rec.start();
+          speechRecRef.current = rec;
+        } catch { /* SpeechRecognition not available — graceful degrade */ }
+      }
     } catch {
       alert('Microphone access denied. Please allow microphone permission.');
     }
@@ -112,8 +149,11 @@ export default function ChatInput({
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
     }
+    speechRecRef.current?.stop();
+    speechRecRef.current = null;
     setListening(false);
     setTranscribing(true);
+    setInterimTranscript('');
   }
 
   async function transcribeAudio() {
@@ -380,12 +420,20 @@ export default function ChatInput({
         </div>
       </div>
 
-      <div className="flex items-center justify-between mt-2 px-1">
-        <span className="text-[10px] text-henry-text-muted">
+      <div className="flex items-center justify-between mt-2 px-1 min-h-[18px]">
+        <span className="text-[10px] text-henry-text-muted flex items-center gap-1.5 overflow-hidden">
           {listening ? (
-            <span className="text-henry-error">● Recording — tap mic to stop & transcribe</span>
+            <span className="flex items-center gap-1.5 text-henry-error font-medium">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-henry-error animate-pulse" />
+              {interimTranscript
+                ? <span className="text-henry-text font-normal truncate max-w-[280px]">{interimTranscript}</span>
+                : 'Listening… tap mic to stop'}
+            </span>
           ) : transcribing ? (
-            <span className="text-henry-accent">Transcribing with Whisper…</span>
+            <span className="flex items-center gap-1.5 text-henry-accent">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-henry-accent animate-pulse" />
+              Transcribing with Whisper…
+            </span>
           ) : (
             <>
               <span className="hidden sm:inline">Enter to send · Shift+Enter for new line · Drop files here</span>
@@ -394,7 +442,7 @@ export default function ChatInput({
           )}
         </span>
         {isStreaming && (
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 shrink-0">
             <div className="typing-dot" />
             <div className="typing-dot" />
             <div className="typing-dot" />
