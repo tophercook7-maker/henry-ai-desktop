@@ -1,136 +1,159 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useStore } from '../../store';
 import { setActiveWorkspaceContext } from '@/henry/workspaceContext';
+import {
+  seedWorkspace,
+  repairWorkspace,
+  isWorkspaceSeeded,
+  getWorkspaceManifest,
+} from '@/henry/workspaceSeeder';
 
-interface WorkspaceFolder {
-  name: string;
-  path: string;
+interface FolderInfo {
+  id: string;
+  label: string;
   description: string;
   icon: string;
+  path: string;
   fileCount: number;
 }
 
-/**
- * Workspace view — the organized folder structure from Henry's brief.
- * 5 core folders for business operations:
- * 1. Product & Engineering
- * 2. Business & Strategy
- * 3. Marketing & Content
- * 4. Operations & Legal
- * 5. Meetings & Communications
- */
-const WORKSPACE_FOLDERS: Omit<WorkspaceFolder, 'fileCount' | 'path'>[] = [
+const WORKSPACE_FOLDERS: Omit<FolderInfo, 'fileCount'>[] = [
   {
-    name: 'Product & Engineering',
-    description: 'Architecture docs, code plans, technical specs, PRD documents',
+    id: '01',
+    label: 'Product & Engineering',
+    description: 'Architecture docs, roadmap, model routing, memory blueprint, personality system',
     icon: '🔧',
+    path: '/workspace/01_Product_Engineering',
   },
   {
-    name: 'Business & Strategy',
-    description: 'Business plans, financial models, competitive analysis, pricing',
+    id: '02',
+    label: 'Business Strategy',
+    description: 'Vision, business model, offer ideas, revenue paths, priorities, launch plan',
     icon: '📊',
+    path: '/workspace/02_Business_Strategy',
   },
   {
-    name: 'Marketing & Content',
-    description: 'Brand assets, social content, blog posts, launch plans',
+    id: '03',
+    label: 'Marketing & Content',
+    description: 'Brand notes, messaging, content ideas, landing page copy, social posts',
     icon: '📢',
+    path: '/workspace/03_Marketing_Content',
   },
   {
-    name: 'Operations & Legal',
-    description: 'Contracts, policies, SOPs, compliance, vendor management',
+    id: '04',
+    label: 'Operations & Legal',
+    description: 'Policies, system notes, integrations list, security notes',
     icon: '📋',
+    path: '/workspace/04_Operations_Legal',
   },
   {
-    name: 'Meetings & Communications',
-    description: 'Meeting notes, agendas, follow-ups, stakeholder updates',
+    id: '05',
+    label: 'Meetings & Communications',
+    description: 'Weekly updates, meeting notes, decisions log',
     icon: '🤝',
+    path: '/workspace/05_Meetings_Communications',
+  },
+  {
+    id: '06',
+    label: 'Memory',
+    description: 'User profile, where we left off, current priorities, relationship summary, timeline',
+    icon: '🧠',
+    path: '/workspace/06_Memory',
+  },
+  {
+    id: '07',
+    label: 'Projects',
+    description: 'One subfolder per active project — overview, plan, tasks, notes, status',
+    icon: '🚀',
+    path: '/workspace/07_Projects',
+  },
+  {
+    id: '08',
+    label: 'Templates',
+    description: 'Reusable document templates — overview, status, roadmap, project, meeting, weekly review',
+    icon: '📐',
+    path: '/workspace/08_Templates',
+  },
+  {
+    id: '09',
+    label: 'Exports & Backups',
+    description: 'Generated exports, manual backups, workspace snapshots',
+    icon: '💾',
+    path: '/workspace/09_Exports_Backups',
+  },
+  {
+    id: '10',
+    label: 'System',
+    description: 'Config, memory schema notes, logs, prompts, state snapshots',
+    icon: '⚙️',
+    path: '/workspace/10_System',
   },
 ];
 
+interface RepairResult {
+  created: number;
+  timestamp: string;
+}
+
 export default function WorkspaceView() {
-  const [folders, setFolders] = useState<WorkspaceFolder[]>([]);
+  const [folders, setFolders] = useState<FolderInfo[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [folderFiles, setFolderFiles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [initializing, setInitializing] = useState(false);
-  const [isInitialized, setIsInitialized] = useState(false);
+  const [seeded, setSeeded] = useState(false);
+  const [seeding, setSeeding] = useState(false);
+  const [repairing, setRepairing] = useState(false);
+  const [repairResult, setRepairResult] = useState<RepairResult | null>(null);
+  const [manifest, setManifest] = useState<ReturnType<typeof getWorkspaceManifest>>(null);
 
-  useEffect(() => {
-    checkWorkspace();
+  const loadFolders = useCallback(async () => {
+    const loaded: FolderInfo[] = [];
+    for (const f of WORKSPACE_FOLDERS) {
+      let fileCount = 0;
+      try {
+        const result = await window.henryAPI.readDirectory(f.path);
+        fileCount = (result.entries || []).length;
+      } catch { /* folder may not exist yet */ }
+      loaded.push({ ...f, fileCount });
+    }
+    setFolders(loaded);
+    setManifest(getWorkspaceManifest());
   }, []);
 
-  async function checkWorkspace() {
-    setLoading(true);
-    try {
-      // Check if workspace folders exist
-      const result = await window.henryAPI.readDirectory();
-      const existingDirs = (result.entries || [])
-        .filter((e: any) => e.isDirectory)
-        .map((e: any) => e.name);
-
-      const wsExists = WORKSPACE_FOLDERS.some((f) =>
-        existingDirs.includes(f.name)
-      );
-
-      if (wsExists) {
-        setIsInitialized(true);
-        await loadFolders();
+  useEffect(() => {
+    void (async () => {
+      setLoading(true);
+      try {
+        const already = isWorkspaceSeeded();
+        setSeeded(already);
+        if (already) await loadFolders();
+      } finally {
+        setLoading(false);
       }
-    } catch (err) {
-      console.error('Failed to check workspace:', err);
-    } finally {
-      setLoading(false);
-    }
-  }
+    })();
+  }, [loadFolders]);
 
-  async function initializeWorkspace() {
-    setInitializing(true);
+  async function handleInitialize() {
+    setSeeding(true);
     try {
-      // Create each workspace folder
-      for (const folder of WORKSPACE_FOLDERS) {
-        const readmePath = `${folder.name}/README.md`;
-        const readmeContent = `# ${folder.icon} ${folder.name}\n\n${folder.description}\n\n---\n*Managed by Henry AI*\n`;
-
-        await window.henryAPI.writeFile(readmePath, readmeContent);
-      }
-
-      setIsInitialized(true);
+      seedWorkspace();
+      setSeeded(true);
       await loadFolders();
-    } catch (err) {
-      console.error('Failed to initialize workspace:', err);
     } finally {
-      setInitializing(false);
+      setSeeding(false);
     }
   }
 
-  async function loadFolders() {
+  async function handleRepair() {
+    setRepairing(true);
+    setRepairResult(null);
     try {
-      const result = await window.henryAPI.readDirectory();
-      const existingDirs = (result.entries || [])
-        .filter((e: any) => e.isDirectory)
-        .map((e: any) => e.name);
-
-      const loadedFolders: WorkspaceFolder[] = WORKSPACE_FOLDERS.map((f) => ({
-        ...f,
-        path: f.name,
-        fileCount: 0,
-      }));
-
-      // Count files in each folder
-      for (const folder of loadedFolders) {
-        if (existingDirs.includes(folder.name)) {
-          try {
-            const dirResult = await window.henryAPI.readDirectory(folder.path);
-            folder.fileCount = (dirResult.entries || []).length;
-          } catch {
-            // Folder might not exist yet
-          }
-        }
-      }
-
-      setFolders(loadedFolders);
-    } catch (err) {
-      console.error('Failed to load folders:', err);
+      const created = repairWorkspace();
+      setRepairResult({ created, timestamp: new Date().toLocaleTimeString() });
+      await loadFolders();
+      if (selectedFolder) await openFolder(selectedFolder);
+    } finally {
+      setRepairing(false);
     }
   }
 
@@ -138,105 +161,146 @@ export default function WorkspaceView() {
     setSelectedFolder(folderPath);
     try {
       const result = await window.henryAPI.readDirectory(folderPath);
-      setFolderFiles(result.entries || []);
-    } catch (err) {
-      console.error('Failed to read folder:', err);
+      setFolderFiles(
+        (result.entries || []).filter((e: any) => !e.name.startsWith('.')),
+      );
+    } catch {
       setFolderFiles([]);
     }
+  }
+
+  function openFileInBrowser() {
+    useStore.getState().setCurrentView('files');
   }
 
   if (loading) {
     return (
       <div className="h-full flex items-center justify-center">
-        <div className="text-henry-text-dim text-sm">Loading workspace...</div>
+        <div className="text-henry-text-dim text-sm animate-pulse">Checking workspace...</div>
       </div>
     );
   }
 
-  if (!isInitialized) {
-    return <WorkspaceInit onInit={initializeWorkspace} initializing={initializing} />;
+  if (!seeded) {
+    return <WorkspaceInit onInit={handleInitialize} seeding={seeding} />;
   }
+
+  const selectedFolderInfo = folders.find((f) => f.path === selectedFolder);
 
   return (
     <div className="h-full flex flex-col">
+      {/* Header */}
       <div className="shrink-0 px-6 py-4 border-b border-henry-border/50">
-        <h1 className="text-lg font-semibold text-henry-text">Workspace</h1>
-        <p className="text-xs text-henry-text-dim mt-1">
-          Your organized business folders — managed by Henry
-        </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-lg font-semibold text-henry-text">Workspace</h1>
+            <p className="text-xs text-henry-text-dim mt-0.5">
+              {manifest
+                ? `${manifest.files.length} documents across ${manifest.folders.length} folders`
+                : 'Henry\'s organized operating environment'}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            {repairResult && (
+              <span className="text-[10px] text-emerald-400 bg-emerald-400/10 px-2 py-1 rounded-md">
+                {repairResult.created > 0
+                  ? `Repaired: ${repairResult.created} files restored`
+                  : `Checked at ${repairResult.timestamp} — all files present`}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={handleRepair}
+              disabled={repairing}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs border border-henry-border/40 text-henry-text-dim hover:text-henry-text hover:border-henry-border/70 transition-colors disabled:opacity-50"
+            >
+              {repairing ? (
+                <span className="animate-spin text-[10px]">⟳</span>
+              ) : (
+                <span>🔧</span>
+              )}
+              {repairing ? 'Repairing…' : 'Repair Workspace'}
+            </button>
+            <button
+              type="button"
+              onClick={openFileInBrowser}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs border border-henry-border/40 text-henry-text-dim hover:text-henry-accent hover:border-henry-accent/40 transition-colors"
+            >
+              📂 Browse Files
+            </button>
+          </div>
+        </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6">
-        <div className="max-w-4xl mx-auto">
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-4xl mx-auto p-6">
           {/* Folder grid */}
-          <div className="grid grid-cols-2 gap-4 mb-8">
+          <div className="grid grid-cols-2 gap-3 mb-6">
             {folders.map((folder) => (
-              <div
-                key={folder.name}
-                className={`text-left p-5 rounded-xl border transition-all ${
+              <button
+                key={folder.id}
+                type="button"
+                onClick={() => openFolder(folder.path)}
+                className={`text-left p-4 rounded-xl border transition-all ${
                   selectedFolder === folder.path
-                    ? 'bg-henry-accent/5 border-henry-accent/30'
+                    ? 'bg-henry-accent/8 border-henry-accent/40 ring-1 ring-henry-accent/20'
                     : 'bg-henry-surface/30 border-henry-border/30 hover:border-henry-border/60 hover:bg-henry-surface/50'
                 }`}
               >
-                <div className="flex items-start justify-between gap-2 mb-2">
-                  <span className="text-2xl">{folder.icon}</span>
-                  <div className="flex flex-col items-end gap-1 shrink-0">
-                    <span className="text-[10px] text-henry-text-muted bg-henry-bg/50 px-2 py-0.5 rounded-full">
-                      {folder.fileCount} files
+                <div className="flex items-start justify-between mb-2">
+                  <span className="text-xl">{folder.icon}</span>
+                  <div className="flex flex-col items-end gap-1">
+                    <span className="text-[10px] text-henry-text-muted bg-henry-bg/60 px-2 py-0.5 rounded-full">
+                      {folder.fileCount} {folder.fileCount === 1 ? 'file' : 'files'}
                     </span>
                     <button
                       type="button"
-                      title="Use folder as chat workspace context"
-                      onClick={() =>
+                      title="Use as Henry's active workspace context"
+                      onClick={(e) => {
+                        e.stopPropagation();
                         setActiveWorkspaceContext({
                           path: folder.path,
                           kind: 'folder',
-                          label: folder.name,
-                        })
-                      }
-                      className="text-[9px] px-2 py-0.5 rounded-md border border-henry-border/40 text-henry-text-muted hover:text-henry-accent"
+                          label: folder.label,
+                        });
+                      }}
+                      className="text-[9px] px-2 py-0.5 rounded border border-henry-border/40 text-henry-text-muted hover:text-henry-accent hover:border-henry-accent/40 transition-colors"
                     >
                       Use as context
                     </button>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => openFolder(folder.path)}
-                  className="w-full text-left"
-                >
-                  <h3 className="text-sm font-medium text-henry-text mb-1">
-                    {folder.name}
-                  </h3>
-                  <p className="text-xs text-henry-text-dim leading-relaxed">
-                    {folder.description}
-                  </p>
-                </button>
-              </div>
+                <div className="text-xs font-medium text-henry-text mb-1">{folder.label}</div>
+                <div className="text-[11px] text-henry-text-dim leading-relaxed">{folder.description}</div>
+              </button>
             ))}
           </div>
 
           {/* Selected folder contents */}
           {selectedFolder && (
-            <div className="animate-fade-in">
-              <div className="flex items-center gap-2 mb-4">
-                <h2 className="text-sm font-semibold text-henry-text">
-                  {folders.find((f) => f.path === selectedFolder)?.icon}{' '}
-                  {selectedFolder}
-                </h2>
-                <span className="text-[10px] text-henry-text-muted">
-                  {folderFiles.length} items
-                </span>
+            <div className="animate-fade-in border-t border-henry-border/30 pt-5">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-base">{selectedFolderInfo?.icon}</span>
+                  <h2 className="text-sm font-semibold text-henry-text">{selectedFolderInfo?.label}</h2>
+                  <span className="text-[10px] text-henry-text-muted">
+                    {folderFiles.length} {folderFiles.length === 1 ? 'item' : 'items'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={openFileInBrowser}
+                  className="text-[10px] text-henry-accent hover:text-henry-accent-hover"
+                >
+                  Open in file browser →
+                </button>
               </div>
 
               {folderFiles.length === 0 ? (
-                <div className="p-8 rounded-xl bg-henry-surface/20 border border-henry-border/20 text-center">
-                  <p className="text-sm text-henry-text-dim">
-                    This folder is empty. Ask Henry to create documents here.
-                  </p>
-                  <p className="text-xs text-henry-text-muted mt-2">
-                    Example: "Create a business plan in Business & Strategy"
+                <div className="p-6 rounded-xl bg-henry-surface/20 border border-henry-border/20 text-center">
+                  <p className="text-sm text-henry-text-dim">This folder is empty.</p>
+                  <p className="text-xs text-henry-text-muted mt-1">
+                    Run Repair Workspace to restore starter documents.
                   </p>
                 </div>
               ) : (
@@ -244,43 +308,50 @@ export default function WorkspaceView() {
                   {folderFiles.map((file: any) => (
                     <div
                       key={file.path || file.name}
-                      className="flex items-center gap-3 px-4 py-2.5 rounded-lg bg-henry-surface/30 border border-henry-border/20 hover:border-henry-border/40 transition-colors"
+                      className="flex items-center gap-3 px-4 py-2.5 rounded-lg bg-henry-surface/30 border border-henry-border/20 hover:border-henry-border/40 transition-colors group"
                     >
-                      <span className="text-sm">
-                        {file.isDirectory ? '📁' : '📄'}
-                      </span>
-                      <span className="text-xs text-henry-text flex-1 truncate">
-                        {file.name}
-                      </span>
-                      <button
-                        type="button"
-                        title="Use as chat workspace context"
-                        onClick={() =>
-                          setActiveWorkspaceContext({
-                            path: file.path || `${selectedFolder}/${file.name}`,
-                            kind: file.isDirectory ? 'folder' : 'file',
-                            label: file.name,
-                          })
-                        }
-                        className="text-[10px] text-henry-text-muted hover:text-henry-accent shrink-0"
-                      >
-                        Context
-                      </button>
-                      {!file.isDirectory && (
+                      <span className="text-sm shrink-0">{file.isDirectory ? '📁' : '📄'}</span>
+                      <span className="text-xs text-henry-text flex-1 truncate">{file.name}</span>
+                      <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button
                           type="button"
-                          onClick={() => {
-                            useStore.getState().setCurrentView('files');
-                          }}
-                          className="text-[10px] text-henry-accent hover:text-henry-accent-hover shrink-0"
+                          title="Use as Henry's active workspace context"
+                          onClick={() =>
+                            setActiveWorkspaceContext({
+                              path: file.path || `${selectedFolder}/${file.name}`,
+                              kind: file.isDirectory ? 'folder' : 'file',
+                              label: file.name,
+                            })
+                          }
+                          className="text-[10px] text-henry-text-muted hover:text-henry-accent"
+                        >
+                          Context
+                        </button>
+                        <button
+                          type="button"
+                          onClick={openFileInBrowser}
+                          className="text-[10px] text-henry-accent hover:text-henry-accent-hover"
                         >
                           Open →
                         </button>
-                      )}
+                      </div>
                     </div>
                   ))}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Workspace manifest info */}
+          {manifest && (
+            <div className="mt-6 pt-4 border-t border-henry-border/20">
+              <div className="flex items-center gap-4 text-[10px] text-henry-text-muted">
+                <span>Seeded: {new Date(manifest.seeded_at).toLocaleDateString()}</span>
+                {manifest.last_repair && (
+                  <span>Last repair: {new Date(manifest.last_repair).toLocaleDateString()}</span>
+                )}
+                <span>v{(manifest as any).version}</span>
+              </div>
             </div>
           )}
         </div>
@@ -289,51 +360,51 @@ export default function WorkspaceView() {
   );
 }
 
+// ── Init screen ───────────────────────────────────────────────────────────────
+
 function WorkspaceInit({
   onInit,
-  initializing,
+  seeding,
 }: {
   onInit: () => void;
-  initializing: boolean;
+  seeding: boolean;
 }) {
   return (
-    <div className="h-full flex items-center justify-center animate-fade-in">
-      <div className="text-center max-w-lg">
-        <div className="text-5xl mb-6">🗂️</div>
-        <h2 className="text-2xl font-bold text-henry-text mb-3">
-          Set Up Your Workspace
-        </h2>
-        <p className="text-henry-text-dim mb-6 leading-relaxed">
-          Henry organizes your work into 5 core folders. Each one has a clear
-          purpose, and Henry knows where to put things.
+    <div className="h-full flex items-center justify-center animate-fade-in p-6">
+      <div className="text-center max-w-lg w-full">
+        <div className="text-5xl mb-5">🗂️</div>
+        <h2 className="text-xl font-bold text-henry-text mb-2">Set Up Your Workspace</h2>
+        <p className="text-sm text-henry-text-dim mb-6 leading-relaxed">
+          Henry will create a fully seeded workspace with 40+ real documents across 10 organized folders.
+          Every file starts with meaningful content — no placeholders, no empty scaffolds.
         </p>
 
-        <div className="grid grid-cols-1 gap-2 mb-8 text-left">
+        <div className="grid grid-cols-2 gap-2 mb-6 text-left">
           {WORKSPACE_FOLDERS.map((folder) => (
             <div
-              key={folder.name}
-              className="flex items-center gap-3 p-3 rounded-lg bg-henry-surface/30 border border-henry-border/20"
+              key={folder.id}
+              className="flex items-center gap-2.5 p-2.5 rounded-lg bg-henry-surface/30 border border-henry-border/20"
             >
-              <span className="text-lg">{folder.icon}</span>
-              <div>
-                <div className="text-xs font-medium text-henry-text">
-                  {folder.name}
-                </div>
-                <div className="text-[10px] text-henry-text-muted">
-                  {folder.description}
-                </div>
+              <span className="text-base shrink-0">{folder.icon}</span>
+              <div className="min-w-0">
+                <div className="text-[11px] font-medium text-henry-text truncate">{folder.label}</div>
+                <div className="text-[10px] text-henry-text-muted leading-snug line-clamp-2">{folder.description}</div>
               </div>
             </div>
           ))}
         </div>
 
         <button
+          type="button"
           onClick={onInit}
-          disabled={initializing}
-          className="px-8 py-3 bg-henry-accent text-white rounded-xl font-medium hover:bg-henry-accent-hover transition-colors"
+          disabled={seeding}
+          className="px-8 py-3 bg-henry-accent text-white rounded-xl font-medium hover:bg-henry-accent-hover transition-colors disabled:opacity-60 disabled:cursor-wait"
         >
-          {initializing ? 'Creating folders...' : 'Initialize Workspace →'}
+          {seeding ? 'Creating workspace…' : 'Initialize Workspace →'}
         </button>
+        <p className="text-[10px] text-henry-text-muted mt-3">
+          Safe to run any time — never overwrites files you've edited.
+        </p>
       </div>
     </div>
   );
