@@ -75,7 +75,7 @@ async function speakGroq(
   const voice = settings.tts_voice_groq || 'Fritz-PlayAI';
 
   try {
-    const res = await fetch('/proxy/groq/openai/v1/audio/speech', {
+    const res = await fetch('https://api.groq.com/openai/v1/audio/speech', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -160,7 +160,7 @@ export async function transcribeWithGroq(
   form.append('model', model);
   form.append('response_format', 'text');
 
-  const res = await fetch('/proxy/groq/openai/v1/audio/transcriptions', {
+  const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}` },
     body: form,

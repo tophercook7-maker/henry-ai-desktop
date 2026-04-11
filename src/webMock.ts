@@ -31,6 +31,11 @@ function on<T>(event: string, cb: Listener<T>): () => void {
 
 const now = () => new Date().toISOString();
 
+// ── Direct API endpoints (bypass the Vite dev-server proxy) ───────────────
+// Groq supports browser-side CORS requests natively — calling api.groq.com
+// directly is simpler and more reliable than routing through the local proxy.
+const GROQ_DIRECT = 'https://api.groq.com';
+
 // ── Mobile proxy support ───────────────────────────────────────────────────
 // On web/Electron: relative /proxy/* paths work (Vite dev server or IPC).
 // On Capacitor iOS/Android: there is no local server — must prefix with the
@@ -47,6 +52,11 @@ function getProxyBase(): string {
 
 function proxyFetch(path: string, init?: RequestInit): Promise<Response> {
   return fetch(`${getProxyBase()}${path}`, init);
+}
+
+// Direct fetch to Groq — no local proxy hop, no Replit reverse-proxy layers.
+function groqFetch(path: string, init?: RequestInit): Promise<Response> {
+  return fetch(`${GROQ_DIRECT}${path}`, init);
 }
 
 // ── Worker Brain: actual AI execution in web mode ──────────────────────────
@@ -110,7 +120,7 @@ async function runWorkerAI(params: {
       const data = await res.json() as any;
       resultText = data.choices?.[0]?.message?.content ?? '';
     } else if (workerProvider === 'groq') {
-      const res = await proxyFetch('/proxy/groq/openai/v1/chat/completions', {
+      const res = await groqFetch('/openai/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
         body: JSON.stringify({ model: workerModel, messages, temperature: 0.7, max_tokens: 4000 }),
@@ -280,7 +290,7 @@ const henryAPI: Window['henryAPI'] = {
     }
 
     if (provider === 'groq') {
-      const res = await proxyFetch('/proxy/groq/openai/v1/chat/completions', {
+      const res = await groqFetch('/openai/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
         body: JSON.stringify({ model, messages, temperature: temperature ?? 0.7, max_tokens: maxTokens }),
@@ -406,7 +416,7 @@ const henryAPI: Window['henryAPI'] = {
           await readOpenAIStream(res);
           doneCb?.(fullText);
         } else if (provider === 'groq') {
-          const res = await proxyFetch('/proxy/groq/openai/v1/chat/completions', {
+          const res = await groqFetch('/openai/v1/chat/completions', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
             body: JSON.stringify({ model, messages, temperature: temperature ?? 0.7, max_tokens: maxTokens, stream: true }),
@@ -1313,7 +1323,7 @@ const henryAPI: Window['henryAPI'] = {
     form.append('file', audioBlob, 'audio.webm');
     form.append('model', 'whisper-large-v3');
     form.append('response_format', 'text');
-    const res = await proxyFetch('/proxy/groq/openai/v1/audio/transcriptions', {
+    const res = await groqFetch('/openai/v1/audio/transcriptions', {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}` },
       body: form,
