@@ -1,6 +1,5 @@
-const CACHE_NAME = 'henry-ai-v1';
+const CACHE_NAME = 'henry-ai-v3';
 const APP_SHELL = [
-  '/',
   '/manifest.json',
   '/icon.svg',
 ];
@@ -26,6 +25,7 @@ self.addEventListener('fetch', (event) => {
 
   // Never intercept AI API calls — always go to network
   if (
+    url.hostname.includes('groq.com') ||
     url.hostname.includes('openai.com') ||
     url.hostname.includes('anthropic.com') ||
     url.hostname.includes('googleapis.com') ||
@@ -35,15 +35,24 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // For navigation requests, serve the app shell (SPA routing)
+  // Navigation requests: always network-first so code updates
+  // reach the browser immediately without a hard refresh.
   if (event.request.mode === 'navigate') {
     event.respondWith(
-      caches.match('/').then((cached) => cached || fetch(event.request))
+      fetch(event.request).catch(() =>
+        caches.match('/').then((cached) => cached || Response.error())
+      )
     );
     return;
   }
 
-  // Cache-first for static assets
+  // JS/CSS/TS source modules: always network-first so Vite hot updates land.
+  if (url.pathname.startsWith('/src/') || url.pathname.includes('.tsx') || url.pathname.includes('.ts')) {
+    event.respondWith(fetch(event.request));
+    return;
+  }
+
+  // Cache-first for other static assets (icons, fonts, manifest)
   event.respondWith(
     caches.match(event.request).then((cached) => {
       if (cached) return cached;
