@@ -1183,21 +1183,23 @@ const henryAPI: Window['henryAPI'] = {
   },
 
   ollamaStatus: async (baseUrl) => {
+    const url = baseUrl || 'http://localhost:11434';
     try {
-      const url = baseUrl || 'http://localhost:11434';
       const res = await fetch(`${url}/api/version`);
-      const data = await res.json();
-      return data;
+      if (!res.ok) return { running: false, url, error: `Ollama returned ${res.status}` };
+      const data = await res.json() as { version?: string };
+      return { running: true, url, version: data.version };
     } catch {
-      return { error: 'Ollama not available' };
+      return { running: false, url, error: 'Ollama not available' };
     }
   },
   ollamaModels: async (baseUrl) => {
     try {
       const url = baseUrl || 'http://localhost:11434';
       const res = await fetch(`${url}/api/tags`);
-      const data = await res.json();
-      return data;
+      if (!res.ok) return { models: [], error: `Ollama returned ${res.status}` };
+      const data = await res.json() as { models?: Array<{ name: string }> };
+      return { models: data.models ?? [] };
     } catch {
       return { models: [] };
     }
@@ -1210,10 +1212,15 @@ const henryAPI: Window['henryAPI'] = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: model }),
       });
-      const data = await res.json();
-      return data;
+      if (!res.ok) {
+        const errBody = await res.text().catch(() => '');
+        let errMsg = `Ollama pull failed (${res.status})`;
+        try { const j = JSON.parse(errBody) as { error?: string }; if (j.error) errMsg = j.error; } catch { /* */ }
+        return { success: false, error: errMsg };
+      }
+      return { success: true };
     } catch (err) {
-      return { error: String(err) };
+      return { success: false, error: String(err) };
     }
   },
   ollamaDelete: async (model, baseUrl) => {
@@ -1224,10 +1231,15 @@ const henryAPI: Window['henryAPI'] = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: model }),
       });
-      const data = await res.json();
-      return data;
+      if (!res.ok) {
+        const errBody = await res.text().catch(() => '');
+        let errMsg = `Ollama delete failed (${res.status})`;
+        try { const j = JSON.parse(errBody) as { error?: string }; if (j.error) errMsg = j.error; } catch { /* */ }
+        return { success: false, error: errMsg };
+      }
+      return { success: true };
     } catch (err) {
-      return { error: String(err) };
+      return { success: false, error: String(err) };
     }
   },
   onOllamaPullProgress: (cb) => on('ollama:pull:progress', cb),
