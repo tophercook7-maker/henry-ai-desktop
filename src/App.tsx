@@ -92,15 +92,19 @@ export default function App() {
       }
 
       // ── Auto-bootstrap Groq from server env key (web/Replit preview mode) ──
-      // If GROQ_API_KEY is baked in by Vite at build time and no provider is
-      // saved yet, inject it silently — no wizard required.
+      // Always refresh the key from the env var so stale/empty localStorage
+      // entries never cause "Failed to fetch" errors.
       const envGroqKey = typeof __GROQ_API_KEY__ !== 'undefined' ? __GROQ_API_KEY__ : '';
       if (envGroqKey) {
         const existingProviders: HenryProviderRecord[] = (() => {
           try { return JSON.parse(localStorage.getItem('henry:providers') || '[]'); } catch { return []; }
         })();
-        const groqAlreadySaved = existingProviders.some((p: any) => p.id === 'groq' && (p.api_key || p.apiKey));
-        if (!groqAlreadySaved) {
+        const savedGroq = existingProviders.find((p: any) => p.id === 'groq');
+        const savedKey = savedGroq?.api_key || (savedGroq as any)?.apiKey || '';
+
+        // Always upsert if the stored key differs from the env key (covers first-run
+        // AND any key rotation or storage corruption scenario)
+        if (savedKey !== envGroqKey) {
           await window.henryAPI.saveProvider({
             id: 'groq',
             name: 'Groq',

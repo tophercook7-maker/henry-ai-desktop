@@ -615,6 +615,8 @@ const henryAPI: Window['henryAPI'] = {
               const settings = getStore<Record<string, string>>('henry:settings', {});
               const baseUrl = settings.ollama_base_url || 'http://localhost:11434';
               friendly = `Cannot reach Ollama at ${baseUrl}.\n\nMake sure Ollama is running with:\n  OLLAMA_HOST=0.0.0.0 OLLAMA_ORIGINS=* ollama serve\n\nThen confirm the base URL in Settings → Engines matches your Mac's local IP (e.g. http://192.168.1.x:11434).`;
+            } else if (provider === 'groq') {
+              friendly = `Couldn't reach Groq — this is usually a brief network hiccup. Try sending again. If it keeps happening, reload the page.`;
             } else {
               friendly = `Network error reaching ${provider} API (${raw}).\n\nCheck your connection and API key in Settings → AI Providers.`;
             }
