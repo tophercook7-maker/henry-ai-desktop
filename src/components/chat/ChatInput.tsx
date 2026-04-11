@@ -152,9 +152,12 @@ export default function ChatInput({
     if (listening) stopGroqWhisper();
     onSend(trimmed);
     setInput('');
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-    }
+    requestAnimationFrame(() => {
+      if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto';
+        textareaRef.current.focus();
+      }
+    });
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
