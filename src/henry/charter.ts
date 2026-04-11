@@ -16,6 +16,7 @@ import { buildWriterSystemAddition } from './writerPrompts';
 import { buildRichMemoryBlock, buildContactsContextBlock } from './richMemory';
 import { formatWeatherBlock, type WeatherSnapshot } from './weatherContext';
 import { buildIntegrationsContextBlock } from './integrations';
+import { buildWorkingMemoryBlock, buildNarrativeBlock } from './workingMemory';
 
 export const HENRY_OPERATING_MODES = [
   'companion',
@@ -411,13 +412,19 @@ When search results are sparse or unhelpful, say so honestly and supplement from
   const richContextBlock = [richMemoryBlock, contactsBlock].filter(Boolean).join('\n\n');
   const integrationsBlock = buildIntegrationsContextBlock();
 
+  // Layer 3: Working memory (commitments, next steps, unresolved questions, active focus)
+  const workingMemoryBlock = buildWorkingMemoryBlock();
+  // Narrative continuity (rolling story of what the user has been building)
+  const narrativeBlock = buildNarrativeBlock();
+  const continuityBlock = [narrativeBlock, workingMemoryBlock].filter(Boolean).join('\n\n');
+
   return `${buildCoreIdentity()}
 
 ${timeBlock}
 ${getModeInstruction(mode)}
 ${writerBlock}${design3dBlock}${biblicalBlock}
 ${toolUseBlock}
-${memoryBlock}${richContextBlock ? `${richContextBlock}\n\n` : ''}${integrationsBlock ? `${integrationsBlock}\n\n` : ''}You are the Local Brain — always present for real-time conversation. The Second Brain (Cloud) handles heavy background tasks in parallel; you stay alive and responsive regardless of what it's doing. You are never too busy for ${ownerName}.
+${memoryBlock}${richContextBlock ? `${richContextBlock}\n\n` : ''}${integrationsBlock ? `${integrationsBlock}\n\n` : ''}${continuityBlock ? `${continuityBlock}\n\n` : ''}You are the Local Brain — always present for real-time conversation. The Second Brain (Cloud) handles heavy background tasks in parallel; you stay alive and responsive regardless of what it's doing. You are never too busy for ${ownerName}.
 
 Use markdown when it improves clarity. Be concise unless depth is requested. Never cut off a thought mid-answer.`;
 }

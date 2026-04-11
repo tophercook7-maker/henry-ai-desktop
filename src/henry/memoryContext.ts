@@ -5,6 +5,7 @@
 
 import type { HenryLeanMemoryParts } from '../types';
 import type { HenryOperatingMode } from './charter';
+import { scoreMemoryFact } from './workingMemory';
 
 /**
  * Caps for prompt-sized memory.
@@ -62,14 +63,6 @@ export function sliceRecentThreadMessages<T extends { role: string; content: str
   return items.slice(-max);
 }
 
-function categorySortOrder(category: string): number {
-  const c = category.toLowerCase();
-  if (c.includes('decision')) return 0;
-  if (c.includes('next') || c.includes('step') || c.includes('action')) return 1;
-  if (c.includes('prefer')) return 2;
-  if (c.includes('project') || c.includes('task')) return 3;
-  return 4;
-}
 
 export interface BuildHenryMemoryContextInput {
   mode: HenryOperatingMode;
@@ -96,8 +89,9 @@ export interface BuildHenryMemoryContextInput {
  */
 export function buildHenryMemoryContextBlock(input: BuildHenryMemoryContextInput): string {
   const facts = dedupeFactsTop(input.lean.facts, HENRY_MEMORY_CAPS.maxFactsInPrompt);
+  // Sort facts by combined importance score (importance field + recency + category weight)
   const sortedFacts = [...facts].sort(
-    (a, b) => categorySortOrder(a.category) - categorySortOrder(b.category)
+    (a, b) => scoreMemoryFact(b) - scoreMemoryFact(a)
   );
 
   const lines: string[] = [];

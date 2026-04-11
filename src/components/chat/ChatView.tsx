@@ -118,6 +118,8 @@ import {
 } from '@/henry/bibleCorpus';
 import { logAction } from '@/henry/auditLog';
 import { extractHtmlFromMessage } from '@/henry/builderPreview';
+import { detectEmotionalState, buildEmotionBlock } from '@/henry/emotionDetector';
+import { autoSaveCommitments, addWorkingItem } from '@/henry/workingMemory';
 import BuilderPreviewPanel from './BuilderPreviewPanel';
 
 const HENRY_OPERATING_MODE_KEY = 'henry_operating_mode';
@@ -1187,8 +1189,13 @@ export default function ChatView() {
       }
     }
 
-    // Enrich system prompt with live web context + Bible corpus if applicable
+    // Emotional intelligence — detect user state and adapt tone
+    const emotionResult = detectEmotionalState(content);
+    const emotionBlock = buildEmotionBlock(emotionResult);
+
+    // Enrich system prompt with emotion adaptation + live web context + Bible corpus
     const extraContext = [
+      emotionBlock,
       webContextBlock,
       bibleContextBlock,
     ].filter(Boolean).join('\n\n');
@@ -1286,6 +1293,11 @@ export default function ChatView() {
         setIsStreaming(false);
         setCompanionStatus({ status: 'done' });
         setTimeout(() => setCompanionStatus({ status: 'idle' }), 1500);
+
+        // Auto-extract Henry's commitments and next steps into working memory
+        if (fullText.length > 80) {
+          autoSaveCommitments(fullText, convId);
+        }
 
         // Builder mode: extract HTML and show live preview
         if (effectiveMode === 'builder') {
@@ -1901,6 +1913,10 @@ export default function ChatView() {
             <div className={`flex items-center gap-2 mb-2 px-3 py-1.5 rounded-lg text-xs animate-fade-in border ${
               companionStatus.status === 'thinking'
                 ? 'bg-henry-accent/6 border-henry-accent/15 text-henry-accent/80'
+                : companionStatus.status === 'planning'
+                ? 'bg-henry-accent/8 border-henry-accent/20 text-henry-accent/85'
+                : companionStatus.status === 'acting'
+                ? 'bg-henry-worker/8 border-henry-worker/20 text-henry-worker/85'
                 : companionStatus.status === 'streaming'
                 ? 'bg-henry-companion/6 border-henry-companion/15 text-henry-companion/80'
                 : companionStatus.status === 'working'
@@ -1918,6 +1934,25 @@ export default function ChatView() {
                     <path d="M12 2a10 10 0 0 1 10 10" />
                   </svg>
                   <span>{companionStatus.taskDescription || 'Thinking…'}</span>
+                </>
+              )}
+              {companionStatus.status === 'planning' && (
+                <>
+                  <svg className="w-3 h-3 animate-spin shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <circle cx="12" cy="12" r="10" strokeOpacity="0.2" />
+                    <path d="M12 2a10 10 0 0 1 10 10" />
+                  </svg>
+                  <span>{companionStatus.taskDescription || 'Planning…'}</span>
+                </>
+              )}
+              {companionStatus.status === 'acting' && (
+                <>
+                  <span className="inline-flex gap-0.5 items-end h-3">
+                    <span className="w-1 h-1 bg-current rounded-full animate-bounce [animation-delay:0ms]" />
+                    <span className="w-1 h-1 bg-current rounded-full animate-bounce [animation-delay:150ms]" />
+                    <span className="w-1 h-1 bg-current rounded-full animate-bounce [animation-delay:300ms]" />
+                  </span>
+                  <span>{companionStatus.taskDescription || 'Acting…'}</span>
                 </>
               )}
               {companionStatus.status === 'streaming' && (

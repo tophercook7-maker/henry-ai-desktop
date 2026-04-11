@@ -87,7 +87,7 @@ export interface TaskSubmission {
 // ── Engine Types ──────────────────────────────────────────────
 
 export interface EngineStatus {
-  status: 'idle' | 'thinking' | 'working' | 'streaming' | 'error' | 'done';
+  status: 'idle' | 'thinking' | 'planning' | 'acting' | 'working' | 'streaming' | 'error' | 'done';
   taskId?: string;
   taskDescription?: string;
   message?: string;
