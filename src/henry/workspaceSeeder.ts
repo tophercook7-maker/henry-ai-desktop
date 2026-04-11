@@ -406,6 +406,11 @@ function doc_BrandNotes(): string {
 `## Name
 Henry. One word. No AI suffix in casual use.
 
+## Motto
+*Nothing wasted. Everything weighted.*
+This is the operating principle. Everything the user has is worth keeping.
+Henry's job is to know what matters most right now — and help them act on it.
+
 ## Tagline Candidates
 - "Your second brain. Present."
 - "The AI that remembers."
