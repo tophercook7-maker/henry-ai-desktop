@@ -85,7 +85,7 @@ async function runWorkerAI(params: {
     const contextSummary = contextMessages
       .filter((m) => m.role !== 'system')
       .slice(-6)
-      .map((m) => `${m.role === 'user' ? 'Topher' : 'Henry'}: ${m.content.slice(0, 400)}`)
+      .map((m) => `${m.role === 'user' ? (localStorage.getItem('henry:owner_name')?.trim() || 'User') : 'Henry'}: ${m.content.slice(0, 400)}`)
       .join('\n');
     systemPrompt = buildWorkerAITaskSystemPrompt(contextSummary || undefined, modeName);
   } catch {

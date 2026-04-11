@@ -891,7 +891,7 @@ function GeneralTab() {
               type="text"
               value={ownerName}
               onChange={(e) => setOwnerName(e.target.value)}
-              placeholder="Topher"
+              placeholder="Your name"
               className="w-full bg-henry-bg border border-henry-border rounded-lg px-3 py-2 text-sm text-henry-text outline-none focus:border-henry-accent/50 transition-colors"
             />
           </div>

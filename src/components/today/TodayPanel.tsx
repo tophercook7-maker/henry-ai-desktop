@@ -116,7 +116,7 @@ export default function TodayPanel() {
         model: s.companion_model,
         apiKey: provider.api_key || provider.apiKey || '',
         messages: [
-          { role: 'system', content: 'You are Henry. Generate a concise, warm morning briefing. No greetings like "Good morning Topher" — start with the substance. Under 200 words. Use simple formatting.' },
+          { role: 'system', content: 'You are Henry. Generate a concise, warm morning briefing. No generic greetings by name — start with the substance. Under 200 words. Use simple formatting.' },
           { role: 'user', content: prompt },
         ],
         temperature: 0.7,

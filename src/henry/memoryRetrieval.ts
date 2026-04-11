@@ -140,7 +140,8 @@ export function formatDeepContext(
     const lines = relationshipMemory.map((r: any) =>
       `- ${r.pattern_type.replace(/_/g, ' ')}: ${r.summary}`
     );
-    sections.push(`## How Topher Works Best\n${lines.join('\n')}`);
+    const ownerName = localStorage.getItem('henry:owner_name')?.trim() || 'the user';
+    sections.push(`## How ${ownerName} Works Best\n${lines.join('\n')}`);
     layerSummary.push(`${relationshipMemory.length} relationship pattern${relationshipMemory.length > 1 ? 's' : ''}`);
   }
 

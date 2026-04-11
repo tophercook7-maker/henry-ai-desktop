@@ -105,7 +105,8 @@ export default function FocusPanel() {
       if (!provider) return;
 
       const mins = Math.round(session.duration / 60);
-      const prompt = `Topher just completed a ${mins}-minute focus session on: "${session.task}". This is session #${count} today. Give a brief, warm, energizing check-in — acknowledge the work, ask how it went, one practical next thought. Under 60 words, conversational.`;
+      const focusOwner = localStorage.getItem('henry:owner_name')?.trim() || 'the user';
+      const prompt = `${focusOwner} just completed a ${mins}-minute focus session on: "${session.task}". This is session #${count} today. Give a brief, warm, energizing check-in — acknowledge the work, ask how it went, one practical next thought. Under 60 words, conversational.`;
 
       let full = '';
       const stream = window.henryAPI.streamMessage({

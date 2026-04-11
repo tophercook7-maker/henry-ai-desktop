@@ -56,7 +56,10 @@ export function buildBriefingPrompt(facts: string): string {
   const hour = now.getHours();
   const greeting = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening';
 
-  return `It's ${greeting} on ${dateStr} at ${timeStr}. Generate a brief, warm daily briefing for Topher.
+  const ownerName = localStorage.getItem('henry:owner_name')?.trim() || 'you';
+  const contextLabel = ownerName === 'you' ? 'Context' : `Context about ${ownerName}`;
+
+  return `It's ${greeting} on ${dateStr} at ${timeStr}. Generate a brief, warm daily briefing for ${ownerName === 'you' ? 'the user' : ownerName}.
 
 Structure (keep it tight — under 200 words total):
 1. One opening line acknowledging the day (not generic — say something true about ${now.toLocaleDateString('en-US', { weekday: 'long' })}s)
@@ -64,7 +67,7 @@ Structure (keep it tight — under 200 words total):
 3. One thing to keep in mind today
 4. One quick win to start with
 
-${facts ? `Context about Topher:\n${facts}\n` : ''}
+${facts ? `${contextLabel}:\n${facts}\n` : ''}
 
 Be warm and direct. No corporate language. Sound like you've been in the room all morning.`;
 }

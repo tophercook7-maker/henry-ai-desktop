@@ -153,8 +153,9 @@ export function buildRichMemoryBlock(): string {
 
   const lines: string[] = [];
 
+  const richOwner = localStorage.getItem('henry:owner_name')?.trim() || 'the user';
   if (projects.length > 0) {
-    lines.push('**Active projects Topher is working on:**');
+    lines.push(`**Active projects ${richOwner} is working on:**`);
     for (const p of projects) {
       lines.push(`- **${p.name}**: ${p.description}${p.nextStep ? ` → Next: ${p.nextStep}` : ''}`);
     }
@@ -162,7 +163,7 @@ export function buildRichMemoryBlock(): string {
   }
 
   if (goals.length > 0) {
-    lines.push("**Topher's current goals:**");
+    lines.push(`**${richOwner === 'the user' ? 'Current' : `${richOwner}'s`} goals:**`);
     for (const g of goals) {
       const pct = g.progress > 0 ? ` (${g.progress}% complete)` : '';
       lines.push(`- **${g.title}**${pct}${g.timeframe ? ` — ${g.timeframe}` : ''}: ${g.description}`);
@@ -171,7 +172,7 @@ export function buildRichMemoryBlock(): string {
   }
 
   if (people.length > 0) {
-    lines.push('**People important to Topher (mention when relevant):**');
+    lines.push(`**People important to ${richOwner} (mention when relevant):**`);
     for (const p of people) {
       const rel = p.relationship ? ` — ${p.relationship}` : '';
       const ctx = p.context ? `: ${p.context}` : '';
@@ -196,7 +197,8 @@ export function buildContactsContextBlock(): string {
       lastInteraction?: string;
     }>;
     if (!contacts.length) return '';
-    const lines = ['**People in Topher\'s network (use for context when mentioned):**'];
+    const contactOwner = localStorage.getItem('henry:owner_name')?.trim() || 'the user';
+    const lines = [`**People in ${contactOwner}'s network (use for context when mentioned):**`];
     for (const c of contacts.slice(0, 12)) {
       const parts = [c.name];
       if (c.role) parts.push(c.role);

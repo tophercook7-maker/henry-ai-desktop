@@ -9,6 +9,10 @@ const MANIFEST_KEY = 'henry:workspace_manifest:v1';
 const FILES_KEY = 'henry:files';
 const SEEDER_VERSION = '1.0.0';
 
+function getOwnerName(): string {
+  return localStorage.getItem('henry:owner_name')?.trim() || 'the user';
+}
+
 interface WorkspaceManifest {
   version: string;
   seeded_at: string;
@@ -41,7 +45,7 @@ function saveFiles(files: Record<string, string>): void {
 
 function header(title: string, status: 'Draft' | 'Active' | 'Final', summary: string, links?: string): string {
   return `Title: ${title}
-Owner: Topher
+Owner: ${getOwnerName()}
 Status: ${status}
 Summary: ${summary}
 Links: ${links || 'none yet'}
@@ -54,9 +58,10 @@ Links: ${links || 'none yet'}
 // ── Document Content Generators ───────────────────────────────────────────────
 
 function doc_HenryAIOverview(): string {
+  const owner = getOwnerName();
   return header('Henry AI – Overview', 'Active', 'High-level overview of what Henry is, who it serves, and how it works.', 'Henry AI – Architecture Spec; Henry AI – Product Roadmap') +
 `## What Henry Is
-Henry is a personal AI operating system built for Topher. Not a generic chatbot — a presence.
+Henry is a personal AI operating system. Not a generic chatbot — a presence.
 He runs on Groq (8B Instant / 70B Versatile), works offline with Ollama, and carries full memory across sessions.
 
 ## Core Capabilities
@@ -69,7 +74,7 @@ He runs on Groq (8B Instant / 70B Versatile), works offline with Ollama, and car
 - Electron desktop + Capacitor mobile
 
 ## Who It Serves
-Topher — and his household. Henry is not a product for everyone; he is a system built for one person.
+${owner} — and their household. Henry adapts to the person using it.
 
 ## Philosophy
 Clarity over chaos. Continuity over fragmentation. Progress over noise.
@@ -212,15 +217,15 @@ Henry's memory system runs on 12 SQLite tables with a bandwidth-aware context bu
 Memory flows from ingestion → scoring → retrieval → prompt injection.
 
 ## Tables
-1. personal_memory — facts about Topher's life, preferences, patterns
+1. personal_memory — facts about the user's life, preferences, patterns
 2. projects — active and past projects
 3. project_memory — memory scoped to a project
 4. session_memory — per-conversation state
 5. working_memory — active commitments and open loops
 6. goals — short and long-term goals
-7. commitments — promises Henry has made or Topher has made
+7. commitments — promises Henry has made or the user has made
 8. milestones — completed achievements
-9. relationship_memory — patterns about people in Topher's life
+9. relationship_memory — patterns about people in the user's life
 10. narrative_memory — rolling life/work story arcs
 11. memory_summaries — compressed conversation summaries
 12. memory_graph_edges — links between memory nodes
@@ -328,14 +333,14 @@ Henry becomes the most personalized AI system in existence — not because it ha
 but because it knows one person deeply, consistently, and well.
 
 ## What Success Looks Like
-- Topher never has to re-explain context. Henry already knows.
+- The user never has to re-explain context. Henry already knows.
 - Every session picks up exactly where the last one left off.
 - Henry anticipates needs based on patterns, not just prompts.
 - Henry feels like a presence, not a tool.
 - The workspace is alive — updated, linked, and useful.
 
 ## Long-Term Direction
-Henry evolves from a personal AI into a full operating system for Topher's life and work.
+Henry evolves from a personal AI into a full operating system for the user's life and work.
 Memory deepens. Automation grows. Voice becomes seamless. Mobile works anywhere.
 
 ## Non-Goals
@@ -391,7 +396,7 @@ function doc_Priorities(): string {
 - Major new feature additions
 
 ## Guiding Filter
-Does this make Henry more present, more continuous, more useful to Topher?
+Does this make Henry more present, more continuous, more useful to the user?
 If yes → priority. If no → defer.
 `;
 }
@@ -420,16 +425,17 @@ Short version: calm, direct, warm, intelligent. Never corporate, never theatrica
 
 ## What Henry Is Not
 A product for everyone. A generic assistant. A chatbot.
-He is a presence built for Topher — and that specificity is the brand.
+Henry is a presence built for one person — and that specificity is the brand.
 `;
 }
 
 function doc_UserProfile(): string {
-  return header('User Profile', 'Active', 'Topher\'s profile — preferences, patterns, and how he works best.') +
+  const owner = getOwnerName();
+  return header('User Profile', 'Active', `${owner === 'the user' ? 'Your' : `${owner}'s`} profile — preferences, patterns, and how you work best.`) +
 `## Name
-Topher
+${owner}
 
-## How He Works
+## How You Work
 - Prefers direct answers with room to dig deeper on request
 - Thinks in systems and patterns
 - Moves fast between ideas; values structure that catches the thread
@@ -475,7 +481,7 @@ This document is auto-updated by Henry. Do not manually edit if you want it to s
 }
 
 function doc_CurrentPriorities(): string {
-  return header('Current Priorities', 'Active', 'What Topher is focused on right now.') +
+  return header('Current Priorities', 'Active', 'What you are focused on right now.') +
 `## Top 3 Right Now
 1. (Henry will populate this from goals)
 2.
@@ -648,7 +654,7 @@ The one thing to do first based on this session.
 function doc_PoliciesAndSystemNotes(): string {
   return header('Policies & System Notes', 'Active', 'Operating policies and system-level notes for Henry AI.') +
 `## Data Policy
-- All memory stored locally on Topher's machine
+- All memory stored locally on your machine
 - No data sent to third parties except AI provider API calls (encrypted)
 - API keys stored in settings; never logged or exported
 
@@ -734,11 +740,11 @@ const WORKSPACE_FILES: Array<{ path: string; content: () => string }> = [
   { path: '/workspace/06_Memory/User Profile.md', content: doc_UserProfile },
   { path: '/workspace/06_Memory/Where We Left Off.md', content: doc_WhereWeLeftOff },
   { path: '/workspace/06_Memory/Current Priorities.md', content: doc_CurrentPriorities },
-  { path: '/workspace/06_Memory/Relationship Summary.md', content: () => header('Relationship Summary', 'Active', 'Henry\'s understanding of the people in Topher\'s life.') + '## People\n(Henry will populate this from relationship memory over time)\n\n## Important Patterns\n(Patterns Henry notices about key relationships)\n\n## Notes\nThis is Henry\'s memory mirror — updated from conversation and relationship memory.\n' },
+  { path: '/workspace/06_Memory/Relationship Summary.md', content: () => header('Relationship Summary', 'Active', 'Henry\'s understanding of the people in your life.') + '## People\n(Henry will populate this from relationship memory over time)\n\n## Important Patterns\n(Patterns Henry notices about key relationships)\n\n## Notes\nThis is Henry\'s memory mirror — updated from conversation and relationship memory.\n' },
   { path: '/workspace/06_Memory/Timeline.md', content: () => header('Timeline', 'Active', 'Key events, milestones, and moments across time.') + '## Format\nDate | Event | Significance\n\n## Timeline\n(Populated from milestone and narrative memory over time)\n' },
-  { path: '/workspace/06_Memory/Important Patterns.md', content: () => header('Important Patterns', 'Active', 'Recurring patterns Henry has noticed about how Topher works.') + '## Work Patterns\n(Henry observes and records)\n\n## Thinking Patterns\n(How Topher approaches problems)\n\n## Energy Patterns\n(When Topher is sharp vs. depleted)\n\n## Notes\nUpdated from working memory and personal memory over time.\n' },
+  { path: '/workspace/06_Memory/Important Patterns.md', content: () => header('Important Patterns', 'Active', 'Recurring patterns Henry has noticed about how you work.') + '## Work Patterns\n(Henry observes and records)\n\n## Thinking Patterns\n(How you approach problems)\n\n## Energy Patterns\n(When you are sharp vs. depleted)\n\n## Notes\nUpdated from working memory and personal memory over time.\n' },
   // 07 Projects
-  { path: '/workspace/07_Projects/Henry AI/Project Overview.md', content: () => header('Henry AI – Project Overview', 'Active', 'Overview of the Henry AI development project.', 'Henry AI Overview; Henry AI Product Roadmap') + '## Summary\nBuilding Henry — a personal AI OS for Topher. Desktop (Electron) + Mobile (Capacitor).\n\n## Why It Matters\nThe most personalized AI system possible. Not a product for everyone — built for one person.\n\n## Current Stage\nCore complete. Voice and mobile in progress.\n\n## Key Tasks\nSee Tasks.md\n\n## Next Action\nVoice interrupt support and mobile Capacitor build.\n' },
+  { path: '/workspace/07_Projects/Henry AI/Project Overview.md', content: () => { const o = getOwnerName(); return header('Henry AI – Project Overview', 'Active', 'Overview of the Henry AI development project.', 'Henry AI Overview; Henry AI Product Roadmap') + `## Summary\nBuilding Henry — a personal AI OS for ${o}. Desktop (Electron) + Mobile (Capacitor).\n\n## Why It Matters\nThe most personalized AI system possible. Not a product for everyone — built for one person.\n\n## Current Stage\nCore complete. Voice and mobile in progress.\n\n## Key Tasks\nSee Tasks.md\n\n## Next Action\nVoice interrupt support and mobile Capacitor build.\n`; } },
   { path: '/workspace/07_Projects/Henry AI/Tasks.md', content: () => header('Henry AI – Tasks', 'Active', 'Active task list for Henry AI development.') + '## In Progress\n- [ ] Voice interrupt support\n- [ ] Mobile Capacitor build\n- [ ] Workspace automation\n\n## Up Next\n- [ ] Memory repair / audit tools\n- [ ] Project auto-scaffold on creation\n- [ ] Landing page\n\n## Done\n- [x] 7-layer memory system\n- [x] 10 operating modes\n- [x] All UI panels\n- [x] Bible corpus\n- [x] Web tools\n- [x] Workspace seeder\n' },
   { path: '/workspace/07_Projects/Henry AI/Notes.md', content: () => header('Henry AI – Notes', 'Active', 'Running notes and observations for the Henry AI project.') + '## Notes\n(Add development notes, decisions, and observations here)\n' },
   { path: '/workspace/07_Projects/Henry AI/Status.md', content: doc_StatusUpdate },
@@ -755,8 +761,8 @@ const WORKSPACE_FILES: Array<{ path: string; content: () => string }> = [
   { path: '/workspace/09_Exports_Backups/backups/.keep', content: () => '# Backups folder\nManual and automated backups stored here.\n' },
   { path: '/workspace/09_Exports_Backups/snapshots/.keep', content: () => '# Snapshots folder\nWorkspace and memory snapshots stored here.\n' },
   // 10 System
-  { path: '/workspace/10_System/config.json', content: () => JSON.stringify({ workspace_version: '1.0.0', owner: 'Topher', created_at: new Date().toISOString(), memory_bandwidth_default: 'normal', primary_provider: 'groq', primary_model: 'llama-3.1-8b-instant', worker_model: 'llama-3.3-70b-versatile', features: { web_tools: true, bible_corpus: true, voice: true, ambient_brain: true } }, null, 2) },
-  { path: '/workspace/10_System/memory_schema.md', content: () => header('Memory Schema Notes', 'Active', 'Human-readable summary of the Henry memory database schema.') + '## Tables\nSee Henry AI Memory Blueprint in 01_Product_Engineering for full schema.\n\n## Quick Reference\n- personal_memory: facts about Topher\n- session_memory: per-conversation state\n- working_memory: active commitments and open loops\n- projects: project tracking\n- goals / commitments / milestones: life and work tracking\n- relationship_memory: patterns about people\n- narrative_memory: rolling story arcs\n- memory_summaries: compressed conversation history\n- memory_graph_edges: links between memory nodes\n' },
+  { path: '/workspace/10_System/config.json', content: () => JSON.stringify({ workspace_version: '1.0.0', owner: getOwnerName(), created_at: new Date().toISOString(), memory_bandwidth_default: 'normal', primary_provider: 'groq', primary_model: 'llama-3.1-8b-instant', worker_model: 'llama-3.3-70b-versatile', features: { web_tools: true, bible_corpus: true, voice: true, ambient_brain: true } }, null, 2) },
+  { path: '/workspace/10_System/memory_schema.md', content: () => header('Memory Schema Notes', 'Active', 'Human-readable summary of the Henry memory database schema.') + '## Tables\nSee Henry AI Memory Blueprint in 01_Product_Engineering for full schema.\n\n## Quick Reference\n- personal_memory: facts about you (the user)\n- session_memory: per-conversation state\n- working_memory: active commitments and open loops\n- projects: project tracking\n- goals / commitments / milestones: life and work tracking\n- relationship_memory: patterns about people\n- narrative_memory: rolling story arcs\n- memory_summaries: compressed conversation history\n- memory_graph_edges: links between memory nodes\n' },
   { path: '/workspace/10_System/logs/.keep', content: () => '# Logs folder\nSystem logs stored here.\n' },
   { path: '/workspace/10_System/prompts/.keep', content: () => '# Prompts folder\nSystem prompts and prompt templates stored here.\n' },
   { path: '/workspace/10_System/state_snapshots/.keep', content: () => '# State Snapshots folder\nSystem state snapshots stored here.\n' },
