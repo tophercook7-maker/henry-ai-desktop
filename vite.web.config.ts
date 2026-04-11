@@ -152,6 +152,11 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  define: {
+    // Expose GROQ_API_KEY from server env into browser bundle so Henry can
+    // auto-bootstrap the Groq provider without the setup wizard.
+    __GROQ_API_KEY__: JSON.stringify(process.env.GROQ_API_KEY || ''),
+  },
   server: {
     host: '0.0.0.0',
     port: 5000,
