@@ -6,18 +6,23 @@
 import type { HenryLeanMemoryParts } from '../types';
 import type { HenryOperatingMode } from './charter';
 
-/** Caps for prompt-sized memory (tune without touching IPC). */
+/**
+ * Caps for prompt-sized memory.
+ * Tuned for 128K-context models (Groq Llama-3.1-8b-instant / 3.3-70b-versatile).
+ * These are aggressive — the full memory block stays well under 20K tokens,
+ * leaving 100K+ for conversation history, scripture, and web context.
+ */
 export const HENRY_MEMORY_CAPS = {
   /** Max distinct facts after deduplication */
-  maxFactsInPrompt: 8,
-  /** Conversation rollup length */
-  maxSummaryChars: 1500,
+  maxFactsInPrompt: 50,
+  /** Conversation rollup — detailed enough for long-running projects */
+  maxSummaryChars: 12_000,
   /** Indexed workspace rows shown */
-  maxWorkspaceHints: 3,
+  maxWorkspaceHints: 20,
   /** User/assistant turns sent as chat messages (not in system block) */
-  maxRecentMessagesInTranscript: 8,
-  /** Per-message truncation in transcript */
-  maxMessageCharsEach: 600,
+  maxRecentMessagesInTranscript: 40,
+  /** Per-message truncation in transcript — preserve full messages where possible */
+  maxMessageCharsEach: 8_000,
 } as const;
 
 export function normalizeFactKey(text: string): string {

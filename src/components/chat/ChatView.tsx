@@ -109,6 +109,13 @@ import {
   formatSourceCitations,
   type WebSource,
 } from '@/henry/webTools';
+import {
+  absorbBible,
+  getBibleCorpusStatus,
+  getBibleContextForPrompt,
+  type BibleCorpusStatus,
+  type LoadProgress,
+} from '@/henry/bibleCorpus';
 import { logAction } from '@/henry/auditLog';
 import { extractHtmlFromMessage } from '@/henry/builderPreview';
 import BuilderPreviewPanel from './BuilderPreviewPanel';
@@ -294,6 +301,8 @@ export default function ChatView() {
   const [chatInject, setChatInject] = useState<{ id: number; text: string } | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [lastWebSources, setLastWebSources] = useState<WebSource[]>([]);
+  const [bibleStatus, setBibleStatus] = useState<BibleCorpusStatus>({ loaded: false, bookCount: 0, verseCount: 0, sizeBytes: 0 });
+  const [bibleLoadProgress, setBibleLoadProgress] = useState<LoadProgress | null>(null);
   const [currentWeather, setCurrentWeather] = useState<WeatherSnapshot | null>(null);
   const [ttsEnabled, setTtsEnabled] = useState(() => {
     try { return localStorage.getItem('henry_tts_enabled') === 'true'; } catch { return false; }
@@ -572,6 +581,11 @@ export default function ChatView() {
   // Fetch live weather once on mount (cached 30 min)
   useEffect(() => {
     getWeather().then((w) => { if (w) setCurrentWeather(w); }).catch(() => {});
+  }, []);
+
+  // Check Bible corpus status on mount (non-blocking)
+  useEffect(() => {
+    getBibleCorpusStatus().then(setBibleStatus).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -1163,9 +1177,23 @@ export default function ChatView() {
           : {}),
       });
 
-    // Enrich system prompt with live web context if tools were used
-    const enrichedSystemPrompt = webContextBlock
-      ? `${systemPrompt}\n\n${webContextBlock}`
+    // Inject full Bible corpus context in biblical mode (IndexedDB cache, up to 100K chars)
+    let bibleContextBlock = '';
+    if (effectiveMode === 'biblical' && bibleStatus.loaded) {
+      try {
+        bibleContextBlock = await getBibleContextForPrompt(content);
+      } catch {
+        // Bible corpus unavailable — Henry falls back to training knowledge
+      }
+    }
+
+    // Enrich system prompt with live web context + Bible corpus if applicable
+    const extraContext = [
+      webContextBlock,
+      bibleContextBlock,
+    ].filter(Boolean).join('\n\n');
+    const enrichedSystemPrompt = extraContext
+      ? `${systemPrompt}\n\n${extraContext}`
       : systemPrompt;
 
     const messagesPayload: HenryAIMessage[] = [
@@ -1212,12 +1240,18 @@ export default function ChatView() {
     try {
       setCompanionStatus({ status: 'streaming' });
 
+      // Max output tokens — biblical mode and quality tasks get larger budgets
+      const maxOutputTokens = effectiveMode === 'biblical'
+        ? 16_384
+        : presenceTier === 'quality' ? 16_384 : 8_192;
+
       const stream = window.henryAPI.streamMessage({
         provider: companionProvider,
         model: companionModel,
         apiKey,
         messages: messagesPayload,
         temperature: 0.7,
+        maxTokens: maxOutputTokens,
       });
 
       streamRef.current = stream;
@@ -1523,6 +1557,18 @@ export default function ChatView() {
     }
   }
 
+  async function handleAbsorbBible() {
+    if (bibleLoadProgress?.phase === 'downloading' || bibleLoadProgress?.phase === 'storing') return;
+    setBibleLoadProgress({ phase: 'downloading' });
+    try {
+      await absorbBible((p) => setBibleLoadProgress(p));
+      const status = await getBibleCorpusStatus();
+      setBibleStatus(status);
+    } catch {
+      setBibleLoadProgress({ phase: 'error', error: 'Download failed — check your connection and try again.' });
+    }
+  }
+
   function cancelStream() {
     if (streamRef.current) {
       streamRef.current.cancel();
@@ -1763,11 +1809,53 @@ export default function ChatView() {
       <div className="shrink-0 border-t border-henry-border/30 bg-henry-surface/20 px-3 sm:px-6 py-3 sm:py-4">
         <div className="max-w-3xl mx-auto">
           {operatingMode === 'biblical' && (
-            <ScriptureToolsPanel
-              disabled={isStreaming}
-              onInjectChat={(text) => setChatInject({ id: Date.now(), text })}
-              onRequestExportPack={() => openExportPack('biblical_study_pack')}
-            />
+            <>
+              <ScriptureToolsPanel
+                disabled={isStreaming}
+                onInjectChat={(text) => setChatInject({ id: Date.now(), text })}
+                onRequestExportPack={() => openExportPack('biblical_study_pack')}
+              />
+              {/* Bible corpus absorption panel */}
+              <div className="flex items-center gap-2 mb-2 flex-wrap">
+                {!bibleStatus.loaded && bibleLoadProgress?.phase !== 'done' ? (
+                  <button
+                    type="button"
+                    disabled={bibleLoadProgress?.phase === 'downloading' || bibleLoadProgress?.phase === 'storing' || bibleLoadProgress?.phase === 'parsing'}
+                    onClick={() => void handleAbsorbBible()}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-henry-accent/30 bg-henry-accent/8 text-xs text-henry-accent hover:bg-henry-accent/15 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {bibleLoadProgress?.phase === 'downloading' ? (
+                      <>
+                        <svg className="w-3 h-3 animate-spin shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10" strokeOpacity="0.2"/><path d="M12 2a10 10 0 0 1 10 10"/></svg>
+                        Downloading Bible…
+                      </>
+                    ) : bibleLoadProgress?.phase === 'parsing' ? (
+                      <>
+                        <svg className="w-3 h-3 animate-spin shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10" strokeOpacity="0.2"/><path d="M12 2a10 10 0 0 1 10 10"/></svg>
+                        Parsing…
+                      </>
+                    ) : bibleLoadProgress?.phase === 'storing' ? (
+                      <>
+                        <svg className="w-3 h-3 animate-spin shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10" strokeOpacity="0.2"/><path d="M12 2a10 10 0 0 1 10 10"/></svg>
+                        Storing{bibleLoadProgress.totalBooks ? ` (${bibleLoadProgress.booksStored ?? 0}/${bibleLoadProgress.totalBooks})` : ''}…
+                      </>
+                    ) : bibleLoadProgress?.phase === 'error' ? (
+                      <>⚠ Retry: Load Full Bible (KJV)</>
+                    ) : (
+                      <>📖 Load Full Bible into Memory</>
+                    )}
+                  </button>
+                ) : bibleStatus.loaded ? (
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-henry-success/25 bg-henry-success/6 text-xs text-henry-success/80">
+                    <svg className="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M20 6L9 17l-5-5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                    Full Bible loaded · {bibleStatus.bookCount} books · {bibleStatus.verseCount.toLocaleString()} verses
+                  </div>
+                ) : null}
+                {bibleLoadProgress?.phase === 'error' && (
+                  <span className="text-xs text-henry-error/80">{bibleLoadProgress.error}</span>
+                )}
+              </div>
+            </>
           )}
           {operatingMode === 'design3d' && (
             <Design3DReferencePanel

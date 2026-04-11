@@ -21,12 +21,16 @@ Supports OpenAI, Anthropic, Google Gemini, Groq, and Ollama. 11 built-in modes +
 - **Proposed integrations** — Linear, Slack (connected), Notion, Jira, Stripe, Google Calendar, Gmail all proposed for user to connect
 
 **Core AI**
-- **Groq hardwired** — Groq is set as the permanent default engine; model: `llama-3.3-70b-versatile`
-- **Full web access** — auto-searches when needed; fetches any URL; supports Google CSE + Brave Search APIs
+- **Groq hardwired** — Groq is set as the permanent default engine; 8B Instant (fast) + 70B Versatile (quality) auto-routed by `modelRouter.ts`
+- **Maximum memory** — `HENRY_MEMORY_CAPS` tuned for 128K context: 50 facts, 12K summary, 40 history turns, 8K chars/message
+- **maxTokens wired** — 16,384 tokens for biblical/quality tasks, 8,192 for fast tasks; passed to every stream call
+- **Full web access** — `webTools.ts` tool layer: `search_web`, `open_url`, `extract_page_text`, `summarize_page`, `collect_sources`; auto-detects web intent before LLM call; injects live context into system prompt; shows source citations as clickable pills
+- **Bible Corpus** — `bibleCorpus.ts`: downloads full KJV (~31K verses) from CDN, stores in IndexedDB; `getBibleContextForPrompt()` injects up to 100K chars of scripture into biblical mode context; "Load Full Bible" button with live download progress
 - **⌘K Command Palette** — fuzzy search across all modes, quick actions, recent conversations, navigation
 - **Rich memory** — projects, goals, and people injected into Henry's system prompt (localStorage)
 - **Voice input (Groq Whisper)** — mic button → MediaRecorder → Groq Whisper STT → inserts transcript into chat
 - **Document ingestion** — drag-and-drop or attach files in chat input; Henry gives multi-angle perspective
+- **Status indicators** — live state bar shows Thinking…(8B/70B) → Responding… → Done with 1.5s checkmark; presence phrases spoken via browser TTS before heavy tasks
 
 **Three New Modes**
 - **Coach mode** — executive coaching approach: one focused question at a time, reflects back, challenges excuses, accountability focus, ends each session with one clear next action
