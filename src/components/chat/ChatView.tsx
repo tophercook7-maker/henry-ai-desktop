@@ -1441,7 +1441,7 @@ export default function ChatView() {
           return;
         }
 
-        const isNetworkBlock = /load failed|failed to fetch|networkerror|network request failed/i.test(error);
+        const isNetworkBlock = /load failed|failed to fetch|networkerror|network request failed|couldn't reach|could not reach|connection error|network error/i.test(error);
         const isOllama = companionProvider === 'ollama';
         const isHttpsCtx = window.location.protocol === 'https:';
 
@@ -1455,7 +1455,12 @@ export default function ChatView() {
             `**Fix:** Open **Settings → AI Providers** and switch to a Cloud AI (OpenAI / Anthropic / Google), or use the Henry desktop app where this restriction doesn't apply.`,
           ].join('\n');
         } else if (isNetworkBlock) {
-          errorContent = `❌ **Connection failed** (\`${error}\`)\n\nHenry couldn't reach the AI provider. Check that your API key is correct in **Settings → AI Providers**, or try again in a moment.`;
+          // The error string may already be a friendly message from the stream layer;
+          // use it directly if it reads naturally, otherwise add a generic wrapper.
+          const alreadyFriendly = error.length > 40 && !error.startsWith('[');
+          errorContent = alreadyFriendly
+            ? `❌ ${error}`
+            : `❌ **Connection failed** — Henry couldn't reach the AI provider. Check your API key in **Settings → AI Providers**, or try again in a moment.`;
         } else {
           errorContent = `❌ **Error:** ${error}`;
         }

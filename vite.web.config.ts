@@ -79,23 +79,51 @@ function aiProxyPlugin(): Plugin {
           }
 
           const upstream = https.request(options, (upRes) => {
-            // Strip hop-by-hop headers that cause the browser to see raw
-            // chunked-encoding framing (the "0\r\n\r\n" terminator shows up
-            // as a stray "0" at the end of streamed AI responses).
-            const outHeaders = { ...upRes.headers };
-            delete outHeaders['transfer-encoding'];
-            delete outHeaders['content-encoding'];
-            delete outHeaders['content-length'];
+            const status = upRes.statusCode ?? 200;
+            console.log(`[henry-proxy] ← ${status} ${upRes.headers['content-type'] ?? ''}`);
+
+            const outHeaders: Record<string, string | string[]> = {};
+            // Copy safe headers — skip hop-by-hop and encoding headers that
+            // would confuse the browser or the Replit proxy layer.
+            const skipHeaders = new Set([
+              'content-encoding',   // prevent gzip garbling
+              'content-length',     // length is invalid after re-framing
+              'connection',
+              'keep-alive',
+              'proxy-authenticate',
+              'proxy-authorization',
+              'te',
+              'trailers',
+              'upgrade',
+            ]);
+            for (const [k, v] of Object.entries(upRes.headers)) {
+              if (!skipHeaders.has(k.toLowerCase()) && v !== undefined) {
+                outHeaders[k] = v as string | string[];
+              }
+            }
             // Always allow cross-origin access (Replit workspace iframes run
             // with opaque origins so every request looks cross-origin)
             outHeaders['access-control-allow-origin'] = '*';
             outHeaders['access-control-allow-headers'] = '*';
-            res.writeHead(upRes.statusCode ?? 200, outHeaders);
+            // Keep transfer-encoding: chunked so Replit's reverse proxy knows
+            // to stream each chunk rather than buffer the whole response.
+            if (!outHeaders['transfer-encoding']) {
+              outHeaders['transfer-encoding'] = 'chunked';
+            }
+
+            res.writeHead(status, outHeaders);
+
+            // Pipe upstream → response; handle errors gracefully so an
+            // upstream drop doesn't leave the client hanging forever.
             upRes.pipe(res);
+            upRes.on('error', (pipeErr) => {
+              console.error('[henry-proxy] upstream pipe error:', pipeErr.message);
+              try { res.end(); } catch { /* already closed */ }
+            });
           });
 
           upstream.on('error', (err) => {
-            console.error('[henry-ai-proxy] upstream error:', err.message);
+            console.error('[henry-proxy] upstream connect error:', err.message);
             if (!res.headersSent) {
               res.writeHead(502, { 'Access-Control-Allow-Origin': '*' });
               res.end(JSON.stringify({ error: err.message }));
