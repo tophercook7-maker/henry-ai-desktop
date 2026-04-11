@@ -278,7 +278,7 @@ export default function ChatInput({
           placeholder={listening ? 'Listening… tap mic to stop' : transcribing ? 'Transcribing…' : placeholder}
           rows={1}
           className="flex-1 bg-transparent text-sm text-henry-text placeholder-henry-text-muted outline-none resize-none max-h-[200px]"
-          disabled={isStreaming || transcribing}
+          disabled={transcribing}
         />
 
         <div className="flex items-center gap-1.5 shrink-0">
