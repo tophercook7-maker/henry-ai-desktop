@@ -246,12 +246,29 @@ function DesktopProviderStep({ onNext, onBack }: ProviderStepProps) {
         });
         await window.henryAPI.saveSetting('companion_model', selectedCloud.defaultModel);
         await window.henryAPI.saveSetting('companion_provider', selectedCloud.id);
-        await window.henryAPI.saveSetting('worker_model', selectedCloud.defaultModel);
-        await window.henryAPI.saveSetting('worker_provider', selectedCloud.id);
         updateSetting('companion_model', selectedCloud.defaultModel);
         updateSetting('companion_provider', selectedCloud.id);
-        updateSetting('worker_model', selectedCloud.defaultModel);
-        updateSetting('worker_provider', selectedCloud.id);
+
+        if (selectedCloud.id === 'groq') {
+          // Set all four Groq engine slots for cross-platform coverage
+          await window.henryAPI.saveSetting('companion_model_2', 'mixtral-8x7b-32768');
+          await window.henryAPI.saveSetting('companion_provider_2', 'groq');
+          await window.henryAPI.saveSetting('worker_model', 'deepseek-r1-distill-llama-70b');
+          await window.henryAPI.saveSetting('worker_provider', 'groq');
+          await window.henryAPI.saveSetting('chat_fast_model', 'llama-3.1-8b-instant');
+          await window.henryAPI.saveSetting('chat_fast_provider', 'groq');
+          updateSetting('companion_model_2', 'mixtral-8x7b-32768');
+          updateSetting('companion_provider_2', 'groq');
+          updateSetting('worker_model', 'deepseek-r1-distill-llama-70b');
+          updateSetting('worker_provider', 'groq');
+          updateSetting('chat_fast_model', 'llama-3.1-8b-instant');
+          updateSetting('chat_fast_provider', 'groq');
+        } else {
+          await window.henryAPI.saveSetting('worker_model', selectedCloud.defaultModel);
+          await window.henryAPI.saveSetting('worker_provider', selectedCloud.id);
+          updateSetting('worker_model', selectedCloud.defaultModel);
+          updateSetting('worker_provider', selectedCloud.id);
+        }
       }
 
       if (mode === 'ollama') {

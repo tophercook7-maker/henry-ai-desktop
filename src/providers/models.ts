@@ -107,6 +107,66 @@ export const AVAILABLE_MODELS: AIModel[] = [
     recommended: 'companion',
   },
 
+  // ── Groq — ultra-fast inference (LPU) ─────────────
+  {
+    id: 'llama-3.3-70b-versatile',
+    name: 'LLaMA 3.3 70B ⚡',
+    provider: 'groq',
+    contextWindow: 128000,
+    inputPricePer1M: 0.59,
+    outputPricePer1M: 0.79,
+    capabilities: ['chat', 'code', 'reasoning'],
+    recommended: 'companion',
+  },
+  {
+    id: 'llama-3.1-8b-instant',
+    name: 'LLaMA 3.1 8B Instant',
+    provider: 'groq',
+    contextWindow: 128000,
+    inputPricePer1M: 0.05,
+    outputPricePer1M: 0.08,
+    capabilities: ['chat', 'code'],
+    recommended: 'companion',
+  },
+  {
+    id: 'llama-3.1-70b-versatile',
+    name: 'LLaMA 3.1 70B',
+    provider: 'groq',
+    contextWindow: 128000,
+    inputPricePer1M: 0.59,
+    outputPricePer1M: 0.79,
+    capabilities: ['chat', 'code', 'reasoning'],
+    recommended: 'companion',
+  },
+  {
+    id: 'mixtral-8x7b-32768',
+    name: 'Mixtral 8x7B',
+    provider: 'groq',
+    contextWindow: 32768,
+    inputPricePer1M: 0.24,
+    outputPricePer1M: 0.24,
+    capabilities: ['chat', 'code'],
+  },
+  {
+    id: 'gemma2-9b-it',
+    name: 'Gemma 2 9B',
+    provider: 'groq',
+    contextWindow: 8192,
+    inputPricePer1M: 0.20,
+    outputPricePer1M: 0.20,
+    capabilities: ['chat'],
+  },
+  {
+    id: 'deepseek-r1-distill-llama-70b',
+    name: 'DeepSeek R1 Distill 70B',
+    provider: 'groq',
+    contextWindow: 128000,
+    inputPricePer1M: 0.75,
+    outputPricePer1M: 0.99,
+    capabilities: ['chat', 'reasoning'],
+    recommended: 'worker',
+  },
+
   // ── Local (Ollama) — free forever ─────────────────
   // ★ = recommended for that brain role
 
@@ -358,6 +418,14 @@ export const PROVIDERS = {
     description: 'Gemini models. Massive context windows, great value.',
     keyUrl: 'https://aistudio.google.com/apikey',
     keyPrefix: 'AI',
+  },
+  groq: {
+    id: 'groq',
+    name: 'Groq',
+    icon: '⚡',
+    description: 'LLaMA 3, Mixtral, Gemma on LPU hardware. Ultra-fast, low cost.',
+    keyUrl: 'https://console.groq.com/keys',
+    keyPrefix: 'gsk_',
   },
   ollama: {
     id: 'ollama',

@@ -361,6 +361,8 @@ function EnginesTab() {
   const enabledProviders = providers.filter((p) => p.enabled).map((p) => p.id);
   const availableModels = AVAILABLE_MODELS.filter((m) => enabledProviders.includes(m.provider));
   const ollamaEnabled = enabledProviders.includes('ollama');
+  const groqEnabled = enabledProviders.includes('groq');
+  const [groqDefaultsResult, setGroqDefaultsResult] = useState<string | null>(null);
 
   async function saveSetting(key: string, value: string) {
     await window.henryAPI.saveSetting(key, value);
@@ -382,8 +384,10 @@ function EnginesTab() {
   async function updateCompanionFallback(modelId: string) {
     setSaving('companion_2');
     try {
+      const m = AVAILABLE_MODELS.find((x) => x.id === modelId);
+      const prov = m?.provider || 'ollama';
       await saveSetting('companion_model_2', modelId);
-      await saveSetting('companion_provider_2', 'ollama');
+      await saveSetting('companion_provider_2', prov);
     } finally {
       setSaving(null);
     }
@@ -392,8 +396,30 @@ function EnginesTab() {
   async function saveCustomModel(engine: 'companion' | 'worker') {
     const name = customModel[engine].trim();
     if (!name) return;
-    await updateEngine(engine, name, 'ollama');
+    const m = AVAILABLE_MODELS.find((x) => x.id === name);
+    const prov = m?.provider || 'ollama';
+    await updateEngine(engine, name, prov);
     setCustomModel((p) => ({ ...p, [engine]: '' }));
+  }
+
+  async function applyGroqDefaults() {
+    setSaving('groq_defaults');
+    setGroqDefaultsResult(null);
+    try {
+      await saveSetting('companion_model', 'llama-3.3-70b-versatile');
+      await saveSetting('companion_provider', 'groq');
+      await saveSetting('companion_model_2', 'mixtral-8x7b-32768');
+      await saveSetting('companion_provider_2', 'groq');
+      await saveSetting('worker_model', 'deepseek-r1-distill-llama-70b');
+      await saveSetting('worker_provider', 'groq');
+      await saveSetting('chat_fast_model', 'llama-3.1-8b-instant');
+      await saveSetting('chat_fast_provider', 'groq');
+      setGroqDefaultsResult('✓ Set — LLaMA 3.3 70B primary · Mixtral fallback · DeepSeek R1 for deep work · 8B for fast mode');
+    } catch (err) {
+      setGroqDefaultsResult(`Error: ${(err as Error).message}`);
+    } finally {
+      setSaving(null);
+    }
   }
 
   /** Query Ollama for installed models and auto-select the best ones. */
@@ -473,6 +499,32 @@ function EnginesTab() {
   return (
     <div className="space-y-5">
 
+      {/* ── Groq defaults banner ── */}
+      {groqEnabled && (
+        <div className="rounded-xl border border-yellow-500/20 bg-yellow-500/5 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex-1">
+              <div className="text-sm font-medium text-henry-text mb-0.5">⚡ Use Groq Defaults</div>
+              <div className="text-xs text-henry-text-dim leading-relaxed">
+                One tap sets all four engines to Groq — works on iPhone, iPad, Android, Mac, Windows, and browser. No local model required.
+              </div>
+              {groqDefaultsResult && (
+                <div className="mt-2 text-xs text-henry-text bg-henry-bg/60 rounded-lg px-3 py-2 leading-relaxed">
+                  {groqDefaultsResult}
+                </div>
+              )}
+            </div>
+            <button
+              onClick={() => void applyGroqDefaults()}
+              disabled={saving === 'groq_defaults'}
+              className="shrink-0 px-4 py-2 bg-yellow-500/80 text-white rounded-lg text-xs font-semibold hover:bg-yellow-500 transition-colors disabled:opacity-50"
+            >
+              {saving === 'groq_defaults' ? 'Applying…' : 'Apply'}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── Auto-detect banner ── */}
       {ollamaEnabled && (
         <div className="rounded-xl border border-henry-accent/20 bg-henry-accent/5 p-4">
@@ -504,12 +556,12 @@ function EnginesTab() {
       <div className="rounded-xl border border-henry-border/50 bg-henry-surface/30 p-5">
         <div className="flex items-center gap-2 mb-1">
           <span className="text-lg">🧠</span>
-          <div className="font-medium text-henry-text">Local Brain</div>
+          <div className="font-medium text-henry-text">Companion Brain</div>
           <span className="text-[10px] bg-henry-companion/10 text-henry-companion px-2 py-0.5 rounded-full font-medium">Primary</span>
         </div>
         <div className="text-xs text-henry-text-dim mb-4">
           Always-on — streams every conversation in real time. Delegates heavy tasks to Worker automatically.
-          Set a <strong className="text-henry-text">Primary</strong> and a <strong className="text-henry-text">Fallback</strong> — Henry uses both and falls back automatically if the primary is unavailable.
+          Set a <strong className="text-henry-text">Primary</strong> and a <strong className="text-henry-text">Fallback</strong> — Henry uses both and falls back automatically if the primary fails.
         </div>
 
         {/* Primary */}
@@ -530,7 +582,7 @@ function EnginesTab() {
                 value={customModel.companion}
                 onChange={(e) => setCustomModel((p) => ({ ...p, companion: e.target.value }))}
                 onKeyDown={(e) => { if (e.key === 'Enter') void saveCustomModel('companion'); }}
-                placeholder="Custom Ollama model (e.g. llama3.3)"
+                placeholder="Custom model ID (e.g. llama3.3 for Ollama)"
                 className="flex-1 bg-henry-bg border border-henry-border rounded-lg px-3 py-2 text-sm text-henry-text outline-none focus:border-henry-accent/50"
               />
               <button
@@ -553,28 +605,26 @@ function EnginesTab() {
             )}
           </div>
           <div className="text-[10px] text-henry-text-muted mb-2">
-            Henry tries this if the primary fails or times out. Recommended: Qwen 2.5 14B or Phi-4.
+            Henry tries this if the primary fails or times out. Recommended: Groq Mixtral or LLaMA 3.1 8B Instant.
           </div>
           <select
             value={settings.companion_model_2 || ''}
             onChange={(e) => {
-              const m = AVAILABLE_MODELS.find((x) => x.id === e.target.value);
-              if (m) void updateCompanionFallback(e.target.value);
-              else if (!e.target.value) void updateCompanionFallback('');
+              if (e.target.value) void updateCompanionFallback(e.target.value);
+              else void updateCompanionFallback('');
             }}
             className="w-full bg-henry-bg border border-henry-border rounded-lg px-3 py-2 text-sm text-henry-text outline-none focus:border-henry-accent/50"
           >
             <option value="">None (no fallback)</option>
-            {availableModels
-              .filter((m) => m.local)
-              .map((m) => {
-                const rec = m.recommended === 'companion' || m.recommended === 'both';
-                return (
-                  <option key={m.id} value={m.id}>
-                    {rec ? '★ ' : ''}🏠 {m.name} — Free
-                  </option>
-                );
-              })}
+            {availableModels.map((m) => {
+              const prov = PROVIDERS[m.provider as ProviderId];
+              const rec = m.recommended === 'companion' || m.recommended === 'both';
+              return (
+                <option key={m.id} value={m.id}>
+                  {rec ? '★ ' : ''}{prov?.icon} {m.name} — {m.local ? 'Free' : `$${m.inputPricePer1M}/$${m.outputPricePer1M}/1M`}
+                </option>
+              );
+            })}
           </select>
         </div>
       </div>
@@ -587,7 +637,7 @@ function EnginesTab() {
           <span className="text-[10px] bg-henry-worker/10 text-henry-worker px-2 py-0.5 rounded-full font-medium">Background</span>
         </div>
         <div className="text-xs text-henry-text-dim mb-4">
-          Runs in the background while Local Brain keeps talking. Best models: DeepSeek R1 (reasoning) or Qwen 2.5 32B+.
+          Runs in the background for heavy tasks. Best options: Groq DeepSeek R1 70B, OpenAI GPT-4o, or Ollama DeepSeek R1.
           Result appears in the same thread automatically.
         </div>
 
@@ -608,7 +658,7 @@ function EnginesTab() {
               value={customModel.worker}
               onChange={(e) => setCustomModel((p) => ({ ...p, worker: e.target.value }))}
               onKeyDown={(e) => { if (e.key === 'Enter') void saveCustomModel('worker'); }}
-              placeholder="Custom Ollama model (e.g. deepseek-r1:32b)"
+              placeholder="Custom model ID (e.g. deepseek-r1:32b for Ollama)"
               className="flex-1 bg-henry-bg border border-henry-border rounded-lg px-3 py-2 text-sm text-henry-text outline-none focus:border-henry-accent/50"
             />
             <button
