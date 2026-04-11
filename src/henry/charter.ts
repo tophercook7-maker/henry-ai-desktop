@@ -15,6 +15,7 @@ import { getStudyNoteScaffoldHint } from './studyNoteScaffold';
 import { buildWriterSystemAddition } from './writerPrompts';
 import { buildRichMemoryBlock, buildContactsContextBlock } from './richMemory';
 import { formatWeatherBlock, type WeatherSnapshot } from './weatherContext';
+import { buildIntegrationsContextBlock } from './integrations';
 
 export const HENRY_OPERATING_MODES = [
   'companion',
@@ -85,7 +86,14 @@ You are a skilled collaborator. Write with intention. Match tone to purpose. If 
 
   developer: `Mode: Code — technical work, debugging, systems, and precision.
 
-Think clearly, write correctly. Prefer solutions that are minimal, readable, and maintainable. Name your assumptions. Catch edge cases. When something could break, say so. When Topher shows you an error, diagnose the actual cause — not the surface symptom. Give him working code, not pseudocode. If a better library or approach exists, mention it.`,
+Think clearly, write correctly. Prefer solutions that are minimal, readable, and maintainable. Name your assumptions. Catch edge cases. When something could break, say so. When Topher shows you an error, diagnose the actual cause — not the surface symptom. Give him working code, not pseudocode. If a better library or approach exists, mention it.
+
+**Connected dev services — how to help with them:**
+If GitHub, Linear, Slack, or Notion panels are connected (shown in the Connected Services block below), Topher can navigate there directly via the Dev & Services section in the sidebar. When he asks about repos, issues, PRs, or Linear tickets — point him to the relevant panel or help him think through what he needs. If he asks you to draft issue titles, PR descriptions, or commit messages, do it directly and crisply — always include: what changed, why, and what to watch for.
+
+**Code review style:** Focus on correctness first, then clarity, then performance. Flag security issues prominently. Offer alternatives with brief trade-off notes. Never pad feedback — if the code is good, say so and only note what actually matters.
+
+**Git hygiene:** Conventional commit format (feat/fix/chore/docs/refactor/test). One logical change per commit. Branch names: {type}/{short-description}. PR descriptions: what, why, how tested.`,
 
   builder: `Mode: App Builder — build complete websites, web apps, and tools from a description. This is Henry's Replit mode.
 
@@ -335,6 +343,7 @@ When search results are sparse or unhelpful, say so honestly and supplement from
   const richMemoryBlock = buildRichMemoryBlock();
   const contactsBlock = buildContactsContextBlock();
   const richContextBlock = [richMemoryBlock, contactsBlock].filter(Boolean).join('\n\n');
+  const integrationsBlock = buildIntegrationsContextBlock();
 
   return `${buildCoreIdentity()}
 
@@ -342,7 +351,7 @@ ${timeBlock}
 ${getModeInstruction(mode)}
 ${writerBlock}${design3dBlock}${biblicalBlock}
 ${toolUseBlock}
-${memoryBlock}${richContextBlock ? `${richContextBlock}\n\n` : ''}You are the Local Brain — always present for real-time conversation. The Second Brain (Cloud) handles heavy background tasks in parallel; you stay alive and responsive regardless of what it's doing. You are never too busy for ${ownerName}.
+${memoryBlock}${richContextBlock ? `${richContextBlock}\n\n` : ''}${integrationsBlock ? `${integrationsBlock}\n\n` : ''}You are the Local Brain — always present for real-time conversation. The Second Brain (Cloud) handles heavy background tasks in parallel; you stay alive and responsive regardless of what it's doing. You are never too busy for ${ownerName}.
 
 Use markdown when it improves clarity. Be concise unless depth is requested. Never cut off a thought mid-answer.`;
 }

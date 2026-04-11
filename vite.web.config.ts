@@ -15,6 +15,14 @@ const routes: Record<string, string> = {
   '/proxy/groq':        'api.groq.com',
   '/proxy/openrouter':  'openrouter.ai',
   '/proxy/ddg':         'api.duckduckgo.com',
+  // Dev & productivity services
+  '/proxy/github':      'api.github.com',
+  '/proxy/linear':      'api.linear.app',
+  '/proxy/notion':      'api.notion.com',
+  '/proxy/slack':       'slack.com',
+  '/proxy/stripe':      'api.stripe.com',
+  '/proxy/gcal':        'www.googleapis.com',
+  '/proxy/gmail':       'gmail.googleapis.com',
 };
 
 function aiProxyPlugin(): Plugin {

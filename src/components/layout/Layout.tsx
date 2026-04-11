@@ -25,6 +25,11 @@ import FinancePanel from '../finance/FinancePanel';
 import ListsPanel from '../lists/ListsPanel';
 import PrintStudioPanel from '../printstudio/PrintStudioPanel';
 import ImageGenPanel from '../imagegen/ImageGenPanel';
+import IntegrationsPanel from '../integrations/IntegrationsPanel';
+import GitHubPanel from '../integrations/GitHubPanel';
+import LinearPanel from '../integrations/LinearPanel';
+import NotionPanel from '../integrations/NotionPanel';
+import SlackPanel from '../integrations/SlackPanel';
 import { useStore } from '../../store';
 import { isHenryOperatingMode, type HenryOperatingMode } from '../../henry/charter';
 import { useEffect } from 'react';
@@ -98,6 +103,11 @@ export default function Layout() {
           {currentView === 'lists' && <ListsPanel />}
           {currentView === 'printstudio' && <PrintStudioPanel />}
           {currentView === 'imagegen' && <ImageGenPanel />}
+          {currentView === 'integrations' && <IntegrationsPanel />}
+          {currentView === 'github' && <GitHubPanel />}
+          {currentView === 'linear' && <LinearPanel />}
+          {currentView === 'notion' && <NotionPanel />}
+          {currentView === 'slack' && <SlackPanel />}
         </main>
       </div>
 

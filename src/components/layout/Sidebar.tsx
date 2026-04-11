@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useStore } from '../../store';
 import type { Conversation } from '../../types';
 
-type ViewType = 'today' | 'chat' | 'secretary' | 'contacts' | 'tasks' | 'files' | 'workspace' | 'terminal' | 'computer' | 'printer' | 'costs' | 'settings' | 'journal' | 'focus' | 'recorder' | 'modes' | 'reminders' | 'crm' | 'finance' | 'lists' | 'printstudio' | 'imagegen';
+type ViewType = 'today' | 'chat' | 'secretary' | 'contacts' | 'tasks' | 'files' | 'workspace' | 'terminal' | 'computer' | 'printer' | 'costs' | 'settings' | 'journal' | 'focus' | 'recorder' | 'modes' | 'reminders' | 'crm' | 'finance' | 'lists' | 'printstudio' | 'imagegen' | 'integrations' | 'github' | 'linear' | 'notion' | 'slack';
 
 const NAV_GROUPS: { label: string; items: { id: ViewType; label: string; icon: string }[] }[] = [
   {
@@ -33,6 +33,16 @@ const NAV_GROUPS: { label: string; items: { id: ViewType; label: string; icon: s
       { id: 'printer', label: '3D Control', icon: '🔧' },
       { id: 'imagegen', label: 'Image Gen', icon: '🎨' },
       { id: 'recorder', label: 'Recorder', icon: '🎙' },
+    ],
+  },
+  {
+    label: 'Dev & Services',
+    items: [
+      { id: 'integrations', label: 'Integrations', icon: '🔌' },
+      { id: 'github', label: 'GitHub', icon: '🐙' },
+      { id: 'linear', label: 'Linear', icon: '🔷' },
+      { id: 'notion', label: 'Notion', icon: '📄' },
+      { id: 'slack', label: 'Slack', icon: '💬' },
     ],
   },
   {
