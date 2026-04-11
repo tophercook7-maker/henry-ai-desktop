@@ -40,6 +40,7 @@ function aiProxyPlugin(): Plugin {
         req.on('data', (chunk: Buffer) => chunks.push(chunk));
         req.on('end', () => {
           const body = Buffer.concat(chunks);
+          console.log(`[henry-proxy] ${req.method} ${url} → ${host} (body: ${body.length}b)`);
 
           // Forward all original headers except host
           const forwardHeaders: Record<string, string | string[] | undefined> = {};
@@ -59,6 +60,9 @@ function aiProxyPlugin(): Plugin {
               ...forwardHeaders,
               host,
               'content-length': body.length,
+              // Force plain uncompressed responses — the proxy pipes the raw
+              // bytes straight to the browser, so gzip would arrive garbled.
+              'accept-encoding': 'identity',
             },
           };
 
@@ -161,5 +165,8 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 5000,
     allowedHosts: true,
+    hmr: process.env.REPLIT_DEV_DOMAIN
+      ? { clientPort: 443, host: process.env.REPLIT_DEV_DOMAIN, protocol: 'wss' }
+      : true,
   },
 });
