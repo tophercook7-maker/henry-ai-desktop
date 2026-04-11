@@ -28,6 +28,25 @@ Supports OpenAI, Anthropic, Google Gemini, Groq, and Ollama. 11 built-in modes +
 - **Bible Corpus** — `bibleCorpus.ts`: downloads full KJV (~31K verses) from CDN, stores in IndexedDB; `getBibleContextForPrompt()` injects up to 100K chars of scripture into biblical mode context; "Load Full Bible" button with live download progress
 - **⌘K Command Palette** — fuzzy search across all modes, quick actions, recent conversations, navigation
 - **Rich memory** — projects, goals, and people injected into Henry's system prompt (localStorage)
+
+**7-Layer Memory Architecture** *(Memory Blueprint — fully implemented)*
+- **Layer 1** — Live Turn: current message + tool results (ChatView)
+- **Layer 2** — Session Memory: DB-backed per-conversation state (`session_memory` table); `sessionLifecycle.ts` manages start/tick/end/compression; `session_end` summaries + `where_we_left_off` auto-generated
+- **Layer 3** — Working Memory: DB-backed single-row state (`working_memory` table); localStorage fast cache + DB sync; commitments table for Henry's explicit promises
+- **Layer 4** — Personal Memory: `personal_memory` table with 5-dimensional scoring (relevance, recency, emotional, strategic, confidence); 12 memory types (identity, preference, habit, value, frustration, goal, etc.); auto-ingested from user messages; `scoreMemoryFact()` ranks facts by combined score
+- **Layer 5** — Project Memory: `projects` + `project_memory` tables; tracks status, summary, blockers, deadlines, strategic/emotional importance
+- **Layer 6** — Relationship Memory: `relationship_memory` table; tracks support style patterns, overwhelm responses, communication preferences; confidence-gated updates
+- **Layer 7** — Narrative Memory: `narrative_memory` table; life/work arcs with linked projects and memories; slow-changing, importance-scored
+- **Memory Graph**: `memory_graph_edges` table — links projects↔files↔conversations↔commitments↔milestones↔arcs
+- **Memory Summaries**: `memory_summaries` table — daily/weekly/monthly rollups, project rollups, session-end summaries, where-we-left-off
+- **Bandwidth Modes**: shallow (fast/minimal) → normal (session+working+personal) → deep (+projects+relationship+narrative) → maximum (all layers + milestones + where-we-left-off + timeline)
+- **Scoring formula**: `retrieval_score = (relevance×0.30) + (recency×0.20) + (emotional×0.15) + (strategic×0.25) + (confidence×0.10)` — used in `memoryRetrieval.ts` + `workingMemory.ts`
+- **Key files**: `electron/ipc/database.ts` (12-table schema), `electron/ipc/memory.ts` (full CRUD + deep context builder), `src/henry/memoryRetrieval.ts` (client scoring + formatter), `src/henry/sessionLifecycle.ts` (lifecycle + personal memory ingestion), `src/henry/workingMemory.ts` (Layer 3 cache + narrative)
+
+**Life Architecture**
+- **Emotion Detection** — `emotionDetector.ts`: detects 9 emotional states (overwhelmed, stressed, urgent, scattered, excited, confused, discouraged, confident, focused); `buildEmotionBlock()` injected into every enriched system prompt
+- **State Indicator Bar** — shows Thinking…/Planning…/Acting…/Responding…/Done ✓ with 1.5s flash; planning (spinner) + acting (dots) states added
+- **Presence Phrases** — spoken via browser TTS before quality tasks; wired in `ambientBrain.ts`
 - **Voice input (Groq Whisper)** — mic button → MediaRecorder → Groq Whisper STT → inserts transcript into chat
 - **Document ingestion** — drag-and-drop or attach files in chat input; Henry gives multi-angle perspective
 - **Status indicators** — live state bar shows Thinking…(8B/70B) → Responding… → Done with 1.5s checkmark; presence phrases spoken via browser TTS before heavy tasks

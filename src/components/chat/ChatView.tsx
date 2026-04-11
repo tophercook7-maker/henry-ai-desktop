@@ -120,6 +120,13 @@ import { logAction } from '@/henry/auditLog';
 import { extractHtmlFromMessage } from '@/henry/builderPreview';
 import { detectEmotionalState, buildEmotionBlock } from '@/henry/emotionDetector';
 import { autoSaveCommitments, addWorkingItem } from '@/henry/workingMemory';
+import {
+  sessionStart,
+  sessionTick,
+  autoIngestPersonalMemory,
+  getActiveMemoryBandwidth,
+} from '@/henry/sessionLifecycle';
+import { formatDeepContext } from '@/henry/memoryRetrieval';
 import BuilderPreviewPanel from './BuilderPreviewPanel';
 
 const HENRY_OPERATING_MODE_KEY = 'henry_operating_mode';
@@ -1038,15 +1045,29 @@ export default function ChatView() {
       workspaceHints: [],
     };
     let lean: HenryLeanMemoryParts = emptyLean;
+    let deepContextBlock = '';
+    const bandwidth = getActiveMemoryBandwidth();
     try {
       const ctx = await window.henryAPI.buildContext({
         conversationId: convId,
         query: content,
+        bandwidth,
       });
       lean = ctx.lean;
+      // Format extended memory layers (Layer 3–7) into system prompt block
+      if (ctx.extended) {
+        const formatted = formatDeepContext(ctx, { bandwidth, maxTokenBudget: 12_000 });
+        deepContextBlock = formatted.systemBlock;
+      }
     } catch {
       /* Memory context is optional */
     }
+
+    // Auto-ingest personal memory from user message (fire-and-forget)
+    autoIngestPersonalMemory(content).catch(() => {});
+
+    // Start/continue session tracking
+    sessionStart(convId).catch(() => {});
 
     const convTitle = conversations.find((c) => c.id === convId)?.title ?? null;
     const workspacePath = settings.workspace_path?.trim() || null;
@@ -1193,8 +1214,9 @@ export default function ChatView() {
     const emotionResult = detectEmotionalState(content);
     const emotionBlock = buildEmotionBlock(emotionResult);
 
-    // Enrich system prompt with emotion adaptation + live web context + Bible corpus
+    // Enrich system prompt with deep memory layers + emotion + web + Bible
     const extraContext = [
+      deepContextBlock,
       emotionBlock,
       webContextBlock,
       bibleContextBlock,
@@ -1298,6 +1320,9 @@ export default function ChatView() {
         if (fullText.length > 80) {
           autoSaveCommitments(fullText, convId);
         }
+
+        // Tick session tracker — track message count + emotional pattern
+        sessionTick({ emotionalPattern: emotionResult?.state || undefined });
 
         // Builder mode: extract HTML and show live preview
         if (effectiveMode === 'builder') {

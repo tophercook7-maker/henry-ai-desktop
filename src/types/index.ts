@@ -132,7 +132,7 @@ export interface WorkspaceFile {
 /** Raw slices from SQLite for the lean memory builder (see `henry/memoryContext.ts`). */
 export interface HenryLeanMemoryParts {
   conversationSummary: string | null;
-  facts: ReadonlyArray<{ fact: string; category: string }>;
+  facts: ReadonlyArray<{ fact: string; category: string; importance?: number; created_at?: string }>;
   workspaceHints: ReadonlyArray<{ file_path: string; summary: string }>;
 }
 

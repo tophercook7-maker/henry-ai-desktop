@@ -112,13 +112,70 @@ contextBridge.exposeInMainWorld('henryAPI', {
   retryTask: (id: string) => ipcRenderer.invoke('task:retry', id),
   getTaskStats: () => ipcRenderer.invoke('task:stats'),
 
-  // ── Memory ────────────────────────────────────────────────
+  // ── Memory — Legacy (backward-compatible) ─────────────────
   saveFact: (fact: Record<string, unknown>) => ipcRenderer.invoke('memory:saveFact', fact),
   searchFacts: (query: Record<string, unknown>) => ipcRenderer.invoke('memory:searchFacts', query),
   getAllFacts: (limit?: number) => ipcRenderer.invoke('memory:getAllFacts', limit),
   buildContext: (params: Record<string, unknown>) => ipcRenderer.invoke('memory:buildContext', params),
   saveSummary: (summary: Record<string, unknown>) => ipcRenderer.invoke('memory:saveSummary', summary),
   getSummary: (conversationId: string) => ipcRenderer.invoke('memory:getSummary', conversationId),
+
+  // ── Memory — Layer 2: Session ─────────────────────────────
+  saveSessionMemory: (session: Record<string, unknown>) => ipcRenderer.invoke('memory:saveSessionMemory', session),
+  getSessionMemory: (conversationId: string) => ipcRenderer.invoke('memory:getSessionMemory', conversationId),
+  compressSession: (opts: Record<string, unknown>) => ipcRenderer.invoke('memory:compressSession', opts),
+
+  // ── Memory — Layer 3: Working Memory (DB-backed) ──────────
+  getWorkingMemory: (userId?: string) => ipcRenderer.invoke('memory:getWorkingMemory', userId),
+  updateWorkingMemory: (updates: Record<string, unknown>) => ipcRenderer.invoke('memory:updateWorkingMemory', updates),
+
+  // ── Memory — Layer 4: Personal Memory (scored) ────────────
+  savePersonalMemory: (item: Record<string, unknown>) => ipcRenderer.invoke('memory:savePersonalMemory', item),
+  getPersonalMemory: (opts?: Record<string, unknown>) => ipcRenderer.invoke('memory:getPersonalMemory', opts),
+  updatePersonalMemory: (id: string, updates: Record<string, unknown>) => ipcRenderer.invoke('memory:updatePersonalMemory', id, updates),
+  deletePersonalMemory: (id: string) => ipcRenderer.invoke('memory:deletePersonalMemory', id),
+  recallPersonalMemory: (id: string) => ipcRenderer.invoke('memory:recallPersonalMemory', id),
+
+  // ── Memory — Layer 5: Projects ────────────────────────────
+  saveProject: (project: Record<string, unknown>) => ipcRenderer.invoke('memory:saveProject', project),
+  getProjects: (opts?: Record<string, unknown>) => ipcRenderer.invoke('memory:getProjects', opts),
+  updateProject: (id: string, updates: Record<string, unknown>) => ipcRenderer.invoke('memory:updateProject', id, updates),
+  saveProjectMemory: (item: Record<string, unknown>) => ipcRenderer.invoke('memory:saveProjectMemory', item),
+  getProjectMemory: (projectId: string) => ipcRenderer.invoke('memory:getProjectMemory', projectId),
+
+  // ── Memory — Goals ────────────────────────────────────────
+  saveGoal: (goal: Record<string, unknown>) => ipcRenderer.invoke('memory:saveGoal', goal),
+  getGoals: (opts?: Record<string, unknown>) => ipcRenderer.invoke('memory:getGoals', opts),
+  updateGoal: (id: string, updates: Record<string, unknown>) => ipcRenderer.invoke('memory:updateGoal', id, updates),
+
+  // ── Memory — Commitments ──────────────────────────────────
+  saveCommitment: (c: Record<string, unknown>) => ipcRenderer.invoke('memory:saveCommitment', c),
+  getCommitments: (opts?: Record<string, unknown>) => ipcRenderer.invoke('memory:getCommitments', opts),
+  resolveCommitment: (id: string) => ipcRenderer.invoke('memory:resolveCommitment', id),
+  updateCommitment: (id: string, updates: Record<string, unknown>) => ipcRenderer.invoke('memory:updateCommitment', id, updates),
+
+  // ── Memory — Milestones ───────────────────────────────────
+  saveMilestone: (m: Record<string, unknown>) => ipcRenderer.invoke('memory:saveMilestone', m),
+  getMilestones: (opts?: Record<string, unknown>) => ipcRenderer.invoke('memory:getMilestones', opts),
+
+  // ── Memory — Layer 6: Relationship Memory ─────────────────
+  saveRelationshipMemory: (item: Record<string, unknown>) => ipcRenderer.invoke('memory:saveRelationshipMemory', item),
+  getRelationshipMemory: (opts?: Record<string, unknown>) => ipcRenderer.invoke('memory:getRelationshipMemory', opts),
+
+  // ── Memory — Layer 7: Narrative Memory ───────────────────
+  saveNarrativeMemory: (arc: Record<string, unknown>) => ipcRenderer.invoke('memory:saveNarrativeMemory', arc),
+  getNarrativeMemory: (opts?: Record<string, unknown>) => ipcRenderer.invoke('memory:getNarrativeMemory', opts),
+
+  // ── Memory — Summaries + Graph ────────────────────────────
+  saveMemorySummary: (s: Record<string, unknown>) => ipcRenderer.invoke('memory:saveMemorySummary', s),
+  getMemorySummaries: (opts?: Record<string, unknown>) => ipcRenderer.invoke('memory:getMemorySummaries', opts),
+  saveGraphEdge: (edge: Record<string, unknown>) => ipcRenderer.invoke('memory:saveGraphEdge', edge),
+  getGraphEdges: (opts?: Record<string, unknown>) => ipcRenderer.invoke('memory:getGraphEdges', opts),
+
+  // ── Memory — Deep Context + Where-We-Left-Off ─────────────
+  buildDeepContext: (params: Record<string, unknown>) => ipcRenderer.invoke('memory:buildDeepContext', params),
+  getWhereWeLeftOff: () => ipcRenderer.invoke('memory:getWhereWeLeftOff'),
+  saveWhereWeLeftOff: (summary: string) => ipcRenderer.invoke('memory:saveWhereWeLeftOff', summary),
 
   // ── Scripture (local store) ───────────────────────────────
   scriptureLookup: (reference: string) => ipcRenderer.invoke('scripture:lookup', reference),

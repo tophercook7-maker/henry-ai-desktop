@@ -218,12 +218,70 @@ declare global {
       activeCount: number;
     }>;
 
+    // ── Memory — Legacy ───────────────────────────────────────
     saveFact: (fact: HenrySaveFactInput) => Promise<boolean | MemoryFact>;
     searchFacts: (query: HenrySearchFactsInput) => Promise<MemoryFact[]>;
     getAllFacts: (limit?: number) => Promise<MemoryFact[]>;
     buildContext: (params: HenryBuildContextInput) => Promise<MemoryContext>;
     saveSummary: (summary: HenrySummaryInput) => Promise<{ id: string | null; error?: string }>;
     getSummary: (conversationId: string) => Promise<string | null>;
+
+    // ── Memory — Layer 2: Session ─────────────────────────────
+    saveSessionMemory: (session: Record<string, unknown>) => Promise<{ id: string; created?: boolean; updated?: boolean }>;
+    getSessionMemory: (conversationId: string) => Promise<Record<string, unknown> | null>;
+    compressSession: (opts: Record<string, unknown>) => Promise<{ compressed: boolean; summaryId: string }>;
+
+    // ── Memory — Layer 3: Working Memory ─────────────────────
+    getWorkingMemory: (userId?: string) => Promise<Record<string, unknown> | null>;
+    updateWorkingMemory: (updates: Record<string, unknown>) => Promise<{ updated: boolean }>;
+
+    // ── Memory — Layer 4: Personal Memory (scored) ────────────
+    savePersonalMemory: (item: Record<string, unknown>) => Promise<{ id: string }>;
+    getPersonalMemory: (opts?: Record<string, unknown>) => Promise<Array<Record<string, unknown>>>;
+    updatePersonalMemory: (id: string, updates: Record<string, unknown>) => Promise<{ updated: boolean }>;
+    deletePersonalMemory: (id: string) => Promise<{ deleted: boolean }>;
+    recallPersonalMemory: (id: string) => Promise<void>;
+
+    // ── Memory — Layer 5: Projects ────────────────────────────
+    saveProject: (project: Record<string, unknown>) => Promise<{ id: string }>;
+    getProjects: (opts?: Record<string, unknown>) => Promise<Array<Record<string, unknown>>>;
+    updateProject: (id: string, updates: Record<string, unknown>) => Promise<{ updated: boolean }>;
+    saveProjectMemory: (item: Record<string, unknown>) => Promise<{ id: string }>;
+    getProjectMemory: (projectId: string) => Promise<Array<Record<string, unknown>>>;
+
+    // ── Memory — Goals ────────────────────────────────────────
+    saveGoal: (goal: Record<string, unknown>) => Promise<{ id: string }>;
+    getGoals: (opts?: Record<string, unknown>) => Promise<Array<Record<string, unknown>>>;
+    updateGoal: (id: string, updates: Record<string, unknown>) => Promise<{ updated: boolean }>;
+
+    // ── Memory — Commitments ──────────────────────────────────
+    saveCommitment: (c: Record<string, unknown>) => Promise<{ id: string }>;
+    getCommitments: (opts?: Record<string, unknown>) => Promise<Array<Record<string, unknown>>>;
+    resolveCommitment: (id: string) => Promise<{ resolved: boolean }>;
+    updateCommitment: (id: string, updates: Record<string, unknown>) => Promise<{ updated: boolean }>;
+
+    // ── Memory — Milestones ───────────────────────────────────
+    saveMilestone: (m: Record<string, unknown>) => Promise<{ id: string }>;
+    getMilestones: (opts?: Record<string, unknown>) => Promise<Array<Record<string, unknown>>>;
+
+    // ── Memory — Layer 6: Relationship Memory ─────────────────
+    saveRelationshipMemory: (item: Record<string, unknown>) => Promise<{ id: string; skipped?: boolean }>;
+    getRelationshipMemory: (opts?: Record<string, unknown>) => Promise<Array<Record<string, unknown>>>;
+
+    // ── Memory — Layer 7: Narrative Memory ───────────────────
+    saveNarrativeMemory: (arc: Record<string, unknown>) => Promise<{ id: string; created?: boolean; updated?: boolean }>;
+    getNarrativeMemory: (opts?: Record<string, unknown>) => Promise<Array<Record<string, unknown>>>;
+
+    // ── Memory — Summaries + Graph ────────────────────────────
+    saveMemorySummary: (s: Record<string, unknown>) => Promise<{ id: string }>;
+    getMemorySummaries: (opts?: Record<string, unknown>) => Promise<Array<Record<string, unknown>>>;
+    saveGraphEdge: (edge: Record<string, unknown>) => Promise<{ id: string }>;
+    getGraphEdges: (opts?: Record<string, unknown>) => Promise<Array<Record<string, unknown>>>;
+
+    // ── Memory — Deep Context + Where-We-Left-Off ─────────────
+    buildDeepContext: (params: Record<string, unknown>) => Promise<Record<string, unknown>>;
+    getWhereWeLeftOff: () => Promise<Record<string, unknown>>;
+    saveWhereWeLeftOff: (summary: string) => Promise<{ id: string }>;
 
     scriptureLookup: (reference: string) => Promise<ScriptureLookupResult>;
     scriptureImport: (entries: ScriptureImportRow[]) => Promise<ScriptureImportResult>;
