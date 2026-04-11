@@ -65,7 +65,9 @@ export default function JournalPanel() {
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [draft, setDraft] = useState('');
   const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
   const [gettingHenryNote, setGettingHenryNote] = useState(false);
+  const [liveHenryNote, setLiveHenryNote] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [view, setView] = useState<'write' | 'history'>('write');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -91,12 +93,26 @@ export default function JournalPanel() {
     const all = loadAllEntries();
     setEntries(all);
     setSaving(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  }
+
+  function handleBlur() {
+    if (draft.trim()) handleSave();
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+      e.preventDefault();
+      handleSave();
+    }
   }
 
   async function askHenry() {
     if (!draft.trim()) return;
     handleSave();
     setGettingHenryNote(true);
+    setLiveHenryNote('');
     try {
       const s = useStore.getState().settings;
       if (!s.companion_provider || !s.companion_model) {
@@ -109,7 +125,6 @@ export default function JournalPanel() {
 
       const prompt = `Here is today's journal entry:\n\n${draft}\n\nGive a brief, warm, thoughtful reflection on this — what stands out, what patterns you notice, one insight or question worth sitting with. Stay concise (2-4 sentences), no platitudes.`;
 
-      let full = '';
       const stream = window.henryAPI.streamMessage({
         provider: s.companion_provider,
         model: s.companion_model,
@@ -120,18 +135,21 @@ export default function JournalPanel() {
         ],
         temperature: 0.8,
       });
-      stream.onChunk((chunk: string) => { full += chunk; });
+      stream.onChunk((chunk: string) => {
+        setLiveHenryNote((prev) => prev + chunk);
+      });
       stream.onDone((fullText: string) => {
+        setLiveHenryNote('');
         const existing = loadEntry(selectedDate);
-        if (existing) {
-          const updated = { ...existing, henryNote: fullText };
-          saveEntry(updated);
-          setEntries(loadAllEntries());
-        }
+        const target = existing ?? { date: selectedDate, content: draft.trim(), savedAt: new Date().toISOString() };
+        const updated = { ...target, henryNote: fullText };
+        saveEntry(updated);
+        setEntries(loadAllEntries());
         setGettingHenryNote(false);
       });
-      stream.onError(() => setGettingHenryNote(false));
+      stream.onError(() => { setLiveHenryNote(''); setGettingHenryNote(false); });
     } catch {
+      setLiveHenryNote('');
       setGettingHenryNote(false);
     }
   }
@@ -184,6 +202,8 @@ export default function JournalPanel() {
               ref={textareaRef}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
+              onBlur={handleBlur}
+              onKeyDown={handleKeyDown}
               placeholder="Start typing… this is just for you."
               className="w-full min-h-[220px] bg-henry-surface/40 border border-henry-border/30 rounded-xl px-4 py-3.5 text-sm text-henry-text placeholder-henry-text-muted outline-none focus:border-henry-accent/40 focus:bg-henry-surface/60 transition-all resize-none leading-relaxed"
             />
@@ -193,7 +213,7 @@ export default function JournalPanel() {
                 disabled={saving || !draft.trim()}
                 className="px-4 py-2 rounded-lg text-xs font-medium bg-henry-surface border border-henry-border/40 text-henry-text hover:bg-henry-hover/50 disabled:opacity-40 transition-all"
               >
-                {saving ? 'Saving…' : 'Save'}
+                {saving ? 'Saving…' : saved ? '✓ Saved' : 'Save'}
               </button>
               <button
                 onClick={askHenry}
@@ -202,18 +222,20 @@ export default function JournalPanel() {
               >
                 {gettingHenryNote ? 'Henry is reading…' : 'Ask Henry to reflect'}
               </button>
+              <span className="text-[10px] text-henry-text-muted ml-auto">⌘S to save</span>
             </div>
           </div>
 
-          {/* Henry's note for today */}
-          {selectedEntry?.henryNote && (
+          {/* Henry's note — streams live then persists */}
+          {(liveHenryNote || selectedEntry?.henryNote) && (
             <div className="rounded-xl border border-henry-accent/20 bg-henry-accent/5 p-4">
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-sm">🧠</span>
                 <span className="text-[11px] font-medium text-henry-accent uppercase tracking-wide">Henry's reflection</span>
+                {gettingHenryNote && <span className="inline-block w-1.5 h-3.5 bg-henry-accent animate-pulse rounded-sm ml-1" />}
               </div>
               <div className="text-sm text-henry-text-dim leading-relaxed">
-                <ReactMarkdown>{selectedEntry.henryNote}</ReactMarkdown>
+                <ReactMarkdown>{liveHenryNote || selectedEntry?.henryNote || ''}</ReactMarkdown>
               </div>
             </div>
           )}

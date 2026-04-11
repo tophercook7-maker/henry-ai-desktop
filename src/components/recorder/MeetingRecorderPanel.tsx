@@ -40,16 +40,27 @@ export default function MeetingRecorderPanel() {
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTimeRef = useRef<number>(0);
+  const mimeTypeRef = useRef<string>('audio/webm');
 
   useEffect(() => {
     setRecordings(loadRecordings());
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, []);
 
+  function getSupportedMimeType(): string {
+    const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus', ''];
+    for (const type of candidates) {
+      if (type === '' || MediaRecorder.isTypeSupported(type)) return type;
+    }
+    return '';
+  }
+
   async function startRecording() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mr = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      const mimeType = getSupportedMimeType();
+      const mr = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      mimeTypeRef.current = mr.mimeType || mimeType || 'audio/webm';
       chunksRef.current = [];
       mr.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
       mr.start(1000);
@@ -79,7 +90,7 @@ export default function MeetingRecorderPanel() {
 
     await new Promise<void>((res) => setTimeout(res, 500));
 
-    const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
+    const blob = new Blob(chunksRef.current, { type: mimeTypeRef.current });
     await processRecording(blob, durationSecs);
   }
 
@@ -156,7 +167,7 @@ export default function MeetingRecorderPanel() {
       if (actionItems.length > 0 && s.companion_provider) {
         for (const item of actionItems.slice(0, 5)) {
           try {
-            await window.henryAPI.createTask?.({
+            await window.henryAPI.submitTask({
               description: item,
               type: 'custom',
               priority: 5,

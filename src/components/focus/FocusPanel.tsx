@@ -79,7 +79,10 @@ export default function FocusPanel() {
   }
 
   async function handleWorkComplete() {
-    const newCount = sessionCount + 1;
+    const completedToday = loadSessions().filter(
+      (s) => s.completedAt.slice(0, 10) === new Date().toISOString().slice(0, 10)
+    ).length;
+    const newCount = completedToday + 1;
     setSessionCount(newCount);
     setTimerState('break');
 

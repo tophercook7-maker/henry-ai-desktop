@@ -24,7 +24,13 @@ function loadHistory(): GeneratedImage[] {
 function saveToHistory(img: GeneratedImage) {
   const h = loadHistory();
   h.unshift(img);
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(h.slice(0, 50)));
+  // Keep fewer images since each is a full base64 data-URI (~1–2 MB)
+  try {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(h.slice(0, 20)));
+  } catch {
+    // localStorage full — keep only the newest 5
+    try { localStorage.setItem(HISTORY_KEY, JSON.stringify(h.slice(0, 5))); } catch { /* give up */ }
+  }
 }
 
 export default function ImageGenPanel() {
@@ -49,7 +55,7 @@ export default function ImageGenPanel() {
       const res = await fetch('/proxy/openai/v1/images/generations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${openaiKey}` },
-        body: JSON.stringify({ model: 'dall-e-3', prompt: prompt.trim(), n: 1, size, style, response_format: 'url' }),
+        body: JSON.stringify({ model: 'dall-e-3', prompt: prompt.trim(), n: 1, size, style, response_format: 'b64_json' }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: { message: res.statusText } }));
@@ -57,11 +63,12 @@ export default function ImageGenPanel() {
       }
       const data = await res.json();
       const item = data.data?.[0];
-      if (!item?.url) throw new Error('No image returned');
+      if (!item?.b64_json) throw new Error('No image returned');
+      const dataUrl = `data:image/png;base64,${item.b64_json}`;
       const img: GeneratedImage = {
         id: `img_${Date.now()}`,
         prompt: prompt.trim(),
-        url: item.url,
+        url: dataUrl,
         revisedPrompt: item.revised_prompt,
         createdAt: new Date().toISOString(),
         size,
@@ -82,8 +89,9 @@ export default function ImageGenPanel() {
     const a = document.createElement('a');
     a.href = img.url;
     a.download = `henry-image-${img.id}.png`;
-    a.target = '_blank';
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
   }
 
   return (
