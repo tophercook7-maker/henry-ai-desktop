@@ -17,6 +17,7 @@ import {
   type HenryOperatingMode,
   isHenryOperatingMode,
 } from '@/henry/charter';
+import { getWeather, type WeatherSnapshot } from '@/henry/weatherContext';
 import {
   buildHenryMemoryContextBlock,
   capMessageContent,
@@ -280,6 +281,7 @@ export default function ChatView() {
   const [saveWorkspaceDraftBusy, setSaveWorkspaceDraftBusy] = useState(false);
   const [chatInject, setChatInject] = useState<{ id: number; text: string } | null>(null);
   const [isSearching, setIsSearching] = useState(false);
+  const [currentWeather, setCurrentWeather] = useState<WeatherSnapshot | null>(null);
   const [ttsEnabled, setTtsEnabled] = useState(() => {
     try { return localStorage.getItem('henry_tts_enabled') === 'true'; } catch { return false; }
   });
@@ -568,6 +570,11 @@ export default function ChatView() {
       window.removeEventListener(HENRY_DESIGN3D_REF_CHANGED_EVENT, sync);
       window.removeEventListener('focus', sync);
     };
+  }, []);
+
+  // Fetch live weather once on mount (cached 30 min)
+  useEffect(() => {
+    getWeather().then((w) => { if (w) setCurrentWeather(w); }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -1096,20 +1103,21 @@ export default function ChatView() {
     const systemPrompt = customModeOverride?.systemPrompt
       ? `${customModeOverride.systemPrompt}\n\n${memoryContext ? `## Memory Context\n${memoryContext}` : ''}`
       : buildCompanionStreamSystemPrompt(effectiveMode, memoryContext, {
-      ...(effectiveMode === 'biblical' ? { biblicalSourceProfileId: biblicalSourceProfileId } : {}),
-      ...(effectiveMode === 'writer'
-        ? {
-            writerDocumentTypeId: writerDocumentTypeId,
-            writerActiveDraftRelativePath: writerActiveDraftPath,
-          }
-        : {}),
-      ...(effectiveMode === 'design3d'
-        ? {
-            design3dWorkflowTypeId: design3dWorkflowTypeId,
-            design3dReferencePath: design3dRefPath,
-          }
-        : {}),
-    });
+        weather: currentWeather,
+        ...(effectiveMode === 'biblical' ? { biblicalSourceProfileId: biblicalSourceProfileId } : {}),
+        ...(effectiveMode === 'writer'
+          ? {
+              writerDocumentTypeId: writerDocumentTypeId,
+              writerActiveDraftRelativePath: writerActiveDraftPath,
+            }
+          : {}),
+        ...(effectiveMode === 'design3d'
+          ? {
+              design3dWorkflowTypeId: design3dWorkflowTypeId,
+              design3dReferencePath: design3dRefPath,
+            }
+          : {}),
+      });
 
     const messagesPayload: HenryAIMessage[] = [
       { role: 'system', content: systemPrompt },

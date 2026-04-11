@@ -637,6 +637,31 @@ function EnginesTab() {
 
 function GeneralTab() {
   const { settings } = useStore();
+  const [ownerName, setOwnerName] = useState(() => {
+    try { return localStorage.getItem('henry:owner_name') || ''; } catch { return ''; }
+  });
+  const [spouseName, setSpouseName] = useState(() => {
+    try { return localStorage.getItem('henry:spouse_name') || ''; } catch { return ''; }
+  });
+  const [homeCity, setHomeCity] = useState(() => {
+    try { return localStorage.getItem('henry:home_city') || ''; } catch { return ''; }
+  });
+  const [householdSaved, setHouseholdSaved] = useState(false);
+
+  function saveHousehold() {
+    try {
+      if (ownerName.trim()) localStorage.setItem('henry:owner_name', ownerName.trim());
+      else localStorage.removeItem('henry:owner_name');
+      if (spouseName.trim()) localStorage.setItem('henry:spouse_name', spouseName.trim());
+      else localStorage.removeItem('henry:spouse_name');
+      if (homeCity.trim()) localStorage.setItem('henry:home_city', homeCity.trim());
+      else localStorage.removeItem('henry:home_city');
+      // Clear weather cache so it re-geocodes with the new city
+      localStorage.removeItem('henry:weather_cache');
+      setHouseholdSaved(true);
+      setTimeout(() => setHouseholdSaved(false), 2500);
+    } catch { /* ignore */ }
+  }
 
   async function updateSetting(key: string, value: string) {
     try {
@@ -649,6 +674,57 @@ function GeneralTab() {
 
   return (
     <div className="space-y-6">
+      {/* Household identity */}
+      <div className="rounded-xl border border-henry-border/50 bg-henry-surface/30 p-5 space-y-4">
+        <div>
+          <h3 className="font-medium text-henry-text">Household</h3>
+          <p className="text-xs text-henry-text-dim mt-1 leading-relaxed">
+            Tell Henry who he belongs to. He'll use these names in his identity, know he's at your home, and talk about weather and life from your location.
+          </p>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-medium text-henry-text-dim mb-1.5">Your name</label>
+            <input
+              type="text"
+              value={ownerName}
+              onChange={(e) => setOwnerName(e.target.value)}
+              placeholder="Topher"
+              className="w-full bg-henry-bg border border-henry-border rounded-lg px-3 py-2 text-sm text-henry-text outline-none focus:border-henry-accent/50 transition-colors"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-henry-text-dim mb-1.5">Partner/spouse (optional)</label>
+            <input
+              type="text"
+              value={spouseName}
+              onChange={(e) => setSpouseName(e.target.value)}
+              placeholder="e.g. Tiara"
+              className="w-full bg-henry-bg border border-henry-border rounded-lg px-3 py-2 text-sm text-henry-text outline-none focus:border-henry-accent/50 transition-colors"
+            />
+          </div>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-henry-text-dim mb-1.5">Home city (optional — Henry auto-detects from GPS)</label>
+          <input
+            type="text"
+            value={homeCity}
+            onChange={(e) => setHomeCity(e.target.value)}
+            placeholder="e.g. Atlanta, GA — leave blank to auto-detect"
+            className="w-full bg-henry-bg border border-henry-border rounded-lg px-3 py-2 text-sm text-henry-text outline-none focus:border-henry-accent/50 transition-colors"
+          />
+        </div>
+        <button
+          onClick={saveHousehold}
+          className="px-5 py-2 rounded-xl text-xs font-semibold bg-henry-accent text-white hover:bg-henry-accent/90 transition-all"
+        >
+          {householdSaved ? '✓ Saved' : 'Save household'}
+        </button>
+        <p className="text-[10px] text-henry-text-muted">
+          Henry will know the weather at your location and refer to both household members naturally in conversation.
+        </p>
+      </div>
+
       <div className="rounded-xl border border-henry-border/50 bg-henry-surface/30 p-5">
         <h3 className="font-medium text-henry-text mb-4">AI Behavior</h3>
         <div>
