@@ -41,6 +41,7 @@
     "@capacitor/splash-screen": "^8.0.1",
     "@capacitor/status-bar": "^8.0.2",
     "@google/generative-ai": "^0.17.0",
+    "@replit/connectors-sdk": "^0.4.0",
     "better-sqlite3": "^11.1.2",
     "electron-updater": "^6.3.9",
     "highlight.js": "^11.10.0",

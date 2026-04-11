@@ -18,6 +18,9 @@ export interface ServiceConfig {
   proxyBase: string;
 }
 
+// Services that are auto-connected via Replit OAuth (no manual token needed)
+export const REPLIT_CONNECTED_SERVICES = new Set(['slack']);
+
 export const SERVICES: ServiceConfig[] = [
   {
     id: 'github',
@@ -119,6 +122,8 @@ export function removeToken(serviceId: string): void {
 }
 
 export function isConnected(serviceId: string): boolean {
+  // Replit OAuth services are always connected (token managed by Replit)
+  if (REPLIT_CONNECTED_SERVICES.has(serviceId)) return true;
   return !!getToken(serviceId);
 }
 
@@ -314,10 +319,8 @@ export async function notionSearch(query = ''): Promise<NotionPage[]> {
 }
 
 // ── Slack API helpers ────────────────────────────────────────────────────────
-
-function slackHeaders(): Record<string, string> {
-  return { 'Authorization': `Bearer ${getToken('slack')}` };
-}
+// Uses Replit connector proxy — OAuth token injected server-side automatically.
+// Routes: /connector/slack/api/{endpoint}
 
 export interface SlackChannel {
   id: string;
@@ -334,23 +337,30 @@ export interface SlackMessage {
 }
 
 export async function slackListChannels(): Promise<SlackChannel[]> {
-  const r = await fetch('/proxy/slack/api/conversations.list?exclude_archived=true&limit=50', {
-    headers: slackHeaders(),
-  });
+  const r = await fetch('/connector/slack/conversations.list?exclude_archived=true&limit=50');
   if (!r.ok) throw new Error(`Slack ${r.status}`);
   const data = await r.json();
-  if (!data.ok) throw new Error(data.error);
+  if (!data.ok) throw new Error(data.error || 'Slack error');
   return data.channels || [];
 }
 
 export async function slackGetHistory(channelId: string, limit = 20): Promise<SlackMessage[]> {
-  const r = await fetch(`/proxy/slack/api/conversations.history?channel=${channelId}&limit=${limit}`, {
-    headers: slackHeaders(),
+  const r = await fetch(`/connector/slack/conversations.history?channel=${channelId}&limit=${limit}`);
+  if (!r.ok) throw new Error(`Slack ${r.status}`);
+  const data = await r.json();
+  if (!data.ok) throw new Error(data.error || 'Slack error');
+  return data.messages || [];
+}
+
+export async function slackPostMessage(channelId: string, text: string): Promise<void> {
+  const r = await fetch('/connector/slack/chat.postMessage', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ channel: channelId, text }),
   });
   if (!r.ok) throw new Error(`Slack ${r.status}`);
   const data = await r.json();
-  if (!data.ok) throw new Error(data.error);
-  return data.messages || [];
+  if (!data.ok) throw new Error(data.error || 'Slack error');
 }
 
 // ── Stripe API helpers ───────────────────────────────────────────────────────

@@ -10,6 +10,16 @@ Supports OpenAI, Anthropic, Google Gemini, Groq, and Ollama. 8 built-in modes + 
 
 ### Features
 
+**Dev & Service Integrations** *(new — sidebar: Dev & Services section)*
+- **Integrations hub** — `/integrations` panel showing all services; connect via paste-in token (GitHub, Linear, Notion, Stripe, Google Calendar, Gmail) or auto-connected via Replit OAuth (Slack)
+- **GitHub panel** — repos list with search, issues (open/closed filter, create new issues), pull requests; uses GitHub REST API via `/proxy/github` with user-supplied PAT
+- **Linear panel** — assigned issues grouped by team, priority filter (Urgent/High/All), links to Linear directly; uses Linear GraphQL API via `/proxy/linear`
+- **Notion panel** — search and browse pages/databases; uses Notion API v1 via `/proxy/notion`
+- **Slack panel** — channel list, message history, compose + send; connected via Replit OAuth connector (no manual token needed); uses `/connector/slack/*` → `@replit/connectors-sdk`
+- **Service proxy routes** — all service calls go through the Vite dev server middleware (CORS-safe); proxy routes for GitHub, Linear, Notion, Stripe, Google Calendar, Gmail; Replit connector middleware for OAuth-managed services
+- **Charter awareness** — Developer mode now includes connected-services guidance, code review style, and git hygiene standards; all connected services injected into system prompt context block
+- **Proposed integrations** — Linear, Slack (connected), Notion, Jira, Stripe, Google Calendar, Gmail all proposed for user to connect
+
 **Core AI**
 - **Groq hardwired** — Groq is set as the permanent default engine; model: `llama-3.3-70b-versatile`
 - **Full web access** — auto-searches when needed; fetches any URL; supports Google CSE + Brave Search APIs

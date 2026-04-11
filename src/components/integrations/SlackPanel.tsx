@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { slackListChannels, slackGetHistory, isConnected, type SlackChannel, type SlackMessage } from '../../henry/integrations';
+import { slackListChannels, slackGetHistory, slackPostMessage, isConnected, type SlackChannel, type SlackMessage } from '../../henry/integrations';
 import { useStore } from '../../store';
 
 export default function SlackPanel() {
@@ -12,6 +12,8 @@ export default function SlackPanel() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [channelSearch, setChannelSearch] = useState('');
+  const [draft, setDraft] = useState('');
+  const [sending, setSending] = useState(false);
 
   useEffect(() => {
     if (connected) loadChannels();
@@ -44,6 +46,20 @@ export default function SlackPanel() {
       setError(e.message);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function sendMessage() {
+    if (!selected || !draft.trim()) return;
+    setSending(true);
+    try {
+      await slackPostMessage(selected.id, draft.trim());
+      setDraft('');
+      loadMessages(selected.id);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setSending(false);
     }
   }
 
@@ -145,7 +161,7 @@ export default function SlackPanel() {
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4 space-y-3 flex flex-col-reverse">
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
               {loading && (
                 <div className="flex justify-center py-6">
                   <div className="w-5 h-5 rounded-full border-2 border-henry-accent/30 border-t-henry-accent animate-spin" />
@@ -159,9 +175,9 @@ export default function SlackPanel() {
               {!loading && messages.length === 0 && (
                 <div className="text-center text-henry-text-muted text-sm py-8">No messages found.</div>
               )}
-              {!loading && messages.map((msg) => (
+              {!loading && [...messages].reverse().map((msg) => (
                 <div key={msg.ts} className="flex gap-3 items-start">
-                  <div className="w-7 h-7 rounded-full bg-henry-surface/50 flex items-center justify-center text-xs shrink-0">
+                  <div className="w-7 h-7 rounded-full bg-henry-surface/50 flex items-center justify-center text-xs shrink-0 font-semibold text-henry-text-dim">
                     {(msg.username || msg.user || '?')[0].toUpperCase()}
                   </div>
                   <div className="flex-1 min-w-0">
@@ -177,6 +193,44 @@ export default function SlackPanel() {
                   </div>
                 </div>
               ))}
+            </div>
+
+            {/* Compose */}
+            <div className="shrink-0 p-3 border-t border-henry-border/20">
+              <div className="flex gap-2 items-end">
+                <textarea
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      sendMessage();
+                    }
+                  }}
+                  placeholder={`Message #${selected?.name || ''}…`}
+                  rows={1}
+                  className="flex-1 bg-henry-surface/50 border border-henry-border/40 rounded-xl px-3 py-2 text-sm text-henry-text placeholder-henry-text-muted outline-none focus:border-henry-accent/50 resize-none min-h-[38px] max-h-[120px]"
+                  style={{ height: 'auto' }}
+                  onInput={(e) => {
+                    const el = e.currentTarget;
+                    el.style.height = 'auto';
+                    el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+                  }}
+                />
+                <button
+                  onClick={sendMessage}
+                  disabled={!draft.trim() || sending}
+                  className="shrink-0 p-2.5 bg-henry-accent text-white rounded-xl hover:bg-henry-accent/90 transition-colors disabled:opacity-40"
+                >
+                  {sending ? (
+                    <div className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                  ) : (
+                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" />
+                    </svg>
+                  )}
+                </button>
+              </div>
             </div>
           </>
         )}

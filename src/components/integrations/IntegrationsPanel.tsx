@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { SERVICES, getToken, setToken, removeToken, isConnected, type ServiceConfig } from '../../henry/integrations';
+import { SERVICES, REPLIT_CONNECTED_SERVICES, getToken, setToken, removeToken, isConnected, type ServiceConfig } from '../../henry/integrations';
 import { useStore } from '../../store';
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -117,9 +117,24 @@ export default function IntegrationsPanel() {
                         <p className="text-xs text-henry-text-muted mt-0.5">{svc.description}</p>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
-                        {connected && !editing && (
+                        {/* Replit OAuth-managed service — always connected, show Open only */}
+                        {connected && REPLIT_CONNECTED_SERVICES.has(svc.id) && (
                           <>
-                            {(svc.id === 'github' || svc.id === 'linear' || svc.id === 'notion' || svc.id === 'slack') && (
+                            <span className="text-[10px] text-henry-text-muted bg-henry-surface/60 border border-henry-border/30 rounded-full px-2 py-1">
+                              via Replit
+                            </span>
+                            <button
+                              onClick={() => setCurrentView(svc.id as any)}
+                              className="px-3 py-1.5 bg-henry-accent/10 text-henry-accent rounded-lg text-xs font-medium hover:bg-henry-accent/20 transition-colors border border-henry-accent/20"
+                            >
+                              Open
+                            </button>
+                          </>
+                        )}
+                        {/* Manual token service — show Open + edit + disconnect when connected */}
+                        {connected && !editing && !REPLIT_CONNECTED_SERVICES.has(svc.id) && (
+                          <>
+                            {(svc.id === 'github' || svc.id === 'linear' || svc.id === 'notion') && (
                               <button
                                 onClick={() => setCurrentView(svc.id as any)}
                                 className="px-3 py-1.5 bg-henry-accent/10 text-henry-accent rounded-lg text-xs font-medium hover:bg-henry-accent/20 transition-colors border border-henry-accent/20"
@@ -149,7 +164,7 @@ export default function IntegrationsPanel() {
                             </button>
                           </>
                         )}
-                        {!connected && !editing && (
+                        {!connected && !editing && !REPLIT_CONNECTED_SERVICES.has(svc.id) && (
                           <button
                             onClick={() => startEdit(svc)}
                             className="px-3 py-1.5 bg-henry-surface border border-henry-border/50 text-henry-text rounded-lg text-xs font-medium hover:bg-henry-hover/50 transition-colors"
@@ -160,8 +175,8 @@ export default function IntegrationsPanel() {
                       </div>
                     </div>
 
-                    {/* Token editor */}
-                    {editing && (
+                    {/* Token editor — only for manual-token services */}
+                    {editing && !REPLIT_CONNECTED_SERVICES.has(svc.id) && (
                       <div className="px-4 pb-4 space-y-3">
                         <div className="h-px bg-henry-border/30" />
                         <div>

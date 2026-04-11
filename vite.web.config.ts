@@ -15,11 +15,10 @@ const routes: Record<string, string> = {
   '/proxy/groq':        'api.groq.com',
   '/proxy/openrouter':  'openrouter.ai',
   '/proxy/ddg':         'api.duckduckgo.com',
-  // Dev & productivity services
+  // Dev & productivity services (user-token-based)
   '/proxy/github':      'api.github.com',
   '/proxy/linear':      'api.linear.app',
   '/proxy/notion':      'api.notion.com',
-  '/proxy/slack':       'slack.com',
   '/proxy/stripe':      'api.stripe.com',
   '/proxy/gcal':        'www.googleapis.com',
   '/proxy/gmail':       'gmail.googleapis.com',
@@ -91,10 +90,63 @@ function aiProxyPlugin(): Plugin {
   };
 }
 
+// ── Replit Connector Proxy Plugin ────────────────────────────────────────────
+// Routes /connector/{service}/* → Replit OAuth-managed connector via @replit/connectors-sdk
+// Used for: Slack (OAuth managed by Replit, no manual token needed)
+function connectorProxyPlugin(): Plugin {
+  return {
+    name: 'henry-connector-proxy',
+    configureServer(server) {
+      server.middlewares.use((req: IncomingMessage, res: ServerResponse, next: () => void) => {
+        const url = req.url ?? '';
+        const match = url.match(/^\/connector\/([^/?]+)(.*)/);
+        if (!match) return next();
+
+        const [, service, apiPath] = match;
+
+        const chunks: Buffer[] = [];
+        req.on('data', (chunk: Buffer) => chunks.push(chunk));
+        req.on('end', async () => {
+          const body = Buffer.concat(chunks);
+          const CORS = {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+            'Access-Control-Allow-Headers': '*',
+          };
+          try {
+            // Dynamic import keeps the Vite config tree-shakeable
+            const { ReplitConnectors } = await import('@replit/connectors-sdk');
+            const connectors = new ReplitConnectors();
+
+            const fetchOpts: Record<string, unknown> = { method: req.method || 'GET' };
+            if (body.length > 0) {
+              fetchOpts.body = body;
+              fetchOpts.headers = { 'content-type': req.headers['content-type'] || 'application/json' };
+            }
+
+            const upstream = await connectors.proxy(service, apiPath || '/', fetchOpts as any);
+            const data = await upstream.text();
+
+            const contentType = upstream.headers.get('content-type') || 'application/json';
+            res.writeHead(upstream.status, { ...CORS, 'Content-Type': contentType });
+            res.end(data);
+          } catch (err: any) {
+            console.error(`[henry-connector-proxy] ${service}${apiPath} error:`, err.message);
+            if (!res.headersSent) {
+              res.writeHead(502, { ...CORS, 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: err.message }));
+            }
+          }
+        });
+      });
+    },
+  };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default defineConfig({
-  plugins: [react(), aiProxyPlugin()],
+  plugins: [react(), aiProxyPlugin(), connectorProxyPlugin()],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
