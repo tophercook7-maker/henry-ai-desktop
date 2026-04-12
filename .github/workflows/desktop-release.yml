@@ -84,10 +84,16 @@ jobs:
           cache: 'npm'
 
       - name: Install Linux build deps
-        run: sudo apt-get install -y rpm
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y rpm fakeroot dpkg-dev
+          sudo apt-get install -y libfuse2t64 || sudo apt-get install -y libfuse2 || true
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Rebuild native modules for Electron
+        run: npm run rebuild
 
       - name: Build Linux AppImage + deb
         run: npm run build:linux
