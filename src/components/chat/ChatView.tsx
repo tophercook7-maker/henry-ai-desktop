@@ -342,6 +342,7 @@ export default function ChatView() {
   const [builderPreviewOpen, setBuilderPreviewOpen] = useState(false);
   const autoSwitchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const streamRef = useRef<any>(null);
   const sessionAsyncResumeStartedRef = useRef(false);
   const wakeHandleSendRef = useRef<((content: string) => void) | null>(null);
@@ -542,8 +543,14 @@ export default function ChatView() {
   }, [conversations.length]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, streamingContent]);
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    if (isStreaming) {
+      container.scrollTop = container.scrollHeight;
+    } else {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages, streamingContent, isStreaming]);
 
   useEffect(() => {
     try {
@@ -1628,7 +1635,7 @@ export default function ChatView() {
     <div className="h-full flex min-h-0">
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
       {/* Messages area */}
-      <div className="flex-1 overflow-y-auto px-3 sm:px-6 py-4">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-3 sm:px-6 py-4">
         {recoveryBannerOpen && recoverySnapshot && (
           <div className="max-w-3xl mx-auto mb-4 rounded-lg border border-henry-accent/25 bg-henry-surface/30 px-3 py-2.5 text-xs text-henry-text">
             <div className="flex items-start justify-between gap-2">
