@@ -59,11 +59,139 @@ export default function SettingsView() {
   );
 }
 
-function ProvidersTab() {
+const PROVIDER_WIZARD: Record<string, {
+  tagline: string;
+  cost: string;
+  costColor: string;
+  steps: { title: string; body: string; link?: { label: string; url: string } }[];
+}> = {
+  groq: {
+    tagline: 'The fastest free AI available — great place to start.',
+    cost: 'Free to start',
+    costColor: 'text-henry-success',
+    steps: [
+      {
+        title: 'Create a free Groq account',
+        body: 'Groq is 100% free to get started — no credit card needed. Click below to sign up with your email or Google account.',
+        link: { label: 'Sign up at console.groq.com →', url: 'https://console.groq.com' },
+      },
+      {
+        title: 'Go to API Keys',
+        body: 'Once logged in, click "API Keys" in the left sidebar (or use the link below). Then click "Create API Key", give it a name like "Henry", and click Create.',
+        link: { label: 'Open API Keys page →', url: 'https://console.groq.com/keys' },
+      },
+      {
+        title: 'Copy your key',
+        body: 'Your key will only be shown once — copy it now before closing the dialog. It starts with gsk_. Paste it below.',
+      },
+    ],
+  },
+  openai: {
+    tagline: 'GPT-4o and o1 — the most capable general-purpose AI.',
+    cost: 'Pay-as-you-go (starts ~$0.002/message)',
+    costColor: 'text-amber-400',
+    steps: [
+      {
+        title: 'Create an OpenAI account',
+        body: 'Head to the OpenAI platform and sign up. New accounts often get a small amount of free credit to test with.',
+        link: { label: 'Sign up at platform.openai.com →', url: 'https://platform.openai.com/signup' },
+      },
+      {
+        title: 'Add a payment method',
+        body: 'Go to Settings → Billing and add a credit card. You control your spend limit — you can set it as low as $5/month. OpenAI only charges for what you actually use.',
+        link: { label: 'Open Billing settings →', url: 'https://platform.openai.com/account/billing' },
+      },
+      {
+        title: 'Create an API Key',
+        body: 'Go to the API Keys page, click "Create new secret key", name it "Henry", and copy it. It starts with sk-. Paste it below — you won\'t be able to see it again.',
+        link: { label: 'Open API Keys →', url: 'https://platform.openai.com/api-keys' },
+      },
+    ],
+  },
+  anthropic: {
+    tagline: 'Claude — exceptional for writing, code, and long documents.',
+    cost: 'Pay-as-you-go (starts ~$0.003/message)',
+    costColor: 'text-amber-400',
+    steps: [
+      {
+        title: 'Create an Anthropic account',
+        body: 'Sign up at the Anthropic Console. New accounts receive $5 in free credits — enough to get a good feel for Claude.',
+        link: { label: 'Sign up at console.anthropic.com →', url: 'https://console.anthropic.com' },
+      },
+      {
+        title: 'Add billing (if needed)',
+        body: 'After your free credits run out, go to Settings → Billing to add a payment method. Usage is billed monthly and only for what you use.',
+        link: { label: 'Open Billing settings →', url: 'https://console.anthropic.com/settings/billing' },
+      },
+      {
+        title: 'Create an API Key',
+        body: 'Go to Settings → API Keys, click "Create Key", name it "Henry", and copy it. It starts with sk-ant-. Paste it below.',
+        link: { label: 'Open API Keys →', url: 'https://console.anthropic.com/settings/keys' },
+      },
+    ],
+  },
+  google: {
+    tagline: 'Gemini — huge context window, very affordable.',
+    cost: 'Free tier available',
+    costColor: 'text-henry-success',
+    steps: [
+      {
+        title: 'Open Google AI Studio',
+        body: 'No separate account needed — just sign in with your Google account. Google AI Studio is free to use with generous rate limits.',
+        link: { label: 'Open Google AI Studio →', url: 'https://aistudio.google.com' },
+      },
+      {
+        title: 'Get an API Key',
+        body: 'Click "Get API key" in the top-left corner of the Studio. Then click "Create API key in new project" (or select an existing Google Cloud project). Copy the key — it starts with AI.',
+        link: { label: 'Get API Key directly →', url: 'https://aistudio.google.com/apikey' },
+      },
+      {
+        title: 'Paste your key below',
+        body: 'That\'s it — no billing setup required for the free tier. Paste your key below and Henry will start using Gemini right away.',
+      },
+    ],
+  },
+  ollama: {
+    tagline: 'Run AI locally on your own computer — completely free, private.',
+    cost: 'Free forever (uses your hardware)',
+    costColor: 'text-henry-success',
+    steps: [
+      {
+        title: 'Download & install Ollama',
+        body: 'Ollama is a free app for Mac, Windows, and Linux. Download and install it like any regular application — takes about 2 minutes.',
+        link: { label: 'Download Ollama →', url: 'https://ollama.ai/download' },
+      },
+      {
+        title: 'Pull a model',
+        body: 'Open your Terminal (Mac/Linux) or Command Prompt (Windows) and run this command to download a model. llama3 is a great starting point — takes ~5 minutes depending on your internet speed.',
+      },
+      {
+        title: 'Allow browser access',
+        body: 'By default Ollama blocks browser connections. You need to restart Ollama with a special setting. On Mac: open Terminal and run the command below. On Windows: set OLLAMA_ORIGINS=* as a system environment variable and restart Ollama.',
+      },
+      {
+        title: 'Enter your Ollama URL',
+        body: 'Once Ollama is running, enter the URL below (usually left as the default). Then use the model manager beneath to pull and manage your models.',
+      },
+    ],
+  },
+};
+
+function ProviderWizard({
+  providerId,
+  onSaved,
+}: {
+  providerId: string;
+  onSaved: () => void;
+}) {
   const { providers, settings, setProviders } = useStore();
-  const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
+  const wizard = PROVIDER_WIZARD[providerId];
+  const providerInfo = PROVIDERS[providerId as ProviderId];
+  const [step, setStep] = useState(0);
+  const [apiKey, setApiKey] = useState('');
   const [ollamaUrl, setOllamaUrl] = useState(settings.ollama_base_url || 'http://localhost:11434');
-  const [saving, setSaving] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
   const [ollamaModels, setOllamaModels] = useState<string[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelsError, setModelsError] = useState('');
@@ -74,46 +202,19 @@ function ProvidersTab() {
   const [deletingModel, setDeletingModel] = useState<string | null>(null);
   const pullUnsubRef = useRef<(() => void) | null>(null);
 
-  useEffect(() => {
-    const keys: Record<string, string> = {};
-    providers.forEach((p) => { keys[p.id] = p.apiKey; });
-    setApiKeys(keys);
-  }, [providers]);
+  const isOllama = providerId === 'ollama';
+  const totalSteps = wizard?.steps.length ?? 0;
+  const isLastStep = step === totalSteps - 1;
 
   useEffect(() => {
-    setOllamaUrl(settings.ollama_base_url || 'http://localhost:11434');
-  }, [settings.ollama_base_url]);
+    const existing = providers.find((p) => p.id === providerId);
+    if (existing?.apiKey) setApiKey(existing.apiKey);
+  }, [providers, providerId]);
 
-  async function saveKey(providerId: string) {
-    setSaving(providerId);
-    try {
-      const provider = PROVIDERS[providerId as ProviderId];
-      const models = AVAILABLE_MODELS.filter((m) => m.provider === providerId).map((m) => m.id);
-
-      await window.henryAPI.saveProvider({
-        id: providerId,
-        name: provider.name,
-        apiKey: apiKeys[providerId] || '',
-        enabled: true,
-        models: JSON.stringify(models),
-      });
-
-      const rawProviders = await window.henryAPI.getProviders();
-      setProviders(
-        rawProviders.map((p: any) => ({
-          id: p.id,
-          name: p.name,
-          apiKey: p.api_key ?? p.apiKey ?? '',
-          enabled: Boolean(p.enabled),
-          models: JSON.parse(p.models || '[]'),
-        }))
-      );
-    } catch (err) {
-      console.error('Failed to save provider:', err);
-    } finally {
-      setSaving(null);
-    }
-  }
+  useEffect(() => {
+    if (isOllama) loadOllamaModels();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOllama]);
 
   async function loadOllamaModels(url?: string) {
     setModelsLoading(true);
@@ -121,7 +222,7 @@ function ProvidersTab() {
     try {
       const result = await window.henryAPI.ollamaModels(url || ollamaUrl);
       if (result.error) { setModelsError(result.error); setOllamaModels([]); }
-      else setOllamaModels(result.models.map((m) => m.name));
+      else setOllamaModels(result.models.map((m: any) => m.name));
     } catch (err: any) {
       setModelsError(err?.message || 'Could not reach Ollama');
       setOllamaModels([]);
@@ -129,11 +230,6 @@ function ProvidersTab() {
       setModelsLoading(false);
     }
   }
-
-  useEffect(() => {
-    loadOllamaModels();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   async function pullModel() {
     const name = pullName.trim();
@@ -152,196 +248,301 @@ function ProvidersTab() {
     } catch (err: any) {
       setPullError(err?.message || 'Pull failed');
     } finally {
-      pullUnsubRef.current?.();
-      pullUnsubRef.current = null;
-      setPulling(false);
+      pullUnsubRef.current?.(); pullUnsubRef.current = null; setPulling(false);
     }
   }
 
   async function deleteModel(modelName: string) {
     setDeletingModel(modelName);
-    try {
-      await window.henryAPI.ollamaDelete(modelName, ollamaUrl);
-      await loadOllamaModels();
-    } catch (err) {
-      console.error('Delete model failed:', err);
-    } finally {
-      setDeletingModel(null);
-    }
+    try { await window.henryAPI.ollamaDelete(modelName, ollamaUrl); await loadOllamaModels(); }
+    catch { /* ignore */ }
+    finally { setDeletingModel(null); }
   }
 
-  async function saveOllamaUrl() {
-    setSaving('ollama');
+  async function saveKey() {
+    setSaving(true);
     try {
-      const url = ollamaUrl.trim() || 'http://localhost:11434';
-      await window.henryAPI.saveSetting('ollama_base_url', url);
-      useStore.getState().updateSetting('ollama_base_url', url);
-
-      const provider = PROVIDERS.ollama;
-      const models = AVAILABLE_MODELS.filter((m) => m.provider === 'ollama').map((m) => m.id);
+      const models = AVAILABLE_MODELS.filter((m) => m.provider === providerId).map((m) => m.id);
+      const key = isOllama ? '' : apiKey.trim();
+      const urlToSave = isOllama ? (ollamaUrl.trim() || 'http://localhost:11434') : '';
+      if (isOllama) {
+        await window.henryAPI.saveSetting('ollama_base_url', urlToSave);
+        useStore.getState().updateSetting('ollama_base_url', urlToSave);
+      }
       await window.henryAPI.saveProvider({
-        id: 'ollama',
-        name: provider.name,
-        apiKey: '',
+        id: providerId,
+        name: providerInfo.name,
+        apiKey: key,
         enabled: true,
         models: JSON.stringify(models),
       });
       const rawProviders = await window.henryAPI.getProviders();
-      setProviders(
-        rawProviders.map((p: any) => ({
-          id: p.id,
-          name: p.name,
-          apiKey: p.api_key ?? p.apiKey ?? '',
-          enabled: Boolean(p.enabled),
-          models: JSON.parse(p.models || '[]'),
-        }))
-      );
-    } catch (err) {
-      console.error('Failed to save Ollama URL:', err);
-    } finally {
-      setSaving(null);
-    }
+      setProviders(rawProviders.map((p: any) => ({
+        id: p.id, name: p.name, apiKey: p.api_key ?? p.apiKey ?? '',
+        enabled: Boolean(p.enabled), models: JSON.parse(p.models || '[]'),
+      })));
+      setSaved(true);
+      onSaved();
+    } catch { /* ignore */ }
+    finally { setSaving(false); }
   }
 
+  if (!wizard) return null;
+
+  if (saved) {
+    return (
+      <div className="mt-4 rounded-xl border border-henry-success/30 bg-henry-success/8 p-5 text-center space-y-2">
+        <div className="text-2xl">✅</div>
+        <p className="text-sm font-medium text-henry-success">{providerInfo.name} is connected!</p>
+        <p className="text-xs text-henry-text-dim">Henry will now use this provider. You can change your active models in the Engines tab.</p>
+      </div>
+    );
+  }
+
+  const currentStep = wizard.steps[step];
+
   return (
-    <div className="space-y-4">
+    <div className="mt-4 space-y-4">
+      {/* Step progress */}
+      <div className="flex items-center gap-1.5">
+        {wizard.steps.map((_, i) => (
+          <div
+            key={i}
+            className={`h-1 flex-1 rounded-full transition-all ${i <= step ? 'bg-henry-accent' : 'bg-henry-border/40'}`}
+          />
+        ))}
+      </div>
+
+      {/* Step card */}
+      <div className="rounded-xl border border-henry-border/40 bg-henry-bg/60 p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <span className="w-5 h-5 rounded-full bg-henry-accent text-white text-[11px] font-bold flex items-center justify-center shrink-0">
+            {step + 1}
+          </span>
+          <p className="text-sm font-medium text-henry-text">{currentStep.title}</p>
+        </div>
+        <p className="text-xs text-henry-text-dim leading-relaxed pl-7">{currentStep.body}</p>
+
+        {/* Special content per provider/step */}
+        {isOllama && step === 1 && (
+          <div className="pl-7">
+            <div className="bg-henry-surface/60 border border-henry-border/30 rounded-lg px-3 py-2 font-mono text-xs text-henry-accent">
+              ollama pull llama3
+            </div>
+            <p className="text-[11px] text-henry-text-muted mt-1.5">Other good options: <code className="text-henry-accent">mistral</code>, <code className="text-henry-accent">phi3</code>, <code className="text-henry-accent">gemma2</code></p>
+          </div>
+        )}
+        {isOllama && step === 2 && (
+          <div className="pl-7 space-y-1.5">
+            <p className="text-[11px] text-henry-text-muted font-medium">Mac / Linux:</p>
+            <div className="bg-henry-surface/60 border border-henry-border/30 rounded-lg px-3 py-2 font-mono text-xs text-henry-accent">
+              OLLAMA_ORIGINS=* ollama serve
+            </div>
+            <p className="text-[11px] text-henry-text-muted font-medium mt-2">Windows:</p>
+            <div className="bg-henry-surface/60 border border-henry-border/30 rounded-lg px-3 py-2 font-mono text-xs text-henry-accent">
+              set OLLAMA_ORIGINS=*
+            </div>
+          </div>
+        )}
+
+        {currentStep.link && (
+          <div className="pl-7">
+            <a
+              href={currentStep.link.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-xs text-henry-accent hover:underline font-medium"
+            >
+              <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                <polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" />
+              </svg>
+              {currentStep.link.label}
+            </a>
+          </div>
+        )}
+      </div>
+
+      {/* Key input on last step (cloud providers) */}
+      {isLastStep && !isOllama && (
+        <div className="space-y-2">
+          <label className="block text-xs font-medium text-henry-text-dim">
+            Paste your API key here
+          </label>
+          <input
+            autoFocus
+            type="password"
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && apiKey.trim()) saveKey(); }}
+            placeholder={`${providerInfo.keyPrefix}...`}
+            className="w-full bg-henry-bg border border-henry-border rounded-lg px-3 py-2.5 text-sm text-henry-text placeholder-henry-text-muted outline-none focus:border-henry-accent/50 font-mono"
+          />
+          <p className="text-[11px] text-henry-text-muted">Your key is stored locally on this device only — never sent to any server.</p>
+        </div>
+      )}
+
+      {/* Ollama URL + model manager on last step */}
+      {isLastStep && isOllama && (
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-henry-text-dim mb-1.5">Ollama URL</label>
+            <input
+              type="text"
+              value={ollamaUrl}
+              onChange={(e) => setOllamaUrl(e.target.value)}
+              placeholder="http://localhost:11434"
+              className="w-full bg-henry-bg border border-henry-border rounded-lg px-3 py-2 text-sm text-henry-text font-mono outline-none focus:border-henry-accent/50"
+            />
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs font-medium text-henry-text-dim">Installed models</label>
+              <button onClick={() => loadOllamaModels()} disabled={modelsLoading} className="text-[10px] text-henry-text-muted hover:text-henry-text">
+                {modelsLoading ? 'Loading…' : '↻ Refresh'}
+              </button>
+            </div>
+            {modelsError && <p className="text-xs text-henry-error mb-2">{modelsError}</p>}
+            {ollamaModels.length === 0 && !modelsLoading && !modelsError && (
+              <p className="text-xs text-henry-text-muted italic">No models yet — pull one below.</p>
+            )}
+            <div className="space-y-1">
+              {ollamaModels.map((m) => (
+                <div key={m} className="flex items-center justify-between bg-henry-bg/60 rounded-lg px-3 py-2">
+                  <span className="text-xs text-henry-text font-mono">{m}</span>
+                  <button onClick={() => deleteModel(m)} disabled={deletingModel === m} className="text-henry-text-muted hover:text-henry-error text-[11px]">
+                    {deletingModel === m ? '…' : '✕'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-henry-text-dim mb-1.5">Pull a model</label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={pullName}
+                onChange={(e) => setPullName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') pullModel(); }}
+                placeholder="e.g. llama3, mistral, phi3"
+                disabled={pulling}
+                className="flex-1 bg-henry-bg border border-henry-border rounded-lg px-3 py-2 text-sm text-henry-text font-mono outline-none focus:border-henry-accent/50 disabled:opacity-50"
+              />
+              <button onClick={pullModel} disabled={pulling || !pullName.trim()} className="px-4 py-2 bg-henry-accent/10 text-henry-accent rounded-lg text-xs font-medium hover:bg-henry-accent/20 disabled:opacity-50">
+                {pulling ? 'Pulling…' : 'Pull'}
+              </button>
+            </div>
+            {pullProgress && (
+              <div className="mt-2 space-y-1">
+                <p className="text-[11px] text-henry-text-dim truncate">{pullProgress.message}</p>
+                {pullProgress.total > 0 && (
+                  <div className="h-1 bg-henry-bg rounded-full overflow-hidden">
+                    <div className="h-full bg-henry-accent transition-all duration-300" style={{ width: `${Math.round((pullProgress.downloaded / pullProgress.total) * 100)}%` }} />
+                  </div>
+                )}
+              </div>
+            )}
+            {pullError && <p className="text-xs text-henry-error mt-1">{pullError}</p>}
+          </div>
+        </div>
+      )}
+
+      {/* Navigation */}
+      <div className="flex items-center justify-between pt-1">
+        <button
+          onClick={() => setStep((s) => Math.max(0, s - 1))}
+          disabled={step === 0}
+          className="text-xs text-henry-text-muted hover:text-henry-text disabled:opacity-30 transition-colors"
+        >
+          ← Back
+        </button>
+        {isLastStep ? (
+          <button
+            onClick={saveKey}
+            disabled={saving || (!isOllama && !apiKey.trim())}
+            className="px-5 py-2 bg-henry-accent text-white rounded-lg text-xs font-medium hover:bg-henry-accent/90 disabled:opacity-40 transition-colors"
+          >
+            {saving ? 'Saving…' : isOllama ? 'Connect Ollama' : 'Save & Activate'}
+          </button>
+        ) : (
+          <button
+            onClick={() => setStep((s) => s + 1)}
+            className="px-5 py-2 bg-henry-accent/10 text-henry-accent rounded-lg text-xs font-medium hover:bg-henry-accent/20 transition-colors"
+          >
+            Next →
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ProvidersTab() {
+  const { providers } = useStore();
+  const [wizardOpen, setWizardOpen] = useState<string | null>(null);
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-henry-text-dim pb-1">
+        Connect AI providers to give Henry intelligence. Each has a step-by-step setup guide — click <strong className="text-henry-text">Set up</strong> to get started.
+      </p>
+
       {(Object.keys(PROVIDERS) as ProviderId[]).map((id) => {
         const provider = PROVIDERS[id];
+        const wizard = PROVIDER_WIZARD[id];
         const isConfigured = id === 'ollama'
           ? providers.some((p) => p.id === 'ollama' && p.enabled)
           : providers.some((p) => p.id === id && p.enabled && p.apiKey);
+        const isOpen = wizardOpen === id;
 
         return (
-          <div key={id} className="rounded-xl border border-henry-border/50 bg-henry-surface/30 p-5">
-            <div className="flex items-center gap-3 mb-3">
-              <span className="text-xl">{provider.icon}</span>
-              <div className="flex-1">
-                <div className="font-medium text-henry-text">{provider.name}</div>
-                <div className="text-xs text-henry-text-dim">{provider.description}</div>
+          <div
+            key={id}
+            className={`rounded-xl border transition-colors ${isOpen ? 'border-henry-accent/40 bg-henry-surface/50' : 'border-henry-border/50 bg-henry-surface/30'}`}
+          >
+            {/* Provider header row */}
+            <div className="flex items-center gap-3 p-4">
+              <span className="text-xl shrink-0">{provider.icon}</span>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-medium text-henry-text">{provider.name}</span>
+                  {isConfigured && (
+                    <span className="text-[11px] bg-henry-success/12 text-henry-success px-2 py-0.5 rounded-full font-medium">
+                      ✓ Connected
+                    </span>
+                  )}
+                  {wizard && (
+                    <span className={`text-[11px] font-medium ${wizard.costColor}`}>{wizard.cost}</span>
+                  )}
+                </div>
+                <p className="text-xs text-henry-text-dim mt-0.5 truncate">{wizard?.tagline || provider.description}</p>
               </div>
-              {isConfigured && (
-                <span className="text-xs bg-henry-success/10 text-henry-success px-2 py-1 rounded-full">
-                  Active
-                </span>
-              )}
+              <button
+                onClick={() => setWizardOpen(isOpen ? null : id)}
+                className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  isOpen
+                    ? 'bg-henry-border/40 text-henry-text-muted hover:bg-henry-border/60'
+                    : isConfigured
+                    ? 'bg-henry-surface/60 text-henry-text-muted border border-henry-border/40 hover:text-henry-text'
+                    : 'bg-henry-accent text-white hover:bg-henry-accent/90'
+                }`}
+              >
+                {isOpen ? 'Close' : isConfigured ? 'Reconfigure' : 'Set up →'}
+              </button>
             </div>
 
-            {id === 'ollama' ? (
-              <div className="space-y-3">
-                <div className="text-xs text-henry-text-dim bg-henry-bg/50 rounded-lg p-3 leading-relaxed">
-                  Run Ollama with <code className="text-henry-accent">OLLAMA_ORIGINS=*</code> so the browser can
-                  reach it. Then pull a model: <code className="text-henry-accent">ollama pull llama3</code>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-henry-text-dim mb-1.5">
-                    Ollama base URL
-                  </label>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={ollamaUrl}
-                      onChange={(e) => setOllamaUrl(e.target.value)}
-                      placeholder="http://localhost:11434"
-                      className="flex-1 bg-henry-bg border border-henry-border rounded-lg px-3 py-2 text-sm text-henry-text font-mono outline-none focus:border-henry-accent/50"
-                    />
-                    <button
-                      onClick={saveOllamaUrl}
-                      disabled={saving === 'ollama'}
-                      className="px-4 py-2 bg-henry-accent/10 text-henry-accent rounded-lg text-xs font-medium hover:bg-henry-accent/20 transition-colors"
-                    >
-                      {saving === 'ollama' ? 'Saving...' : 'Save'}
-                    </button>
-                  </div>
-                </div>
-
-                {/* ── Installed models ── */}
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-xs font-medium text-henry-text-dim">Installed models</label>
-                    <button
-                      onClick={() => loadOllamaModels()}
-                      disabled={modelsLoading}
-                      className="text-[10px] text-henry-text-muted hover:text-henry-text transition-colors"
-                    >
-                      {modelsLoading ? 'Loading…' : '↻ Refresh'}
-                    </button>
-                  </div>
-                  {modelsError && (
-                    <p className="text-xs text-henry-error mb-2">{modelsError}</p>
-                  )}
-                  {ollamaModels.length === 0 && !modelsLoading && !modelsError && (
-                    <p className="text-xs text-henry-text-muted italic">No models found — pull one below.</p>
-                  )}
-                  <div className="space-y-1">
-                    {ollamaModels.map((m) => (
-                      <div key={m} className="flex items-center justify-between bg-henry-bg/60 rounded-lg px-3 py-2">
-                        <span className="text-xs text-henry-text font-mono">{m}</span>
-                        <button
-                          onClick={() => deleteModel(m)}
-                          disabled={deletingModel === m}
-                          className="text-henry-text-muted hover:text-henry-error transition-colors text-[11px]"
-                          title="Remove model"
-                        >
-                          {deletingModel === m ? '…' : '✕'}
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* ── Pull new model ── */}
-                <div>
-                  <label className="block text-xs font-medium text-henry-text-dim mb-1.5">Pull a model</label>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={pullName}
-                      onChange={(e) => setPullName(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') pullModel(); }}
-                      placeholder="e.g. llama3, mistral, phi3"
-                      disabled={pulling}
-                      className="flex-1 bg-henry-bg border border-henry-border rounded-lg px-3 py-2 text-sm text-henry-text font-mono outline-none focus:border-henry-accent/50 disabled:opacity-50"
-                    />
-                    <button
-                      onClick={pullModel}
-                      disabled={pulling || !pullName.trim()}
-                      className="px-4 py-2 bg-henry-accent/10 text-henry-accent rounded-lg text-xs font-medium hover:bg-henry-accent/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {pulling ? 'Pulling…' : 'Pull'}
-                    </button>
-                  </div>
-                  {pullProgress && (
-                    <div className="mt-2 space-y-1">
-                      <p className="text-[11px] text-henry-text-dim truncate">{pullProgress.message}</p>
-                      {pullProgress.total > 0 && (
-                        <div className="h-1 bg-henry-bg rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-henry-accent transition-all duration-300"
-                            style={{ width: `${Math.round((pullProgress.downloaded / pullProgress.total) * 100)}%` }}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  {pullError && <p className="text-xs text-henry-error mt-1">{pullError}</p>}
-                </div>
-              </div>
-            ) : (
-              <div className="flex gap-2">
-                <input
-                  type="password"
-                  value={apiKeys[id] || ''}
-                  onChange={(e) => setApiKeys({ ...apiKeys, [id]: e.target.value })}
-                  placeholder={`${provider.keyPrefix}...`}
-                  className="flex-1 bg-henry-bg border border-henry-border rounded-lg px-3 py-2 text-sm text-henry-text placeholder-henry-text-muted outline-none focus:border-henry-accent/50"
+            {/* Wizard panel */}
+            {isOpen && (
+              <div className="px-4 pb-5 border-t border-henry-border/30 pt-1">
+                <ProviderWizard
+                  providerId={id}
+                  onSaved={() => {
+                    setTimeout(() => setWizardOpen(null), 1800);
+                  }}
                 />
-                <button
-                  onClick={() => saveKey(id)}
-                  disabled={saving === id}
-                  className="px-4 py-2 bg-henry-accent/10 text-henry-accent rounded-lg text-xs font-medium hover:bg-henry-accent/20 transition-colors"
-                >
-                  {saving === id ? 'Saving...' : 'Save'}
-                </button>
               </div>
             )}
           </div>
