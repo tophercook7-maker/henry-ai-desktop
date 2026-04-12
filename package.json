@@ -3,7 +3,10 @@
   "version": "0.1.0",
   "description": "Henry AI — Local-first desktop AI operating system with dual-engine architecture",
   "main": "dist-electron/main.js",
-  "author": "Henry AI",
+  "author": {
+    "name": "Henry AI",
+    "email": "hello@henryai.app"
+  },
   "license": "MIT",
   "scripts": {
     "dev": "vite --config vite.web.config.ts",
