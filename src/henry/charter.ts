@@ -19,6 +19,16 @@ import { buildIntegrationsContextBlock } from './integrations';
 import { buildWorkingMemoryBlock, buildNarrativeBlock } from './workingMemory';
 import { buildPersonalityBlock } from './personality';
 
+/**
+ * localStorage is only available in browser/renderer contexts.
+ * The Electron main process (Node.js) imports this file via taskBroker,
+ * so all reads must be guarded — fall back to null in Node.js.
+ */
+function safeLocalGet(key: string): string | null {
+  if (typeof localStorage === 'undefined') return null;
+  try { return localStorage.getItem(key); } catch { return null; }
+}
+
 export const HENRY_OPERATING_MODES = [
   'companion',
   'writer',
@@ -40,8 +50,8 @@ export function isHenryOperatingMode(value: string): value is HenryOperatingMode
 }
 
 function buildHouseholdIdentity(): string {
-  const ownerName = localStorage.getItem('henry:owner_name')?.trim() || 'you';
-  const spouseName = localStorage.getItem('henry:spouse_name')?.trim() || '';
+  const ownerName = safeLocalGet('henry:owner_name')?.trim() || 'you';
+  const spouseName = safeLocalGet('henry:spouse_name')?.trim() || '';
   const household = spouseName ? `${ownerName} and ${spouseName}` : ownerName;
   const spouseLine = spouseName
     ? ` ${spouseName} is ${ownerName !== 'you' ? `${ownerName}'s` : 'your'} partner and also has Henry's full commitment — you serve them both equally.`
@@ -55,8 +65,8 @@ Your entire purpose is doing for ${household}. That's not a feature — it's who
 
 /** Core identity: always prepend to system prompts (Companion and Worker). */
 export function buildCoreIdentity(): string {
-  const ownerName = localStorage.getItem('henry:owner_name')?.trim() || 'you';
-  const spouseName = localStorage.getItem('henry:spouse_name')?.trim() || '';
+  const ownerName = safeLocalGet('henry:owner_name')?.trim() || 'you';
+  const spouseName = safeLocalGet('henry:spouse_name')?.trim() || '';
   const household = spouseName ? `${ownerName} and ${spouseName}` : ownerName;
 
   return `${buildHouseholdIdentity()}
@@ -334,7 +344,7 @@ Always find a way. If one approach fails, try another.`,
 }
 
 export function getModeInstruction(mode: HenryOperatingMode): string {
-  const ownerName = localStorage.getItem('henry:owner_name')?.trim() || 'you';
+  const ownerName = safeLocalGet('henry:owner_name')?.trim() || 'you';
   return buildModeInstructionsMap(ownerName)[mode];
 }
 
@@ -376,7 +386,7 @@ export function buildCompanionStreamSystemPrompt(
     hour >= 12 && hour < 17 ? 'afternoon' :
     hour >= 17 && hour < 21 ? 'evening' :
     'night';
-  const ownerName = localStorage.getItem('henry:owner_name')?.trim() || 'you';
+  const ownerName = safeLocalGet('henry:owner_name')?.trim() || 'you';
   const weatherStr = formatWeatherBlock(options?.weather ?? null);
   const timeBlock = `Current date/time: ${dateStr} · ${timeStr} (${tz}) — ${partOfDay}${weatherStr ? `\n${weatherStr}` : ''}
 Let this shape how you show up. If it's early morning, ${ownerName} might be starting their day; late evening, winding down. Match the energy naturally — don't announce it, just carry it.\n`;
@@ -470,7 +480,7 @@ export function buildWorkerAITaskSystemPrompt(
   const wHour = now.getHours();
   const wPartOfDay = wHour >= 5 && wHour < 12 ? 'morning' : wHour >= 12 && wHour < 17 ? 'afternoon' : wHour >= 17 && wHour < 21 ? 'evening' : 'night';
 
-  const workerOwner = localStorage.getItem('henry:owner_name')?.trim() || 'the user';
+  const workerOwner = safeLocalGet('henry:owner_name')?.trim() || 'the user';
   const contextBlock = conversationContext?.trim()
     ? `\n\nConversation context (what the Local Brain and ${workerOwner} were discussing):\n${conversationContext.trim()}\n`
     : '';
