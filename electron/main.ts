@@ -64,9 +64,19 @@ app.whenReady().then(() => {
     fs.mkdirSync(henryDir, { recursive: true });
   }
 
-  const db = initDatabase(henryDir);
-
+  // Always create the window first so the user sees something even if DB init fails.
   createWindow();
+
+  let db: ReturnType<typeof initDatabase>;
+  try {
+    db = initDatabase(henryDir);
+  } catch (err) {
+    console.error('[Henry] Database init failed:', err);
+    getMainWindow()?.webContents.once('did-finish-load', () => {
+      getMainWindow()?.webContents.send('henry:db-error', String(err));
+    });
+    return;
+  }
 
   registerSettingsHandlers(db);
   registerAIHandlers(db, getMainWindow);
