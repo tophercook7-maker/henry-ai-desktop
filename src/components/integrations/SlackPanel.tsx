@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { slackListChannels, slackGetHistory, slackPostMessage, isConnected, type SlackChannel, type SlackMessage } from '../../henry/integrations';
 import { useStore } from '../../store';
+import ConnectPrompt from './ConnectPrompt';
 
 function buildSlackPrompt(channel: SlackChannel, messages: SlackMessage[]): string {
   const recent = [...messages].reverse().slice(-30);
@@ -24,7 +25,7 @@ function buildSlackPrompt(channel: SlackChannel, messages: SlackMessage[]): stri
 
 export default function SlackPanel() {
   const setCurrentView = useStore((s) => s.setCurrentView);
-  const connected = isConnected('slack');
+  const [connected, setConnected] = useState(isConnected('slack'));
 
   const [channels, setChannels] = useState<SlackChannel[]>([]);
   const [selected, setSelected] = useState<SlackChannel | null>(null);
@@ -85,23 +86,23 @@ export default function SlackPanel() {
 
   if (!connected) {
     return (
-      <div className="h-full flex flex-col items-center justify-center gap-4 p-8 text-center">
-        <div className="text-5xl">💬</div>
-        <div>
-          <h2 className="text-lg font-semibold text-henry-text mb-1">Slack not connected</h2>
-          <p className="text-sm text-henry-text-muted">Add your Slack Bot Token to read channels.</p>
-          <p className="text-xs text-henry-text-muted mt-2">
-            Create a Slack App at api.slack.com/apps and install it to your workspace.
-            Copy the Bot User OAuth Token (starts with xoxb-).
-          </p>
-        </div>
-        <button
-          onClick={() => setCurrentView('integrations' as any)}
-          className="px-4 py-2 bg-henry-accent text-white rounded-xl text-sm font-semibold hover:bg-henry-accent/90 transition-colors"
-        >
-          Go to Integrations
-        </button>
-      </div>
+      <ConnectPrompt
+        serviceId="slack"
+        icon="💬"
+        name="Slack"
+        unlocks="Read your channels, see recent messages, and send replies without leaving Henry."
+        steps={[
+          'Go to api.slack.com/apps and create a new app (or open an existing one)',
+          'Under OAuth & Permissions, add scopes: channels:read, channels:history, chat:write, users:read',
+          'Click "Install to Workspace" and approve',
+          'Copy the Bot User OAuth Token (starts with xoxb-) and paste it below',
+        ]}
+        tokenLabel="Slack Bot Token"
+        tokenPlaceholder="xoxb-…"
+        docsUrl="https://api.slack.com/apps"
+        docsLabel="Open Slack App settings →"
+        onConnected={() => setConnected(true)}
+      />
     );
   }
 

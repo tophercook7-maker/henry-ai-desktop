@@ -5,6 +5,7 @@ import {
   type GHUser, type GHRepo, type GHIssue, type GHPR,
 } from '../../henry/integrations';
 import { useStore } from '../../store';
+import ConnectPrompt from './ConnectPrompt';
 
 function buildIssuesPrompt(repo: GHRepo, issues: GHIssue[], filter: 'open' | 'closed'): string {
   const lines = issues.slice(0, 20).map((i) => {
@@ -63,7 +64,7 @@ function priorityLabel(p: number): string {
 
 export default function GitHubPanel() {
   const setCurrentView = useStore((s) => s.setCurrentView);
-  const connected = isConnected('github');
+  const [connected, setConnected] = useState(isConnected('github'));
 
   const [tab, setTab] = useState<Tab>('repos');
   const [user, setUser] = useState<GHUser | null>(null);
@@ -163,19 +164,23 @@ export default function GitHubPanel() {
 
   if (!connected) {
     return (
-      <div className="h-full flex flex-col items-center justify-center gap-4 p-8 text-center">
-        <div className="text-5xl">🐙</div>
-        <div>
-          <h2 className="text-lg font-semibold text-henry-text mb-1">GitHub not connected</h2>
-          <p className="text-sm text-henry-text-muted">Add your Personal Access Token to get started.</p>
-        </div>
-        <button
-          onClick={() => setCurrentView('integrations' as any)}
-          className="px-4 py-2 bg-henry-accent text-white rounded-xl text-sm font-semibold hover:bg-henry-accent/90 transition-colors"
-        >
-          Go to Integrations
-        </button>
-      </div>
+      <ConnectPrompt
+        serviceId="github"
+        icon="🐙"
+        name="GitHub"
+        unlocks="Browse your repos, triage issues, and review pull requests — all from Henry."
+        steps={[
+          'Go to github.com/settings/tokens/new',
+          'Give it a name and select scopes: repo, read:user, read:org',
+          'Click "Generate token" and copy the token (starts with ghp_)',
+          'Paste it below',
+        ]}
+        tokenLabel="GitHub Personal Access Token"
+        tokenPlaceholder="ghp_…"
+        docsUrl="https://github.com/settings/tokens/new"
+        docsLabel="Create GitHub token →"
+        onConnected={() => setConnected(true)}
+      />
     );
   }
 

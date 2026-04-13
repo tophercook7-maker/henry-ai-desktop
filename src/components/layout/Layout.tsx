@@ -30,6 +30,9 @@ import GitHubPanel from '../integrations/GitHubPanel';
 import LinearPanel from '../integrations/LinearPanel';
 import NotionPanel from '../integrations/NotionPanel';
 import SlackPanel from '../integrations/SlackPanel';
+import StripePanel from '../integrations/StripePanel';
+import GCalPanel from '../integrations/GCalPanel';
+import GmailPanel from '../integrations/GmailPanel';
 import { useStore } from '../../store';
 import { isHenryOperatingMode, type HenryOperatingMode } from '../../henry/charter';
 import { useEffect } from 'react';
@@ -108,6 +111,9 @@ export default function Layout() {
           {currentView === 'linear' && <LinearPanel />}
           {currentView === 'notion' && <NotionPanel />}
           {currentView === 'slack' && <SlackPanel />}
+          {currentView === 'stripe' && <StripePanel />}
+          {currentView === 'gcal' && <GCalPanel />}
+          {currentView === 'gmail' && <GmailPanel />}
         </main>
       </div>
 
