@@ -45,7 +45,7 @@ function createWindow() {
       mainWindow.webContents.openDevTools({ mode: 'detach' });
     }
   } else {
-    mainWindow.loadFile(path.join(app.getAppPath(), 'renderer', 'index.html'));
+    mainWindow.loadFile(path.join(__dirname, '../index.html'));
   }
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
