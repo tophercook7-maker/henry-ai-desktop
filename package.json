@@ -80,6 +80,7 @@
     "vite-plugin-electron-renderer": "^0.14.5"
   },
   "build": {
+    "afterPack": "./scripts/afterPack-strip-mac-xattrs.cjs",
     "appId": "com.henryai.desktop",
     "productName": "Henry AI",
     "icon": "resources/icon.png",

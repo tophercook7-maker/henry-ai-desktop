@@ -15,6 +15,8 @@ permissions:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # Avoid AppleDouble / resource-fork files when copying into the app bundle (macOS)
+  COPYFILE_DISABLE: 1
 
 jobs:
   # ── Mac ───────────────────────────────────────────────────────────────────
