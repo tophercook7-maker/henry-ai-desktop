@@ -36,6 +36,7 @@ export default defineConfig({
     ]),
     electronRenderer(),
   ],
+  base: './',
   build: {
     outDir: 'renderer',
   },
