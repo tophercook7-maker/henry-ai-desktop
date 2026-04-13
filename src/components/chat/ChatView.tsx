@@ -102,7 +102,7 @@ import {
   autoShouldSearch,
   extractUrlsFromText,
   getSearchApiKeys,
-} from '@/henry/webSearch';
+} from '../../henry/webSearch';
 import {
   shouldUseWebTools,
   runWebTools,

@@ -15,7 +15,7 @@ import {
   formatSearchResultsForHenry,
   formatPageContentForHenry,
   type SearchResult,
-} from '@/henry/webSearch';
+} from './webSearch';
 
 // ── Tool schema definitions ────────────────────────────────────────────────────
 
