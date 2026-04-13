@@ -123,7 +123,7 @@ export default function Sidebar() {
   }
 
   return (
-    <div className="w-56 shrink-0 bg-henry-surface/50 border-r border-henry-border/50 flex flex-col">
+    <div className="w-56 shrink-0 bg-henry-surface/50 border-r border-henry-border/50 flex flex-col h-full overflow-hidden">
       {/* New chat button */}
       <div className="p-3">
         <button
@@ -139,7 +139,7 @@ export default function Sidebar() {
       </div>
 
       {/* Scrollable body: nav groups + conversations */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto min-h-0">
         {/* Navigation — grouped */}
         <nav className="px-2">
           {NAV_GROUPS.map((group) => (

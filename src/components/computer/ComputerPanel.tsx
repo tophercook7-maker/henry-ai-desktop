@@ -17,26 +17,71 @@ interface Permissions {
   message?: string;
 }
 
+const QUICK_ACTION_GROUPS = [
+  {
+    label: 'Open apps',
+    icon: '📱',
+    actions: [
+      { label: 'Finder', type: 'app' as const, value: 'Finder' },
+      { label: 'Safari', type: 'app' as const, value: 'Safari' },
+      { label: 'Terminal', type: 'app' as const, value: 'Terminal' },
+      { label: 'System Settings', type: 'app' as const, value: 'System Settings' },
+      { label: 'Activity Monitor', type: 'app' as const, value: 'Activity Monitor' },
+    ],
+  },
+  {
+    label: 'Files & folders',
+    icon: '📁',
+    actions: [
+      { label: 'Open home folder', type: 'shell' as const, value: 'open ~' },
+      { label: 'Open Downloads', type: 'shell' as const, value: 'open ~/Downloads' },
+      { label: 'Open Desktop', type: 'shell' as const, value: 'open ~/Desktop' },
+      { label: 'List Desktop files', type: 'shell' as const, value: 'ls -la ~/Desktop' },
+      { label: 'Disk space', type: 'shell' as const, value: 'df -h ~' },
+    ],
+  },
+  {
+    label: 'System info',
+    icon: '💻',
+    actions: [
+      { label: 'Check memory', type: 'shell' as const, value: 'vm_stat | head -10' },
+      { label: 'Running processes', type: 'shell' as const, value: 'ps aux | head -20' },
+      { label: 'Network info', type: 'shell' as const, value: 'ifconfig | grep "inet " | grep -v 127.0.0.1' },
+      { label: 'macOS version', type: 'shell' as const, value: 'sw_vers' },
+      { label: 'Uptime', type: 'shell' as const, value: 'uptime' },
+    ],
+  },
+  {
+    label: 'Automate',
+    icon: '⚡',
+    actions: [
+      { label: 'Take screenshot', type: 'screenshot' as const, value: '' },
+      { label: 'Empty trash', type: 'shell' as const, value: 'osascript -e \'tell application "Finder" to empty trash\'' },
+      { label: 'Hide all windows', type: 'shell' as const, value: 'osascript -e \'tell application "System Events" to set visible of every process to false\'' },
+      { label: 'Lock screen', type: 'shell' as const, value: 'pmset displaysleepnow' },
+    ],
+  },
+];
+
 export default function ComputerPanel() {
   const [permissions, setPermissions] = useState<Permissions | null>(null);
   const [systemInfo, setSystemInfo] = useState<any>(null);
   const [log, setLog] = useState<ActionLog[]>([]);
   const [input, setInput] = useState('');
   const [running, setRunning] = useState(false);
-  const [mode, setMode] = useState<'shell' | 'applescript' | 'app'>('shell');
+  const [mode, setMode] = useState<'actions' | 'shell' | 'applescript' | 'app'>('actions');
   const [screenshot, setScreenshot] = useState<string | null>(null);
   const [apps, setApps] = useState<string[]>([]);
   const [appFilter, setAppFilter] = useState('');
   const [history, setHistory] = useState<string[]>([]);
   const [historyIdx, setHistoryIdx] = useState(-1);
-  const [pendingAction, setPendingAction] = useState<{ label: string; fn: () => Promise<void> } | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     loadPermissions();
     loadSystemInfo();
-    addLog('info', 'Henry Computer Control ready. Commands run on your computer via the desktop app.');
+    addLog('info', 'Henry Computer Control ready.');
   }, []);
 
   useEffect(() => {
@@ -74,6 +119,20 @@ export default function ComputerPanel() {
     if (mode === 'app') loadApps();
   }, [mode]);
 
+  async function runShell(cmd: string) {
+    setRunning(true);
+    addLog('command', `$ ${cmd}`);
+    try {
+      const result = await window.henryAPI.computerRunShell({ command: cmd, timeout: 30000 });
+      if (result.output) addLog('result', result.output);
+      if (result.error && !result.success) addLog('error', result.error);
+    } catch (e: any) {
+      addLog('error', e.message);
+    } finally {
+      setRunning(false);
+    }
+  }
+
   async function executeCommand() {
     if (!input.trim() || running) return;
     const cmd = input.trim();
@@ -82,7 +141,6 @@ export default function ComputerPanel() {
     setHistoryIdx(-1);
     setRunning(true);
     addLog('command', `$ ${cmd}`);
-
     try {
       let result: any;
       if (mode === 'shell') {
@@ -103,7 +161,7 @@ export default function ComputerPanel() {
 
   async function openApp(appName: string) {
     setRunning(true);
-    addLog('command', `open -a "${appName}"`);
+    addLog('info', `Opening ${appName}…`);
     try {
       const result = await window.henryAPI.computerOpenApp(appName);
       addLog(result.success ? 'result' : 'error', result.output);
@@ -116,7 +174,7 @@ export default function ComputerPanel() {
 
   async function takeScreenshot() {
     setRunning(true);
-    addLog('info', 'Taking screenshot...');
+    addLog('info', 'Taking screenshot…');
     try {
       const result = await window.henryAPI.computerScreenshot();
       if (result.success && result.base64) {
@@ -132,16 +190,14 @@ export default function ComputerPanel() {
     }
   }
 
-  async function typeText(text: string) {
-    setRunning(true);
-    addLog('command', `type: "${text}"`);
-    try {
-      const result = await window.henryAPI.computerTypeText(text);
-      addLog(result.success ? 'result' : 'error', result.success ? 'Text typed.' : (result.error || 'Failed.'));
-    } catch (e: any) {
-      addLog('error', e.message);
-    } finally {
-      setRunning(false);
+  async function runQuickAction(action: { type: 'shell' | 'app' | 'screenshot'; value: string; label: string }) {
+    if (running) return;
+    if (action.type === 'screenshot') {
+      await takeScreenshot();
+    } else if (action.type === 'app') {
+      await openApp(action.value);
+    } else {
+      await runShell(action.value);
     }
   }
 
@@ -164,25 +220,25 @@ export default function ComputerPanel() {
 
   const isDesktop = permissions?.platform !== 'web';
   const filteredApps = apps.filter((a) => a.toLowerCase().includes(appFilter.toLowerCase()));
+  const missingPerms = permissions && (!permissions.accessibility || !permissions.screenRecording);
 
   return (
     <div className="h-full flex flex-col bg-henry-bg text-henry-text overflow-hidden">
       {/* Header */}
-      <div className="shrink-0 px-6 py-4 border-b border-henry-border/50 bg-henry-surface/30">
-        <div className="flex items-center justify-between mb-3">
+      <div className="shrink-0 px-6 py-4 border-b border-henry-border/50 bg-henry-surface/20">
+        <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-henry-text flex items-center gap-2">
+            <h2 className="text-base font-semibold text-henry-text flex items-center gap-2">
               🖥️ Computer Control
               {!isDesktop && (
                 <span className="text-[11px] px-2 py-0.5 rounded-full bg-henry-warning/15 text-henry-warning font-normal">
-                  Web Preview
+                  Desktop app required
                 </span>
               )}
             </h2>
             {systemInfo && (
               <p className="text-xs text-henry-text-muted mt-0.5">
-                {systemInfo.platform} · {systemInfo.arch} · {systemInfo.hostname} · {systemInfo.freeMemoryGB}GB free
-                {systemInfo.macOS && ` · ${systemInfo.macOS.split('\n')[0]}`}
+                {systemInfo.hostname} · {systemInfo.platform} · {systemInfo.freeMemoryGB}GB free
               </p>
             )}
           </div>
@@ -203,19 +259,11 @@ export default function ComputerPanel() {
           </div>
         </div>
 
-        {/* Permission status */}
-        {permissions && (
-          <div className="flex items-start gap-3">
-            <PermBadge
-              label="Accessibility"
-              granted={permissions.accessibility}
-              instructions={permissions.accessibilityInstructions}
-            />
-            <PermBadge
-              label="Screen Recording"
-              granted={permissions.screenRecording}
-              instructions={permissions.screenRecordingInstructions}
-            />
+        {/* Permissions — only show if something is missing */}
+        {permissions && missingPerms && (
+          <div className="flex items-center gap-3 mt-3">
+            <PermBadge label="Accessibility" granted={permissions.accessibility} instructions={permissions.accessibilityInstructions} />
+            <PermBadge label="Screen Recording" granted={permissions.screenRecording} instructions={permissions.screenRecordingInstructions} />
             {permissions.message && (
               <div className="text-[11px] text-henry-text-muted italic">{permissions.message}</div>
             )}
@@ -224,42 +272,75 @@ export default function ComputerPanel() {
       </div>
 
       <div className="flex-1 flex overflow-hidden">
-        {/* Left: log + input */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Mode tabs */}
           <div className="shrink-0 flex gap-1 px-4 pt-3 pb-2 border-b border-henry-border/30">
-            {(['shell', 'applescript', 'app'] as const).map((m) => (
+            {([
+              { id: 'actions', label: '⚡ Quick Actions' },
+              { id: 'shell', label: '💻 Shell' },
+              { id: 'applescript', label: '🍎 AppleScript' },
+              { id: 'app', label: '📱 Apps' },
+            ] as const).map((m) => (
               <button
-                key={m}
-                onClick={() => setMode(m)}
-                className={`px-3 py-1 text-xs rounded-lg font-medium transition-all ${
-                  mode === m
-                    ? 'bg-henry-accent text-white'
-                    : 'bg-henry-hover text-henry-text-dim hover:text-henry-text'
+                key={m.id}
+                onClick={() => setMode(m.id)}
+                className={`px-3 py-1.5 text-xs rounded-lg font-medium transition-all ${
+                  mode === m.id
+                    ? 'bg-henry-accent/10 text-henry-accent border border-henry-accent/20'
+                    : 'text-henry-text-muted hover:text-henry-text hover:bg-henry-hover/50'
                 }`}
               >
-                {m === 'shell' ? '💻 Shell' : m === 'applescript' ? '🍎 AppleScript' : '📱 Apps'}
+                {m.label}
               </button>
             ))}
           </div>
 
+          {/* Quick Actions panel */}
+          {mode === 'actions' && (
+            <div className="flex-1 overflow-y-auto p-4 space-y-5">
+              {QUICK_ACTION_GROUPS.map((group) => (
+                <div key={group.label}>
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-henry-text-muted mb-2 flex items-center gap-1.5">
+                    <span>{group.icon}</span>
+                    {group.label}
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {group.actions.map((action) => (
+                      <button
+                        key={action.label}
+                        onClick={() => runQuickAction(action)}
+                        disabled={running}
+                        className="text-left px-3 py-2.5 rounded-xl bg-henry-surface/30 border border-henry-border/30 hover:border-henry-accent/30 hover:bg-henry-surface/50 transition-colors disabled:opacity-40 group"
+                      >
+                        <p className="text-xs font-medium text-henry-text group-hover:text-henry-accent transition-colors">{action.label}</p>
+                        {action.type === 'shell' && (
+                          <p className="text-[10px] text-henry-text-muted/60 mt-0.5 font-mono truncate">{action.value}</p>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* App launcher */}
           {mode === 'app' && (
-            <div className="shrink-0 px-4 py-3 border-b border-henry-border/20">
+            <div className="flex-1 overflow-y-auto p-4">
               <input
                 type="text"
                 value={appFilter}
                 onChange={(e) => setAppFilter(e.target.value)}
-                placeholder="Filter apps..."
+                placeholder="Search apps…"
                 className="w-full bg-henry-bg border border-henry-border rounded-lg px-3 py-2 text-sm text-henry-text outline-none focus:border-henry-accent/50 mb-3"
               />
-              <div className="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto">
+              <div className="grid grid-cols-3 gap-2">
                 {filteredApps.map((app) => (
                   <button
                     key={app}
                     onClick={() => openApp(app)}
                     disabled={running}
-                    className="text-xs px-2 py-1.5 rounded-lg bg-henry-surface border border-henry-border/30 hover:border-henry-accent/50 hover:bg-henry-accent/5 text-henry-text-dim hover:text-henry-text transition-all text-left truncate disabled:opacity-50"
+                    className="text-xs px-2 py-2 rounded-lg bg-henry-surface border border-henry-border/30 hover:border-henry-accent/50 hover:bg-henry-accent/5 text-henry-text-dim hover:text-henry-text transition-all text-left truncate disabled:opacity-50"
                   >
                     {app}
                   </button>
@@ -268,74 +349,69 @@ export default function ComputerPanel() {
             </div>
           )}
 
-          {/* Action log */}
-          <div
-            ref={logRef}
-            className="flex-1 overflow-y-auto px-4 py-3 font-mono text-xs space-y-1"
-          >
-            {log.map((entry) => (
-              <div key={entry.id}>
-                <LogLine entry={entry} />
+          {/* Shell / AppleScript: log + input */}
+          {(mode === 'shell' || mode === 'applescript') && (
+            <>
+              <div ref={logRef} className="flex-1 overflow-y-auto px-4 py-3 font-mono text-xs space-y-1">
+                {log.map((entry) => (
+                  <div key={entry.id}>
+                    <LogLine entry={entry} />
+                  </div>
+                ))}
+                {running && <div className="text-henry-accent animate-pulse">▋ running…</div>}
               </div>
-            ))}
-            {running && (
-              <div className="text-henry-accent animate-pulse">▋ running...</div>
-            )}
-          </div>
 
-          {/* Input */}
-          {mode !== 'app' && (
-            <div className="shrink-0 p-4 border-t border-henry-border/30">
-              <div className="flex gap-2">
-                <input
-                  ref={inputRef}
-                  type="text"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  disabled={running}
-                  placeholder={
-                    mode === 'shell'
-                      ? 'Enter shell command... (↑↓ for history)'
-                      : 'Enter AppleScript... (e.g. tell application "Safari" to activate)'
-                  }
-                  className="flex-1 bg-henry-bg border border-henry-border rounded-xl px-4 py-2.5 text-sm text-henry-text font-mono outline-none focus:border-henry-accent/50 disabled:opacity-50"
-                />
-                <button
-                  onClick={executeCommand}
-                  disabled={running || !input.trim()}
-                  className="px-4 py-2.5 bg-henry-accent text-white rounded-xl text-sm font-medium hover:bg-henry-accent-hover transition-all disabled:opacity-50"
-                >
-                  Run
-                </button>
+              <div className="shrink-0 p-4 border-t border-henry-border/30">
+                <div className="flex gap-2">
+                  <input
+                    ref={inputRef}
+                    type="text"
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    disabled={running}
+                    placeholder={mode === 'shell' ? 'Shell command… (↑↓ history)' : 'AppleScript…'}
+                    className="flex-1 bg-henry-bg border border-henry-border rounded-xl px-4 py-2.5 text-sm text-henry-text font-mono outline-none focus:border-henry-accent/50 disabled:opacity-50"
+                  />
+                  <button
+                    onClick={executeCommand}
+                    disabled={running || !input.trim()}
+                    className="px-4 py-2.5 bg-henry-accent text-white rounded-xl text-sm font-medium hover:bg-henry-accent/90 transition-colors disabled:opacity-50"
+                  >
+                    Run
+                  </button>
+                </div>
+                <p className="text-[10px] text-henry-text-muted mt-1.5 px-1">
+                  {mode === 'shell'
+                    ? 'Commands run in your henry-workspace. Use absolute paths for other locations.'
+                    : 'AppleScript requires Accessibility permission.'}
+                </p>
               </div>
-              <p className="text-[10px] text-henry-text-muted mt-1.5 px-1">
-                {mode === 'shell'
-                  ? 'Shell commands execute in your henry-workspace. Use absolute paths for other locations.'
-                  : 'AppleScript requires Accessibility permission in System Settings.'}
-              </p>
+            </>
+          )}
+
+          {/* Activity log for Quick Actions and App mode */}
+          {(mode === 'actions' || mode === 'app') && log.length > 0 && (
+            <div className="shrink-0 border-t border-henry-border/30 max-h-32 overflow-y-auto px-4 py-2 font-mono text-xs space-y-0.5" ref={logRef}>
+              {log.slice(-20).map((entry) => (
+                <div key={entry.id}>
+                  <LogLine entry={entry} />
+                </div>
+              ))}
+              {running && <div className="text-henry-accent animate-pulse">▋ running…</div>}
             </div>
           )}
         </div>
 
-        {/* Right: screenshot */}
+        {/* Screenshot panel */}
         {screenshot && (
-          <div className="w-80 shrink-0 border-l border-henry-border/50 flex flex-col">
+          <div className="w-72 shrink-0 border-l border-henry-border/50 flex flex-col">
             <div className="flex items-center justify-between px-3 py-2 border-b border-henry-border/30 text-xs text-henry-text-muted">
               <span>Screenshot</span>
-              <button
-                onClick={() => setScreenshot(null)}
-                className="hover:text-henry-text transition-colors"
-              >
-                ✕
-              </button>
+              <button onClick={() => setScreenshot(null)} className="hover:text-henry-text transition-colors">✕</button>
             </div>
             <div className="flex-1 overflow-auto p-2">
-              <img
-                src={screenshot}
-                alt="Screenshot"
-                className="w-full rounded border border-henry-border/30"
-              />
+              <img src={screenshot} alt="Screenshot" className="w-full rounded border border-henry-border/30" />
             </div>
             <div className="p-2 border-t border-henry-border/30">
               <button
@@ -349,14 +425,12 @@ export default function ComputerPanel() {
         )}
       </div>
 
-      {/* Desktop app CTA (web only) */}
+      {/* Desktop app CTA */}
       {!isDesktop && (
         <div className="shrink-0 mx-4 mb-4 p-4 rounded-xl bg-henry-accent/5 border border-henry-accent/20">
           <p className="text-sm font-medium text-henry-text mb-1">Full computer control requires the desktop app</p>
           <p className="text-xs text-henry-text-dim leading-relaxed">
-            The Henry desktop app (built with Electron) gives Henry real ability to open apps, control your mouse and
-            keyboard, take screenshots, and execute shell commands — all with your approval before each action.
-            Build it with <code className="text-henry-accent">npm run build:mac</code>.
+            The Henry desktop app gives Henry real ability to open apps, take screenshots, and run shell commands — with your approval before each action.
           </p>
         </div>
       )}
@@ -364,39 +438,23 @@ export default function ComputerPanel() {
   );
 }
 
-function PermBadge({
-  label,
-  granted,
-  instructions,
-}: {
-  label: string;
-  granted: boolean;
-  instructions?: string | null;
-}) {
+function PermBadge({ label, granted, instructions }: { label: string; granted: boolean; instructions?: string | null }) {
   const [showHelp, setShowHelp] = useState(false);
-
   return (
     <div className="relative">
       <button
         onClick={() => !granted && setShowHelp(!showHelp)}
         className={`flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full font-medium transition-all ${
-          granted
-            ? 'bg-henry-success/15 text-henry-success'
-            : 'bg-henry-error/15 text-henry-error hover:bg-henry-error/20 cursor-pointer'
+          granted ? 'bg-henry-success/15 text-henry-success' : 'bg-henry-error/15 text-henry-error hover:bg-henry-error/20 cursor-pointer'
         }`}
       >
-        {granted ? '✓' : '✕'} {label}
-        {!granted && instructions && <span className="opacity-60">?</span>}
+        {granted ? '✓' : '!'} {label}
+        {!granted && instructions && <span className="opacity-60 ml-0.5">→ fix</span>}
       </button>
       {showHelp && instructions && (
         <div className="absolute top-7 left-0 z-10 w-72 p-3 rounded-xl bg-henry-surface border border-henry-border shadow-xl text-xs text-henry-text-dim leading-relaxed">
           {instructions}
-          <button
-            onClick={() => setShowHelp(false)}
-            className="block mt-2 text-henry-accent hover:underline"
-          >
-            Got it
-          </button>
+          <button onClick={() => setShowHelp(false)} className="block mt-2 text-henry-accent hover:underline">Got it</button>
         </div>
       )}
     </div>

@@ -343,6 +343,42 @@ export default function IntegrationsPanel() {
 
       {/* Service list */}
       <div className="flex-1 overflow-y-auto p-6 space-y-8">
+
+        {/* Connected feeds — quick-access tiles for services that have live panels */}
+        {connected.length > 0 && (
+          <div>
+            <h2 className="text-[11px] font-semibold uppercase tracking-wider text-henry-text-muted mb-3">
+              Your connected apps
+            </h2>
+            <div className="grid grid-cols-2 gap-2">
+              {connected.filter((s) => HAS_PANEL.has(s.id)).map((svc) => {
+                const feedLabel: Record<string, string> = {
+                  github: 'Repos, issues & PRs',
+                  slack: 'Channels & messages',
+                  notion: 'Pages & databases',
+                  linear: 'Issues & projects',
+                };
+                return (
+                  <button
+                    key={svc.id}
+                    onClick={() => useStore.getState().setCurrentView(svc.id as any)}
+                    className="flex items-center gap-3 p-3 rounded-xl bg-henry-surface/30 border border-henry-accent/15 hover:border-henry-accent/30 hover:bg-henry-surface/50 transition-colors text-left group"
+                  >
+                    <div className="w-9 h-9 rounded-xl bg-henry-bg/60 flex items-center justify-center text-lg shrink-0">{svc.icon}</div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-henry-text">{svc.name}</p>
+                      <p className="text-[10px] text-henry-text-muted">{feedLabel[svc.id] || 'View feed'}</p>
+                    </div>
+                    <svg className="w-3.5 h-3.5 text-henry-accent/50 group-hover:text-henry-accent shrink-0 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <polyline points="9 18 15 12 9 6" />
+                    </svg>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {grouped.map(({ cat, services }) => (
           <div key={cat}>
             <h2 className="text-[11px] font-semibold uppercase tracking-wider text-henry-text-muted mb-3">
