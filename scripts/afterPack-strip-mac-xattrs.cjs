@@ -34,5 +34,26 @@ module.exports = async function afterPackStripMacXattrs(context) {
     /* ignore */
   }
 
-  execFileSync('xattr', ['-cr', appPath], { stdio: 'inherit' });
+  // Whole tree (Frameworks, Resources, all Mach-O files, nested helper .app bundles).
+  execFileSync('/usr/bin/xattr', ['-cr', appPath], { stdio: 'inherit' });
+
+  // Explicit pass on each nested *.app (e.g. "Henry AI Helper (GPU).app") — ensures
+  // bundle roots are cleared even if tooling treats them specially before codesign.
+  try {
+    const nested = execFileSync(
+      '/usr/bin/find',
+      [appPath, '-name', '*.app', '-type', 'd'],
+      { encoding: 'utf8' }
+    )
+      .split('\n')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    for (const bundle of nested) {
+      if (bundle !== appPath) {
+        execFileSync('/usr/bin/xattr', ['-cr', bundle], { stdio: 'inherit' });
+      }
+    }
+  } catch {
+    /* ignore */
+  }
 };
