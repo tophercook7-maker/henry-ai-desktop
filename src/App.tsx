@@ -9,6 +9,15 @@ import { startProactiveNudges, type HenryNudge } from './henry/proactiveNudges';
 import { seedWorkspace } from './henry/workspaceSeeder';
 
 // ── Temporary startup diagnostics — remove when hang is identified ──────────
+function withTimeout<T>(promise: Promise<T>, label: string, ms = 5000): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+    ),
+  ]);
+}
+
 async function diagCall<T>(label: string, p: Promise<T>): Promise<T> {
   console.log(`[Henry:diag] → ${label}`);
   const t = Date.now();
@@ -191,10 +200,22 @@ export default function App() {
         // Seed workspace on first run (idempotent — safe to call every launch)
         try { seedWorkspace(); } catch { /* non-critical */ }
 
-        const [convos, providers] = await Promise.all([
-          diagCall('getConversations', window.henryAPI.getConversations()),
-          diagCall('getProviders', window.henryAPI.getProviders()),
-        ]);
+        const convos = await withTimeout(
+          window.henryAPI.getConversations(),
+          'getConversations'
+        ).catch((err: unknown) => {
+          console.error('[Henry] getConversations failed:', err);
+          return [] as Awaited<ReturnType<typeof window.henryAPI.getConversations>>;
+        });
+
+        const providers = await withTimeout(
+          window.henryAPI.getProviders(),
+          'getProviders'
+        ).catch((err: unknown) => {
+          console.error('[Henry] getProviders failed:', err);
+          return [] as Awaited<ReturnType<typeof window.henryAPI.getProviders>>;
+        });
+
         setConversations(convos);
         setProviders(
           providers.map((p: HenryProviderRecord) => ({
