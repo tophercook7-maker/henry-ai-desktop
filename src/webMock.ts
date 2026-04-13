@@ -1397,4 +1397,9 @@ const henryAPI: Window['henryAPI'] = {
   },
 };
 
-window.henryAPI = henryAPI;
+// Only install the mock in non-Electron contexts (plain browser / Capacitor).
+// In Electron, preload already exposes henryAPI via contextBridge as a
+// non-writable property — reassigning it throws a TypeError that prevents React from mounting.
+if (!window.henryAPI) {
+  window.henryAPI = henryAPI;
+}
