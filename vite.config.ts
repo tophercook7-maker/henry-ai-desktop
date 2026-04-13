@@ -36,6 +36,9 @@ export default defineConfig({
     ]),
     electronRenderer(),
   ],
+  build: {
+    outDir: 'renderer',
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
