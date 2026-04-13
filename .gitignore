@@ -18,6 +18,9 @@ release/
 *.swo
 *~
 
+# Accidental nested checkout / duplicate tree (do not commit)
+henry-ai-desktop/
+
 # OS
 .DS_Store
 Thumbs.db

@@ -1,6 +1,6 @@
 {
   "name": "henry-ai-desktop",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Henry AI — Local-first desktop AI operating system with dual-engine architecture",
   "main": "dist-electron/main.js",
   "author": {
