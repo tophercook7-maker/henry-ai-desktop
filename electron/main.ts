@@ -58,6 +58,10 @@ function createWindow() {
     console.error(`[Henry] Renderer failed to load — code=${code} desc=${desc} url=${url}`);
   });
 
+  mainWindow.webContents.on('render-process-gone', (_e, details) => {
+    console.error(`[Henry] Render process gone — reason=${details.reason} exitCode=${details.exitCode}`);
+  });
+
   mainWindow.on('closed', () => { mainWindow = null; });
 }
 

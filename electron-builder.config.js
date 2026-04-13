@@ -17,8 +17,8 @@ module.exports = {
   },
 
   files: [
-    'dist/**/*',
-    'dist-electron/**/*',
+    'dist/**',
+    'dist-electron/**',
     '!node_modules/**/*',
     'node_modules/better-sqlite3/**/*',
   ],
