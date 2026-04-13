@@ -91,36 +91,48 @@ app.whenReady().then(() => {
     fs.mkdirSync(henryDir, { recursive: true });
   }
 
-  // Always create the window first so the user sees something even if DB init fails.
-  createWindow();
-
-  let db: ReturnType<typeof initDatabase>;
+  // ── 1. Init database ─────────────────────────────────────────────────────────
+  let db: ReturnType<typeof initDatabase> | null = null;
+  let dbError: string | null = null;
   try {
     db = initDatabase(henryDir);
   } catch (err) {
+    dbError = String(err);
     console.error('[Henry] Database init failed:', err);
-    getMainWindow()?.webContents.once('did-finish-load', () => {
-      getMainWindow()?.webContents.send('henry:db-error', String(err));
-    });
-    return;
   }
 
-  registerSettingsHandlers(db);
-  registerAIHandlers(db, getMainWindow);
-  registerFilesystemHandlers(henryDir);
-  registerTaskBrokerHandlers(db, getMainWindow, henryDir);
-  registerMemoryHandlers(db);
-  registerScriptureHandlers(db, getMainWindow);
-  registerOllamaHandlers(getMainWindow);
-  registerOllamaCleanup();
-  registerTerminalHandlers(getMainWindow, henryDir);
-  registerComputerHandlers(getMainWindow);
-  registerPrinterHandlers(getMainWindow);
+  // ── 2. Register all IPC handlers before the window opens ────────────────────
+  //
+  // The window is intentionally created AFTER all handlers are registered so
+  // the renderer can never call window.henryAPI before a matching ipcMain.handle
+  // exists.  Previously createWindow() was called first, introducing a race where
+  // the renderer's initApp() IPC calls could fire before handlers were ready.
+  //
+  if (db) {
+    registerSettingsHandlers(db);
+    registerAIHandlers(db, getMainWindow);
+    registerFilesystemHandlers(henryDir);
+    registerTaskBrokerHandlers(db, getMainWindow, henryDir);
+    registerMemoryHandlers(db);
+    registerScriptureHandlers(db, getMainWindow);
+    registerOllamaHandlers(getMainWindow);
+    registerOllamaCleanup();
+    registerTerminalHandlers(getMainWindow, henryDir);
+    registerComputerHandlers(getMainWindow);
+    registerPrinterHandlers(getMainWindow);
+  } else {
+    // DB failed — register minimal stubs for the three channels called
+    // unconditionally by the renderer's initApp() so they return safely instead
+    // of hanging (Electron 31 rejects unregistered invokes, but being explicit is
+    // safer and surfaces the real error rather than a generic IPC rejection).
+    ipcMain.handle('settings:getAll', () => ({}));
+    ipcMain.handle('settings:save', () => false);
+    ipcMain.handle('providers:getAll', () => []);
+    ipcMain.handle('providers:save', () => false);
+    ipcMain.handle('conversations:getAll', () => []);
+  }
 
-  // ── Auto-updater ────────────────────────────────────────────────────────────
-  // Disabled on macOS until the app is code-signed.
-  // Unsigned macOS builds reject auto-update entirely; enabling it causes noise.
-  // Windows and Linux auto-update works without signing.
+  // ── 3. Register updater IPC handlers ────────────────────────────────────────
   const updaterEnabled = process.platform !== 'darwin';
 
   if (updaterEnabled) {
@@ -150,6 +162,16 @@ app.whenReady().then(() => {
     if (!updaterEnabled) return;
     autoUpdater.quitAndInstall(false, true);
   });
+
+  // ── 4. Open the window — every ipcMain.handle is now registered ─────────────
+  createWindow();
+
+  // Surface DB error to the renderer after its page finishes loading.
+  if (dbError) {
+    getMainWindow()?.webContents.once('did-finish-load', () => {
+      getMainWindow()?.webContents.send('henry:db-error', dbError);
+    });
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
