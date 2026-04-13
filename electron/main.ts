@@ -14,6 +14,14 @@ import { registerTerminalHandlers } from './ipc/terminal';
 import { registerComputerHandlers } from './ipc/computer';
 import { registerPrinterHandlers } from './ipc/printer';
 
+// ── Temporary diagnostics — remove when black-screen root cause is confirmed ──
+process.on('uncaughtException', (err) => {
+  console.error('[Henry] uncaughtException in main process:', err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[Henry] unhandledRejection in main process:', reason);
+});
+
 let mainWindow: BrowserWindow | null = null;
 
 export function getMainWindow(): BrowserWindow | null {
@@ -46,6 +54,10 @@ function createWindow() {
     }
   } else {
     mainWindow.loadFile(path.join(__dirname, '../index.html'));
+    // Temporary: open DevTools in packaged mode when HENRY_DEBUG=true
+    if (process.env.HENRY_DEBUG === 'true') {
+      mainWindow.webContents.openDevTools({ mode: 'detach' });
+    }
   }
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -60,6 +72,12 @@ function createWindow() {
 
   mainWindow.webContents.on('render-process-gone', (_e, details) => {
     console.error(`[Henry] Render process gone — reason=${details.reason} exitCode=${details.exitCode}`);
+  });
+
+  // Temporary: pipe all renderer console output to the main-process log
+  mainWindow.webContents.on('console-message', (_e, level, message, line, sourceId) => {
+    const tag = ['verbose', 'info', 'warning', 'error'][level] ?? 'log';
+    console.log(`[Henry:renderer:${tag}] ${message}  (${sourceId}:${line})`);
   });
 
   mainWindow.on('closed', () => { mainWindow = null; });
