@@ -1,7 +1,7 @@
 {
   "name": "henry-ai-desktop",
   "version": "0.1.0",
-  "description": "Henry AI — Local-first desktop AI operating system with dual-engine architecture",
+  "description": "Henry AI \u2014 Local-first desktop AI operating system with dual-engine architecture",
   "main": "dist-electron/main.js",
   "author": {
     "name": "Henry AI",
@@ -77,64 +77,5 @@
     "vite": "^5.4.21",
     "vite-plugin-electron": "^0.28.7",
     "vite-plugin-electron-renderer": "^0.14.5"
-  },
-  "build": {
-    "appId": "com.henryai.desktop",
-    "productName": "Henry AI",
-    "icon": "resources/icon.png",
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "dist/**/*",
-      "dist-electron/**/*"
-    ],
-    "publish": {
-      "provider": "github",
-      "owner": "tophercook7-maker",
-      "repo": "henry-ai-desktop"
-    },
-    "mac": {
-      "target": [
-        "dmg",
-        "zip"
-      ],
-      "category": "public.app-category.productivity",
-      "hardenedRuntime": true,
-      "gatekeeperAssess": false,
-      "entitlements": "resources/entitlements.mac.plist",
-      "entitlementsInherit": "resources/entitlements.mac.plist"
-    },
-    "dmg": {
-      "title": "Henry AI",
-      "contents": [
-        {
-          "x": 130,
-          "y": 220
-        },
-        {
-          "x": 410,
-          "y": 220,
-          "type": "link",
-          "path": "/Applications"
-        }
-      ]
-    },
-    "win": {
-      "target": [
-        "nsis"
-      ]
-    },
-    "linux": {
-      "target": [
-        "AppImage",
-        "deb"
-      ],
-      "category": "Utility"
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true
-    }
   }
 }

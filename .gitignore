@@ -30,3 +30,4 @@ npm-debug.log*
 *.db
 *.db-journal
 *.db-wal
+*.tsbuildinfo

@@ -53,6 +53,11 @@ function createWindow() {
     return { action: 'deny' };
   });
 
+  // Surface renderer load failures in the main-process console (visible in crash logs).
+  mainWindow.webContents.on('did-fail-load', (_e, code, desc, url) => {
+    console.error(`[Henry] Renderer failed to load — code=${code} desc=${desc} url=${url}`);
+  });
+
   mainWindow.on('closed', () => { mainWindow = null; });
 }
 
@@ -91,30 +96,38 @@ app.whenReady().then(() => {
   registerPrinterHandlers(getMainWindow);
 
   // ── Auto-updater ────────────────────────────────────────────────────────────
-  autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = true;
+  // Disabled on macOS until the app is code-signed.
+  // Unsigned macOS builds reject auto-update entirely; enabling it causes noise.
+  // Windows and Linux auto-update works without signing.
+  const updaterEnabled = process.platform !== 'darwin';
 
-  autoUpdater.on('update-available', () => {
-    getMainWindow()?.webContents.send('updater:update-available');
-  });
-  autoUpdater.on('update-downloaded', () => {
-    getMainWindow()?.webContents.send('updater:update-downloaded');
-  });
-  autoUpdater.on('error', (err: Error) => {
-    console.error('[AutoUpdater] Error:', err.message);
-  });
+  if (updaterEnabled) {
+    autoUpdater.autoDownload = true;
+    autoUpdater.autoInstallOnAppQuit = true;
+
+    autoUpdater.on('update-available', () => {
+      getMainWindow()?.webContents.send('updater:update-available');
+    });
+    autoUpdater.on('update-downloaded', () => {
+      getMainWindow()?.webContents.send('updater:update-downloaded');
+    });
+    autoUpdater.on('error', (err: Error) => {
+      console.error('[AutoUpdater] Error:', err.message);
+    });
+
+    setTimeout(() => {
+      autoUpdater.checkForUpdates().catch(() => null);
+    }, 10_000);
+  }
 
   ipcMain.handle('updater:check', () => {
+    if (!updaterEnabled) return null;
     return autoUpdater.checkForUpdates().catch(() => null);
   });
   ipcMain.handle('updater:install', () => {
+    if (!updaterEnabled) return;
     autoUpdater.quitAndInstall(false, true);
   });
-
-  // Check silently after 10 s so first launch isn't slowed down
-  setTimeout(() => {
-    autoUpdater.checkForUpdates().catch(() => null);
-  }, 10_000);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

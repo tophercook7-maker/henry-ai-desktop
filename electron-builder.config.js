@@ -1,14 +1,15 @@
 /**
  * Electron Builder configuration for Henry AI Desktop.
- * Builds cross-platform installers: macOS (.dmg), Windows (.exe), Linux (.AppImage/.deb).
- * 
- * Run: npm run build && npx electron-builder
+ * Single source of truth — package.json "build" field has been removed.
+ *
+ * Icons: place icon.icns (Mac), icon.ico (Windows), icons/ (Linux) in build/
+ * Signing: set CSC_LINK + CSC_KEY_PASSWORD env vars for Mac; unsigned uses --config.mac.identity=null
  */
 
 module.exports = {
   appId: 'ai.henry.desktop',
   productName: 'Henry AI',
-  copyright: 'Copyright © 2026',
+  copyright: 'Copyright © 2026 Henry AI',
 
   directories: {
     buildResources: 'build',
@@ -22,13 +23,13 @@ module.exports = {
     'node_modules/better-sqlite3/**/*',
   ],
 
-  // macOS
+  // macOS — unsigned builds use: electron-builder --mac --config.mac.identity=null
   mac: {
     target: [
       { target: 'dmg', arch: ['arm64', 'x64'] },
     ],
     category: 'public.app-category.developer-tools',
-    icon: 'build/icon.icns',
+    // icon: 'build/icon.icns' — add when icon file exists
     darkModeSupport: true,
     hardenedRuntime: true,
     gatekeeperAssess: false,
@@ -50,7 +51,7 @@ module.exports = {
     target: [
       { target: 'nsis', arch: ['x64'] },
     ],
-    icon: 'build/icon.ico',
+    // icon: 'build/icon.ico' — add when icon file exists
     requestedExecutionLevel: 'asInvoker',
   },
 
@@ -61,8 +62,7 @@ module.exports = {
     createDesktopShortcut: true,
     createStartMenuShortcut: true,
     shortcutName: 'Henry AI',
-    installerIcon: 'build/icon.ico',
-    installerSidebar: 'build/installerSidebar.bmp',
+    // installerIcon / installerSidebar — add when icon files exist
   },
 
   // Linux
@@ -72,11 +72,11 @@ module.exports = {
       { target: 'deb', arch: ['x64', 'arm64'] },
     ],
     category: 'Development',
-    icon: 'build/icons',
+    // icon: 'build/icons' — add when icon directory exists
     synopsis: 'Henry AI — Your personal AI operating system',
     description: 'A local-first desktop AI assistant with dual-engine architecture, multi-provider support, and workspace management.',
   },
 
-  // Auto-update (for future use)
+  // publish: null — CI creates GitHub Releases via softprops/action-gh-release
   publish: null,
 };
