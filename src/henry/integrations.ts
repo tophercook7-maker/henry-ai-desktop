@@ -24,7 +24,8 @@ export interface ServiceConfig {
 }
 
 // Services that are auto-connected via Replit OAuth (no manual token needed)
-export const REPLIT_CONNECTED_SERVICES = new Set(['slack']);
+// Slack was previously here but now uses a user-provided bot token (xoxb-)
+export const REPLIT_CONNECTED_SERVICES = new Set<string>();
 
 export const SERVICES: ServiceConfig[] = [
   {
@@ -81,13 +82,13 @@ export const SERVICES: ServiceConfig[] = [
     icon: '💬',
     description: 'Read channels and send messages.',
     unlocks: 'Read your Slack channels and send messages without leaving Henry.',
-    connectionType: 'replit-oauth',
+    connectionType: 'api-key',
     keyLabel: 'Paste your Slack bot token',
     keyPlaceholder: 'xoxb-…',
     docsUrl: 'https://api.slack.com/apps',
-    docsLabel: 'Set up Slack app',
+    docsLabel: 'Create a Slack App →',
     tokenLabel: 'Bot Token',
-    tokenHint: 'Create a Slack App and install it. Copy the Bot User OAuth Token (xoxb-).',
+    tokenHint: 'Create a Slack App at api.slack.com/apps, add OAuth scopes channels:read + chat:write + channels:history, install it, and copy the Bot User OAuth Token (starts with xoxb-).',
     category: 'productivity',
     proxyBase: '/proxy/slack',
   },
@@ -359,8 +360,8 @@ export async function notionSearch(query = ''): Promise<NotionPage[]> {
 }
 
 // ── Slack API helpers ────────────────────────────────────────────────────────
-// Uses Replit connector proxy — OAuth token injected server-side automatically.
-// Routes: /connector/slack/api/{endpoint}
+// Uses user-provided bot token (xoxb-) via /proxy/slack → slack.com
+// Required OAuth scopes: channels:read, channels:history, chat:write
 
 export interface SlackChannel {
   id: string;
@@ -376,31 +377,81 @@ export interface SlackMessage {
   username?: string;
 }
 
-export async function slackListChannels(): Promise<SlackChannel[]> {
-  const r = await fetch('/connector/slack/conversations.list?exclude_archived=true&limit=50');
-  if (!r.ok) throw new Error(`Slack ${r.status}`);
-  const data = await r.json();
-  if (!data.ok) throw new Error(data.error || 'Slack error');
-  return data.channels || [];
+function slackHeaders(): Record<string, string> {
+  return {
+    'Authorization': `Bearer ${getToken('slack')}`,
+    'Content-Type': 'application/json',
+  };
 }
 
-export async function slackGetHistory(channelId: string, limit = 20): Promise<SlackMessage[]> {
-  const r = await fetch(`/connector/slack/conversations.history?channel=${channelId}&limit=${limit}`);
-  if (!r.ok) throw new Error(`Slack ${r.status}`);
+export async function slackListChannels(): Promise<SlackChannel[]> {
+  const token = getToken('slack');
+  if (!token) throw new Error('No Slack token configured. Add your bot token in Integrations.');
+  const r = await fetch('/proxy/slack/api/conversations.list?exclude_archived=true&limit=100&types=public_channel,private_channel', {
+    headers: slackHeaders(),
+  });
+  if (!r.ok) throw new Error(`Slack HTTP ${r.status}`);
   const data = await r.json();
-  if (!data.ok) throw new Error(data.error || 'Slack error');
-  return data.messages || [];
+  if (!data.ok) {
+    if (data.error === 'invalid_auth' || data.error === 'not_authed') {
+      throw new Error('Invalid Slack token. Check your bot token in Integrations.');
+    }
+    throw new Error(`Slack API error: ${data.error}`);
+  }
+  return (data.channels || []) as SlackChannel[];
+}
+
+export async function slackGetHistory(channelId: string, limit = 30): Promise<SlackMessage[]> {
+  const token = getToken('slack');
+  if (!token) throw new Error('No Slack token configured.');
+  const r = await fetch(`/proxy/slack/api/conversations.history?channel=${channelId}&limit=${limit}`, {
+    headers: slackHeaders(),
+  });
+  if (!r.ok) throw new Error(`Slack HTTP ${r.status}`);
+  const data = await r.json();
+  if (!data.ok) throw new Error(`Slack API error: ${data.error}`);
+  const messages = (data.messages || []) as SlackMessage[];
+  // Resolve user display names
+  const userIds = [...new Set(messages.map((m) => m.user).filter(Boolean))];
+  if (userIds.length > 0) {
+    try {
+      const names = await slackResolveUserNames(userIds);
+      return messages.map((m) => ({ ...m, username: names[m.user] || m.user }));
+    } catch {
+      return messages;
+    }
+  }
+  return messages;
+}
+
+async function slackResolveUserNames(userIds: string[]): Promise<Record<string, string>> {
+  const names: Record<string, string> = {};
+  await Promise.allSettled(
+    userIds.slice(0, 10).map(async (uid) => {
+      try {
+        const r = await fetch(`/proxy/slack/api/users.info?user=${uid}`, { headers: slackHeaders() });
+        if (!r.ok) return;
+        const data = await r.json();
+        if (data.ok && data.user) {
+          names[uid] = data.user.profile?.display_name || data.user.real_name || data.user.name || uid;
+        }
+      } catch { /* ignore */ }
+    })
+  );
+  return names;
 }
 
 export async function slackPostMessage(channelId: string, text: string): Promise<void> {
-  const r = await fetch('/connector/slack/chat.postMessage', {
+  const token = getToken('slack');
+  if (!token) throw new Error('No Slack token configured.');
+  const r = await fetch('/proxy/slack/api/chat.postMessage', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: slackHeaders(),
     body: JSON.stringify({ channel: channelId, text }),
   });
-  if (!r.ok) throw new Error(`Slack ${r.status}`);
+  if (!r.ok) throw new Error(`Slack HTTP ${r.status}`);
   const data = await r.json();
-  if (!data.ok) throw new Error(data.error || 'Slack error');
+  if (!data.ok) throw new Error(`Slack API error: ${data.error}`);
 }
 
 // ── Stripe API helpers ───────────────────────────────────────────────────────

@@ -22,6 +22,7 @@ const routes: Record<string, string> = {
   '/proxy/stripe':      'api.stripe.com',
   '/proxy/gcal':        'www.googleapis.com',
   '/proxy/gmail':       'gmail.googleapis.com',
+  '/proxy/slack':       'slack.com',
 };
 
 function aiProxyPlugin(): Plugin {
