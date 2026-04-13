@@ -108,6 +108,7 @@ export default function App() {
   }
 
   async function initApp() {
+    console.log('[INIT] start');
     try {
       // URL bypass: ?enter or #enter skips wizard immediately
       const urlBypass =
@@ -120,6 +121,7 @@ export default function App() {
         history.replaceState(null, '', window.location.pathname);
       }
 
+      console.log('[INIT] bootstrap providers');
       // ── Auto-bootstrap Groq from server env key (web/Replit preview mode) ──
       // Always refresh the key from the env var so stale/empty localStorage
       // entries never cause "Failed to fetch" errors.
@@ -149,6 +151,7 @@ export default function App() {
         }
       }
 
+      console.log('[INIT] getSettings');
       const settingsMap = (await diagCall('getSettings', window.henryAPI.getSettings())) as Record<string, string>;
 
       Object.entries(settingsMap).forEach(([key, value]) => {
@@ -200,6 +203,7 @@ export default function App() {
         // Seed workspace on first run (idempotent — safe to call every launch)
         try { seedWorkspace(); } catch { /* non-critical */ }
 
+        console.log('[INIT] getConversations');
         const convos = await withTimeout(
           window.henryAPI.getConversations(),
           'getConversations'
@@ -208,6 +212,7 @@ export default function App() {
           return [] as Awaited<ReturnType<typeof window.henryAPI.getConversations>>;
         });
 
+        console.log('[INIT] getProviders');
         const providers = await withTimeout(
           window.henryAPI.getProviders(),
           'getProviders'
@@ -230,6 +235,7 @@ export default function App() {
     } catch (err) {
       console.error('Failed to init app:', err);
     } finally {
+      console.log('[INIT] done');
       setLoading(false);
     }
   }
@@ -302,12 +308,8 @@ export default function App() {
 
   if (loading) {
     return (
-      <div className="h-screen w-screen bg-henry-bg flex items-center justify-center">
-        <div className="text-center animate-fade-in">
-          <div className="text-5xl mb-4">🧠</div>
-          <h1 className="text-xl font-bold text-henry-text mb-2">Henry AI</h1>
-          <p className="text-sm text-henry-text-dim">Loading...</p>
-        </div>
+      <div style={{ background: 'black', color: 'white', padding: 40, fontFamily: 'monospace' }}>
+        Henry is loading...
       </div>
     );
   }
