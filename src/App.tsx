@@ -8,6 +8,26 @@ import type { Task } from './types';
 import { startProactiveNudges, type HenryNudge } from './henry/proactiveNudges';
 import { seedWorkspace } from './henry/workspaceSeeder';
 
+// ── Temporary startup diagnostics — remove when hang is identified ──────────
+async function diagCall<T>(label: string, p: Promise<T>): Promise<T> {
+  console.log(`[Henry:diag] → ${label}`);
+  const t = Date.now();
+  const timer = setTimeout(
+    () => console.warn(`[Henry:diag] ⚠ ${label} still pending after 4 s — likely hanging`),
+    4000
+  );
+  try {
+    const result = await p;
+    clearTimeout(timer);
+    console.log(`[Henry:diag] ✓ ${label} resolved in ${Date.now() - t} ms`);
+    return result;
+  } catch (err) {
+    clearTimeout(timer);
+    console.error(`[Henry:diag] ✗ ${label} rejected in ${Date.now() - t} ms:`, err);
+    throw err;
+  }
+}
+
 const HENRY_FIRST_MESSAGE = `Hey. I'm up and running.
 
 Before we dive in — what's the most important thing on your plate right now? It could be a project you're working on, something you want to write, a question you've been turning over, or honestly anything. Just tell me and we'll start there.
@@ -86,7 +106,7 @@ export default function App() {
         window.location.hash === '#enter' ||
         window.location.hash === '#henry';
       if (urlBypass) {
-        await window.henryAPI.saveSetting('setup_complete', 'true');
+        await diagCall('saveSetting(setup_complete)', window.henryAPI.saveSetting('setup_complete', 'true'));
         // Clean the URL without reload
         history.replaceState(null, '', window.location.pathname);
       }
@@ -105,13 +125,13 @@ export default function App() {
         // Always upsert if the stored key differs from the env key (covers first-run
         // AND any key rotation or storage corruption scenario)
         if (savedKey !== envGroqKey) {
-          await window.henryAPI.saveProvider({
+          await diagCall('saveProvider(groq)', window.henryAPI.saveProvider({
             id: 'groq',
             name: 'Groq',
             api_key: envGroqKey,
             enabled: 1,
             models: JSON.stringify([]),
-          } as any);
+          } as any));
           await window.henryAPI.saveSetting('companion_provider', 'groq');
           await window.henryAPI.saveSetting('companion_model', 'llama-3.1-8b-instant');
           await window.henryAPI.saveSetting('worker_provider', 'groq');
@@ -120,7 +140,7 @@ export default function App() {
         }
       }
 
-      const settingsMap = (await window.henryAPI.getSettings()) as Record<string, string>;
+      const settingsMap = (await diagCall('getSettings', window.henryAPI.getSettings())) as Record<string, string>;
 
       Object.entries(settingsMap).forEach(([key, value]) => {
         useStore.getState().updateSetting(key, value);
@@ -172,8 +192,8 @@ export default function App() {
         try { seedWorkspace(); } catch { /* non-critical */ }
 
         const [convos, providers] = await Promise.all([
-          window.henryAPI.getConversations(),
-          window.henryAPI.getProviders(),
+          diagCall('getConversations', window.henryAPI.getConversations()),
+          diagCall('getProviders', window.henryAPI.getProviders()),
         ]);
         setConversations(convos);
         setProviders(
