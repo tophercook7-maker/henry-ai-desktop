@@ -61,6 +61,7 @@ function ConnectModal({
   const { connectService, disconnectService } = useConnectionStore();
   const isReplitOAuth = svc.connectionType === 'replit-oauth';
   const connected = status === 'connected';
+  const expired = status === 'expired';
 
   const [draft, setDraft] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -71,8 +72,6 @@ function ConnectModal({
     if (!draft.trim()) return;
     setSaving(true);
     setTimeout(() => {
-      // For Google services, route through connectGoogle (but this modal
-      // handles non-Google services; Google panels use ConnectScreen directly)
       connectService(svc.id, draft.trim());
       setSaving(false);
       setSaved(true);
@@ -119,29 +118,58 @@ function ConnectModal({
         <div className="px-5 pb-5 space-y-4">
           <p className="text-sm text-henry-text-muted leading-relaxed">{svc.unlocks}</p>
 
-          {/* Replit-OAuth */}
-          {isReplitOAuth && (
+          {/* Google OAuth — connected */}
+          {isReplitOAuth && connected && (
             <div className="rounded-xl bg-henry-success/10 border border-henry-success/20 p-4 flex items-start gap-3">
               <span className="text-lg mt-0.5">✅</span>
               <div>
-                <p className="text-sm font-medium text-henry-text">Connected to your workspace</p>
-                <p className="text-xs text-henry-text-muted mt-0.5">{svc.name} is connected and ready to use.</p>
+                <p className="text-sm font-medium text-henry-text">Google is connected</p>
+                <p className="text-xs text-henry-text-muted mt-0.5">Gmail, Calendar, and Drive are all active.</p>
               </div>
             </div>
           )}
 
-          {/* Connected state */}
+          {/* Google OAuth — expired */}
+          {isReplitOAuth && expired && (
+            <div className="rounded-xl bg-henry-warning/10 border border-henry-warning/25 p-4 flex items-start gap-3">
+              <span className="text-lg mt-0.5">⚠️</span>
+              <div>
+                <p className="text-sm font-medium text-henry-text">Google access expired</p>
+                <p className="text-xs text-henry-text-muted mt-0.5">Re-connect Google to restore Gmail, Calendar, and Drive.</p>
+              </div>
+            </div>
+          )}
+
+          {/* Google OAuth — not connected: send user to the panel */}
+          {isReplitOAuth && !connected && !expired && (
+            <div className="space-y-3">
+              <div className="rounded-xl bg-henry-surface/40 border border-henry-border/30 p-4">
+                <p className="text-xs text-henry-text-muted leading-relaxed">
+                  One Google sign-in connects Gmail, Calendar, and Drive — all at once.
+                </p>
+              </div>
+              <button
+                onClick={openPanel}
+                className="w-full py-3 bg-white text-gray-800 border border-gray-200 rounded-xl text-sm font-semibold hover:bg-gray-50 transition-colors flex items-center justify-center gap-2.5 shadow-sm"
+              >
+                <GoogleLogo />
+                Connect with Google
+              </button>
+            </div>
+          )}
+
+          {/* API-key — connected */}
           {!isReplitOAuth && connected && (
             <div className="rounded-xl bg-henry-success/10 border border-henry-success/20 p-4 flex items-start gap-3">
               <span className="text-lg mt-0.5">✅</span>
               <div>
-                <p className="text-sm font-medium text-henry-text">Your account is connected</p>
-                <p className="text-xs text-henry-text-muted mt-0.5">Henry will use your key locally on this device.</p>
+                <p className="text-sm font-medium text-henry-text">Connected</p>
+                <p className="text-xs text-henry-text-muted mt-0.5">Your key is stored locally and never leaves this device.</p>
               </div>
             </div>
           )}
 
-          {/* Not connected — friendly form */}
+          {/* API-key — not connected */}
           {!isReplitOAuth && !connected && (
             <div className="space-y-3">
               <div>
@@ -186,7 +214,26 @@ function ConnectModal({
             </div>
           )}
 
-          {/* Advanced */}
+          {/* Google: reconnect or disconnect when expired */}
+          {isReplitOAuth && (expired || connected) && (
+            <div className="flex gap-2">
+              {expired && (
+                <button onClick={openPanel} className="flex-1 py-2.5 bg-henry-warning/10 text-henry-warning border border-henry-warning/25 rounded-xl text-sm font-semibold hover:bg-henry-warning/20 transition-colors">
+                  Reconnect Google
+                </button>
+              )}
+              {connected && (
+                <button
+                  onClick={() => { disconnectService(svc.id); onClose(); }}
+                  className="px-4 py-2.5 bg-henry-surface border border-henry-border/50 text-henry-text-dim rounded-xl text-sm hover:bg-henry-error/10 hover:border-henry-error/30 hover:text-henry-error transition-colors"
+                >
+                  Disconnect
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Advanced — API key services only */}
           {!isReplitOAuth && (
             <div>
               <button onClick={() => setShowAdvanced((v) => !v)} className="flex items-center gap-1.5 text-xs text-henry-text-muted hover:text-henry-text transition-colors">
@@ -231,6 +278,17 @@ function ConnectModal({
   );
 }
 
+function GoogleLogo() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+    </svg>
+  );
+}
+
 // ── Service card ──────────────────────────────────────────────────────────────
 
 function ServiceCard({
@@ -249,7 +307,6 @@ function ServiceCard({
   if (expired) primaryLabel = 'Reconnect';
   else if (connected && HAS_PANEL.has(svc.id)) primaryLabel = 'Open';
   else if (connected) primaryLabel = 'Manage';
-  else if (isReplitOAuth) primaryLabel = 'View';
 
   return (
     <div className={`rounded-2xl border transition-all ${
