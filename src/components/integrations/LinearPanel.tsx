@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { linearGetMyIssues, isConnected, type LinearIssue } from '../../henry/integrations';
-import { useStore } from '../../store';
+import { linearGetMyIssues, type LinearIssue } from '../../henry/integrations';
+import { useConnectionStore, selectStatus } from '../../henry/connectionStore';
+import ConnectScreen from './ConnectScreen';
 
 function priorityIcon(p: number): string {
   return ['', '🔴', '🟠', '🔵', '⚪', '⚪'][p] || '⚪';
@@ -20,18 +21,17 @@ function timeAgo(iso: string): string {
 }
 
 export default function LinearPanel() {
-  const setCurrentView = useStore((s) => s.setCurrentView);
-  const connected = isConnected('linear');
-
+  const status = useConnectionStore(selectStatus('linear'));
+  const { markExpired } = useConnectionStore();
   const [issues, setIssues] = useState<LinearIssue[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [filter, setFilter] = useState<'all' | 'urgent' | 'high'>('all');
 
   useEffect(() => {
-    if (!connected) return;
+    if (status !== 'connected') return;
     load();
-  }, [connected]);
+  }, [status]);
 
   async function load() {
     setLoading(true);
@@ -46,23 +46,7 @@ export default function LinearPanel() {
     }
   }
 
-  if (!connected) {
-    return (
-      <div className="h-full flex flex-col items-center justify-center gap-4 p-8 text-center">
-        <div className="text-5xl">🔷</div>
-        <div>
-          <h2 className="text-lg font-semibold text-henry-text mb-1">Linear not connected</h2>
-          <p className="text-sm text-henry-text-muted">Add your Linear API key to see your issues.</p>
-        </div>
-        <button
-          onClick={() => setCurrentView('integrations')}
-          className="px-4 py-2 bg-henry-accent text-white rounded-xl text-sm font-semibold hover:bg-henry-accent/90 transition-colors"
-        >
-          Go to Integrations
-        </button>
-      </div>
-    );
-  }
+  if (status !== 'connected') return <ConnectScreen serviceId="linear" />;
 
   const filtered = issues.filter((i) => {
     if (filter === 'urgent') return i.priority === 1;
@@ -79,7 +63,6 @@ export default function LinearPanel() {
 
   return (
     <div className="h-full flex flex-col bg-henry-bg overflow-hidden">
-      {/* Header */}
       <div className="shrink-0 px-6 pt-5 pb-3 border-b border-henry-border/30">
         <div className="flex items-center gap-3">
           <div className="text-2xl">🔷</div>
@@ -89,30 +72,16 @@ export default function LinearPanel() {
               {loading ? 'Loading…' : `${issues.length} issue${issues.length !== 1 ? 's' : ''} assigned to you`}
             </p>
           </div>
-          <button
-            onClick={load}
-            className="p-1.5 rounded-lg text-henry-text-muted hover:text-henry-text hover:bg-henry-hover/50 transition-colors"
-            title="Refresh"
-          >
+          <button onClick={load} className="p-1.5 rounded-lg text-henry-text-muted hover:text-henry-text hover:bg-henry-hover/50 transition-colors" title="Refresh">
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
               <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />
             </svg>
           </button>
         </div>
-
-        {/* Filters */}
         <div className="flex gap-1.5 mt-3">
           {(['all', 'urgent', 'high'] as const).map((f) => (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                filter === f
-                  ? 'bg-henry-accent/10 text-henry-accent border border-henry-accent/20'
-                  : 'text-henry-text-muted hover:text-henry-text hover:bg-henry-hover/50'
-              }`}
-            >
+            <button key={f} onClick={() => setFilter(f)} className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${filter === f ? 'bg-henry-accent/10 text-henry-accent border border-henry-accent/20' : 'text-henry-text-muted hover:text-henry-text hover:bg-henry-hover/50'}`}>
               {f === 'all' ? 'All' : f === 'urgent' ? '🔴 Urgent' : '🟠 High+'}
             </button>
           ))}
@@ -120,63 +89,29 @@ export default function LinearPanel() {
         </div>
       </div>
 
-      {/* Content */}
       <div className="flex-1 overflow-y-auto p-4 space-y-6">
         {error && (
           <div className="px-4 py-3 bg-henry-error/10 border border-henry-error/30 rounded-xl text-xs text-henry-error">
             {error}
+            <button onClick={() => markExpired('linear')} className="block mt-1 text-henry-accent underline">Reconnect account</button>
           </div>
         )}
-
-        {loading && (
-          <div className="flex items-center justify-center py-12">
-            <div className="w-6 h-6 rounded-full border-2 border-henry-accent/30 border-t-henry-accent animate-spin" />
-          </div>
-        )}
-
-        {!loading && Object.keys(byTeam).length === 0 && (
-          <div className="text-center py-12 text-henry-text-muted text-sm">
-            No issues assigned to you right now.
-          </div>
-        )}
-
+        {loading && <div className="flex items-center justify-center py-12"><div className="w-6 h-6 rounded-full border-2 border-henry-accent/30 border-t-henry-accent animate-spin" /></div>}
+        {!loading && Object.keys(byTeam).length === 0 && <div className="text-center py-12 text-henry-text-muted text-sm">No issues assigned to you right now.</div>}
         {!loading && Object.entries(byTeam).map(([team, teamIssues]) => (
           <div key={team}>
             <h2 className="text-[11px] font-semibold uppercase tracking-wider text-henry-text-muted mb-2">{team}</h2>
             <div className="space-y-2">
               {teamIssues.map((issue) => (
-                <a
-                  key={issue.id}
-                  href={issue.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-start gap-3 p-3 rounded-2xl bg-henry-surface/40 hover:bg-henry-surface/70 border border-henry-border/20 transition-colors"
-                >
-                  {/* State dot */}
-                  <div
-                    className="mt-1 shrink-0 w-3.5 h-3.5 rounded-full border-2"
-                    style={{ borderColor: issue.state.color || '#888' }}
-                  />
+                <a key={issue.id} href={issue.url} target="_blank" rel="noreferrer" className="flex items-start gap-3 p-3 rounded-2xl bg-henry-surface/40 hover:bg-henry-surface/70 border border-henry-border/20 transition-colors">
+                  <div className="mt-1 shrink-0 w-3.5 h-3.5 rounded-full border-2" style={{ borderColor: issue.state.color || '#888' }} />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-henry-text leading-snug">{issue.title}</p>
                     <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                       <span className="text-[10px]">{priorityIcon(issue.priority)}</span>
                       <span className="text-[10px] text-henry-text-muted">{priorityLabel(issue.priority)}</span>
-                      <span
-                        className="px-1.5 py-0.5 rounded text-[10px] font-medium"
-                        style={{ background: `${issue.state.color}22`, color: issue.state.color }}
-                      >
-                        {issue.state.name}
-                      </span>
-                      {issue.labels.nodes.slice(0, 2).map((l) => (
-                        <span
-                          key={l.name}
-                          className="px-1.5 py-0.5 rounded text-[10px]"
-                          style={{ background: `${l.color}22`, color: l.color }}
-                        >
-                          {l.name}
-                        </span>
-                      ))}
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-medium" style={{ background: `${issue.state.color}22`, color: issue.state.color }}>{issue.state.name}</span>
+                      {issue.labels.nodes.slice(0, 2).map((l) => <span key={l.name} className="px-1.5 py-0.5 rounded text-[10px]" style={{ background: `${l.color}22`, color: l.color }}>{l.name}</span>)}
                       <span className="text-[10px] text-henry-text-muted ml-auto">{timeAgo(issue.updatedAt)}</span>
                     </div>
                   </div>

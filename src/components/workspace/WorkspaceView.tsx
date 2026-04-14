@@ -7,6 +7,9 @@ import {
   isWorkspaceSeeded,
   getWorkspaceManifest,
 } from '@/henry/workspaceSeeder';
+import { getAmbientItems, removeAmbientItem, type AmbientItem } from '../../ambient/memoryRecall';
+import { useSharedBrainState } from '../../brain/sharedState';
+import type { PriorityItem } from '../../henry/priority/priorityTypes';
 
 interface FolderInfo {
   id: string;
@@ -18,76 +21,16 @@ interface FolderInfo {
 }
 
 const WORKSPACE_FOLDERS: Omit<FolderInfo, 'fileCount'>[] = [
-  {
-    id: '01',
-    label: 'Product & Engineering',
-    description: 'Architecture docs, roadmap, model routing, memory blueprint, personality system',
-    icon: '🔧',
-    path: '/workspace/01_Product_Engineering',
-  },
-  {
-    id: '02',
-    label: 'Business Strategy',
-    description: 'Vision, business model, offer ideas, revenue paths, priorities, launch plan',
-    icon: '📊',
-    path: '/workspace/02_Business_Strategy',
-  },
-  {
-    id: '03',
-    label: 'Marketing & Content',
-    description: 'Brand notes, messaging, content ideas, landing page copy, social posts',
-    icon: '📢',
-    path: '/workspace/03_Marketing_Content',
-  },
-  {
-    id: '04',
-    label: 'Operations & Legal',
-    description: 'Policies, system notes, integrations list, security notes',
-    icon: '📋',
-    path: '/workspace/04_Operations_Legal',
-  },
-  {
-    id: '05',
-    label: 'Meetings & Communications',
-    description: 'Weekly updates, meeting notes, decisions log',
-    icon: '🤝',
-    path: '/workspace/05_Meetings_Communications',
-  },
-  {
-    id: '06',
-    label: 'Memory',
-    description: 'User profile, where we left off, current priorities, relationship summary, timeline',
-    icon: '🧠',
-    path: '/workspace/06_Memory',
-  },
-  {
-    id: '07',
-    label: 'Projects',
-    description: 'One subfolder per active project — overview, plan, tasks, notes, status',
-    icon: '🚀',
-    path: '/workspace/07_Projects',
-  },
-  {
-    id: '08',
-    label: 'Templates',
-    description: 'Reusable document templates — overview, status, roadmap, project, meeting, weekly review',
-    icon: '📐',
-    path: '/workspace/08_Templates',
-  },
-  {
-    id: '09',
-    label: 'Exports & Backups',
-    description: 'Generated exports, manual backups, workspace snapshots',
-    icon: '💾',
-    path: '/workspace/09_Exports_Backups',
-  },
-  {
-    id: '10',
-    label: 'System',
-    description: 'Config, memory schema notes, logs, prompts, state snapshots',
-    icon: '⚙️',
-    path: '/workspace/10_System',
-  },
+  { id: '01', label: 'Product & Engineering', description: 'Architecture, roadmap, model routing', icon: '🔧', path: '/workspace/01_Product_Engineering' },
+  { id: '02', label: 'Business Strategy', description: 'Vision, revenue, priorities, launch plan', icon: '📊', path: '/workspace/02_Business_Strategy' },
+  { id: '03', label: 'Marketing & Content', description: 'Brand, messaging, content, social', icon: '📢', path: '/workspace/03_Marketing_Content' },
+  { id: '04', label: 'Operations & Legal', description: 'Policies, integrations, security notes', icon: '📋', path: '/workspace/04_Operations_Legal' },
+  { id: '05', label: 'Meetings & Comms', description: 'Weekly updates, meeting notes, decisions', icon: '🤝', path: '/workspace/05_Meetings_Communications' },
+  { id: '06', label: 'Memory', description: 'User profile, priorities, relationship history', icon: '🧠', path: '/workspace/06_Memory' },
+  { id: '07', label: 'Projects', description: 'One subfolder per active project', icon: '🚀', path: '/workspace/07_Projects' },
+  { id: '08', label: 'Templates', description: 'Reusable document templates', icon: '📐', path: '/workspace/08_Templates' },
+  { id: '09', label: 'Exports & Backups', description: 'Generated exports, snapshots', icon: '💾', path: '/workspace/09_Exports_Backups' },
+  { id: '10', label: 'System', description: 'Config, logs, prompts, state snapshots', icon: '⚙️', path: '/workspace/10_System' },
 ];
 
 interface RepairResult {
@@ -95,7 +38,169 @@ interface RepairResult {
   timestamp: string;
 }
 
+// ── Focus Bar ─────────────────────────────────────────────────────────────────
+
+/**
+ * Minimal "what matters now" bar — reads from shared brain state.
+ * Only renders when the background brain has produced meaningful output.
+ */
+function WorkspaceFocusBar() {
+  const { topFocus, activeThread, surfaceNow, reconnectNeeded, priorityReadyAt, prioritySnapshot } =
+    useSharedBrainState();
+
+  if (!priorityReadyAt) return null;
+
+  const top = topFocus;
+  const thread = activeThread;
+  const needsAttention = surfaceNow.length > 0 ? surfaceNow[0] : null;
+  const reconnect = reconnectNeeded.length > 0 ? reconnectNeeded[0] : null;
+
+  // Nothing meaningful to show — stay silent
+  if (!top && !thread && !needsAttention && !reconnect) return null;
+
+  const urgentCount = prioritySnapshot?.urgentNow.length ?? 0;
+  const isUrgent = urgentCount > 0;
+
+  return (
+    <div className={`shrink-0 px-6 py-2.5 border-b border-henry-border/30 bg-henry-surface/30 ${isUrgent ? 'border-l-2 border-l-henry-warning' : ''}`}>
+      <div className="flex items-start gap-6 flex-wrap">
+        {top && (
+          <div className="flex items-center gap-2 min-w-0">
+            <span className={`text-[9px] font-semibold uppercase tracking-wider shrink-0 ${isUrgent ? 'text-henry-warning' : 'text-henry-text-muted'}`}>
+              {isUrgent ? '● Focus' : '○ Focus'}
+            </span>
+            <span className="text-[11px] text-henry-text truncate max-w-[220px]" title={top}>{top}</span>
+          </div>
+        )}
+        {thread && (
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-[9px] font-semibold uppercase tracking-wider text-henry-text-muted shrink-0">Thread</span>
+            <span className="text-[11px] text-henry-text-dim truncate max-w-[200px]" title={thread}>{thread}</span>
+          </div>
+        )}
+        {needsAttention && !top && (
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-[9px] font-semibold uppercase tracking-wider text-henry-text-muted shrink-0">Up next</span>
+            <span className="text-[11px] text-henry-text-dim truncate max-w-[200px]">{needsAttention}</span>
+          </div>
+        )}
+        {reconnect && (
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-[9px] font-semibold uppercase tracking-wider text-henry-warning shrink-0">Reconnect</span>
+            <span className="text-[11px] text-henry-warning/80 truncate max-w-[160px]">{reconnect}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Priority badge color by source — matches PrioritySource type (singular)
+function categoryBadgeClass(source: string): string {
+  if (source === 'reminder' || source === 'task') return 'bg-henry-accent/15 text-henry-accent';
+  if (source === 'commitment') return 'bg-yellow-500/15 text-yellow-400';
+  if (source === 'relationship') return 'bg-purple-500/15 text-purple-400';
+  if (source === 'capture') return 'bg-green-500/15 text-green-400';
+  if (source === 'project') return 'bg-orange-500/15 text-orange-400';
+  if (source === 'conversation') return 'bg-blue-500/15 text-blue-400';
+  return 'bg-henry-surface text-henry-text-muted';
+}
+
+function WorkspaceTop3() {
+  const { prioritySnapshot, priorityReadyAt } = useSharedBrainState();
+
+  if (!priorityReadyAt || !prioritySnapshot) return null;
+
+  const items = (prioritySnapshot.top3 ?? []).slice(0, 3);
+  if (items.length === 0) return null;
+
+  return (
+    <div>
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-henry-text-muted mb-2.5">
+        Top priorities
+      </p>
+      <div className="space-y-2">
+        {items.map((item: PriorityItem, idx: number) => (
+          <div
+            key={item.id ?? idx}
+            className="flex items-start gap-3 px-3 py-2.5 rounded-lg bg-henry-surface/30 border border-henry-border/20"
+          >
+            <span className="shrink-0 mt-0.5 text-[10px] font-bold text-henry-text-muted w-4">
+              {idx + 1}.
+            </span>
+            <span
+              className={`shrink-0 mt-0.5 text-[9px] font-semibold uppercase px-1.5 py-0.5 rounded ${categoryBadgeClass(item.source)}`}
+            >
+              {item.source}
+            </span>
+            <span className="text-[12px] text-henry-text leading-snug flex-1 min-w-0 truncate" title={item.title}>
+              {item.title}
+            </span>
+            {(item.signals.isOverdue || item.signals.isExplicitUrgent) && (
+              <span className="shrink-0 text-[9px] text-henry-warning font-semibold mt-0.5">urgent</span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AmbientNotesSection() {
+  const setCurrentView = useStore((s) => s.setCurrentView);
+  const [wsItems, setWsItems] = useState<AmbientItem[]>([]);
+  const [projItems, setProjItems] = useState<AmbientItem[]>([]);
+
+  useEffect(() => {
+    setWsItems(getAmbientItems('workspace', 5));
+    setProjItems(getAmbientItems('project', 5));
+  }, []);
+
+  const allItems = [...projItems.map((i) => ({ ...i, label: 'Project' })), ...wsItems.map((i) => ({ ...i, label: 'Workspace' }))];
+
+  if (allItems.length === 0) return null;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-henry-text-muted">
+          Quick notes
+        </p>
+        <button
+          onClick={() => setCurrentView('captures')}
+          className="text-[10px] text-henry-text-muted hover:text-henry-accent transition-colors"
+        >
+          Manage in Captures →
+        </button>
+      </div>
+      <div className="space-y-1.5">
+        {allItems.map((item) => (
+          <div
+            key={item.id}
+            className="group flex items-start gap-3 px-3 py-2.5 rounded-xl border border-henry-border/20 bg-henry-surface/20"
+          >
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-henry-hover/60 text-henry-text-muted shrink-0 mt-0.5">
+              {item.label}
+            </span>
+            <p className="flex-1 text-xs text-henry-text-dim leading-relaxed">{item.text}</p>
+            <button
+              onClick={() => {
+                if (item.label === 'Workspace') { removeAmbientItem('workspace', item.id); setWsItems((p) => p.filter((x) => x.id !== item.id)); }
+                else { removeAmbientItem('project', item.id); setProjItems((p) => p.filter((x) => x.id !== item.id)); }
+              }}
+              className="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] text-henry-text-muted hover:text-henry-text px-1"
+            >
+              ×
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function WorkspaceView() {
+  const setCurrentView = useStore((s) => s.setCurrentView);
   const [folders, setFolders] = useState<FolderInfo[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [folderFiles, setFolderFiles] = useState<any[]>([]);
@@ -113,7 +218,7 @@ export default function WorkspaceView() {
       try {
         const result = await window.henryAPI.readDirectory(f.path);
         fileCount = (result.entries || []).length;
-      } catch { /* folder may not exist yet */ }
+      } catch { /* not yet created */ }
       loaded.push({ ...f, fileCount });
     }
     setFolders(loaded);
@@ -161,22 +266,16 @@ export default function WorkspaceView() {
     setSelectedFolder(folderPath);
     try {
       const result = await window.henryAPI.readDirectory(folderPath);
-      setFolderFiles(
-        (result.entries || []).filter((e: any) => !e.name.startsWith('.')),
-      );
+      setFolderFiles((result.entries || []).filter((e: any) => !e.name.startsWith('.')));
     } catch {
       setFolderFiles([]);
     }
   }
 
-  function openFileInBrowser() {
-    useStore.getState().setCurrentView('files');
-  }
-
   if (loading) {
     return (
       <div className="h-full flex items-center justify-center">
-        <div className="text-henry-text-dim text-sm animate-pulse">Checking workspace...</div>
+        <div className="text-henry-text-dim text-sm animate-pulse">Loading workspace…</div>
       </div>
     );
   }
@@ -185,7 +284,9 @@ export default function WorkspaceView() {
     return <WorkspaceInit onInit={handleInitialize} seeding={seeding} />;
   }
 
+  const totalFiles = folders.reduce((sum, f) => sum + f.fileCount, 0);
   const selectedFolderInfo = folders.find((f) => f.path === selectedFolder);
+  const activeFolders = folders.filter((f) => f.fileCount > 0);
 
   return (
     <div className="h-full flex flex-col">
@@ -195,113 +296,149 @@ export default function WorkspaceView() {
           <div>
             <h1 className="text-lg font-semibold text-henry-text">Workspace</h1>
             <p className="text-xs text-henry-text-dim mt-0.5">
-              {manifest
-                ? `${manifest.files.length} documents across ${manifest.folders.length} folders`
-                : 'Henry\'s organized operating environment'}
+              {totalFiles} documents · {activeFolders.length} active folders
             </p>
           </div>
           <div className="flex items-center gap-2">
             {repairResult && (
-              <span className="text-[10px] text-emerald-400 bg-emerald-400/10 px-2 py-1 rounded-md">
-                {repairResult.created > 0
-                  ? `Repaired: ${repairResult.created} files restored`
-                  : `Checked at ${repairResult.timestamp} — all files present`}
+              <span className="text-[10px] text-henry-success bg-henry-success/10 px-2 py-1 rounded-md">
+                {repairResult.created > 0 ? `${repairResult.created} files restored` : 'All files present'}
               </span>
             )}
             <button
-              type="button"
               onClick={handleRepair}
               disabled={repairing}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs border border-henry-border/40 text-henry-text-dim hover:text-henry-text hover:border-henry-border/70 transition-colors disabled:opacity-50"
             >
-              {repairing ? (
-                <span className="animate-spin text-[10px]">⟳</span>
-              ) : (
-                <span>🔧</span>
-              )}
-              {repairing ? 'Repairing…' : 'Repair Workspace'}
+              {repairing ? <span className="animate-spin text-[10px]">⟳</span> : <span>🔧</span>}
+              {repairing ? 'Repairing…' : 'Repair'}
             </button>
             <button
-              type="button"
-              onClick={openFileInBrowser}
+              onClick={() => setCurrentView('files')}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs border border-henry-border/40 text-henry-text-dim hover:text-henry-accent hover:border-henry-accent/40 transition-colors"
             >
-              📂 Browse Files
+              📂 Browse files
             </button>
           </div>
         </div>
       </div>
 
+      {/* What matters now — reads from background brain */}
+      <WorkspaceFocusBar />
+
       <div className="flex-1 overflow-y-auto">
-        <div className="max-w-4xl mx-auto p-6">
-          {/* Folder grid */}
-          <div className="grid grid-cols-2 gap-3 mb-6">
-            {folders.map((folder) => (
+        <div className="max-w-4xl mx-auto p-6 space-y-6">
+
+          {/* Top priority items from background brain */}
+          <WorkspaceTop3 />
+
+          {/* Quick actions */}
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-henry-text-muted mb-3">Quick actions</p>
+            <div className="grid grid-cols-3 gap-2">
               <button
-                key={folder.id}
-                type="button"
-                onClick={() => openFolder(folder.path)}
-                className={`text-left p-4 rounded-xl border transition-all ${
-                  selectedFolder === folder.path
-                    ? 'bg-henry-accent/8 border-henry-accent/40 ring-1 ring-henry-accent/20'
-                    : 'bg-henry-surface/30 border-henry-border/30 hover:border-henry-border/60 hover:bg-henry-surface/50'
-                }`}
+                onClick={() => {
+                  window.dispatchEvent(new CustomEvent('henry_mode_launch', {
+                    detail: { mode: 'writer', prompt: 'Create a new document for me.' }
+                  }));
+                  useStore.getState().setCurrentView('chat');
+                }}
+                className="flex items-center gap-2 px-4 py-3 rounded-xl bg-henry-accent/10 border border-henry-accent/20 text-henry-accent hover:bg-henry-accent/20 transition-colors text-sm font-medium"
               >
-                <div className="flex items-start justify-between mb-2">
-                  <span className="text-xl">{folder.icon}</span>
-                  <div className="flex flex-col items-end gap-1">
-                    <span className="text-[10px] text-henry-text-muted bg-henry-bg/60 px-2 py-0.5 rounded-full">
-                      {folder.fileCount} {folder.fileCount === 1 ? 'file' : 'files'}
-                    </span>
-                    <button
-                      type="button"
-                      title="Use as Henry's active workspace context"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setActiveWorkspaceContext({
-                          path: folder.path,
-                          kind: 'folder',
-                          label: folder.label,
-                        });
-                      }}
-                      className="text-[9px] px-2 py-0.5 rounded border border-henry-border/40 text-henry-text-muted hover:text-henry-accent hover:border-henry-accent/40 transition-colors"
-                    >
-                      Use as context
-                    </button>
-                  </div>
-                </div>
-                <div className="text-xs font-medium text-henry-text mb-1">{folder.label}</div>
-                <div className="text-[11px] text-henry-text-dim leading-relaxed">{folder.description}</div>
+                <span className="text-base">✏️</span> New document
               </button>
-            ))}
+              <button
+                onClick={() => setCurrentView('files')}
+                className="flex items-center gap-2 px-4 py-3 rounded-xl bg-henry-surface/40 border border-henry-border/30 text-henry-text-dim hover:text-henry-text hover:border-henry-border/60 transition-colors text-sm font-medium"
+              >
+                <span className="text-base">📂</span> Browse all files
+              </button>
+              <button
+                onClick={() => {
+                  window.dispatchEvent(new CustomEvent('henry_mode_launch', {
+                    detail: { mode: 'secretary', prompt: 'Give me a quick summary of what\'s in my workspace and what I should focus on.' }
+                  }));
+                  useStore.getState().setCurrentView('chat');
+                }}
+                className="flex items-center gap-2 px-4 py-3 rounded-xl bg-henry-surface/40 border border-henry-border/30 text-henry-text-dim hover:text-henry-text hover:border-henry-border/60 transition-colors text-sm font-medium"
+              >
+                <span className="text-base">🧠</span> Summarize workspace
+              </button>
+            </div>
           </div>
 
-          {/* Selected folder contents */}
+          {/* Ambient Quick Notes */}
+          <AmbientNotesSection />
+
+          {/* Active folders — compact grid */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-henry-text-muted">Folders</p>
+              {manifest && (
+                <span className="text-[10px] text-henry-text-muted">
+                  Seeded {new Date(manifest.seeded_at).toLocaleDateString()}
+                  {manifest.last_repair ? ` · repaired ${new Date(manifest.last_repair).toLocaleDateString()}` : ''}
+                </span>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              {folders.map((folder) => (
+                <button
+                  key={folder.id}
+                  onClick={() => openFolder(folder.path)}
+                  className={`text-left p-4 rounded-xl border transition-all ${
+                    selectedFolder === folder.path
+                      ? 'bg-henry-accent/8 border-henry-accent/40 ring-1 ring-henry-accent/20'
+                      : 'bg-henry-surface/30 border-henry-border/30 hover:border-henry-border/60 hover:bg-henry-surface/50'
+                  }`}
+                >
+                  <div className="flex items-start justify-between mb-1.5">
+                    <span className="text-lg">{folder.icon}</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] text-henry-text-muted">
+                        {folder.fileCount} {folder.fileCount === 1 ? 'file' : 'files'}
+                      </span>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setActiveWorkspaceContext({ path: folder.path, kind: 'folder', label: folder.label });
+                        }}
+                        className="text-[9px] px-1.5 py-0.5 rounded border border-henry-border/40 text-henry-text-muted hover:text-henry-accent hover:border-henry-accent/40 transition-colors"
+                        title="Use as context"
+                      >
+                        context
+                      </button>
+                    </div>
+                  </div>
+                  <div className="text-xs font-medium text-henry-text mb-0.5">{folder.label}</div>
+                  <div className="text-[11px] text-henry-text-dim leading-snug truncate">{folder.description}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Selected folder files */}
           {selectedFolder && (
-            <div className="animate-fade-in border-t border-henry-border/30 pt-5">
+            <div className="border-t border-henry-border/30 pt-5">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <span className="text-base">{selectedFolderInfo?.icon}</span>
                   <h2 className="text-sm font-semibold text-henry-text">{selectedFolderInfo?.label}</h2>
-                  <span className="text-[10px] text-henry-text-muted">
-                    {folderFiles.length} {folderFiles.length === 1 ? 'item' : 'items'}
-                  </span>
+                  <span className="text-[10px] text-henry-text-muted">{folderFiles.length} items</span>
                 </div>
                 <button
-                  type="button"
-                  onClick={openFileInBrowser}
-                  className="text-[10px] text-henry-accent hover:text-henry-accent-hover"
+                  onClick={() => setCurrentView('files')}
+                  className="text-[10px] text-henry-accent hover:underline"
                 >
-                  Open in file browser →
+                  Open in files →
                 </button>
               </div>
 
               {folderFiles.length === 0 ? (
                 <div className="p-6 rounded-xl bg-henry-surface/20 border border-henry-border/20 text-center">
                   <p className="text-sm text-henry-text-dim">This folder is empty.</p>
-                  <p className="text-xs text-henry-text-muted mt-1">
-                    Run Repair Workspace to restore starter documents.
-                  </p>
+                  <p className="text-xs text-henry-text-muted mt-1">Run Repair to restore starter documents.</p>
                 </div>
               ) : (
                 <div className="space-y-1">
@@ -314,23 +451,18 @@ export default function WorkspaceView() {
                       <span className="text-xs text-henry-text flex-1 truncate">{file.name}</span>
                       <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button
-                          type="button"
-                          title="Use as Henry's active workspace context"
-                          onClick={() =>
-                            setActiveWorkspaceContext({
-                              path: file.path || `${selectedFolder}/${file.name}`,
-                              kind: file.isDirectory ? 'folder' : 'file',
-                              label: file.name,
-                            })
-                          }
+                          onClick={() => setActiveWorkspaceContext({
+                            path: file.path || `${selectedFolder}/${file.name}`,
+                            kind: file.isDirectory ? 'folder' : 'file',
+                            label: file.name,
+                          })}
                           className="text-[10px] text-henry-text-muted hover:text-henry-accent"
                         >
-                          Context
+                          Use as context
                         </button>
                         <button
-                          type="button"
-                          onClick={openFileInBrowser}
-                          className="text-[10px] text-henry-accent hover:text-henry-accent-hover"
+                          onClick={() => setCurrentView('files')}
+                          className="text-[10px] text-henry-accent hover:underline"
                         >
                           Open →
                         </button>
@@ -341,70 +473,40 @@ export default function WorkspaceView() {
               )}
             </div>
           )}
-
-          {/* Workspace manifest info */}
-          {manifest && (
-            <div className="mt-6 pt-4 border-t border-henry-border/20">
-              <div className="flex items-center gap-4 text-[10px] text-henry-text-muted">
-                <span>Seeded: {new Date(manifest.seeded_at).toLocaleDateString()}</span>
-                {manifest.last_repair && (
-                  <span>Last repair: {new Date(manifest.last_repair).toLocaleDateString()}</span>
-                )}
-                <span>v{manifest.version}</span>
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </div>
   );
 }
 
-// ── Init screen ───────────────────────────────────────────────────────────────
-
-function WorkspaceInit({
-  onInit,
-  seeding,
-}: {
-  onInit: () => void;
-  seeding: boolean;
-}) {
+function WorkspaceInit({ onInit, seeding }: { onInit: () => void; seeding: boolean }) {
   return (
-    <div className="h-full flex items-center justify-center animate-fade-in p-6">
+    <div className="h-full flex items-center justify-center p-6">
       <div className="text-center max-w-lg w-full">
         <div className="text-5xl mb-5">🗂️</div>
         <h2 className="text-xl font-bold text-henry-text mb-2">Set Up Your Workspace</h2>
         <p className="text-sm text-henry-text-dim mb-6 leading-relaxed">
-          Henry will create a fully seeded workspace with 40+ real documents across 10 organized folders.
-          Every file starts with meaningful content — no placeholders, no empty scaffolds.
+          Henry will create a fully organized workspace with 40+ documents across 10 folders — all pre-filled with real content, no empty scaffolds.
         </p>
-
         <div className="grid grid-cols-2 gap-2 mb-6 text-left">
           {WORKSPACE_FOLDERS.map((folder) => (
-            <div
-              key={folder.id}
-              className="flex items-center gap-2.5 p-2.5 rounded-lg bg-henry-surface/30 border border-henry-border/20"
-            >
+            <div key={folder.id} className="flex items-center gap-2.5 p-2.5 rounded-lg bg-henry-surface/30 border border-henry-border/20">
               <span className="text-base shrink-0">{folder.icon}</span>
               <div className="min-w-0">
                 <div className="text-[11px] font-medium text-henry-text truncate">{folder.label}</div>
-                <div className="text-[10px] text-henry-text-muted leading-snug line-clamp-2">{folder.description}</div>
+                <div className="text-[10px] text-henry-text-muted leading-snug">{folder.description}</div>
               </div>
             </div>
           ))}
         </div>
-
         <button
-          type="button"
           onClick={onInit}
           disabled={seeding}
-          className="px-8 py-3 bg-henry-accent text-white rounded-xl font-medium hover:bg-henry-accent-hover transition-colors disabled:opacity-60 disabled:cursor-wait"
+          className="px-8 py-3 bg-henry-accent text-white rounded-xl font-medium hover:bg-henry-accent/90 transition-colors disabled:opacity-60"
         >
-          {seeding ? 'Creating workspace…' : 'Initialize Workspace →'}
+          {seeding ? 'Creating workspace…' : 'Set up workspace →'}
         </button>
-        <p className="text-[10px] text-henry-text-muted mt-3">
-          Safe to run any time — never overwrites files you've edited.
-        </p>
+        <p className="text-[10px] text-henry-text-muted mt-3">Never overwrites files you've edited.</p>
       </div>
     </div>
   );

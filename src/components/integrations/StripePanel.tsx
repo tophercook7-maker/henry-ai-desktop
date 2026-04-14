@@ -1,12 +1,10 @@
 import { useState, useEffect } from 'react';
-import { isConnected, stripeGetBalance, stripeListCharges, type StripeBalance, type StripeCharge } from '../../henry/integrations';
-import ConnectPrompt from './ConnectPrompt';
+import { stripeGetBalance, stripeListCharges, type StripeBalance, type StripeCharge } from '../../henry/integrations';
+import { useConnectionStore, selectStatus } from '../../henry/connectionStore';
+import ConnectScreen from './ConnectScreen';
 
 function formatCurrency(amount: number, currency: string): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: currency.toUpperCase(),
-  }).format(amount / 100);
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: currency.toUpperCase() }).format(amount / 100);
 }
 
 function timeAgo(ts: number): string {
@@ -19,15 +17,16 @@ function timeAgo(ts: number): string {
 }
 
 export default function StripePanel() {
-  const [connected, setConnected] = useState(isConnected('stripe'));
+  const status = useConnectionStore(selectStatus('stripe'));
+  const { markExpired } = useConnectionStore();
   const [balance, setBalance] = useState<StripeBalance | null>(null);
   const [charges, setCharges] = useState<StripeCharge[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (connected) load();
-  }, [connected]);
+    if (status === 'connected') load();
+  }, [status]);
 
   async function load() {
     setLoading(true);
@@ -43,26 +42,7 @@ export default function StripePanel() {
     }
   }
 
-  if (!connected) {
-    return (
-      <ConnectPrompt
-        serviceId="stripe"
-        icon="💳"
-        name="Stripe"
-        unlocks="See your revenue, recent charges, and customer activity without leaving Henry."
-        steps={[
-          'Go to dashboard.stripe.com/apikeys',
-          'Create a Restricted Key with read-only access to Balance and Charges',
-          'Copy the key (starts with rk_ or sk_) and paste it below',
-        ]}
-        tokenLabel="Stripe Secret or Restricted Key"
-        tokenPlaceholder="rk_live_… or sk_live_…"
-        docsUrl="https://dashboard.stripe.com/apikeys"
-        docsLabel="Open Stripe API keys →"
-        onConnected={() => setConnected(true)}
-      />
-    );
-  }
+  if (status !== 'connected') return <ConnectScreen serviceId="stripe" />;
 
   const available = balance?.available?.[0];
   const pending = balance?.pending?.[0];
@@ -74,16 +54,9 @@ export default function StripePanel() {
           <div className="text-2xl">💳</div>
           <div className="flex-1">
             <h1 className="text-base font-semibold text-henry-text">Stripe</h1>
-            <p className="text-xs text-henry-text-muted">
-              {loading ? 'Loading…' : `${charges.length} recent charges`}
-            </p>
+            <p className="text-xs text-henry-text-muted">{loading ? 'Loading…' : `${charges.length} recent charges`}</p>
           </div>
-          <button
-            onClick={load}
-            disabled={loading}
-            className="p-1.5 rounded-lg text-henry-text-muted hover:text-henry-text hover:bg-henry-hover/50 transition-colors"
-            title="Refresh"
-          >
+          <button onClick={load} disabled={loading} className="p-1.5 rounded-lg text-henry-text-muted hover:text-henry-text hover:bg-henry-hover/50 transition-colors" title="Refresh">
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
               <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />
@@ -96,74 +69,40 @@ export default function StripePanel() {
         {error && (
           <div className="px-4 py-3 bg-henry-error/10 border border-henry-error/30 rounded-xl text-xs text-henry-error">
             {error}
-            {(error.includes('401') || error.includes('403') || error.includes('auth')) && (
-              <button
-                onClick={() => { setConnected(false); }}
-                className="block mt-1 underline hover:no-underline"
-              >
-                Re-enter API key
-              </button>
-            )}
+            <button onClick={() => markExpired('stripe')} className="block mt-1 text-henry-accent underline">Reconnect account</button>
           </div>
         )}
 
-        {/* Balance cards */}
         {balance && (
           <div className="grid grid-cols-2 gap-3">
             <div className="p-4 rounded-2xl bg-henry-surface/40 border border-henry-border/20">
               <p className="text-[11px] font-medium text-henry-text-muted uppercase tracking-wide mb-1">Available</p>
-              <p className="text-2xl font-bold text-henry-success tabular-nums">
-                {available ? formatCurrency(available.amount, available.currency) : '—'}
-              </p>
+              <p className="text-2xl font-bold text-henry-success tabular-nums">{available ? formatCurrency(available.amount, available.currency) : '—'}</p>
               <p className="text-[10px] text-henry-text-muted mt-0.5">{available?.currency?.toUpperCase()}</p>
             </div>
             <div className="p-4 rounded-2xl bg-henry-surface/40 border border-henry-border/20">
               <p className="text-[11px] font-medium text-henry-text-muted uppercase tracking-wide mb-1">Pending</p>
-              <p className="text-2xl font-bold text-henry-warning tabular-nums">
-                {pending ? formatCurrency(pending.amount, pending.currency) : '—'}
-              </p>
+              <p className="text-2xl font-bold text-henry-warning tabular-nums">{pending ? formatCurrency(pending.amount, pending.currency) : '—'}</p>
               <p className="text-[10px] text-henry-text-muted mt-0.5">{pending?.currency?.toUpperCase()}</p>
             </div>
           </div>
         )}
 
-        {loading && (
-          <div className="flex items-center justify-center py-12">
-            <div className="w-6 h-6 rounded-full border-2 border-henry-accent/30 border-t-henry-accent animate-spin" />
-          </div>
-        )}
+        {loading && <div className="flex items-center justify-center py-12"><div className="w-6 h-6 rounded-full border-2 border-henry-accent/30 border-t-henry-accent animate-spin" /></div>}
 
-        {/* Charges list */}
         {!loading && charges.length > 0 && (
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-wider text-henry-text-muted mb-2">Recent charges</p>
             <div className="space-y-2">
               {charges.map((charge) => (
-                <div
-                  key={charge.id}
-                  className="flex items-center gap-3 p-3 rounded-2xl bg-henry-surface/40 border border-henry-border/20"
-                >
-                  <div className={`shrink-0 w-2 h-2 rounded-full ${
-                    charge.status === 'succeeded' ? 'bg-henry-success' :
-                    charge.status === 'failed' ? 'bg-henry-error' :
-                    'bg-henry-warning'
-                  }`} />
+                <div key={charge.id} className="flex items-center gap-3 p-3 rounded-2xl bg-henry-surface/40 border border-henry-border/20">
+                  <div className={`shrink-0 w-2 h-2 rounded-full ${charge.status === 'succeeded' ? 'bg-henry-success' : charge.status === 'failed' ? 'bg-henry-error' : 'bg-henry-warning'}`} />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-henry-text font-medium tabular-nums">
-                      {formatCurrency(charge.amount, charge.currency)}
-                    </p>
-                    {charge.description && (
-                      <p className="text-[11px] text-henry-text-muted truncate">{charge.description}</p>
-                    )}
+                    <p className="text-sm text-henry-text font-medium tabular-nums">{formatCurrency(charge.amount, charge.currency)}</p>
+                    {charge.description && <p className="text-[11px] text-henry-text-muted truncate">{charge.description}</p>}
                   </div>
                   <div className="shrink-0 text-right">
-                    <p className={`text-[11px] font-medium ${
-                      charge.status === 'succeeded' ? 'text-henry-success' :
-                      charge.status === 'failed' ? 'text-henry-error' :
-                      'text-henry-warning'
-                    }`}>
-                      {charge.status}
-                    </p>
+                    <p className={`text-[11px] font-medium ${charge.status === 'succeeded' ? 'text-henry-success' : charge.status === 'failed' ? 'text-henry-error' : 'text-henry-warning'}`}>{charge.status}</p>
                     <p className="text-[10px] text-henry-text-muted">{timeAgo(charge.created)}</p>
                   </div>
                 </div>
@@ -173,9 +112,7 @@ export default function StripePanel() {
         )}
 
         {!loading && !error && charges.length === 0 && balance && (
-          <div className="text-center py-8 text-henry-text-muted text-sm">
-            No recent charges found.
-          </div>
+          <div className="text-center py-8 text-henry-text-muted text-sm">No recent charges found.</div>
         )}
       </div>
     </div>

@@ -1,34 +1,19 @@
 import { useState, useEffect } from 'react';
-import { isConnected, getToken } from '../../henry/integrations';
+import { getGoogleToken } from '../../henry/integrations';
+import { useConnectionStore, selectStatus } from '../../henry/connectionStore';
 import { useStore } from '../../store';
-import ConnectPrompt from './ConnectPrompt';
-
-interface GmailThread {
-  id: string;
-  snippet: string;
-  historyId: string;
-}
+import ConnectScreen from './ConnectScreen';
 
 interface GmailMessage {
   id: string;
   threadId: string;
   snippet: string;
-  payload: {
-    headers: { name: string; value: string }[];
-    body?: { data?: string };
-    parts?: { mimeType: string; body: { data?: string } }[];
-  };
+  payload: { headers: { name: string; value: string }[] };
   internalDate: string;
 }
 
 function getHeader(msg: GmailMessage, name: string): string {
   return msg.payload.headers.find((h) => h.name.toLowerCase() === name.toLowerCase())?.value || '';
-}
-
-function decodeBase64(data: string): string {
-  try {
-    return atob(data.replace(/-/g, '+').replace(/_/g, '/'));
-  } catch { return ''; }
 }
 
 function timeAgo(ms: number): string {
@@ -41,38 +26,41 @@ function timeAgo(ms: number): string {
 }
 
 export default function GmailPanel() {
-  const [connected, setConnected] = useState(isConnected('gmail'));
+  const status = useConnectionStore(selectStatus('gmail'));
+  const profile = useConnectionStore((s) => s.getGoogleProfile());
+  const { markExpired } = useConnectionStore();
+
   const [messages, setMessages] = useState<GmailMessage[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [selected, setSelected] = useState<GmailMessage | null>(null);
 
   useEffect(() => {
-    if (connected) load();
-  }, [connected]);
+    if (status === 'connected') load();
+    else setMessages([]);
+  }, [status]);
 
   async function load() {
     setLoading(true);
     setError('');
     try {
-      const token = getToken('gmail');
-      // List inbox messages
+      const token = getGoogleToken();
       const listR = await fetch('/proxy/gmail/gmail/v1/users/me/messages?labelIds=INBOX&maxResults=20', {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!listR.ok) {
-        if (listR.status === 401 || listR.status === 403) throw new Error('Token expired or invalid. Please reconnect.');
+        if (listR.status === 401 || listR.status === 403) { markExpired('gmail'); return; }
         throw new Error(`Gmail ${listR.status}`);
       }
       const listData = await listR.json();
       const ids: string[] = (listData.messages || []).map((m: any) => m.id);
 
-      // Fetch each message (parallel, limited)
       const fetched = await Promise.allSettled(
         ids.slice(0, 15).map((id) =>
-          fetch(`/proxy/gmail/gmail/v1/users/me/messages/${id}?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date`, {
-            headers: { Authorization: `Bearer ${token}` },
-          }).then((r) => r.json())
+          fetch(
+            `/proxy/gmail/gmail/v1/users/me/messages/${id}?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          ).then((r) => r.json())
         )
       );
       const msgs = fetched
@@ -87,30 +75,11 @@ export default function GmailPanel() {
     }
   }
 
-  if (!connected) {
-    return (
-      <ConnectPrompt
-        serviceId="gmail"
-        icon="📧"
-        name="Gmail"
-        unlocks="Read your inbox, get Henry to summarize threads, and draft replies without leaving the app."
-        steps={[
-          'Go to the Google OAuth Playground at developers.google.com/oauthplayground',
-          'Select the Gmail API — gmail.readonly scope',
-          'Click Authorize, then Exchange for a token',
-          'Copy the Access Token and paste it below',
-        ]}
-        tokenLabel="Google OAuth Access Token"
-        tokenPlaceholder="ya29.…"
-        docsUrl="https://developers.google.com/oauthplayground/"
-        docsLabel="Open OAuth Playground →"
-        onConnected={() => setConnected(true)}
-      />
-    );
-  }
+  if (status !== 'connected') return <ConnectScreen serviceId="gmail" />;
 
   return (
     <div className="h-full flex flex-col bg-henry-bg overflow-hidden">
+      {/* Header */}
       <div className="shrink-0 px-6 pt-5 pb-3 border-b border-henry-border/30">
         <div className="flex items-center gap-3">
           <div className="text-2xl">📧</div>
@@ -118,6 +87,7 @@ export default function GmailPanel() {
             <h1 className="text-base font-semibold text-henry-text">Gmail</h1>
             <p className="text-xs text-henry-text-muted">
               {loading ? 'Loading inbox…' : `${messages.length} recent messages`}
+              {profile?.email && <span className="ml-2 opacity-60">· {profile.email}</span>}
             </p>
           </div>
           <button onClick={load} disabled={loading} className="p-1.5 rounded-lg text-henry-text-muted hover:text-henry-text hover:bg-henry-hover/50 transition-colors" title="Refresh">
@@ -136,24 +106,11 @@ export default function GmailPanel() {
             {error && (
               <div className="mx-1 px-3 py-2 bg-henry-error/10 border border-henry-error/30 rounded-xl text-xs text-henry-error mb-3">
                 {error}
-                {(error.includes('expired') || error.includes('invalid')) && (
-                  <button onClick={() => setConnected(false)} className="block mt-1 underline">Reconnect</button>
-                )}
+                <button onClick={load} className="block mt-1 text-henry-accent underline">Try again</button>
               </div>
             )}
-
-            {loading && (
-              <div className="flex items-center justify-center py-12">
-                <div className="w-6 h-6 rounded-full border-2 border-henry-accent/30 border-t-henry-accent animate-spin" />
-              </div>
-            )}
-
-            {!loading && messages.length === 0 && !error && (
-              <div className="text-center py-12 text-henry-text-muted text-sm">
-                No messages in inbox.
-              </div>
-            )}
-
+            {loading && <div className="flex items-center justify-center py-12"><div className="w-6 h-6 rounded-full border-2 border-henry-accent/30 border-t-henry-accent animate-spin" /></div>}
+            {!loading && messages.length === 0 && !error && <div className="text-center py-12 text-henry-text-muted text-sm">No messages in inbox.</div>}
             {messages.map((msg) => {
               const subject = getHeader(msg, 'Subject') || '(no subject)';
               const from = getHeader(msg, 'From');
@@ -179,21 +136,9 @@ export default function GmailPanel() {
               );
             })}
           </div>
-
-          {/* OAuth note */}
-          <div className="shrink-0 px-3 pb-3">
-            <div className="rounded-xl bg-henry-surface/20 border border-henry-border/20 px-3 py-2">
-              <p className="text-[10px] text-henry-text-muted leading-relaxed">
-                Access tokens expire in ~1 hour.{' '}
-                <a href="https://developers.google.com/oauthplayground/" target="_blank" rel="noreferrer" className="text-henry-accent hover:underline">
-                  Refresh token →
-                </a>
-              </p>
-            </div>
-          </div>
         </div>
 
-        {/* Selected message detail */}
+        {/* Message detail */}
         {selected && (
           <div className="flex-1 flex flex-col overflow-hidden">
             <div className="shrink-0 px-4 py-3 border-b border-henry-border/30 flex items-center gap-2">
@@ -217,9 +162,6 @@ export default function GmailPanel() {
             </div>
             <div className="flex-1 overflow-y-auto p-4">
               <p className="text-sm text-henry-text-dim leading-relaxed whitespace-pre-wrap">{selected.snippet}</p>
-              <p className="text-[11px] text-henry-text-muted/60 mt-4 italic">
-                Full message body not loaded — Gmail metadata mode only shows a snippet. A full OAuth flow with message access is needed for complete content.
-              </p>
             </div>
           </div>
         )}

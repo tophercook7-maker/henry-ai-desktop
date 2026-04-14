@@ -3,6 +3,8 @@ import { useStore } from '../../store';
 import type { Task, TaskStatus } from '../../types';
 import { writerDraftDirForPath } from '@/henry/writerDraftIndex';
 import { requestFilesTabOpenRelativeDir } from '@/henry/writerDraftContext';
+import { getAmbientItems, removeAmbientItem, type AmbientItem } from '../../ambient/memoryRecall';
+import { sendToHenry } from '../../actions/store/chatBridgeStore';
 
 const STATUS_CONFIG: Record<TaskStatus, { icon: string; label: string; color: string }> = {
   pending: { icon: '⏳', label: 'Pending', color: 'text-henry-text-muted' },
@@ -12,6 +14,70 @@ const STATUS_CONFIG: Record<TaskStatus, { icon: string; label: string; color: st
   failed: { icon: '❌', label: 'Failed', color: 'text-henry-error' },
   cancelled: { icon: '🚫', label: 'Cancelled', color: 'text-henry-text-muted' },
 };
+
+function AmbientTasksSection() {
+  const setCurrentView = useStore((s) => s.setCurrentView);
+  const [items, setItems] = useState<AmbientItem[]>([]);
+
+  useEffect(() => {
+    setItems(getAmbientItems('tasks', 10));
+  }, []);
+
+  function dismiss(id: string) {
+    removeAmbientItem('tasks', id);
+    setItems((prev) => prev.filter((i) => i.id !== id));
+  }
+
+  function promoteToChat(text: string) {
+    sendToHenry(`Turn this into a task: ${text}`);
+    setCurrentView('chat');
+  }
+
+  if (items.length === 0) return null;
+
+  return (
+    <div className="mt-6 max-w-3xl mx-auto">
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-henry-text-muted">
+          Captured tasks
+        </p>
+        <button
+          onClick={() => setCurrentView('captures')}
+          className="text-[10px] text-henry-text-muted hover:text-henry-accent transition-colors"
+        >
+          See all in Captures →
+        </button>
+      </div>
+      <div className="space-y-1.5">
+        {items.map((item) => (
+          <div
+            key={item.id}
+            className="flex items-start gap-3 px-3 py-2.5 rounded-xl border border-henry-border/20 bg-henry-surface/20 group"
+          >
+            <span className="text-henry-text-muted mt-0.5 shrink-0">📋</span>
+            <p className="flex-1 text-xs text-henry-text-dim leading-relaxed">{item.text}</p>
+            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button
+                onClick={() => promoteToChat(item.text)}
+                title="Turn into a task with Henry"
+                className="text-[10px] px-2 py-0.5 rounded bg-henry-accent/10 text-henry-accent hover:bg-henry-accent/20 transition-colors"
+              >
+                Add
+              </button>
+              <button
+                onClick={() => dismiss(item.id)}
+                title="Dismiss"
+                className="text-[10px] px-2 py-0.5 rounded bg-henry-hover/60 text-henry-text-muted hover:text-henry-text transition-colors"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default function TaskQueueView() {
   const { tasks, setTasks, updateTask } = useStore();
@@ -146,6 +212,7 @@ export default function TaskQueueView() {
             ))}
           </div>
         )}
+        <AmbientTasksSection />
       </div>
     </div>
   );

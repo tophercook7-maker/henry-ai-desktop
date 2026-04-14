@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { isConnected, getToken } from '../../henry/integrations';
-import ConnectPrompt from './ConnectPrompt';
+import { getGoogleToken } from '../../henry/integrations';
+import { useConnectionStore, selectStatus } from '../../henry/connectionStore';
+import ConnectScreen from './ConnectScreen';
 
 interface CalEvent {
   id: string;
@@ -8,8 +9,9 @@ interface CalEvent {
   start: { dateTime?: string; date?: string };
   end: { dateTime?: string; date?: string };
   location?: string;
-  description?: string;
   htmlLink?: string;
+  attendees?: { email: string; displayName?: string; responseStatus: string }[];
+  description?: string;
 }
 
 function formatEventTime(event: CalEvent): string {
@@ -31,20 +33,24 @@ function isToday(event: CalEvent): boolean {
 }
 
 export default function GCalPanel() {
-  const [connected, setConnected] = useState(isConnected('gcal'));
+  const status = useConnectionStore(selectStatus('gcal'));
+  const profile = useConnectionStore((s) => s.getGoogleProfile());
+  const { markExpired } = useConnectionStore();
+
   const [events, setEvents] = useState<CalEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (connected) load();
-  }, [connected]);
+    if (status === 'connected') load();
+    else setEvents([]);
+  }, [status]);
 
   async function load() {
     setLoading(true);
     setError('');
     try {
-      const token = getToken('gcal');
+      const token = getGoogleToken();
       const now = new Date().toISOString();
       const end = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
       const r = await fetch(
@@ -52,11 +58,8 @@ export default function GCalPanel() {
         { headers: { Authorization: `Bearer ${token}` } }
       );
       if (!r.ok) {
-        const msg = await r.text().catch(() => '');
-        if (r.status === 401 || r.status === 403) {
-          throw new Error('Token expired or invalid. Please reconnect.');
-        }
-        throw new Error(`Google Calendar ${r.status}: ${msg}`);
+        if (r.status === 401 || r.status === 403) { markExpired('gcal'); return; }
+        throw new Error(`Google Calendar ${r.status}`);
       }
       const data = await r.json();
       setEvents(data.items || []);
@@ -67,27 +70,7 @@ export default function GCalPanel() {
     }
   }
 
-  if (!connected) {
-    return (
-      <ConnectPrompt
-        serviceId="gcal"
-        icon="📅"
-        name="Google Calendar"
-        unlocks="See your upcoming events and let Henry help you plan your day and prep for meetings."
-        steps={[
-          'Go to console.cloud.google.com and create a project',
-          'Enable the Google Calendar API',
-          'Create an OAuth 2.0 token with calendar.readonly scope — or use a service account token',
-          'Paste the access token below',
-        ]}
-        tokenLabel="Google OAuth Access Token"
-        tokenPlaceholder="ya29.…"
-        docsUrl="https://console.cloud.google.com/apis/credentials"
-        docsLabel="Open Google Cloud Console →"
-        onConnected={() => setConnected(true)}
-      />
-    );
-  }
+  if (status !== 'connected') return <ConnectScreen serviceId="gcal" />;
 
   const todayEvents = events.filter(isToday);
   const upcomingEvents = events.filter((e) => !isToday(e));
@@ -101,6 +84,7 @@ export default function GCalPanel() {
             <h1 className="text-base font-semibold text-henry-text">Google Calendar</h1>
             <p className="text-xs text-henry-text-muted">
               {loading ? 'Loading…' : `Next 7 days · ${events.length} events`}
+              {profile?.email && <span className="ml-2 opacity-60">· {profile.email}</span>}
             </p>
           </div>
           <button onClick={load} disabled={loading} className="p-1.5 rounded-lg text-henry-text-muted hover:text-henry-text hover:bg-henry-hover/50 transition-colors" title="Refresh">
@@ -116,19 +100,10 @@ export default function GCalPanel() {
         {error && (
           <div className="px-4 py-3 bg-henry-error/10 border border-henry-error/30 rounded-xl text-xs text-henry-error">
             {error}
-            {(error.includes('expired') || error.includes('invalid') || error.includes('401') || error.includes('403')) && (
-              <button onClick={() => setConnected(false)} className="block mt-1 underline hover:no-underline">
-                Reconnect with new token
-              </button>
-            )}
+            <button onClick={load} className="block mt-1 text-henry-accent underline">Try again</button>
           </div>
         )}
-
-        {loading && (
-          <div className="flex items-center justify-center py-12">
-            <div className="w-6 h-6 rounded-full border-2 border-henry-accent/30 border-t-henry-accent animate-spin" />
-          </div>
-        )}
+        {loading && <div className="flex items-center justify-center py-12"><div className="w-6 h-6 rounded-full border-2 border-henry-accent/30 border-t-henry-accent animate-spin" /></div>}
 
         {!loading && todayEvents.length > 0 && (
           <div>
@@ -149,20 +124,8 @@ export default function GCalPanel() {
         )}
 
         {!loading && !error && events.length === 0 && (
-          <div className="text-center py-12 text-henry-text-muted text-sm">
-            No events in the next 7 days.
-          </div>
+          <div className="text-center py-12 text-henry-text-muted text-sm">No events in the next 7 days.</div>
         )}
-
-        {/* Note about OAuth token expiry */}
-        <div className="rounded-xl bg-henry-surface/20 border border-henry-border/20 p-3">
-          <p className="text-[11px] text-henry-text-muted leading-relaxed">
-            <strong className="text-henry-text-dim">Note:</strong> Google OAuth access tokens expire after 1 hour. If events stop loading, reconnect with a fresh token from the Google OAuth Playground.{' '}
-            <a href="https://developers.google.com/oauthplayground/" target="_blank" rel="noreferrer" className="text-henry-accent hover:underline">
-              OAuth Playground →
-            </a>
-          </p>
-        </div>
       </div>
     </div>
   );
@@ -184,8 +147,11 @@ function EventCard({ event, highlight = false }: { event: CalEvent; highlight?: 
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-henry-text truncate">{event.summary || 'Untitled event'}</p>
         <p className="text-[11px] text-henry-text-muted mt-0.5">{formatEventTime(event)}</p>
-        {event.location && (
-          <p className="text-[11px] text-henry-text-muted/70 mt-0.5 truncate">📍 {event.location}</p>
+        {event.location && <p className="text-[11px] text-henry-text-muted/70 mt-0.5 truncate">📍 {event.location}</p>}
+        {event.attendees && event.attendees.length > 1 && (
+          <p className="text-[10px] text-henry-text-muted/60 mt-0.5">
+            {event.attendees.length} attendees
+          </p>
         )}
       </div>
     </a>

@@ -4,6 +4,7 @@ import { getTodayBriefing, getTodayKey, saveBriefing, setGenerating, isGeneratin
 import { getDueMacros, markMacroRun } from '../../henry/recurringMacros';
 import { loadProjects, type HenryProject } from '../../henry/richMemory';
 import type { DailyBriefing } from '../../henry/proactiveBriefing';
+import { useCapturesStore, selectUnroutedCaptures } from '../../ambient/capturesStore';
 
 const HENRY_OPERATING_MODE_KEY = 'henry_operating_mode';
 const HENRY_LAST_GREETING_KEY = 'henry_last_greeting_date';
@@ -46,6 +47,8 @@ function getTodayLabel(): string {
 
 export default function TodayPanel() {
   const { setCurrentView, conversations, settings } = useStore();
+  const captures = useCapturesStore((s) => s.captures);
+  const unroutedCaptures = selectUnroutedCaptures(captures);
   const [isNewDay, setIsNewDay] = useState(false);
   const [briefing, setBriefing] = useState<DailyBriefing | null>(null);
   const [generatingBriefing, setGeneratingBriefing] = useState(false);
@@ -340,6 +343,29 @@ export default function TodayPanel() {
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* Unrouted Captures Widget */}
+          {unroutedCaptures.length > 0 && (
+            <div className="rounded-xl border border-henry-warning/20 bg-henry-warning/5 px-4 py-3 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className="text-base shrink-0">🎙</span>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-henry-text">
+                    {unroutedCaptures.length} unrouted {unroutedCaptures.length === 1 ? 'capture' : 'captures'}
+                  </p>
+                  <p className="text-xs text-henry-text-muted truncate">
+                    {unroutedCaptures[0].text.slice(0, 60)}{unroutedCaptures[0].text.length > 60 ? '…' : ''}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setCurrentView('captures')}
+                className="shrink-0 text-[11px] px-3 py-1.5 rounded-lg bg-henry-warning/15 border border-henry-warning/30 text-henry-warning hover:bg-henry-warning/25 transition-all font-medium"
+              >
+                Review →
+              </button>
             </div>
           )}
 

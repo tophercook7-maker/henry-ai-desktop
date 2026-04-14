@@ -7,6 +7,11 @@ import {
   type ProviderId,
 } from '../../providers/models';
 import { autoSelectModels } from '@/henry/modelPriority';
+import { useInitiativeStore, type InitiativeMode } from '../../henry/initiativeStore';
+import { useSessionModeStore, type SessionMode } from '../../henry/sessionModeStore';
+import { getPriorityMode, setPriorityMode } from '../../henry/priority/priorityEngine';
+import { invalidatePriorityCache } from '../../henry/priority/prioritySelectors';
+import type { PriorityMode } from '../../henry/priority/priorityTypes';
 import {
   loadProjects, saveProject, deleteProject, newProject,
   loadGoals, saveGoal, deleteGoal, newGoal,
@@ -1040,6 +1045,16 @@ function VoiceModelTab() {
 
 function GeneralTab() {
   const { settings } = useStore();
+  const { mode: initiativeMode, setMode: setInitiativeMode } = useInitiativeStore();
+  const { mode: sessionMode, setMode: setSessionMode } = useSessionModeStore();
+  const [priorityMode, setPriorityModeState] = useState<PriorityMode>(getPriorityMode);
+
+  function handlePriorityModeChange(m: PriorityMode) {
+    setPriorityMode(m);
+    invalidatePriorityCache();
+    setPriorityModeState(m);
+  }
+
   const [ownerName, setOwnerName] = useState(() => {
     try { return localStorage.getItem('henry:owner_name') || ''; } catch { return ''; }
   });
@@ -1148,6 +1163,99 @@ function GeneralTab() {
             <span>Balanced</span>
             <span>Creative</span>
           </div>
+        </div>
+      </div>
+
+      {/* Initiative Mode */}
+      <div className="rounded-xl border border-henry-border/50 bg-henry-surface/30 p-5 space-y-4">
+        <div>
+          <h3 className="font-medium text-henry-text mb-1">Henry's initiative level</h3>
+          <p className="text-xs text-henry-text-dim leading-relaxed">
+            Controls how proactively Henry surfaces suggestions, connects dots, and speaks first.
+          </p>
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          {([
+            { id: 'quiet' as InitiativeMode, label: 'Quiet', desc: 'Only responds when asked. No suggestions.' },
+            { id: 'balanced' as InitiativeMode, label: 'Balanced', desc: 'Mentions things when they genuinely connect.' },
+            { id: 'proactive' as InitiativeMode, label: 'Proactive', desc: 'Actively surfaces context, connects dots, suggests.' },
+          ]).map((opt) => (
+            <button
+              key={opt.id}
+              onClick={() => setInitiativeMode(opt.id)}
+              className={`text-left p-3 rounded-xl border transition-all ${
+                initiativeMode === opt.id
+                  ? 'border-henry-accent/40 bg-henry-accent/10 text-henry-accent'
+                  : 'border-henry-border/40 bg-henry-bg hover:border-henry-accent/20 text-henry-text-dim hover:text-henry-text'
+              }`}
+            >
+              <p className="text-xs font-semibold mb-1">{opt.label}</p>
+              <p className="text-[10px] leading-relaxed opacity-80">{opt.desc}</p>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Priority Mode */}
+      <div className="rounded-xl border border-henry-border/50 bg-henry-surface/30 p-5 space-y-4">
+        <div>
+          <h3 className="font-medium text-henry-text mb-1">Priority focus mode</h3>
+          <p className="text-xs text-henry-text-dim leading-relaxed">
+            How Henry weighs urgency when deciding what to surface first.
+          </p>
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          {([
+            { id: 'calm' as PriorityMode, label: 'Calm focus', desc: 'Steady flow, no urgency pressure.' },
+            { id: 'balanced' as PriorityMode, label: 'Balanced', desc: 'Urgency and importance equally weighted.' },
+            { id: 'urgency' as PriorityMode, label: 'Urgency first', desc: 'Time-critical things always rise to the top.' },
+          ]).map((opt) => (
+            <button
+              key={opt.id}
+              onClick={() => handlePriorityModeChange(opt.id)}
+              className={`text-left p-3 rounded-xl border transition-all ${
+                priorityMode === opt.id
+                  ? 'border-henry-accent/40 bg-henry-accent/10 text-henry-accent'
+                  : 'border-henry-border/40 bg-henry-bg hover:border-henry-accent/20 text-henry-text-dim hover:text-henry-text'
+              }`}
+            >
+              <p className="text-xs font-semibold mb-1">{opt.label}</p>
+              <p className="text-[10px] leading-relaxed opacity-80">{opt.desc}</p>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Session Mode */}
+      <div className="rounded-xl border border-henry-border/50 bg-henry-surface/30 p-5 space-y-4">
+        <div>
+          <h3 className="font-medium text-henry-text mb-1">Session mode</h3>
+          <p className="text-xs text-henry-text-dim leading-relaxed">
+            Shifts Henry's tone, focus, and suggestions based on what kind of session you're in.
+          </p>
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          {([
+            { id: 'auto' as SessionMode,      label: 'Auto',       desc: 'Henry infers from context.' },
+            { id: 'build' as SessionMode,     label: 'Build',      desc: 'Deep project work and architecture.' },
+            { id: 'admin' as SessionMode,     label: 'Admin',      desc: 'Tasks, inbox, scheduling, cleanup.' },
+            { id: 'reflection' as SessionMode, label: 'Reflection', desc: 'Thinking, journaling, stepping back.' },
+            { id: 'capture' as SessionMode,   label: 'Capture',    desc: 'Fast intake and idea routing.' },
+            { id: 'execution' as SessionMode, label: 'Execution',  desc: 'Shipping, finishing, moving now.' },
+          ]).map((opt) => (
+            <button
+              key={opt.id}
+              onClick={() => setSessionMode(opt.id)}
+              className={`text-left p-3 rounded-xl border transition-all ${
+                sessionMode === opt.id
+                  ? 'border-henry-accent/40 bg-henry-accent/10 text-henry-accent'
+                  : 'border-henry-border/40 bg-henry-bg hover:border-henry-accent/20 text-henry-text-dim hover:text-henry-text'
+              }`}
+            >
+              <p className="text-xs font-semibold mb-1">{opt.label}</p>
+              <p className="text-[10px] leading-relaxed opacity-80">{opt.desc}</p>
+            </button>
+          ))}
         </div>
       </div>
 

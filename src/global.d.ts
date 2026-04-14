@@ -59,7 +59,6 @@ declare global {
     taskId?: string;
     taskDescription?: string;
     message?: string;
-    queueLength?: number;
   }
 
   interface HenryAIMessage {
