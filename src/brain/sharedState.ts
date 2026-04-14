@@ -1,8 +1,13 @@
 /**
  * Henry AI — Shared Brain State
- * The single source of truth that bridges the background brain and the front brain.
- * The background brain writes here. The coordinator and charter.ts read from here.
- * Never write to this directly from UI components — only the background brain updates it.
+ *
+ * The single source of truth that bridges all three operating layers:
+ *   Foreground Mind  → reads this; produces conversation responses
+ *   Background Mind  → writes priority, awareness, connection health, threads
+ *   Reflective Mind  → writes suggestedNextMove, drift, neglect, rhythm
+ *
+ * Never write to this directly from UI components.
+ * Only background brain, reflective mind, and coordinator update it.
  */
 
 import { create } from 'zustand';
@@ -25,41 +30,51 @@ export interface BrainSuggestedAction {
 }
 
 export interface SharedBrainState {
-  // ── Priority (pre-computed by background brain) ──────────────────────────
+  // ── Priority (background brain) ──────────────────────────────────────────
   prioritySnapshot: PrioritySnapshot | null;
   priorityReadyAt: number | null;
 
-  // ── Awareness (pre-computed) ─────────────────────────────────────────────
+  // ── Awareness (background brain) ─────────────────────────────────────────
   awarenessSnapshot: AwarenessSnapshot | null;
   awarenessReadyAt: number | null;
 
-  // ── Connection health ────────────────────────────────────────────────────
+  // ── Connection health (background brain) ─────────────────────────────────
   connectionHealth: BrainConnectionHealth[];
   reconnectNeeded: string[];
 
-  // ── Coordinator output (what the front brain actually uses) ───────────────
-  /** Items ready to be surfaced proactively in conversation. Coordinator-filtered. */
+  // ── Coordinator output (foreground brain reads these) ─────────────────────
   surfaceNow: string[];
-  /** Current top focus — one plain-language string. */
   topFocus: string | null;
-  /** Items explicitly suppressed (too soon to repeat, low value). */
   keepQuiet: string[];
-  /** Connection/auth alerts worth mentioning. */
   connectionAlerts: string[];
 
-  // ── Continuity ───────────────────────────────────────────────────────────
-  /** Primary active thread title (plain string for quick reference). */
+  // ── Continuity (background brain + coordinator) ───────────────────────────
   activeThread: string | null;
-  /** Secondary thread titles — other arcs in motion. */
   secondaryThreads: string[];
   unresolvedCount: number;
+
+  // ── Reflective Mind output ────────────────────────────────────────────────
+  /** The single most actionable next move right now. */
+  suggestedNextMove: string | null;
+  /** Current daily rhythm phase identifier (e.g. "focus_block"). */
+  rhythmPhase: string | null;
+  /** Human-readable rhythm label (e.g. "Focus block"). */
+  rhythmLabel: string | null;
+  /** Active threads that have stalled without resolution. */
+  driftWarnings: string[];
+  /** Commitments or threads past their natural check-in time. */
+  neglectedItems: string[];
+  /** Brief reasoning notes from the reflective mind — for coordinator to use. */
+  reflectiveNotes: string[];
+  /** When the reflective mind last ran (epoch ms). */
+  lastReflectiveRun: number | null;
 
   // ── Background brain meta ─────────────────────────────────────────────────
   lastBackgroundRun: number | null;
   backgroundRunning: boolean;
   runCount: number;
 
-  // ── Mutations (only used by background brain + coordinator) ───────────────
+  // ── Mutations ─────────────────────────────────────────────────────────────
   _setPrioritySnapshot: (s: PrioritySnapshot) => void;
   _setAwarenessSnapshot: (s: AwarenessSnapshot) => void;
   _setConnectionHealth: (h: BrainConnectionHealth[]) => void;
@@ -71,6 +86,14 @@ export interface SharedBrainState {
     activeThread: string | null;
     secondaryThreads: string[];
     unresolvedCount: number;
+  }) => void;
+  _setReflectiveOutput: (output: {
+    suggestedNextMove: string | null;
+    rhythmPhase: string;
+    rhythmLabel: string;
+    driftWarnings: string[];
+    neglectedItems: string[];
+    reflectiveNotes: string[];
   }) => void;
   _setBackgroundRunning: (running: boolean) => void;
   _markBackgroundRun: () => void;
@@ -90,6 +113,17 @@ export const useSharedBrainState = create<SharedBrainState>((set) => ({
   activeThread: null,
   secondaryThreads: [],
   unresolvedCount: 0,
+
+  // Reflective mind
+  suggestedNextMove: null,
+  rhythmPhase: null,
+  rhythmLabel: null,
+  driftWarnings: [],
+  neglectedItems: [],
+  reflectiveNotes: [],
+  lastReflectiveRun: null,
+
+  // Meta
   lastBackgroundRun: null,
   backgroundRunning: false,
   runCount: 0,
@@ -101,6 +135,7 @@ export const useSharedBrainState = create<SharedBrainState>((set) => ({
     reconnectNeeded: h.filter((x) => x.status === 'disconnected' || x.status === 'expiring').map((x) => x.service),
   }),
   _setCoordinatorOutput: (output) => set(output),
+  _setReflectiveOutput: (output) => set({ ...output, lastReflectiveRun: Date.now() }),
   _setBackgroundRunning: (running) => set({ backgroundRunning: running }),
   _markBackgroundRun: () => set((s) => ({ lastBackgroundRun: Date.now(), runCount: s.runCount + 1 })),
 }));
