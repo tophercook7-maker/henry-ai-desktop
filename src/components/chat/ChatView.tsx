@@ -1347,10 +1347,11 @@ export default function ChatView() {
     try {
       setCompanionStatus({ status: 'streaming' });
 
-      // Max output tokens — biblical mode and quality tasks get larger budgets
+      // Max output tokens — sized to realistic response lengths, not theoretical max.
+      // Smaller ceilings reduce TTFT because models reserve capacity before streaming.
       const maxOutputTokens = effectiveMode === 'biblical'
-        ? 16_384
-        : presenceTier === 'quality' ? 16_384 : 8_192;
+        ? 8_192
+        : presenceTier === 'quality' ? 6_000 : presenceTier === 'fast' ? 1_500 : 3_000;
 
       const stream = window.henryAPI.streamMessage({
         provider: companionProvider,

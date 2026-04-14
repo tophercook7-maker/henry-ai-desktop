@@ -614,6 +614,41 @@ Priorities — when ${ownerName}'s profile or memory indicates they value certai
   const runtimeContextBlock = buildRuntimeContextBlock();
   const selfRepairBlock = buildSelfRepairBlock();
 
+  // Optional context blocks — budgeted to keep the system prompt lean.
+  // Listed in descending priority: earlier entries survive budget cuts.
+  // Budget: 4,500 chars (~1,125 tokens). Blocks that push over the limit are dropped.
+  const OPTIONAL_BUDGET = 4_500;
+  const optionalCandidates = [
+    capabilityBlock,
+    memoryBlock,
+    awarenessBlock,
+    valuesBlock,
+    richContextBlock,
+    ambientMemoryBlock,
+    rhythmBlock,
+    coordinatorBlock || priorityBlock,
+    computerBlock,
+    commitmentsBlock,
+    continuityBlock,
+    initiativeBlock,
+    sessionModeBlock,
+    conflictSignalsBlock,
+    relationshipBlock,
+    lifeAreaBlock,
+    runtimeContextBlock,
+    selfRepairBlock,
+  ].filter(Boolean) as string[];
+
+  let optionalChars = 0;
+  const selectedOptional: string[] = [];
+  for (const block of optionalCandidates) {
+    if (optionalChars + block.length > OPTIONAL_BUDGET) break;
+    selectedOptional.push(block);
+    optionalChars += block.length;
+  }
+
+  const optionalContext = selectedOptional.join('\n\n');
+
   return `${buildCoreIdentity()}
 
 ${buildPersonalityBlock()}
@@ -630,9 +665,7 @@ ${identityModelBlock}
 ${selfDescriptionGuidance}
 
 ${constitutionBlock}
-${conflictSignalsBlock ? `\n${conflictSignalsBlock}\n` : ''}
-${memoryBlock}${valuesBlock ? `${valuesBlock}\n\n` : ''}${richContextBlock ? `${richContextBlock}\n\n` : ''}${capabilityBlock ? `${capabilityBlock}\n\n` : ''}${ambientMemoryBlock ? `${ambientMemoryBlock}\n\n` : ''}${awarenessBlock ? `${awarenessBlock}\n\n` : ''}${rhythmBlock ? `${rhythmBlock}\n\n` : ''}${coordinatorBlock ? `${coordinatorBlock}\n\n` : ''}${priorityBlock ? `${priorityBlock}\n\n` : ''}${computerBlock ? `${computerBlock}\n\n` : ''}${continuityBlock ? `${continuityBlock}\n\n` : ''}${commitmentsBlock ? `${commitmentsBlock}\n\n` : ''}${relationshipBlock ? `${relationshipBlock}\n\n` : ''}${lifeAreaBlock ? `${lifeAreaBlock}\n\n` : ''}${sessionModeBlock ? `${sessionModeBlock}\n\n` : ''}${runtimeContextBlock ? `${runtimeContextBlock}\n\n` : ''}${selfRepairBlock ? `${selfRepairBlock}\n\n` : ''}${initiativeBlock}
-
+${optionalContext ? `\n${optionalContext}\n` : ''}
 You are the Local Brain — always present for real-time conversation. The Second Brain (Cloud) handles heavy background tasks in parallel; you stay alive and responsive regardless of what it's doing. You are never too busy for ${ownerName}.
 
 Use markdown when it improves clarity. Be concise unless depth is requested. Never cut off a thought mid-answer.`;
