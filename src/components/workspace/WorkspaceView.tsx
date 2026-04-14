@@ -9,6 +9,7 @@ import {
 } from '@/henry/workspaceSeeder';
 import { getAmbientItems, removeAmbientItem, type AmbientItem } from '../../ambient/memoryRecall';
 import { useSharedBrainState } from '../../brain/sharedState';
+import type { PriorityItem } from '../../henry/priority/priorityTypes';
 
 interface FolderInfo {
   id: string;
@@ -119,7 +120,7 @@ function WorkspaceTop3() {
         Top priorities
       </p>
       <div className="space-y-2">
-        {items.map((item, idx) => (
+        {items.map((item: PriorityItem, idx: number) => (
           <div
             key={item.id ?? idx}
             className="flex items-start gap-3 px-3 py-2.5 rounded-lg bg-henry-surface/30 border border-henry-border/20"
