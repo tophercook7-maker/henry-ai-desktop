@@ -13,6 +13,8 @@
 import { useSharedBrainState, getSharedBrainState } from './sharedState';
 import { getInitiativeMode } from '../henry/initiativeStore';
 import { loadActiveThreads, buildContinuityThreadBlock } from '../henry/threads/threadStore';
+import { buildReflectiveMindBlock } from './reflectiveMind';
+import type { ReflectiveOutput } from './reflectiveMind';
 
 const SUPPRESSION_KEY = 'henry:coordinator_surfaced';
 const SUPPRESSION_WINDOW_MS = 20 * 60 * 1000; // 20 minutes
@@ -164,7 +166,12 @@ export function buildCoordinatorBlock(): string {
   if (typeof localStorage === 'undefined') return '';
 
   const state = getSharedBrainState();
-  const { surfaceNow, topFocus, keepQuiet, connectionAlerts, activeThread, unresolvedCount, priorityReadyAt } = state;
+  const {
+    surfaceNow, topFocus, keepQuiet, connectionAlerts,
+    unresolvedCount, priorityReadyAt,
+    suggestedNextMove, rhythmPhase, rhythmLabel,
+    driftWarnings, neglectedItems, reflectiveNotes,
+  } = state;
 
   // If background brain hasn't run yet, nothing to say
   if (!priorityReadyAt) return '';
@@ -195,6 +202,20 @@ export function buildCoordinatorBlock(): string {
 
   if (keepQuiet.length) {
     lines.push(`Keep quiet about: ${keepQuiet.slice(0, 3).map((s) => `"${s}"`).join(', ')} — don't volunteer unless asked.`);
+  }
+
+  // ── Reflective Mind block ─────────────────────────────────────────────────
+  if (rhythmPhase) {
+    const reflectiveOutput: ReflectiveOutput = {
+      suggestedNextMove: suggestedNextMove ?? null,
+      rhythmPhase: rhythmPhase ?? '',
+      rhythmLabel: rhythmLabel ?? '',
+      driftWarnings,
+      neglectedItems,
+      reflectiveNotes,
+    };
+    const reflectiveBlock = buildReflectiveMindBlock(reflectiveOutput);
+    if (reflectiveBlock) lines.push('', reflectiveBlock);
   }
 
   if (lines.length <= 1) return ''; // Only the header
