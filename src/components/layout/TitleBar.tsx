@@ -1,14 +1,16 @@
 import { useState, useEffect } from 'react';
 import { useStore } from '../../store';
 import { wakeWordManager } from '../../henry/wakeWord';
+import { useCapturesStore, selectUnroutedCaptures } from '../../ambient/capturesStore';
 
 export default function TitleBar() {
-  const { companionStatus, workerStatus } = useStore();
+  const { companionStatus, workerStatus, setCurrentView } = useStore();
+  const captures = useCapturesStore((s) => s.captures);
+  const unroutedCount = selectUnroutedCaptures(captures).length;
   const [installPrompt, setInstallPrompt] = useState<any>(null);
   const [installed, setInstalled] = useState(false);
   const [wakeActive, setWakeActive] = useState(false);
   const [wakeFlash, setWakeFlash] = useState<string | null>(null);
-  const [ambientCount, setAmbientCount] = useState(0);
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [updateReady, setUpdateReady] = useState(false);
 
@@ -55,17 +57,11 @@ export default function TitleBar() {
       setWakeFlash(`"${display}"`);
       setTimeout(() => setWakeFlash(null), 4000);
     }
-    function onAmbientNote() {
-      setAmbientCount(wakeWordManager.getAmbientLog().length);
-    }
-
     window.addEventListener('henry_wake_state', onWakeState);
     window.addEventListener('henry_wake_word', onWakeWord);
-    window.addEventListener('henry_ambient_note', onAmbientNote);
     return () => {
       window.removeEventListener('henry_wake_state', onWakeState);
       window.removeEventListener('henry_wake_word', onWakeWord);
-      window.removeEventListener('henry_ambient_note', onAmbientNote);
     };
   }, []);
 
@@ -141,8 +137,8 @@ export default function TitleBar() {
             Cloud
             <span className="hidden sm:inline text-henry-text-muted">
               {' '}{workerStatus.status === 'idle' ? 'ready' : workerStatus.status}
-              {(workerStatus.queueLength ?? 0) > 0 &&
-                ` (${workerStatus.queueLength} queued)`}
+              {(workerStatus as any).queueLength > 0 &&
+                ` (${(workerStatus as any).queueLength} queued)`}
             </span>
           </span>
         </div>
@@ -192,11 +188,23 @@ export default function TitleBar() {
           </button>
         )}
 
+        {/* Captures count badge — navigates to captures panel */}
+        {unroutedCount > 0 && (
+          <button
+            onClick={() => setCurrentView('captures')}
+            title={`${unroutedCount} unrouted capture${unroutedCount !== 1 ? 's' : ''} — click to review`}
+            className="titlebar-no-drag flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-henry-warning/15 border border-henry-warning/30 text-henry-warning hover:bg-henry-warning/25 transition-all"
+          >
+            <span className="font-semibold">{unroutedCount}</span>
+            <span className="hidden sm:inline">to route</span>
+          </button>
+        )}
+
         {/* Wake word toggle */}
         <button
           onClick={() => void toggleWakeWord()}
           title={wakeActive
-            ? `Henry is always listening · ${ambientCount} notes captured this session · click to stop`
+            ? 'Henry is always listening · click to stop'
             : 'Enable always-on listening — Henry wakes when he hears his name'}
           className={`titlebar-no-drag relative flex items-center gap-1.5 px-2 py-1 rounded-lg transition-all text-[11px] font-medium ${
             wakeActive
@@ -223,9 +231,6 @@ export default function TitleBar() {
             <span className="flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-henry-accent animate-pulse" />
               <span className="hidden sm:inline">Listening</span>
-              {ambientCount > 0 && (
-                <span className="hidden sm:inline text-henry-accent/60">·{ambientCount}</span>
-              )}
             </span>
           ) : (
             <span className="hidden sm:inline">Listen</span>

@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useStore } from '../../store';
-import type { Conversation, ViewType } from '../../types';
+import type { Conversation } from '../../types';
+
+type ViewType = 'today' | 'chat' | 'secretary' | 'contacts' | 'tasks' | 'files' | 'workspace' | 'terminal' | 'computer' | 'printer' | 'costs' | 'settings' | 'journal' | 'focus' | 'recorder' | 'modes' | 'reminders' | 'crm' | 'finance' | 'lists' | 'printstudio' | 'imagegen' | 'integrations' | 'github' | 'linear' | 'notion' | 'slack' | 'captures' | 'weekly';
 
 const NAV_GROUPS: { label: string; items: { id: ViewType; label: string; icon: string }[] }[] = [
   {
@@ -8,52 +10,52 @@ const NAV_GROUPS: { label: string; items: { id: ViewType; label: string; icon: s
     items: [
       { id: 'today', label: 'Today', icon: '🏠' },
       { id: 'chat', label: 'Chat', icon: '💬' },
-      { id: 'journal', label: 'Journal', icon: '📔' },
-    ],
-  },
-  {
-    label: 'Life',
-    items: [
-      { id: 'goals', label: 'Goals', icon: '🎯' },
       { id: 'reminders', label: 'Reminders', icon: '🔔' },
       { id: 'lists', label: 'Lists', icon: '📝' },
-      { id: 'focus', label: 'Focus', icon: '🔵' },
+      { id: 'journal', label: 'Journal', icon: '📔' },
+      { id: 'captures', label: 'Captures', icon: '🎙' },
+      { id: 'focus', label: 'Focus', icon: '🎯' },
+      { id: 'weekly', label: 'Weekly', icon: '📅' },
     ],
   },
   {
-    label: 'Connect',
-    items: [
-      { id: 'google_calendar', label: 'Calendar', icon: '📅' },
-      { id: 'gmail', label: 'Gmail', icon: '📧' },
-    ],
-  },
-  {
-    label: 'Work',
+    label: 'Business',
     items: [
       { id: 'secretary', label: 'Secretary', icon: '🗓️' },
-      { id: 'tasks', label: 'Tasks', icon: '📋' },
-      { id: 'finance', label: 'Finance', icon: '💵' },
       { id: 'crm', label: 'Clients', icon: '🤝' },
+      { id: 'finance', label: 'Finance', icon: '💵' },
+      { id: 'contacts', label: 'People', icon: '👥' },
+      { id: 'tasks', label: 'Tasks', icon: '📋' },
     ],
   },
   {
-    label: 'Build',
+    label: 'Maker',
     items: [
-      { id: 'ide', label: 'IDE', icon: '✦' },
-      { id: 'video', label: 'Video', icon: '🎬' },
-      { id: 'imagegen', label: 'Image Gen', icon: '🎨' },
       { id: 'printstudio', label: 'Print Studio', icon: '🖨️' },
       { id: 'printer', label: '3D Control', icon: '🔧' },
+      { id: 'imagegen', label: 'Image Gen', icon: '🎨' },
       { id: 'recorder', label: 'Recorder', icon: '🎙' },
+    ],
+  },
+  {
+    label: 'Dev & Services',
+    items: [
+      { id: 'integrations', label: 'Integrations', icon: '🔌' },
+      { id: 'github', label: 'GitHub', icon: '🐙' },
+      { id: 'linear', label: 'Linear', icon: '🔷' },
+      { id: 'notion', label: 'Notion', icon: '📄' },
+      { id: 'slack', label: 'Slack', icon: '💬' },
     ],
   },
   {
     label: 'Tools',
     items: [
-      { id: 'integrations', label: 'Integrations', icon: '🔌' },
+      { id: 'files', label: 'Files', icon: '📁' },
+      { id: 'workspace', label: 'Workspace', icon: '🗂️' },
       { id: 'terminal', label: 'Terminal', icon: '💻' },
       { id: 'computer', label: 'Computer', icon: '🖥️' },
-      { id: 'files', label: 'Files', icon: '📁' },
+      { id: 'costs', label: 'Costs', icon: '💰' },
+      { id: 'modes', label: 'My Modes', icon: '✨' },
       { id: 'settings', label: 'Settings', icon: '⚙️' },
     ],
   },
@@ -123,7 +125,7 @@ export default function Sidebar() {
   }
 
   return (
-    <div className="w-56 shrink-0 bg-henry-surface/50 border-r border-henry-border/50 flex flex-col">
+    <div className="w-56 shrink-0 bg-henry-surface/50 border-r border-henry-border/50 flex flex-col h-full overflow-hidden">
       {/* New chat button */}
       <div className="p-3">
         <button
@@ -139,7 +141,7 @@ export default function Sidebar() {
       </div>
 
       {/* Scrollable body: nav groups + conversations */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto min-h-0">
         {/* Navigation — grouped */}
         <nav className="px-2">
           {NAV_GROUPS.map((group) => (

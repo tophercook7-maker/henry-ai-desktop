@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useStore } from '../../store';
-import type { Conversation, ViewType } from '../../types';
+import type { Conversation } from '../../types';
+
+type ViewType = 'today' | 'chat' | 'secretary' | 'contacts' | 'tasks' | 'files' | 'workspace' | 'terminal' | 'computer' | 'printer' | 'costs' | 'settings' | 'journal' | 'focus' | 'recorder' | 'modes' | 'reminders' | 'crm' | 'finance' | 'lists' | 'printstudio' | 'imagegen' | 'integrations' | 'github' | 'linear' | 'notion' | 'slack';
 
 const BOTTOM_TABS: { id: ViewType; label: string; icon: string }[] = [
   { id: 'today', label: 'Today', icon: '🏠' },
@@ -31,11 +33,6 @@ const MORE_NAV: { id: ViewType; label: string; icon: string }[] = [
   { id: 'printer', label: '3D Control', icon: '🔧' },
   { id: 'terminal', label: 'Terminal', icon: '💻' },
   { id: 'computer', label: 'Computer', icon: '🖥️' },
-  { id: 'goals', label: 'Goals', icon: '🎯' },
-  { id: 'google_calendar', label: 'Calendar', icon: '📅' },
-  { id: 'gmail', label: 'Gmail', icon: '📧' },
-  { id: 'ide', label: 'IDE', icon: '✦' },
-  { id: 'video', label: 'Video', icon: '🎬' },
   { id: 'costs', label: 'Costs', icon: '💰' },
   { id: 'settings', label: 'Settings', icon: '⚙️' },
 ];
