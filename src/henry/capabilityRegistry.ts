@@ -24,27 +24,47 @@ import { isConnected } from './integrations';
  * electron/ipc/* and the preload bridge. Update here only when the
  * feature is actually built and shipped.
  */
+/**
+ * Computer / device capabilities.
+ *
+ * These reflect what is actually registered in electron/ipc/computer.ts.
+ * Each entry is true only when the IPC handler exists AND works on the
+ * current platform.
+ *
+ * macOS-only features (AppleScript, screenshot, type, click) require macOS
+ * Accessibility and Screen Recording permissions to be granted in System
+ * Settings → Privacy & Security.
+ */
 export const COMPUTER_CAPABILITIES = {
-  /** Sandboxed read/write of text files inside the configured workspace folder. */
+  /** Read/write text files inside the configured workspace folder (IPC: fs:readFile, fs:writeFile). */
   workspaceFileAccess: true,
 
-  /** Full shell/terminal execution (exec, spawn, arbitrary commands). NOT implemented. */
-  shellAccess: false,
+  /** Shell command execution with a short dangerous-command blocklist (IPC: computer:runShell). */
+  shellAccess: true,
 
-  /** AppleScript execution — app control, automation. NOT implemented. */
-  applescript: false,
+  /** AppleScript execution — app control, UI automation (IPC: computer:osascript, macOS only). */
+  applescript: true,
 
-  /** Keyboard / mouse input injection / automation. NOT implemented. */
-  inputAutomation: false,
+  /** Keyboard typing via AppleScript (IPC: computer:typeText, macOS only). */
+  typeText: true,
 
-  /** Screenshot capture. NOT implemented. */
-  screenshot: false,
+  /** Mouse click at coordinates via AppleScript (IPC: computer:click, macOS only). */
+  mouseClick: true,
 
-  /** System-wide file access (outside workspace). NOT implemented. */
-  systemFileAccess: false,
+  /** Screenshot capture (IPC: computer:screenshot — screencapture on macOS, PowerShell on Windows). */
+  screenshot: true,
 
-  /** Open arbitrary apps. NOT implemented. */
-  appControl: false,
+  /** Open an app by name (IPC: computer:openApp — open -a on macOS). */
+  openApp: true,
+
+  /** Open a URL in the default browser (IPC: computer:openUrl). */
+  openUrl: true,
+
+  /** List installed/running apps and processes (IPC: computer:listApps, computer:listProcesses). */
+  listApps: true,
+
+  /** Check macOS Accessibility + Screen Recording permissions (IPC: computer:checkPermissions). */
+  checkPermissions: true,
 } as const;
 
 // ── Integration Capabilities ──────────────────────────────────────────────────
@@ -117,14 +137,20 @@ export function getIntegrationCapabilities(): Record<string, IntegrationCapabili
 export function buildCapabilityRegistryBlock(): string {
   const integrations = getIntegrationCapabilities();
 
-  // Computer layer
+  // Computer layer — reflects what electron/ipc/computer.ts actually implements
   const computerLines: string[] = [
     `  Workspace file access (read/write text files in workspace): YES`,
-    `  Shell / terminal execution: NO — not implemented`,
-    `  AppleScript / app control: NO — not implemented`,
-    `  Keyboard / mouse automation: NO — not implemented`,
-    `  Screenshots: NO — not implemented`,
-    `  System-wide file access: NO — sandboxed to workspace only`,
+    `  Shell command execution (computer:runShell, with safety blocklist): YES`,
+    `  AppleScript / app UI control (computer:osascript — macOS only): YES`,
+    `  Keyboard input / typing (computer:typeText — macOS, needs Accessibility permission): YES`,
+    `  Mouse click at coordinates (computer:click — macOS, needs Accessibility permission): YES`,
+    `  Screenshot capture (computer:screenshot — screencapture on macOS): YES`,
+    `  Open app by name (computer:openApp): YES`,
+    `  Open URL in browser (computer:openUrl): YES`,
+    `  List apps and processes (computer:listApps, computer:listProcesses): YES`,
+    `  Permission check (computer:checkPermissions): YES`,
+    `  NOTE: AppleScript/typeText/click/screenshot require macOS Accessibility + Screen Recording`,
+    `  NOTE: These only work in the desktop Electron app — not in a browser context`,
   ];
 
   // Integration layer
