@@ -631,7 +631,24 @@ export async function driveExportFileContent(fileId: string, mimeType: string): 
     throw new Error(`Google Drive export ${r.status}`);
   }
 
+  // Guard: when fetching raw media (alt=media), the response may be binary.
+  // Only proceed if the server confirms a text content-type.
+  if (!DRIVE_EXPORTABLE.has(mimeType)) {
+    const ct = r.headers.get('content-type') ?? '';
+    if (!ct.startsWith('text/') && !ct.includes('json') && !ct.includes('xml')) {
+      throw new Error(`This file type can't be read as text (${ct || mimeType}).`);
+    }
+  }
+
   const text = await r.text();
+
+  // Null-byte guard: if the decoded string is garbage binary, refuse to return it.
+  for (let i = 0; i < Math.min(text.length, 4000); i++) {
+    if (text.charCodeAt(i) === 0) {
+      throw new Error(`This file contains binary content and can't be displayed as text.`);
+    }
+  }
+
   // Cap at ~200K chars so prompts stay manageable
   return text.length > 200_000 ? text.slice(0, 200_000) + '\n\n[content truncated]' : text;
 }
