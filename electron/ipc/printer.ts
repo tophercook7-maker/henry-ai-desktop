@@ -32,9 +32,42 @@ function safeSend(channel: string, data: unknown) {
   if (win && !win.isDestroyed()) win.webContents.send(channel, data);
 }
 
-function runPython(script: string, timeout = 10000): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+// ── Python detection ──────────────────────────────────────────────────────────
+// Electron apps on Mac get a restricted PATH (/usr/bin:/bin) that typically
+// misses Homebrew python3. We probe the most common locations explicitly.
+
+const MAC_PYTHON_CANDIDATES = [
+  '/opt/homebrew/bin/python3',   // Apple Silicon + Homebrew
+  '/usr/local/bin/python3',      // Intel Mac + Homebrew
+  '/usr/bin/python3',            // System Python (macOS 12.3+)
+  '/usr/bin/python',             // Older system Python
+  'python3',                     // PATH fallback
+  'python',
+];
+
+let resolvedPython: string | null = null;
+
+async function findPython(): Promise<string> {
+  if (resolvedPython) return resolvedPython;
+  if (process.platform === 'win32') { resolvedPython = 'python'; return resolvedPython; }
+
+  for (const cmd of MAC_PYTHON_CANDIDATES) {
+    const result = await runPythonWith(cmd, 'print("ok")', 3000);
+    if (result.exitCode === 0 && result.stdout.trim() === 'ok') {
+      resolvedPython = cmd;
+      return resolvedPython;
+    }
+  }
+  resolvedPython = 'python3'; // last resort
+  return resolvedPython;
+}
+
+function runPythonWith(
+  pythonCmd: string,
+  script: string,
+  timeout = 10000,
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   return new Promise((resolve) => {
-    const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
     const child = spawn(pythonCmd, ['-c', script], { timeout });
     let stdout = '';
     let stderr = '';
@@ -43,6 +76,11 @@ function runPython(script: string, timeout = 10000): Promise<{ stdout: string; s
     child.on('close', (code: number | null) => resolve({ stdout, stderr, exitCode: code ?? -1 }));
     child.on('error', (e: Error) => resolve({ stdout: '', stderr: e.message, exitCode: -1 }));
   });
+}
+
+async function runPython(script: string, timeout = 10000): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  const cmd = await findPython();
+  return runPythonWith(cmd, script, timeout);
 }
 
 export function registerPrinterHandlers(winGetter: WindowGetter) {
@@ -159,8 +197,8 @@ except Exception as e:
 `;
     fs.writeFileSync(scriptPath, script);
 
+    const pythonCmd = await findPython();
     return new Promise((resolve) => {
-      const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
       const child = spawn(pythonCmd, [scriptPath], { stdio: ['pipe', 'pipe', 'pipe'] });
 
       let firstLine = true;

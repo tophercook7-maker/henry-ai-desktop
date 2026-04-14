@@ -106,8 +106,8 @@ export default function PrinterPanel() {
   const logRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    checkDeps();
     setupListener();
+    checkDepsAndScan();
   }, []);
 
   useEffect(() => {
@@ -143,6 +143,19 @@ export default function PrinterPanel() {
         addLog('error', data.data || 'Unknown error');
       }
     });
+  }
+
+  async function checkDepsAndScan() {
+    try {
+      const result = await window.henryAPI.printerCheckDeps();
+      setDepsOk(result.available);
+      if (!result.available && result.installCommand) setDepsInstall(result.installCommand);
+    } catch {
+      setDepsOk(false);
+    }
+    // Always scan for ports — the IPC handler uses a native ls fallback when pyserial is missing.
+    // This lets the user see connected printers and get a clearer error if they try to connect.
+    scanForPrinters();
   }
 
   async function checkDeps() {
@@ -286,23 +299,11 @@ export default function PrinterPanel() {
         </div>
       </div>
 
-      {/* Python deps warning */}
-      {depsOk === false && (
-        <div className="mx-4 mt-4 p-4 rounded-xl bg-henry-warning/5 border border-henry-warning/20">
-          <p className="text-sm font-medium text-henry-warning mb-1">One-time setup needed</p>
-          <p className="text-xs text-henry-text-dim mb-2">
-            Run this in your terminal to enable printer communication:
-          </p>
-          <code className="text-xs text-henry-accent bg-henry-bg px-2 py-1 rounded block mb-3">{depsInstall}</code>
-          <button onClick={checkDeps} className="text-xs text-henry-accent hover:underline">Done — check again →</button>
-        </div>
-      )}
-
       <div className="flex-1 flex overflow-hidden">
         <div className="flex-1 flex flex-col overflow-hidden">
 
           {/* ─── NOT CONNECTED: discovery wizard ─────────────────────────────── */}
-          {!connected && depsOk !== false && (
+          {!connected && (
             <div className="flex-1 overflow-y-auto">
               <div className="p-6 max-w-lg mx-auto space-y-5">
 
@@ -346,6 +347,16 @@ export default function PrinterPanel() {
                       </button>
                     </div>
 
+                    {/* Pyserial soft warning — shown only when pyserial is missing */}
+                    {depsOk === false && (
+                      <div className="p-3 rounded-xl bg-henry-warning/5 border border-henry-warning/20 space-y-1">
+                        <p className="text-xs font-medium text-henry-warning">One-time setup needed to connect</p>
+                        <p className="text-[11px] text-henry-text-dim">Run in your terminal, then click check again:</p>
+                        <code className="text-[11px] text-henry-accent bg-henry-bg px-2 py-1 rounded block">{depsInstall}</code>
+                        <button onClick={checkDepsAndScan} className="text-[11px] text-henry-accent hover:underline">Check again →</button>
+                      </div>
+                    )}
+
                     <div className="space-y-2">
                       {ports.map((port) => (
                         <div
@@ -364,16 +375,21 @@ export default function PrinterPanel() {
                             <p className="text-xs text-henry-text-muted font-mono">{port.device}</p>
                           </div>
                           <button
-                            onClick={() => connectToPrinter(port.device)}
-                            disabled={connecting}
-                            className="shrink-0 px-4 py-2 bg-henry-accent text-white rounded-lg text-xs font-semibold hover:bg-henry-accent/90 transition-colors disabled:opacity-50"
+                            onClick={() => depsOk ? connectToPrinter(port.device) : undefined}
+                            disabled={connecting || depsOk === false}
+                            title={depsOk === false ? `Install pyserial first: ${depsInstall}` : undefined}
+                            className={`shrink-0 px-4 py-2 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 ${
+                              depsOk === false
+                                ? 'bg-henry-surface border border-henry-border text-henry-text-muted cursor-not-allowed'
+                                : 'bg-henry-accent text-white hover:bg-henry-accent/90'
+                            }`}
                           >
                             {connecting && selectedPort === port.device ? (
                               <span className="flex items-center gap-1.5">
                                 <div className="w-3 h-3 rounded-full border border-white/30 border-t-white animate-spin" />
                                 Connecting…
                               </span>
-                            ) : 'Connect'}
+                            ) : depsOk === false ? 'Setup needed' : 'Connect'}
                           </button>
                         </div>
                       ))}
