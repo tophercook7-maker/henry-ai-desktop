@@ -26,6 +26,19 @@ const CODE_EXTS = new Set([
   'swift', 'kt', 'rb', 'php', 'sql', 'graphql',
 ]);
 
+// Never attempt to read these as text — they will produce garbage content
+const BINARY_EXTS = new Set([
+  'pdf', 'png', 'jpg', 'jpeg', 'gif', 'bmp', 'ico', 'webp', 'tiff', 'tif',
+  'mp3', 'mp4', 'wav', 'ogg', 'flac', 'm4a', 'aac', 'webm', 'avi', 'mov', 'mkv',
+  'zip', 'tar', 'gz', 'bz2', 'xz', '7z', 'rar', 'zst',
+  'exe', 'dll', 'so', 'dylib', 'bin', 'dat', 'img', 'iso',
+  'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
+  'db', 'sqlite', 'sqlite3',
+  'ttf', 'otf', 'woff', 'woff2', 'eot',
+  'pyc', 'class', 'o', 'a', 'obj', 'lib',
+  'sketch', 'fig',
+]);
+
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', '__pycache__', '.venv', 'target']);
 
 function getExt(name: string): string {
@@ -36,6 +49,7 @@ function getExt(name: string): string {
 function shouldIndex(name: string): boolean {
   if (SKIP_DIRS.has(name)) return false;
   const ext = getExt(name);
+  if (BINARY_EXTS.has(ext)) return false;
   return CODE_EXTS.has(ext) || ext === '';
 }
 
