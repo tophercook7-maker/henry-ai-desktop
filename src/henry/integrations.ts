@@ -6,6 +6,31 @@
 
 const PREFIX = 'henry:int:';
 
+// ── Shared Google auth ────────────────────────────────────────────────────────
+// All Google services (Gmail, Calendar, Drive) share one OAuth token.
+// Store once, read everywhere.
+
+const GOOGLE_SERVICES = new Set(['gmail', 'gcal', 'gdrive']);
+
+export function getGoogleToken(): string {
+  try { return localStorage.getItem(`${PREFIX}token:google`) || ''; } catch { return ''; }
+}
+
+export function setGoogleToken(token: string): void {
+  try {
+    if (token.trim()) localStorage.setItem(`${PREFIX}token:google`, token.trim());
+    else localStorage.removeItem(`${PREFIX}token:google`);
+  } catch { /* ignore */ }
+}
+
+export function removeGoogleToken(): void {
+  try { localStorage.removeItem(`${PREFIX}token:google`); } catch { /* ignore */ }
+}
+
+export function isGoogleConnected(): boolean {
+  return !!getGoogleToken();
+}
+
 export interface ServiceConfig {
   id: string;
   name: string;
@@ -130,25 +155,43 @@ export const SERVICES: ServiceConfig[] = [
     icon: '📧',
     description: 'Read and compose emails.',
     unlocks: 'Let Henry read and draft emails so you can move faster in your inbox.',
-    connectionType: 'api-key',
-    keyLabel: 'Paste your Google access token',
+    connectionType: 'replit-oauth',
+    keyLabel: 'Google account',
     keyPlaceholder: 'ya29.…',
     docsUrl: 'https://console.cloud.google.com/apis/credentials',
     docsLabel: 'Get access token',
     tokenLabel: 'OAuth Access Token',
-    tokenHint: 'Requires Google OAuth. Use a service account or OAuth 2.0 token with gmail.readonly scope.',
+    tokenHint: 'Sign in with Google to connect Gmail.',
     category: 'productivity',
     proxyBase: '/proxy/gmail',
+  },
+  {
+    id: 'gdrive',
+    name: 'Google Drive',
+    icon: '📁',
+    description: 'Browse and access files and documents.',
+    unlocks: 'Access recent Drive files and let Henry help you find what you need.',
+    connectionType: 'replit-oauth',
+    keyLabel: 'Google account',
+    keyPlaceholder: 'ya29.…',
+    docsUrl: 'https://console.cloud.google.com/apis/credentials',
+    docsLabel: 'Get access token',
+    tokenLabel: 'OAuth Access Token',
+    tokenHint: 'Sign in with Google to connect Drive.',
+    category: 'productivity',
+    proxyBase: '/proxy/gdrive',
   },
 ];
 
 // ── Token storage ────────────────────────────────────────────────────────────
 
 export function getToken(serviceId: string): string {
+  if (GOOGLE_SERVICES.has(serviceId)) return getGoogleToken();
   try { return localStorage.getItem(`${PREFIX}token:${serviceId}`) || ''; } catch { return ''; }
 }
 
 export function setToken(serviceId: string, token: string): void {
+  if (GOOGLE_SERVICES.has(serviceId)) { setGoogleToken(token); return; }
   try {
     if (token.trim()) {
       localStorage.setItem(`${PREFIX}token:${serviceId}`, token.trim());
@@ -159,11 +202,12 @@ export function setToken(serviceId: string, token: string): void {
 }
 
 export function removeToken(serviceId: string): void {
+  if (GOOGLE_SERVICES.has(serviceId)) { removeGoogleToken(); return; }
   try { localStorage.removeItem(`${PREFIX}token:${serviceId}`); } catch { /* ignore */ }
 }
 
 export function isConnected(serviceId: string): boolean {
-  // Replit OAuth services are always connected (token managed by Replit)
+  if (GOOGLE_SERVICES.has(serviceId)) return isGoogleConnected();
   if (REPLIT_CONNECTED_SERVICES.has(serviceId)) return true;
   return !!getToken(serviceId);
 }
@@ -486,6 +530,294 @@ export async function stripeListCharges(limit = 20): Promise<StripeCharge[]> {
   if (!r.ok) throw new Error(`Stripe ${r.status}`);
   const data = await r.json();
   return data.data || [];
+}
+
+// ── Google Drive API helpers ─────────────────────────────────────────────────
+
+export interface DriveFile {
+  id: string;
+  name: string;
+  mimeType: string;
+  modifiedTime: string;
+  webViewLink: string;
+  iconLink?: string;
+  size?: string;
+  owners?: { displayName: string }[];
+}
+
+function driveHeaders(): Record<string, string> {
+  return { Authorization: `Bearer ${getGoogleToken()}` };
+}
+
+export async function driveListFiles(pageSize = 20): Promise<DriveFile[]> {
+  const fields = 'files(id,name,mimeType,modifiedTime,webViewLink,iconLink,size,owners)';
+  const r = await fetch(
+    `/proxy/gdrive/drive/v3/files?orderBy=modifiedTime+desc&pageSize=${pageSize}&fields=${encodeURIComponent(fields)}`,
+    { headers: driveHeaders() }
+  );
+  if (!r.ok) {
+    if (r.status === 401 || r.status === 403) throw new Error('Your Google account needs to be reconnected.');
+    throw new Error(`Google Drive ${r.status}`);
+  }
+  const data = await r.json();
+  return data.files || [];
+}
+
+// ── Google Calendar write helpers ────────────────────────────────────────────
+
+export interface CalEventPayload {
+  summary: string;
+  start: { dateTime: string; timeZone?: string };
+  end: { dateTime: string; timeZone?: string };
+  description?: string;
+  location?: string;
+  attendees?: { email: string }[];
+}
+
+export interface CalEventCreated {
+  id: string;
+  htmlLink: string;
+  summary: string;
+  start: { dateTime: string };
+}
+
+export async function gcalCreateEvent(payload: CalEventPayload): Promise<CalEventCreated> {
+  const token = getGoogleToken();
+  if (!token) throw new Error('Google account is not connected.');
+  const r = await fetch('/proxy/gcal/calendar/v3/calendars/primary/events', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!r.ok) {
+    const msg = await r.text().catch(() => '');
+    if (r.status === 401 || r.status === 403) throw new Error('Your Google account needs to be reconnected.');
+    throw new Error(`Google Calendar ${r.status}: ${msg}`);
+  }
+  return r.json();
+}
+
+// ── Google Drive export (get file text content) ───────────────────────────────
+
+const DRIVE_EXPORTABLE = new Set([
+  'application/vnd.google-apps.document',
+  'application/vnd.google-apps.spreadsheet',
+  'application/vnd.google-apps.presentation',
+]);
+
+/**
+ * Returns the text content of a Drive file.
+ * Google Docs/Sheets/Slides are exported as plain text.
+ * Other file types download raw (capped at 200 KB to keep prompts reasonable).
+ */
+export async function driveExportFileContent(fileId: string, mimeType: string): Promise<string> {
+  const token = getGoogleToken();
+  if (!token) throw new Error('Google account is not connected.');
+
+  let url: string;
+  if (DRIVE_EXPORTABLE.has(mimeType)) {
+    url = `/proxy/gdrive/drive/v3/files/${encodeURIComponent(fileId)}/export?mimeType=text%2Fplain`;
+  } else {
+    url = `/proxy/gdrive/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`;
+  }
+
+  const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!r.ok) {
+    if (r.status === 401 || r.status === 403) throw new Error('Your Google account needs to be reconnected.');
+    if (r.status === 403) throw new Error('This file cannot be exported as plain text.');
+    throw new Error(`Google Drive export ${r.status}`);
+  }
+
+  const text = await r.text();
+  // Cap at ~200K chars so prompts stay manageable
+  return text.length > 200_000 ? text.slice(0, 200_000) + '\n\n[content truncated]' : text;
+}
+
+// ── Gmail draft creation ──────────────────────────────────────────────────────
+
+/** Create a Gmail draft. Returns the draft ID. */
+export async function gmailCreateDraft(
+  to: string,
+  subject: string,
+  bodyText: string,
+  fromEmail?: string
+): Promise<{ draftId: string; threadId?: string }> {
+  const token = getGoogleToken();
+  if (!token) throw new Error('Google account is not connected.');
+
+  const headers = [
+    `To: ${to}`,
+    fromEmail ? `From: ${fromEmail}` : null,
+    `Subject: =?UTF-8?B?${btoa(unescape(encodeURIComponent(subject)))}?=`,
+    'MIME-Version: 1.0',
+    'Content-Type: text/plain; charset=UTF-8',
+    'Content-Transfer-Encoding: base64',
+    '',
+    btoa(unescape(encodeURIComponent(bodyText))),
+  ].filter(Boolean).join('\r\n');
+
+  const raw = headers
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+
+  const r = await fetch('/proxy/gmail/gmail/v1/users/me/drafts', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ message: { raw } }),
+  });
+
+  if (!r.ok) {
+    const msg = await r.text().catch(() => '');
+    if (r.status === 401 || r.status === 403) throw new Error('Your Google account needs to be reconnected.');
+    throw new Error(`Gmail draft ${r.status}: ${msg}`);
+  }
+
+  const data = await r.json();
+  return { draftId: data.id, threadId: data.message?.threadId };
+}
+
+// ── Notion write helpers ──────────────────────────────────────────────────────
+
+export interface NotionCreatedPage {
+  id: string;
+  url: string;
+  object: 'page';
+}
+
+/**
+ * Create a new Notion page as a child of an existing page.
+ * `parentPageId` is the page's 32-char UUID (dashes removed or with).
+ * `blocks` is an array of Notion block objects.
+ */
+export async function notionCreatePage(
+  parentPageId: string,
+  title: string,
+  markdownLines: string[] = []
+): Promise<NotionCreatedPage> {
+  const token = getToken('notion');
+  if (!token) throw new Error('Notion is not connected.');
+
+  // Build simple paragraph blocks from lines
+  const children = markdownLines
+    .filter((line) => line.trim())
+    .map((line) => ({
+      object: 'block',
+      type: 'paragraph',
+      paragraph: {
+        rich_text: [{ type: 'text', text: { content: line.slice(0, 2000) } }],
+      },
+    }));
+
+  const body: Record<string, unknown> = {
+    parent: { type: 'page_id', page_id: parentPageId },
+    properties: {
+      title: { title: [{ type: 'text', text: { content: title } }] },
+    },
+  };
+  if (children.length > 0) {
+    body.children = children.slice(0, 100); // Notion API max 100 blocks per request
+  }
+
+  const r = await fetch('/proxy/notion/v1/pages', {
+    method: 'POST',
+    headers: notionHeaders(),
+    body: JSON.stringify(body),
+  });
+
+  if (!r.ok) {
+    const msg = await r.text().catch(() => '');
+    if (r.status === 401 || r.status === 403) throw new Error('Notion token is invalid. Reconnect in Integrations.');
+    throw new Error(`Notion create page ${r.status}: ${msg}`);
+  }
+
+  const data = await r.json();
+  return { id: data.id, url: data.url, object: 'page' };
+}
+
+// ── Linear write helpers ──────────────────────────────────────────────────────
+
+export interface LinearCreatedIssue {
+  id: string;
+  identifier: string;
+  title: string;
+  url: string;
+}
+
+export async function linearCreateIssue(
+  teamId: string,
+  title: string,
+  description?: string,
+  priority?: number
+): Promise<LinearCreatedIssue> {
+  const query = `
+    mutation IssueCreate($input: IssueCreateInput!) {
+      issueCreate(input: $input) {
+        success
+        issue {
+          id
+          identifier
+          title
+          url
+        }
+      }
+    }
+  `;
+  const variables = {
+    input: {
+      teamId,
+      title,
+      ...(description ? { description } : {}),
+      ...(priority !== undefined ? { priority } : {}),
+    },
+  };
+
+  const r = await fetch('/proxy/linear/graphql', {
+    method: 'POST',
+    headers: linearHeaders(),
+    body: JSON.stringify({ query, variables }),
+  });
+
+  if (!r.ok) {
+    const msg = await r.text().catch(() => '');
+    throw new Error(`Linear ${r.status}: ${msg}`);
+  }
+
+  const data = await r.json();
+  if (data.errors?.length) throw new Error(data.errors[0].message);
+  const issue = data.data?.issueCreate?.issue;
+  if (!issue) throw new Error('Linear did not return the created issue.');
+  return issue as LinearCreatedIssue;
+}
+
+// ── Google Calendar read helper (used by summary action) ─────────────────────
+
+export async function gcalListEvents(days = 7): Promise<object[]> {
+  const token = getGoogleToken();
+  if (!token) throw new Error('Google account is not connected.');
+  const now = new Date().toISOString();
+  const end = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+  const url =
+    `/proxy/gcal/calendar/v3/calendars/primary/events` +
+    `?orderBy=startTime&singleEvents=true` +
+    `&timeMin=${encodeURIComponent(now)}&timeMax=${encodeURIComponent(end)}` +
+    `&maxResults=20`;
+
+  const r = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!r.ok) {
+    if (r.status === 401 || r.status === 403) throw new Error('Your Google account needs to be reconnected.');
+    throw new Error(`Google Calendar ${r.status}`);
+  }
+  const data = await r.json();
+  return data.items || [];
 }
 
 // ── Henry context block ──────────────────────────────────────────────────────
