@@ -14,6 +14,7 @@ import { useSharedBrainState } from './sharedState';
 import { runPriorityEngine, getPriorityMode } from '../henry/priority/priorityEngine';
 import { invalidatePriorityCache } from '../henry/priority/prioritySelectors';
 import { runCoordinator } from './coordinator';
+import { runReflectiveMind } from './reflectiveMind';
 
 const POLL_INTERVAL_MS = 5 * 60 * 1000;   // 5 minutes — light background sweep
 const DEBOUNCE_MS = 800;                   // avoid thrashing on rapid events
@@ -69,6 +70,21 @@ async function jobCheckConnectionHealth(): Promise<void> {
   } catch { /* ignore */ }
 }
 
+/** Run the reflective mind pass and write output to shared state. */
+function jobRunReflection(): void {
+  try {
+    const output = runReflectiveMind();
+    useSharedBrainState.getState()._setReflectiveOutput({
+      suggestedNextMove: output.suggestedNextMove,
+      rhythmPhase: output.rhythmPhase,
+      rhythmLabel: output.rhythmLabel,
+      driftWarnings: output.driftWarnings,
+      neglectedItems: output.neglectedItems,
+      reflectiveNotes: output.reflectiveNotes,
+    });
+  } catch { /* silently ignore — background job */ }
+}
+
 /** Run all background jobs and update coordinator output. */
 async function runAllJobs(): Promise<void> {
   const state = useSharedBrainState.getState();
@@ -82,7 +98,9 @@ async function runAllJobs(): Promise<void> {
       jobCheckConnectionHealth(),
       jobRefreshThreads(),
     ]);
-    // After jobs complete, let the coordinator compute what to surface
+    // After data jobs complete — run reflective mind (reads updated state)
+    jobRunReflection();
+    // Then let the coordinator compute what to surface
     runCoordinator();
     state._markBackgroundRun();
   } finally {
