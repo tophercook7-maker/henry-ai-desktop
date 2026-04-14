@@ -2271,21 +2271,31 @@ export default function ChatView() {
             )}
             {operatingMode === 'biblical' && (
               <label className="flex flex-col gap-1 shrink-0 text-[10px] text-henry-text-muted uppercase tracking-wide">
-                Bible source
+                Bible version
                 <select
-                  className="text-xs font-medium normal-case tracking-normal rounded-lg border border-henry-border/40 bg-henry-surface/40 text-henry-text px-2 py-1.5 max-w-[11rem] focus:outline-none focus:ring-1 focus:ring-henry-accent/50"
+                  className="text-xs font-medium normal-case tracking-normal rounded-lg border border-henry-border/40 bg-henry-surface/40 text-henry-text px-2 py-1.5 max-w-[14rem] focus:outline-none focus:ring-1 focus:ring-henry-accent/50"
                   value={biblicalSourceProfileId}
                   onChange={(e) => {
                     const v = e.target.value;
                     if (isBibleSourceProfileId(v)) setBiblicalSourceProfileId(v);
                   }}
-                  aria-label="Bible source profile for Biblical mode"
+                  aria-label="Bible version for Biblical mode"
                 >
-                  {BIBLE_SOURCE_PROFILES.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.label}
-                    </option>
-                  ))}
+                  <optgroup label="Protestant translations">
+                    {BIBLE_SOURCE_PROFILES.filter((p) => p.category === 'protestant').map((p) => (
+                      <option key={p.id} value={p.id}>{p.label}</option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="Orthodox">
+                    {BIBLE_SOURCE_PROFILES.filter((p) => p.category === 'orthodox').map((p) => (
+                      <option key={p.id} value={p.id}>{p.label}</option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="Ethiopian">
+                    {BIBLE_SOURCE_PROFILES.filter((p) => p.category === 'ethiopian' || (p.category === 'study' && p.canonFamily === 'ethiopian_orthodox')).map((p) => (
+                      <option key={p.id} value={p.id}>{p.label}</option>
+                    ))}
+                  </optgroup>
                 </select>
               </label>
             )}
@@ -2312,12 +2322,12 @@ export default function ChatView() {
           </div>
           {operatingMode === 'biblical' && (
             <p className="text-[10px] text-henry-text-muted mt-2 leading-relaxed">
-              Local scripture lookup is available for imported references; missing references are labeled
-              honestly. Scripture-first mode: scripture, commentary, interpretation, and speculation are
-              labeled distinctly. First line e.g.{' '}
+              Henry responds in the language and style of your selected Bible version. Local scripture store
+              is used when verses are imported — otherwise Henry renders in that version's register and labels
+              it clearly. Scripture-first: scripture, commentary, interpretation, and speculation are always
+              labeled distinctly. Try{' '}
               <span className="text-henry-text-dim">John 3:16</span> or{' '}
-              <span className="text-henry-text-dim">Read Psalm 23:1</span>. Sample import:{' '}
-              <code className="text-henry-text-dim">src/henry/sampleScripture.json</code>.
+              <span className="text-henry-text-dim">Explain Psalm 23</span>.
             </p>
           )}
           {operatingMode === 'writer' && (
