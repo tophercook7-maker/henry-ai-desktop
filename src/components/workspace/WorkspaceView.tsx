@@ -41,29 +41,48 @@ interface RepairResult {
 // ── Focus Bar ─────────────────────────────────────────────────────────────────
 
 /**
- * Minimal "what matters now" bar — reads from shared brain state.
- * Only renders when the background brain has produced meaningful output.
+ * Live mind bar — integrates all three mind layers:
+ *   Priority/focus (background brain)
+ *   Continuity thread (background brain)
+ *   Rhythm + suggested next move + drift (reflective mind)
+ *
+ * Renders only when the background brain has run at least once.
+ * Each slot is individually conditional — silence is the default.
  */
 function WorkspaceFocusBar() {
-  const { topFocus, activeThread, surfaceNow, reconnectNeeded, priorityReadyAt, prioritySnapshot } =
-    useSharedBrainState();
+  const {
+    topFocus, activeThread, surfaceNow, reconnectNeeded,
+    priorityReadyAt, prioritySnapshot,
+    rhythmLabel, suggestedNextMove, driftWarnings,
+  } = useSharedBrainState();
 
   if (!priorityReadyAt) return null;
 
   const top = topFocus;
   const thread = activeThread;
-  const needsAttention = surfaceNow.length > 0 ? surfaceNow[0] : null;
+  const needsAttention = !top && surfaceNow.length > 0 ? surfaceNow[0] : null;
   const reconnect = reconnectNeeded.length > 0 ? reconnectNeeded[0] : null;
-
-  // Nothing meaningful to show — stay silent
-  if (!top && !thread && !needsAttention && !reconnect) return null;
+  const drift = !reconnect && driftWarnings.length > 0 ? driftWarnings[0] : null;
 
   const urgentCount = prioritySnapshot?.urgentNow.length ?? 0;
   const isUrgent = urgentCount > 0;
 
+  // Nothing from any layer — stay silent
+  if (!top && !thread && !needsAttention && !reconnect && !rhythmLabel && !suggestedNextMove) return null;
+
   return (
-    <div className={`shrink-0 px-6 py-2.5 border-b border-henry-border/30 bg-henry-surface/30 ${isUrgent ? 'border-l-2 border-l-henry-warning' : ''}`}>
-      <div className="flex items-start gap-6 flex-wrap">
+    <div className={`shrink-0 px-6 py-2 border-b border-henry-border/30 bg-henry-surface/30 ${isUrgent ? 'border-l-2 border-l-henry-warning' : ''}`}>
+      <div className="flex items-center gap-5 flex-wrap">
+
+        {/* Rhythm phase — reflective mind */}
+        {rhythmLabel && (
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="text-[9px] font-semibold uppercase tracking-wider text-henry-text-dim/60 shrink-0">Now</span>
+            <span className="text-[10px] text-henry-text-dim/60 truncate max-w-[110px]">{rhythmLabel}</span>
+          </div>
+        )}
+
+        {/* Top focus — background brain priority */}
         {top && (
           <div className="flex items-center gap-2 min-w-0">
             <span className={`text-[9px] font-semibold uppercase tracking-wider shrink-0 ${isUrgent ? 'text-henry-warning' : 'text-henry-text-muted'}`}>
@@ -72,24 +91,47 @@ function WorkspaceFocusBar() {
             <span className="text-[11px] text-henry-text truncate max-w-[220px]" title={top}>{top}</span>
           </div>
         )}
+
+        {/* Active thread — background brain continuity */}
         {thread && (
           <div className="flex items-center gap-2 min-w-0">
             <span className="text-[9px] font-semibold uppercase tracking-wider text-henry-text-muted shrink-0">Thread</span>
             <span className="text-[11px] text-henry-text-dim truncate max-w-[200px]" title={thread}>{thread}</span>
           </div>
         )}
-        {needsAttention && !top && (
+
+        {/* Suggested next move — reflective mind (suppressed when urgent, shown otherwise) */}
+        {suggestedNextMove && !isUrgent && (
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-[9px] font-semibold uppercase tracking-wider text-henry-text-muted shrink-0">Next</span>
+            <span className="text-[11px] text-henry-text-dim truncate max-w-[240px]" title={suggestedNextMove}>{suggestedNextMove}</span>
+          </div>
+        )}
+
+        {/* Surface now fallback — when no top focus and no suggested move */}
+        {needsAttention && !suggestedNextMove && (
           <div className="flex items-center gap-2 min-w-0">
             <span className="text-[9px] font-semibold uppercase tracking-wider text-henry-text-muted shrink-0">Up next</span>
             <span className="text-[11px] text-henry-text-dim truncate max-w-[200px]">{needsAttention}</span>
           </div>
         )}
+
+        {/* Drift warning — reflective mind (shown when no reconnect alert) */}
+        {drift && (
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-[9px] font-semibold uppercase tracking-wider text-henry-text-dim/50 shrink-0">Drift</span>
+            <span className="text-[10px] text-henry-text-dim/50 truncate max-w-[200px]" title={drift}>{drift}</span>
+          </div>
+        )}
+
+        {/* Reconnect alert — highest priority display */}
         {reconnect && (
           <div className="flex items-center gap-2 min-w-0">
             <span className="text-[9px] font-semibold uppercase tracking-wider text-henry-warning shrink-0">Reconnect</span>
             <span className="text-[11px] text-henry-warning/80 truncate max-w-[160px]">{reconnect}</span>
           </div>
         )}
+
       </div>
     </div>
   );
