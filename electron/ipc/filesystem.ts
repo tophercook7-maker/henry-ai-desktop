@@ -9,6 +9,31 @@ import { ipcMain } from 'electron';
 import fs from 'fs';
 import path from 'path';
 
+// Extensions that are always binary — skip UTF-8 decode entirely
+const BINARY_EXTS = new Set([
+  'pdf', 'png', 'jpg', 'jpeg', 'gif', 'bmp', 'ico', 'webp', 'tiff', 'tif',
+  'mp3', 'mp4', 'wav', 'ogg', 'flac', 'm4a', 'aac', 'webm', 'avi', 'mov', 'mkv',
+  'zip', 'tar', 'gz', 'bz2', 'xz', '7z', 'rar', 'zst',
+  'exe', 'dll', 'so', 'dylib', 'bin', 'dat', 'img', 'iso',
+  'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
+  'db', 'sqlite', 'sqlite3',
+  'ttf', 'otf', 'woff', 'woff2', 'eot',
+  'pyc', 'class', 'o', 'a', 'obj', 'lib',
+  'sketch', 'fig', 'xcassets', 'xcarchive',
+]);
+
+/**
+ * Null-byte scan — the classic Unix `file` command heuristic.
+ * A null byte in the first 8000 bytes is a reliable binary indicator.
+ */
+function hasBinaryBytes(buf: Buffer): boolean {
+  const limit = Math.min(buf.length, 8000);
+  for (let i = 0; i < limit; i++) {
+    if (buf[i] === 0) return true;
+  }
+  return false;
+}
+
 export function registerFilesystemHandlers(workspacePath: string) {
   // Resolve and validate that requested paths are inside the workspace
   function safePath(requestedPath: string): string {
@@ -46,13 +71,28 @@ export function registerFilesystemHandlers(workspacePath: string) {
     };
   });
 
-  // Read file
+  // Read file — guards against binary content reaching the UI
   ipcMain.handle('fs:readFile', async (_, filePath: string) => {
     const target = safePath(filePath);
     if (!fs.existsSync(target)) {
       throw new Error(`File not found: ${filePath}`);
     }
-    return fs.readFileSync(target, 'utf-8');
+
+    // Fast path: known binary extension
+    const ext = path.extname(filePath).slice(1).toLowerCase();
+    if (BINARY_EXTS.has(ext)) {
+      throw new Error(`BINARY_FILE: ${path.basename(filePath)} can't be displayed as text.`);
+    }
+
+    // Read as Buffer so we can inspect bytes before decoding
+    const buf = fs.readFileSync(target);
+
+    // Null-byte scan — catches unlisted binary types (compiled files, compressed streams, etc.)
+    if (hasBinaryBytes(buf)) {
+      throw new Error(`BINARY_FILE: ${path.basename(filePath)} appears to be a binary file and can't be displayed as text.`);
+    }
+
+    return buf.toString('utf-8');
   });
 
   /** Lightweight existence check (file or directory) under workspace — no content read. */
