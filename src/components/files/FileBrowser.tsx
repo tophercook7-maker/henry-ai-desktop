@@ -23,6 +23,7 @@ export default function FileBrowser() {
   const [editedContent, setEditedContent] = useState<string>('');
   const [hasChanges, setHasChanges] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [isBinaryFile, setIsBinaryFile] = useState(false);
 
   useEffect(() => {
     try {
@@ -55,6 +56,8 @@ export default function FileBrowser() {
   }
 
   async function openFile(filePath: string) {
+    setIsBinaryFile(false);
+    setError(null);
     try {
       const content = await window.henryAPI.readFile(filePath);
       setSelectedFile(filePath);
@@ -62,7 +65,17 @@ export default function FileBrowser() {
       setEditedContent(content);
       setHasChanges(false);
     } catch (err: any) {
-      setError(err.message || 'Failed to read file');
+      const msg: string = err.message || '';
+      if (msg.startsWith('BINARY_FILE')) {
+        // Binary file — show the file name in the tab but not garbage in the editor
+        setSelectedFile(filePath);
+        setIsBinaryFile(true);
+        setFileContent('');
+        setEditedContent('');
+        setHasChanges(false);
+      } else {
+        setError(msg || 'Failed to read file');
+      }
     }
   }
 
@@ -258,16 +271,28 @@ export default function FileBrowser() {
                 )}
               </div>
 
-              {/* Editor */}
+              {/* Editor — or binary-file notice */}
               <div className="flex-1 overflow-auto">
-                <CodeEditor
-                  content={editedContent}
-                  language={getLanguage(selectedFile)}
-                  onChange={(value) => {
-                    setEditedContent(value);
-                    setHasChanges(value !== fileContent);
-                  }}
-                />
+                {isBinaryFile ? (
+                  <div className="h-full flex flex-col items-center justify-center gap-3 text-center px-8">
+                    <span className="text-3xl">🚫</span>
+                    <p className="text-sm text-henry-text-muted">
+                      This file can't be displayed as text.
+                    </p>
+                    <p className="text-xs text-henry-text-dim">
+                      Binary files like images, PDFs, and compiled code can't be edited here.
+                    </p>
+                  </div>
+                ) : (
+                  <CodeEditor
+                    content={editedContent}
+                    language={getLanguage(selectedFile)}
+                    onChange={(value) => {
+                      setEditedContent(value);
+                      setHasChanges(value !== fileContent);
+                    }}
+                  />
+                )}
               </div>
             </div>
           ) : (
