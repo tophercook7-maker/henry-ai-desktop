@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, ipcMain } from 'electron';
+import { app, BrowserWindow, shell, ipcMain, Menu } from 'electron';
 import path from 'path';
 import { autoUpdater } from 'electron-updater';
 import { initDatabase } from './ipc/database';
@@ -80,6 +80,51 @@ function createWindow() {
   mainWindow.webContents.on('console-message', (_e, level, message, line, sourceId) => {
     const tag = ['verbose', 'info', 'warning', 'error'][level] ?? 'log';
     console.log(`[Henry:renderer:${tag}] ${message}  (${sourceId}:${line})`);
+  });
+
+  // ── Global right-click context menu ────────────────────────────────────────
+  // Provides Copy/Cut/Paste/Select All everywhere in the app.
+  // Inspect Element is shown only in development mode.
+  const isDev = !!process.env.VITE_DEV_SERVER_URL;
+  mainWindow.webContents.on('context-menu', (_event, params) => {
+    const win = getMainWindow();
+    if (!win) return;
+
+    const template: Electron.MenuItemConstructorOptions[] = [
+      {
+        label: 'Cut',
+        role: 'cut',
+        enabled: params.isEditable && params.editFlags.canCut,
+      },
+      {
+        label: 'Copy',
+        role: 'copy',
+        enabled: params.editFlags.canCopy,
+      },
+      {
+        label: 'Paste',
+        role: 'paste',
+        enabled: params.isEditable && params.editFlags.canPaste,
+      },
+      { type: 'separator' },
+      {
+        label: 'Select All',
+        role: 'selectAll',
+        enabled: params.editFlags.canSelectAll,
+      },
+    ];
+
+    if (isDev) {
+      template.push(
+        { type: 'separator' },
+        {
+          label: 'Inspect Element',
+          click: () => win.webContents.inspectElement(params.x, params.y),
+        }
+      );
+    }
+
+    Menu.buildFromTemplate(template).popup({ window: win });
   });
 
   mainWindow.on('closed', () => { mainWindow = null; });
