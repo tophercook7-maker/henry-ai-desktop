@@ -13,6 +13,8 @@
 import { useSharedBrainState, getSharedBrainState } from './sharedState';
 import { getInitiativeMode } from '../henry/initiativeStore';
 import { loadActiveThreads, buildContinuityThreadBlock } from '../henry/threads/threadStore';
+import { buildReflectiveMindBlock } from './reflectiveMind';
+import type { ReflectiveOutput } from './reflectiveMind';
 
 const SUPPRESSION_KEY = 'henry:coordinator_surfaced';
 const SUPPRESSION_WINDOW_MS = 20 * 60 * 1000; // 20 minutes
@@ -156,15 +158,28 @@ export function runCoordinator(): void {
 // ── System prompt block ────────────────────────────────────────────────────
 
 /**
- * Generates the coordinator's system prompt block.
- * This is what the front brain actually reads — pre-computed, noise-filtered,
- * suppression-aware. Falls back to empty string if no state is ready.
+ * Aggregate the world model into a system prompt block for the foreground mind.
+ *
+ * Sources pulled together here:
+ *   - Priority snapshot  → topFocus, surfaceNow, keepQuiet
+ *   - Continuity threads → activeThread, thread block
+ *   - Connection health  → connectionAlerts
+ *   - Reflective mind   → suggestedNextMove, rhythm, drift, neglect, notes
+ *
+ * Pre-computed, noise-filtered, suppression-aware.
+ * Falls back to empty string when background brain has not run yet.
  */
 export function buildCoordinatorBlock(): string {
   if (typeof localStorage === 'undefined') return '';
 
   const state = getSharedBrainState();
-  const { surfaceNow, topFocus, keepQuiet, connectionAlerts, activeThread, unresolvedCount, priorityReadyAt } = state;
+  const {
+    surfaceNow, topFocus, keepQuiet, connectionAlerts,
+    unresolvedCount, priorityReadyAt,
+    // Reflective mind output
+    suggestedNextMove, rhythmPhase, rhythmLabel,
+    driftWarnings, neglectedItems, reflectiveNotes,
+  } = state;
 
   // If background brain hasn't run yet, nothing to say
   if (!priorityReadyAt) return '';
@@ -173,31 +188,51 @@ export function buildCoordinatorBlock(): string {
   const age = Math.round((Date.now() - priorityReadyAt) / 1000);
   const ageStr = age < 10 ? 'just now' : age < 60 ? `${age}s ago` : `${Math.round(age / 60)}m ago`;
 
-  lines.push(`## Background brain state (updated ${ageStr})`);
+  lines.push(`## Live mind state (updated ${ageStr})`);
 
+  // ── Priority + focus ──────────────────────────────────────────────────────
   if (topFocus) lines.push(`Current top focus: ${topFocus}.`);
 
-  // Structured thread block — shows primary thread with type, next step, open items, secondary threads
+  // ── Continuity threads ────────────────────────────────────────────────────
   const threadBlock = buildContinuityThreadBlock();
   if (threadBlock) lines.push(threadBlock);
 
+  // ── Items to surface ──────────────────────────────────────────────────────
   if (surfaceNow.length) {
     lines.push(`Worth surfacing if relevant: ${surfaceNow.map((s) => `"${s}"`).join(', ')}.`);
   }
 
+  // ── Connection alerts ─────────────────────────────────────────────────────
   if (connectionAlerts.length) {
     lines.push(`Connection alert: ${connectionAlerts.join('; ')}.`);
   }
 
+  // ── Unresolved count ──────────────────────────────────────────────────────
   if (unresolvedCount > 0) {
     lines.push(`${unresolvedCount} unresolved item${unresolvedCount !== 1 ? 's' : ''} in background.`);
   }
 
+  // ── Suppressed items ──────────────────────────────────────────────────────
   if (keepQuiet.length) {
     lines.push(`Keep quiet about: ${keepQuiet.slice(0, 3).map((s) => `"${s}"`).join(', ')} — don't volunteer unless asked.`);
   }
 
-  if (lines.length <= 1) return ''; // Only the header
+  // ── Reflective mind block ─────────────────────────────────────────────────
+  // Only included when the reflective mind has run (rhythmPhase is set)
+  if (rhythmPhase) {
+    const reflective: ReflectiveOutput = {
+      suggestedNextMove: suggestedNextMove ?? null,
+      rhythmPhase,
+      rhythmLabel: rhythmLabel ?? '',
+      driftWarnings,
+      neglectedItems,
+      reflectiveNotes,
+    };
+    const reflectiveBlock = buildReflectiveMindBlock(reflective);
+    if (reflectiveBlock) lines.push('', reflectiveBlock);
+  }
+
+  if (lines.length <= 1) return ''; // Only the header — nothing to say
 
   lines.push('');
   lines.push('This was prepared in the background. Use it naturally — don\'t announce it, don\'t recite it.');
