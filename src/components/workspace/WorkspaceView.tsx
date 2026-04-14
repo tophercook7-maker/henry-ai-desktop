@@ -7,6 +7,8 @@ import {
   isWorkspaceSeeded,
   getWorkspaceManifest,
 } from '@/henry/workspaceSeeder';
+import { getAmbientItems, removeAmbientItem, type AmbientItem } from '../../ambient/memoryRecall';
+import { useSharedBrainState } from '../../brain/sharedState';
 
 interface FolderInfo {
   id: string;
@@ -33,6 +35,167 @@ const WORKSPACE_FOLDERS: Omit<FolderInfo, 'fileCount'>[] = [
 interface RepairResult {
   created: number;
   timestamp: string;
+}
+
+// ── Focus Bar ─────────────────────────────────────────────────────────────────
+
+/**
+ * Minimal "what matters now" bar — reads from shared brain state.
+ * Only renders when the background brain has produced meaningful output.
+ */
+function WorkspaceFocusBar() {
+  const { topFocus, activeThread, surfaceNow, reconnectNeeded, priorityReadyAt, prioritySnapshot } =
+    useSharedBrainState();
+
+  if (!priorityReadyAt) return null;
+
+  const top = topFocus;
+  const thread = activeThread;
+  const needsAttention = surfaceNow.length > 0 ? surfaceNow[0] : null;
+  const reconnect = reconnectNeeded.length > 0 ? reconnectNeeded[0] : null;
+
+  // Nothing meaningful to show — stay silent
+  if (!top && !thread && !needsAttention && !reconnect) return null;
+
+  const urgentCount = prioritySnapshot?.urgentNow.length ?? 0;
+  const isUrgent = urgentCount > 0;
+
+  return (
+    <div className={`shrink-0 px-6 py-2.5 border-b border-henry-border/30 bg-henry-surface/30 ${isUrgent ? 'border-l-2 border-l-henry-warning' : ''}`}>
+      <div className="flex items-start gap-6 flex-wrap">
+        {top && (
+          <div className="flex items-center gap-2 min-w-0">
+            <span className={`text-[9px] font-semibold uppercase tracking-wider shrink-0 ${isUrgent ? 'text-henry-warning' : 'text-henry-text-muted'}`}>
+              {isUrgent ? '● Focus' : '○ Focus'}
+            </span>
+            <span className="text-[11px] text-henry-text truncate max-w-[220px]" title={top}>{top}</span>
+          </div>
+        )}
+        {thread && (
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-[9px] font-semibold uppercase tracking-wider text-henry-text-muted shrink-0">Thread</span>
+            <span className="text-[11px] text-henry-text-dim truncate max-w-[200px]" title={thread}>{thread}</span>
+          </div>
+        )}
+        {needsAttention && !top && (
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-[9px] font-semibold uppercase tracking-wider text-henry-text-muted shrink-0">Up next</span>
+            <span className="text-[11px] text-henry-text-dim truncate max-w-[200px]">{needsAttention}</span>
+          </div>
+        )}
+        {reconnect && (
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-[9px] font-semibold uppercase tracking-wider text-henry-warning shrink-0">Reconnect</span>
+            <span className="text-[11px] text-henry-warning/80 truncate max-w-[160px]">{reconnect}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Priority badge color by source — matches PrioritySource type (singular)
+function categoryBadgeClass(source: string): string {
+  if (source === 'reminder' || source === 'task') return 'bg-henry-accent/15 text-henry-accent';
+  if (source === 'commitment') return 'bg-yellow-500/15 text-yellow-400';
+  if (source === 'relationship') return 'bg-purple-500/15 text-purple-400';
+  if (source === 'capture') return 'bg-green-500/15 text-green-400';
+  if (source === 'project') return 'bg-orange-500/15 text-orange-400';
+  if (source === 'conversation') return 'bg-blue-500/15 text-blue-400';
+  return 'bg-henry-surface text-henry-text-muted';
+}
+
+function WorkspaceTop3() {
+  const { prioritySnapshot, priorityReadyAt } = useSharedBrainState();
+
+  if (!priorityReadyAt || !prioritySnapshot) return null;
+
+  const items = (prioritySnapshot.top3 ?? []).slice(0, 3);
+  if (items.length === 0) return null;
+
+  return (
+    <div>
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-henry-text-muted mb-2.5">
+        Top priorities
+      </p>
+      <div className="space-y-2">
+        {items.map((item, idx) => (
+          <div
+            key={item.id ?? idx}
+            className="flex items-start gap-3 px-3 py-2.5 rounded-lg bg-henry-surface/30 border border-henry-border/20"
+          >
+            <span className="shrink-0 mt-0.5 text-[10px] font-bold text-henry-text-muted w-4">
+              {idx + 1}.
+            </span>
+            <span
+              className={`shrink-0 mt-0.5 text-[9px] font-semibold uppercase px-1.5 py-0.5 rounded ${categoryBadgeClass(item.source)}`}
+            >
+              {item.source}
+            </span>
+            <span className="text-[12px] text-henry-text leading-snug flex-1 min-w-0 truncate" title={item.title}>
+              {item.title}
+            </span>
+            {(item.signals.isOverdue || item.signals.isExplicitUrgent) && (
+              <span className="shrink-0 text-[9px] text-henry-warning font-semibold mt-0.5">urgent</span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AmbientNotesSection() {
+  const setCurrentView = useStore((s) => s.setCurrentView);
+  const [wsItems, setWsItems] = useState<AmbientItem[]>([]);
+  const [projItems, setProjItems] = useState<AmbientItem[]>([]);
+
+  useEffect(() => {
+    setWsItems(getAmbientItems('workspace', 5));
+    setProjItems(getAmbientItems('project', 5));
+  }, []);
+
+  const allItems = [...projItems.map((i) => ({ ...i, label: 'Project' })), ...wsItems.map((i) => ({ ...i, label: 'Workspace' }))];
+
+  if (allItems.length === 0) return null;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-henry-text-muted">
+          Quick notes
+        </p>
+        <button
+          onClick={() => setCurrentView('captures')}
+          className="text-[10px] text-henry-text-muted hover:text-henry-accent transition-colors"
+        >
+          Manage in Captures →
+        </button>
+      </div>
+      <div className="space-y-1.5">
+        {allItems.map((item) => (
+          <div
+            key={item.id}
+            className="group flex items-start gap-3 px-3 py-2.5 rounded-xl border border-henry-border/20 bg-henry-surface/20"
+          >
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-henry-hover/60 text-henry-text-muted shrink-0 mt-0.5">
+              {item.label}
+            </span>
+            <p className="flex-1 text-xs text-henry-text-dim leading-relaxed">{item.text}</p>
+            <button
+              onClick={() => {
+                if (item.label === 'Workspace') { removeAmbientItem('workspace', item.id); setWsItems((p) => p.filter((x) => x.id !== item.id)); }
+                else { removeAmbientItem('project', item.id); setProjItems((p) => p.filter((x) => x.id !== item.id)); }
+              }}
+              className="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] text-henry-text-muted hover:text-henry-text px-1"
+            >
+              ×
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export default function WorkspaceView() {
@@ -159,8 +322,14 @@ export default function WorkspaceView() {
         </div>
       </div>
 
+      {/* What matters now — reads from background brain */}
+      <WorkspaceFocusBar />
+
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-4xl mx-auto p-6 space-y-6">
+
+          {/* Top priority items from background brain */}
+          <WorkspaceTop3 />
 
           {/* Quick actions */}
           <div>
@@ -196,6 +365,9 @@ export default function WorkspaceView() {
               </button>
             </div>
           </div>
+
+          {/* Ambient Quick Notes */}
+          <AmbientNotesSection />
 
           {/* Active folders — compact grid */}
           <div>

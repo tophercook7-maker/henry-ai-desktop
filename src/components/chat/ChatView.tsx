@@ -120,6 +120,7 @@ import { logAction } from '@/henry/auditLog';
 import { extractHtmlFromMessage } from '@/henry/builderPreview';
 import { detectEmotionalState, buildEmotionBlock } from '@/henry/emotionDetector';
 import { autoSaveCommitments, addWorkingItem } from '@/henry/workingMemory';
+import { autoExtractUserCommitments, autoExtractHenryCommitments } from '@/henry/commitmentExtractor';
 import {
   sessionStart,
   sessionTick,
@@ -128,6 +129,8 @@ import {
 } from '@/henry/sessionLifecycle';
 import { formatDeepContext } from '@/henry/memoryRetrieval';
 import BuilderPreviewPanel from './BuilderPreviewPanel';
+import { useSharedBrainState } from '../../brain/sharedState';
+import { hasAnythingToSurface, evaluateInitiative } from '../../core/initiative/initiativeEngine';
 
 const HENRY_OPERATING_MODE_KEY = 'henry_operating_mode';
 const HENRY_BIBLICAL_PROFILE_KEY = 'henry_biblical_source_profile';
@@ -347,6 +350,41 @@ export default function ChatView() {
   const sessionAsyncResumeStartedRef = useRef(false);
   const wakeHandleSendRef = useRef<((content: string) => void) | null>(null);
 
+  // ── Proactive initiative surfacing ────────────────────────────────────────
+  const [proactiveSuggestion, setProactiveSuggestion] = useState<string | null>(null);
+  const proactiveFiredRef = useRef(false);
+  const { priorityReadyAt } = useSharedBrainState();
+
+  // When the background brain has run and the conversation is empty,
+  // ask the initiative engine if there's anything worth saying first.
+  useEffect(() => {
+    if (proactiveFiredRef.current) return;         // only once per session
+    if (messages.length > 0) return;              // don't interrupt existing conversation
+    if (!priorityReadyAt) return;                 // brain hasn't run yet
+
+    const delay = setTimeout(() => {
+      if (proactiveFiredRef.current) return;
+      if (messages.length > 0) return;            // user may have started typing
+
+      if (!hasAnythingToSurface()) return;
+
+      const result = evaluateInitiative();
+      if (result.shouldSurface && result.message) {
+        proactiveFiredRef.current = true;
+        setProactiveSuggestion(result.message);
+      }
+    }, 2200); // give the brain a moment to settle after first run
+
+    return () => clearTimeout(delay);
+  }, [priorityReadyAt, messages.length]);
+
+  // Clear the proactive suggestion once the user engages
+  useEffect(() => {
+    if (messages.length > 0 && proactiveSuggestion) {
+      setProactiveSuggestion(null);
+    }
+  }, [messages.length, proactiveSuggestion]);
+
   useEffect(() => {
     function handleSecretaryPrompt(e: Event) {
       const detail = (e as CustomEvent<{ prompt: string; mode?: string }>).detail;
@@ -383,15 +421,22 @@ export default function ChatView() {
       }, 80);
     }
 
+    function handleActionPrompt(e: Event) {
+      const { prompt } = (e as CustomEvent<{ prompt: string }>).detail;
+      if (prompt) setChatInject({ id: Date.now(), text: prompt });
+    }
+
     window.addEventListener('henry_secretary_prompt', handleSecretaryPrompt);
     window.addEventListener('henry_mode_launch', handleModeLaunch);
     window.addEventListener('henry_new_chat', handleNewChat);
     window.addEventListener('henry_wake_word', handleWakeWord);
+    window.addEventListener('henry_action_prompt', handleActionPrompt);
     return () => {
       window.removeEventListener('henry_secretary_prompt', handleSecretaryPrompt);
       window.removeEventListener('henry_mode_launch', handleModeLaunch);
       window.removeEventListener('henry_new_chat', handleNewChat);
       window.removeEventListener('henry_wake_word', handleWakeWord);
+      window.removeEventListener('henry_action_prompt', handleActionPrompt);
     };
   }, []);
 
@@ -1326,6 +1371,9 @@ export default function ChatView() {
         // Auto-extract Henry's commitments and next steps into working memory
         if (fullText.length > 80) {
           autoSaveCommitments(fullText, convId);
+          // Also check for durable commitments on both sides of the conversation
+          autoExtractUserCommitments(content, convId);
+          autoExtractHenryCommitments(fullText, convId);
         }
 
         // Tick session tracker — track message count + emotional pattern
@@ -1744,6 +1792,7 @@ export default function ChatView() {
               setOperatingMode(mode);
               setChatInject({ id: Date.now(), text });
             }}
+            proactiveSuggestion={proactiveSuggestion}
           />
         ) : (
           <div className="max-w-3xl mx-auto space-y-4">
@@ -2432,12 +2481,25 @@ const DISCOVERY_MODES: Array<{
 
 function EmptyChat({
   onModeAndInject,
+  proactiveSuggestion,
 }: {
   onModeAndInject: (mode: HenryOperatingMode, text: string) => void;
+  proactiveSuggestion?: string | null;
 }) {
   return (
     <div className="h-full flex items-start justify-center pt-8 pb-6 overflow-y-auto">
       <div className="w-full max-w-2xl px-4 animate-fade-in">
+
+        {/* Proactive suggestion from initiative engine */}
+        {proactiveSuggestion && (
+          <div className="mb-5 flex items-start gap-3 px-4 py-3 rounded-xl bg-henry-surface/40 border border-henry-border/30">
+            <div className="shrink-0 mt-0.5 w-5 h-5 rounded-full bg-henry-accent/15 flex items-center justify-center">
+              <span className="text-[9px] text-henry-accent font-bold">H</span>
+            </div>
+            <p className="text-[13px] text-henry-text leading-relaxed">{proactiveSuggestion}</p>
+          </div>
+        )}
+
         <div className="text-center mb-7">
           <div className="text-5xl mb-3">🧠</div>
           <h2 className="text-xl font-bold text-henry-text mb-1">Henry AI</h2>
