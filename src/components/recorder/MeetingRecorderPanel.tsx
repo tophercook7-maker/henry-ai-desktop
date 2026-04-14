@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useStore } from '../../store';
+import { saveAudio, loadAudioURL, deleteAudio } from '../../henry/audioStorage';
 
 interface Recording {
   id: string;
@@ -43,6 +44,12 @@ export default function MeetingRecorderPanel() {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
   const [copied, setCopied] = useState(false);
+  // Audio playback
+  const [audioURL, setAudioURL] = useState<string | null>(null);
+  const [loadingAudio, setLoadingAudio] = useState(false);
+  const [audioAvailable, setAudioAvailable] = useState(false);
+  const prevAudioURLRef = useRef<string | null>(null);
+
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -52,8 +59,38 @@ export default function MeetingRecorderPanel() {
   useEffect(() => {
     const all = loadRecordings();
     setRecordings(all);
+    if (all.length > 0) setSelectedRecording(all[0]);
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, []);
+
+  // Load audio when selection changes
+  useEffect(() => {
+    // Revoke previous URL to avoid memory leaks
+    if (prevAudioURLRef.current) {
+      URL.revokeObjectURL(prevAudioURLRef.current);
+      prevAudioURLRef.current = null;
+    }
+    setAudioURL(null);
+    setAudioAvailable(false);
+
+    if (!selectedRecording) return;
+    let cancelled = false;
+    setLoadingAudio(true);
+    loadAudioURL(selectedRecording.id).then((url) => {
+      if (cancelled) return;
+      setLoadingAudio(false);
+      if (url) {
+        setAudioURL(url);
+        setAudioAvailable(true);
+        prevAudioURLRef.current = url;
+      } else {
+        setAudioAvailable(false);
+      }
+    }).catch(() => {
+      if (!cancelled) setLoadingAudio(false);
+    });
+    return () => { cancelled = true; };
+  }, [selectedRecording?.id]);
 
   function refreshRecordings(updated?: Recording[]) {
     const all = updated ?? loadRecordings();
@@ -97,7 +134,7 @@ export default function MeetingRecorderPanel() {
     if (timerRef.current) clearInterval(timerRef.current);
     setRecording(false);
     setProcessing(true);
-    setStatus('Transcribing with Groq Whisper…');
+    setStatus('Processing audio…');
     const durationSecs = Math.floor((Date.now() - startTimeRef.current) / 1000);
     await new Promise<void>((res) => setTimeout(res, 500));
     const blob = new Blob(chunksRef.current, { type: mimeTypeRef.current });
@@ -105,8 +142,11 @@ export default function MeetingRecorderPanel() {
   }
 
   async function processRecording(blob: Blob, durationSecs: number) {
+    const id = `rec_${Date.now()}`;
     try {
-      const s = useStore.getState().settings;
+      // Save audio blob to IndexedDB immediately so playback works even if transcription fails
+      try { await saveAudio(id, blob); } catch { /* non-fatal */ }
+
       const providers = await window.henryAPI.getProviders();
       const groqProvider = providers.find((p: any) => p.id === 'groq');
       const apiKey = groqProvider?.api_key || groqProvider?.apiKey || '';
@@ -127,8 +167,8 @@ export default function MeetingRecorderPanel() {
       let summary = '';
       let actionItems: string[] = [];
 
-      const companionProvider = s.companion_provider;
-      const companionModel = s.companion_model;
+      const companionProvider = settings.companion_provider;
+      const companionModel = settings.companion_model;
       if (companionProvider && companionModel && transcript && !transcript.startsWith('[')) {
         const provider = providers.find((p: any) => p.id === companionProvider);
         if (provider) {
@@ -154,7 +194,7 @@ export default function MeetingRecorderPanel() {
       }
 
       const title = meetingTitle.trim() || `Meeting — ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`;
-      const rec: Recording = { id: `rec_${Date.now()}`, title, date: new Date().toISOString(), duration: durationSecs, transcript, summary, actionItems };
+      const rec: Recording = { id, title, date: new Date().toISOString(), duration: durationSecs, transcript, summary, actionItems };
 
       const all = [rec, ...loadRecordings()];
       saveRecordings(all);
@@ -163,7 +203,7 @@ export default function MeetingRecorderPanel() {
       setMeetingTitle('');
       setStatus('');
 
-      if (actionItems.length > 0 && s.companion_provider) {
+      if (actionItems.length > 0 && settings.companion_provider) {
         for (const item of actionItems.slice(0, 5)) {
           try { await window.henryAPI.submitTask({ description: item, type: 'custom', priority: 5 }); } catch { /* ignore */ }
         }
@@ -203,22 +243,16 @@ export default function MeetingRecorderPanel() {
       `Duration: ${formatDuration(selectedRecording.duration)}`,
       '',
     ];
-    if (selectedRecording.summary) {
-      lines.push('## Summary', selectedRecording.summary, '');
-    }
+    if (selectedRecording.summary) lines.push('## Summary', selectedRecording.summary, '');
     if (selectedRecording.actionItems?.length) {
       lines.push('## Action Items', ...selectedRecording.actionItems.map((i) => `- ${i}`), '');
     }
-    if (selectedRecording.transcript) {
-      lines.push('## Transcript', selectedRecording.transcript);
-    }
-    const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
+    if (selectedRecording.transcript) lines.push('## Transcript', selectedRecording.transcript);
+    const b = new Blob([lines.join('\n')], { type: 'text/plain' });
+    const url = URL.createObjectURL(b);
     const a = document.createElement('a');
-    a.href = url;
-    a.download = `${selectedRecording.title.replace(/[^a-z0-9]/gi, '_')}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
+    a.href = url; a.download = `${selectedRecording.title.replace(/[^a-z0-9]/gi, '_')}.txt`;
+    a.click(); URL.revokeObjectURL(url);
   }
 
   function sendToWorkspace() {
@@ -234,8 +268,9 @@ export default function MeetingRecorderPanel() {
     useStore.getState().setCurrentView('chat');
   }
 
-  function deleteRecording(id: string) {
+  async function deleteRecording(id: string) {
     if (!confirm('Delete this recording?')) return;
+    try { await deleteAudio(id); } catch { /* non-fatal */ }
     const updated = recordings.filter((r) => r.id !== id);
     saveRecordings(updated);
     setRecordings(updated);
@@ -379,7 +414,6 @@ export default function MeetingRecorderPanel() {
                     </p>
                   </div>
 
-                  {/* Delete */}
                   <button
                     onClick={() => deleteRecording(selectedRecording.id)}
                     className="shrink-0 p-1.5 rounded-lg text-henry-text-muted hover:text-henry-error hover:bg-henry-error/10 transition-colors"
@@ -390,6 +424,31 @@ export default function MeetingRecorderPanel() {
                       <path d="M19,6v14a2,2,0,0,1-2,2H7a2,2,0,0,1-2-2V6m3,0V4a2,2,0,0,1,2-2h4a2,2,0,0,1,2,2V6" />
                     </svg>
                   </button>
+                </div>
+
+                {/* Audio player */}
+                <div className="mt-3">
+                  {loadingAudio ? (
+                    <div className="h-10 rounded-xl bg-henry-surface/30 border border-henry-border/20 flex items-center justify-center">
+                      <span className="text-xs text-henry-text-muted animate-pulse">Loading audio…</span>
+                    </div>
+                  ) : audioAvailable && audioURL ? (
+                    <div className="rounded-xl bg-henry-surface/30 border border-henry-border/20 p-2">
+                      <audio
+                        src={audioURL}
+                        controls
+                        className="w-full h-8"
+                        style={{ colorScheme: 'dark' }}
+                      />
+                    </div>
+                  ) : (
+                    <div className="h-9 rounded-xl bg-henry-surface/20 border border-henry-border/20 flex items-center px-3 gap-2">
+                      <svg className="w-3.5 h-3.5 text-henry-text-muted/50" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <circle cx="12" cy="12" r="10" /><polygon points="10 8 16 12 10 16 10 8" />
+                      </svg>
+                      <span className="text-[11px] text-henry-text-muted/60">Audio not available for this recording</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Action buttons */}
