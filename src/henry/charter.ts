@@ -692,6 +692,100 @@ Use markdown when it improves clarity. Be concise unless depth is requested. Nev
 }
 
 /**
+ * LIGHT system prompt — core identity + mode + time only.
+ * Used for most normal conversational turns where full context is not needed.
+ * Target: ~1,200–1,800 system tokens.
+ */
+export function buildLightSystemPrompt(
+  mode: HenryOperatingMode,
+  options?: { weather?: WeatherSnapshot | null }
+): string {
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('en-US', {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+  });
+  const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const weatherStr = formatWeatherBlock(options?.weather ?? null);
+
+  return [
+    buildCoreIdentity(),
+    '',
+    `Current date/time: ${dateStr} · ${timeStr} (${tz})${weatherStr ? `\n${weatherStr}` : ''}`,
+    '',
+    getModeInstruction(mode),
+    '',
+    'Use markdown when it improves clarity. Be concise unless depth is requested. Never cut off a thought mid-answer.',
+  ].join('\n');
+}
+
+/**
+ * MEDIUM system prompt — light base + minimal memory (top facts + short summary).
+ * Used for ongoing project work, longer threads, and workspace-attached sessions.
+ * Target: ~2,500–3,500 system tokens.
+ */
+export function buildMediumSystemPrompt(
+  mode: HenryOperatingMode,
+  compactMemory: string,
+  options?: { weather?: WeatherSnapshot | null; connectedServicesSummary?: string }
+): string {
+  const base = buildLightSystemPrompt(mode, options);
+  const parts: string[] = [base];
+
+  if (compactMemory.trim()) {
+    parts.push('');
+    parts.push(`## Context (this session)\n${compactMemory.trim()}`);
+  }
+
+  if (options?.connectedServicesSummary?.trim()) {
+    parts.push('');
+    parts.push(options.connectedServicesSummary.trim());
+  }
+
+  return parts.join('\n');
+}
+
+/**
+ * Compact capability summary for "awareness" questions.
+ * Replaces dumping the full capability block (saves ~800 tokens).
+ */
+export function buildAwarenessSummary(connectedServices: string[]): string {
+  const ownerName = safeLocalGet('henry:owner_name')?.trim() || 'you';
+  const connectedLine = connectedServices.length > 0
+    ? `Connected right now: **${connectedServices.join(', ')}**. For each I can read data, draft content, and take actions on ${ownerName}'s behalf.`
+    : 'No services connected yet — connect them from the integrations panel to unlock actions.';
+
+  return [
+    `## What I can do`,
+    ``,
+    `**Always active — no connections needed:**`,
+    `Plan, reason, write, code, analyze, remember context across sessions, organize, draft, advise, prioritize, and discuss anything.`,
+    ``,
+    `**Through connected services:**`,
+    connectedLine,
+    ``,
+    `**On this device:**`,
+    `Shell access, file system, AppleScript automation, screenshot capability.`,
+    ``,
+    `Answer this question briefly and specifically. Do not list every integration in detail.`,
+  ].join('\n');
+}
+
+/**
+ * Compact integration status block for service-specific questions.
+ * Replaces including the full integration registry (saves ~400 tokens).
+ */
+export function buildIntegrationStatusBlock(
+  serviceLabel: string,
+  isConnected: boolean
+): string {
+  if (!isConnected) {
+    return `## ${serviceLabel} status\nNot connected. Tell the user what you could do once connected, then offer to help set it up.`;
+  }
+  return `## ${serviceLabel} status\nConnected. Data not yet fetched this session. Offer to load it now — do not describe or invent what might be there.`;
+}
+
+/**
  * Worker: general AI task (queue) — thorough delegated work, with optional conversation context.
  * @param conversationContext - Recent conversation snippet the Companion was handling (optional).
  * @param mode - The operating mode active when the task was created.

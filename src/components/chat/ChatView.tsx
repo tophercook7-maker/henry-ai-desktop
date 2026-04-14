@@ -13,10 +13,26 @@ import ExportPackBuilder from './ExportPackBuilder';
 import MessageBubble from './MessageBubble';
 import {
   buildCompanionStreamSystemPrompt,
+  buildLightSystemPrompt,
+  buildMediumSystemPrompt,
+  buildAwarenessSummary,
+  buildIntegrationStatusBlock,
   HENRY_OPERATING_MODES,
   type HenryOperatingMode,
   isHenryOperatingMode,
 } from '@/henry/charter';
+import {
+  classifyMessageIntent,
+  selectContextTier,
+  trimHistoryToTokenBudget,
+  estimateTokens,
+  TOKEN_HARD_LIMIT,
+  TIER_HISTORY_CAPS,
+  TIER_MEMORY_CAPS,
+  logContextDecision,
+  type ContextTier,
+  type MessageIntent,
+} from '@/henry/contextTier';
 import { getWeather, type WeatherSnapshot } from '@/henry/weatherContext';
 import { resolveChat, requiresQualityModel, modelShortName } from '@/henry/modelRouter';
 import { speak as ttsSpeakFn, cancelTTS } from '@/henry/ttsService';
@@ -24,7 +40,6 @@ import { getPresencePhrase, speakPresence, detectPresenceTier } from '@/henry/am
 import {
   buildHenryMemoryContextBlock,
   capMessageContent,
-  HENRY_MEMORY_CAPS,
   sliceRecentThreadMessages,
 } from '@/henry/memoryContext';
 import {
@@ -1165,20 +1180,44 @@ export default function ChatView() {
         ? buildWorkspaceContextPromptSection(wsCtx, { indexSummaryHint: wsIndexHint })
         : '';
 
-    let memoryContext = buildHenryMemoryContextBlock({
-      mode: effectiveMode,
-      lean,
-      workspacePathHint: workspacePath,
-      conversationTitle: convTitle,
-      biblicalSourceProfileLabel:
-        effectiveMode === 'biblical' ? bibleProfile?.label ?? null : null,
-      writerDocumentTypeLabel:
-        effectiveMode === 'writer' ? writerType?.label ?? null : null,
-      design3dWorkflowLabel:
-        effectiveMode === 'design3d' ? design3dType?.label ?? null : null,
-      design3dReferenceNote: design3dRefNote,
-      activeWorkspaceContextBlock: wsBlock || null,
-    });
+    // ── Context tier decision ─────────────────────────────────────────────
+    const intent: MessageIntent = classifyMessageIntent(content);
+    const threadMessagesLive = useStore.getState().messages.filter((m) => m.conversation_id === convId);
+    const tier: ContextTier = selectContextTier(
+      intent,
+      threadMessagesLive.length,
+      !!activeWorkspaceContext,
+      effectiveMode === 'biblical'
+    );
+    const tierHistoryCaps = TIER_HISTORY_CAPS[tier];
+    const tierMemoryCaps  = TIER_MEMORY_CAPS[tier];
+
+    // Trim lean data to tier caps before building memory block
+    const tieredLean = {
+      conversationSummary: tierMemoryCaps.maxSummaryChars === 0
+        ? null
+        : (lean.conversationSummary?.slice(0, tierMemoryCaps.maxSummaryChars) ?? null),
+      facts: lean.facts.slice(0, tierMemoryCaps.maxFacts),
+      workspaceHints: lean.workspaceHints.slice(0, tierMemoryCaps.maxWorkspaceHints),
+    };
+
+    // Build memory context: empty for LIGHT, compact for MEDIUM, full for FULL
+    let memoryContext = tier === 'light'
+      ? ''
+      : buildHenryMemoryContextBlock({
+          mode: effectiveMode,
+          lean: tieredLean,
+          workspacePathHint: workspacePath,
+          conversationTitle: convTitle,
+          biblicalSourceProfileLabel:
+            effectiveMode === 'biblical' ? bibleProfile?.label ?? null : null,
+          writerDocumentTypeLabel:
+            effectiveMode === 'writer' ? writerType?.label ?? null : null,
+          design3dWorkflowLabel:
+            effectiveMode === 'design3d' ? design3dType?.label ?? null : null,
+          design3dReferenceNote: design3dRefNote,
+          activeWorkspaceContextBlock: wsBlock || null,
+        });
 
     if (effectiveMode === 'biblical') {
       try {
@@ -1196,28 +1235,14 @@ export default function ChatView() {
       }
     }
 
-    // Recent transcript only — capped count and per-message length (no full history dump).
-    // Must read from the store here: `messages` from the hook is stale right after addMessage(userMsg).
-    const threadMessagesLive = useStore.getState().messages.filter((m) => m.conversation_id === convId);
+    // History: apply tier-based caps (fewer messages + shorter per-message on LIGHT)
     const history = sliceRecentThreadMessages(
       threadMessagesLive.map((m) => ({
         role: m.role,
-        content: capMessageContent(m.content, HENRY_MEMORY_CAPS.maxMessageCharsEach),
+        content: capMessageContent(m.content, tierHistoryCaps.maxCharsEach),
       })),
-      HENRY_MEMORY_CAPS.maxRecentMessagesInTranscript
+      tierHistoryCaps.maxMessages
     );
-
-    if (import.meta.env.DEV) {
-      const last = history[history.length - 1];
-      console.debug('[Henry] companion stream', {
-        convId,
-        historyCount: history.length,
-        lastRole: last?.role,
-        lastMessageMatchesSend: last?.role === 'user' && last?.content === content,
-        provider: useStore.getState().settings.companion_provider,
-        model: useStore.getState().settings.companion_model,
-      });
-    }
 
     // Get companion engine settings — use model router to pick the right provider/model
     const providers = await window.henryAPI.getProviders();
@@ -1257,25 +1282,68 @@ export default function ChatView() {
     const customModeRaw = (() => { try { return localStorage.getItem('henry_custom_mode_override'); } catch { return null; } })();
     const customModeOverride = customModeRaw ? (() => { try { return JSON.parse(customModeRaw) as { systemPrompt?: string; name?: string }; } catch { return null; } })() : null;
 
-    // Prepare the streaming call (Henry charter + mode + memory + mode-specific options)
-    const systemPrompt = customModeOverride?.systemPrompt
-      ? `${customModeOverride.systemPrompt}\n\n${memoryContext ? `## Memory Context\n${memoryContext}` : ''}`
-      : buildCompanionStreamSystemPrompt(effectiveMode, memoryContext, {
+    // Connected services list (for awareness/integration blocks)
+    const _connectedServices: string[] = (() => {
+      try {
+        const raw = localStorage.getItem('henry:connections');
+        if (!raw) return [];
+        const obj = JSON.parse(raw) as Record<string, { status?: string }>;
+        return Object.entries(obj).filter(([, v]) => v?.status === 'connected').map(([k]) => k);
+      } catch { return []; }
+    })();
+
+    // Map intent → integration service label + id
+    const INTEGRATION_SERVICE_MAP: Partial<Record<MessageIntent, { label: string; serviceId: string }>> = {
+      integration_gmail:  { label: 'Gmail',           serviceId: 'gmail'  },
+      integration_gcal:   { label: 'Google Calendar', serviceId: 'gcal'   },
+      integration_slack:  { label: 'Slack',            serviceId: 'slack'  },
+      integration_github: { label: 'GitHub',           serviceId: 'github' },
+      integration_notion: { label: 'Notion',           serviceId: 'notion' },
+      integration_stripe: { label: 'Stripe',           serviceId: 'stripe' },
+      integration_linear: { label: 'Linear',           serviceId: 'linear' },
+    };
+
+    // ── Build system prompt for this tier ────────────────────────────────────
+    let systemPrompt: string;
+    if (customModeOverride?.systemPrompt) {
+      systemPrompt = `${customModeOverride.systemPrompt}\n\n${memoryContext ? `## Memory Context\n${memoryContext}` : ''}`;
+    } else if (tier === 'full' || effectiveMode === 'biblical' || effectiveMode === 'writer' || effectiveMode === 'design3d') {
+      // FULL tier or mode-specific (biblical/writer/design3d) always use the rich system prompt
+      systemPrompt = buildCompanionStreamSystemPrompt(effectiveMode, memoryContext, {
         weather: currentWeather,
-        ...(effectiveMode === 'biblical' ? { biblicalSourceProfileId: biblicalSourceProfileId } : {}),
+        ...(effectiveMode === 'biblical' ? { biblicalSourceProfileId } : {}),
         ...(effectiveMode === 'writer'
-          ? {
-              writerDocumentTypeId: writerDocumentTypeId,
-              writerActiveDraftRelativePath: writerActiveDraftPath,
-            }
+          ? { writerDocumentTypeId, writerActiveDraftRelativePath: writerActiveDraftPath }
           : {}),
         ...(effectiveMode === 'design3d'
-          ? {
-              design3dWorkflowTypeId: design3dWorkflowTypeId,
-              design3dReferencePath: design3dRefPath,
-            }
+          ? { design3dWorkflowTypeId, design3dReferencePath: design3dRefPath }
           : {}),
       });
+    } else if (tier === 'medium') {
+      // MEDIUM tier: light base + compact memory + connected services summary
+      systemPrompt = buildMediumSystemPrompt(effectiveMode, memoryContext, {
+        weather: currentWeather,
+        connectedServicesSummary: _connectedServices.length > 0
+          ? `Connected services: ${_connectedServices.join(', ')}.`
+          : undefined,
+      });
+      const svcDef = INTEGRATION_SERVICE_MAP[intent];
+      if (svcDef) {
+        const isConn = _connectedServices.includes(svcDef.serviceId);
+        systemPrompt += '\n\n' + buildIntegrationStatusBlock(svcDef.label, isConn);
+      }
+    } else {
+      // LIGHT tier (default): core identity + mode only
+      systemPrompt = buildLightSystemPrompt(effectiveMode, { weather: currentWeather });
+      if (intent === 'awareness') {
+        systemPrompt += '\n\n' + buildAwarenessSummary(_connectedServices);
+      }
+      const svcDef = INTEGRATION_SERVICE_MAP[intent];
+      if (svcDef) {
+        const isConn = _connectedServices.includes(svcDef.serviceId);
+        systemPrompt += '\n\n' + buildIntegrationStatusBlock(svcDef.label, isConn);
+      }
+    }
 
     // Inject full Bible corpus context in biblical mode (IndexedDB cache, up to 100K chars)
     let bibleContextBlock = '';
@@ -1287,25 +1355,41 @@ export default function ChatView() {
       }
     }
 
-    // Emotional intelligence — detect user state and adapt tone
+    // Emotional intelligence — detect user state and adapt tone (all tiers)
     const emotionResult = detectEmotionalState(content);
     const emotionBlock = buildEmotionBlock(emotionResult);
 
-    // Enrich system prompt with deep memory layers + emotion + web + Bible + self-repair
-    const extraContext = [
-      deepContextBlock,
-      emotionBlock,
-      webContextBlock,
-      bibleContextBlock,
-      selfRepairContextBlock,
-    ].filter(Boolean).join('\n\n');
+    // Extra context: LIGHT skips deep memory + self-repair blocks (saves ~400–800 tokens)
+    const extraContextParts = tier === 'light'
+      ? [emotionBlock, webContextBlock, bibleContextBlock]
+      : [deepContextBlock, emotionBlock, webContextBlock, bibleContextBlock, selfRepairContextBlock];
+    const extraContext = extraContextParts.filter(Boolean).join('\n\n');
     const enrichedSystemPrompt = extraContext
       ? `${systemPrompt}\n\n${extraContext}`
       : systemPrompt;
 
+    // ── Token guard ──────────────────────────────────────────────────────────
+    const systemTokens = estimateTokens(enrichedSystemPrompt);
+    const historyTokensBefore = history.reduce((s, m) => s + estimateTokens(m.content) + 4, 0);
+    const guardedHistory = trimHistoryToTokenBudget(history, systemTokens, TOKEN_HARD_LIMIT);
+    const historyTokensAfter = guardedHistory.reduce((s, m) => s + estimateTokens(m.content) + 4, 0);
+
+    // ── Context logging ──────────────────────────────────────────────────────
+    logContextDecision({
+      tier,
+      intent,
+      systemTokens,
+      historyTokensBefore,
+      historyTokensAfter,
+      totalTokens: systemTokens + historyTokensAfter,
+      historyCountBefore: history.length,
+      historyCountAfter: guardedHistory.length,
+      trimmed: guardedHistory.length < history.length,
+    });
+
     const messagesPayload: HenryAIMessage[] = [
       { role: 'system', content: enrichedSystemPrompt },
-      ...history.map((m) => ({
+      ...guardedHistory.map((m) => ({
         role: m.role as HenryAIMessage['role'],
         content: m.content,
       })),
