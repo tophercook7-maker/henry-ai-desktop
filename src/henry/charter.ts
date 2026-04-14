@@ -15,9 +15,26 @@ import { getStudyNoteScaffoldHint } from './studyNoteScaffold';
 import { buildWriterSystemAddition } from './writerPrompts';
 import { buildRichMemoryBlock, buildContactsContextBlock } from './richMemory';
 import { formatWeatherBlock, type WeatherSnapshot } from './weatherContext';
-import { buildIntegrationsContextBlock } from './integrations';
+import { buildCapabilityBlock } from './capabilityContext';
 import { buildWorkingMemoryBlock, buildNarrativeBlock } from './workingMemory';
 import { buildPersonalityBlock } from './personality';
+import { buildAmbientMemoryBlock } from '../ambient/memoryRecall';
+import { buildInitiativeModeBlock } from './initiativeStore';
+import { buildAwarenessBlock } from './awarenessStore';
+import { buildComputerSnapshotBlock } from './computerSnapshotStore';
+import { buildPriorityBlock } from './priority/prioritySelectors';
+import { buildCoordinatorBlock } from '../brain/coordinator';
+import { buildRhythmBlock, inferRhythmPhase } from './dailyRhythm';
+import { buildSessionModeBlock } from './sessionModeStore';
+import { buildLifeAreaBlock } from './lifeAreas';
+import { buildCommitmentsBlock } from './commitmentStore';
+import { buildRelationshipBlock } from './relationshipStore';
+import { buildValuesBlock } from './valuesStore';
+import { buildIdentityModelBlock, buildSelfDescriptionGuidance } from './identityModel';
+import { buildConstitutionBlock } from './constitution';
+import { detectActiveConflicts, buildConflictSignalsBlock } from './conflictDetector';
+import { buildRuntimeContextBlock } from '../core/runtime/runtimeContext';
+import { buildSelfRepairBlock } from './selfRepairStore';
 
 /**
  * localStorage is only available in browser/renderer contexts.
@@ -428,6 +445,55 @@ When their message includes a block starting with "🌐 Web page content from:" 
 When search results are sparse or unhelpful, say so honestly and supplement from training knowledge, labeling what is your training vs. what came from the search.
 `;
 
+  const actionBehaviorBlock = `
+HENRY — ACTION VOICE AND DECISION BEHAVIOR:
+You are a thinking AND acting companion. When you notice something you could do for ${ownerName} — a draft to write, an event to create, a file to summarize — offer it plainly. When you act, speak like a capable person doing the work, not a system running a process.
+
+**How to speak at each stage:**
+
+Before acting (suggesting): Lead with what you can do. Short, confident.
+- "I can draft that for you." / "I can put that on your calendar." / "I can pull up the file."
+
+Asking permission before a write: State what you're about to do, then ask.
+- "Ready to save this as a Gmail draft — want me to go ahead?"
+- "I can create that event on your calendar. Should I?"
+- "Ready to post this to Slack — go ahead?"
+
+While running: Say what you're doing in one line if needed.
+- "I'm pulling in the file now." / "Creating the event."
+
+After success: Say what happened and what to do next. One or two sentences.
+- "Done — the draft is saved in Gmail. You can review and send it there."
+- "The event is on your calendar now."
+- "Issue is live in Linear."
+
+On failure: Say what went wrong in plain language. Never say "request failed", "API error", "token expired", "401", "endpoint", or any technical term.
+- "Gmail didn't respond — the draft wasn't saved."
+- "The message didn't go through. Check that Slack is connected."
+- "That didn't work. Try again in a moment."
+
+When a service is not connected: Say what you can do once it's set up.
+- "I can do that once Google is connected."
+- "I'd need Slack connected to send that."
+- "Once GitHub is set up, I can create the issue."
+
+When auth has expired: Say it simply and point to the fix.
+- "Your Google connection needs to be refreshed before I can finish that."
+- "Slack needs to be reconnected — you can do that in the integrations panel."
+
+**What never to say:**
+- "Executing action" / "Invoking endpoint" / "Calling API"
+- "Request failed with 401" / "Provider token missing" / "HTTP error"
+- "I am unable to perform that operation"
+- Anything that sounds like a stack trace or a service message
+
+**Decision model:**
+- Read-only (summarize, load into chat, analyze): run immediately, no confirmation needed
+- Writes to external services (save draft, create event, send message, create issue): ask first
+- Service not connected: say what you need and stop
+- Compose/draft (writing content for review, not sending): no confirmation needed — draft freely
+`;
+
   const aiDisclaimerBlock = `
 HENRY — AI HONESTY & SAFETY (always present, non-negotiable):
 You are an AI built by humans. You can be wrong. You can misremember, misunderstand, hallucinate facts, or generate plausible-sounding but incorrect information — especially on specialized topics like medicine, law, finance, engineering, and scripture.
@@ -442,13 +508,58 @@ Priorities — when ${ownerName}'s profile or memory indicates they value certai
   const richMemoryBlock = buildRichMemoryBlock();
   const contactsBlock = buildContactsContextBlock();
   const richContextBlock = [richMemoryBlock, contactsBlock].filter(Boolean).join('\n\n');
-  const integrationsBlock = buildIntegrationsContextBlock();
+  const capabilityBlock = buildCapabilityBlock();
 
   // Layer 3: Working memory (commitments, next steps, unresolved questions, active focus)
   const workingMemoryBlock = buildWorkingMemoryBlock();
   // Narrative continuity (rolling story of what the user has been building)
   const narrativeBlock = buildNarrativeBlock();
   const continuityBlock = [narrativeBlock, workingMemoryBlock].filter(Boolean).join('\n\n');
+  // Ambient captures (notes spoken aloud and routed to memory/workspace/etc.)
+  const ambientMemoryBlock = buildAmbientMemoryBlock();
+  // What's happening right now: tasks, reminders, projects, captures
+  const awarenessBlock = buildAwarenessBlock();
+  // How proactively Henry should surface things
+  const initiativeBlock = buildInitiativeModeBlock();
+  // Computer snapshot (only injected when a recent snapshot exists)
+  const computerBlock = buildComputerSnapshotBlock();
+  // Dual-brain coordinator block — pre-computed by background brain, noise-filtered.
+  // Falls back to fresh priority computation when background brain hasn't run yet.
+  const coordinatorBlock = buildCoordinatorBlock();
+  const priorityBlock = coordinatorBlock ? '' : buildPriorityBlock();
+  // Time-shape of the day: morning setup / focus block / admin window / evening review / etc.
+  const rhythmPhase = inferRhythmPhase();
+  const rhythmBlock = buildRhythmBlock();
+  // Life area domain context — only injected when there's a clear dominant domain
+  const lifeAreaBlock = buildLifeAreaBlock();
+  // Session mode behavioral directive: build / admin / reflection / capture / execution
+  const sessionModeBlock = buildSessionModeBlock(rhythmPhase);
+  // Durable commitments — intentionally held obligations that should not disappear
+  const commitmentsBlock = buildCommitmentsBlock();
+  // People with open follow-ups or recent relational context
+  const relationshipBlock = buildRelationshipBlock();
+  // User's values and standards — lens for weighting priorities and alignment
+  const valuesBlock = buildValuesBlock();
+  // Henry's self-model — grounding block for identity, purpose, promises, standards
+  const identityModelBlock = buildIdentityModelBlock();
+  const connectedServices: string[] = (() => {
+    try {
+      if (typeof localStorage === 'undefined') return [];
+      const raw = localStorage.getItem('henry:connections');
+      if (!raw) return [];
+      const obj = JSON.parse(raw) as Record<string, { status?: string }>;
+      return Object.entries(obj).filter(([, v]) => v?.status === 'connected').map(([k]) => k);
+    } catch { return []; }
+  })();
+  const selfDescriptionGuidance = buildSelfDescriptionGuidance(connectedServices);
+  // Ranked operating principles — how Henry resolves conflicts between systems
+  const constitutionBlock = buildConstitutionBlock();
+  // Live conflict signals — which principles are actively relevant this session
+  const conflictSnapshot = detectActiveConflicts();
+  const conflictSignalsBlock = buildConflictSignalsBlock(conflictSnapshot);
+  // Unified runtime context — thread next step, active principles, reconnect
+  const runtimeContextBlock = buildRuntimeContextBlock();
+  const selfRepairBlock = buildSelfRepairBlock();
 
   return `${buildCoreIdentity()}
 
@@ -458,8 +569,17 @@ ${timeBlock}
 ${getModeInstruction(mode)}
 ${writerBlock}${design3dBlock}${biblicalBlock}
 ${toolUseBlock}
+${actionBehaviorBlock}
 ${aiDisclaimerBlock}
-${memoryBlock}${richContextBlock ? `${richContextBlock}\n\n` : ''}${integrationsBlock ? `${integrationsBlock}\n\n` : ''}${continuityBlock ? `${continuityBlock}\n\n` : ''}You are the Local Brain — always present for real-time conversation. The Second Brain (Cloud) handles heavy background tasks in parallel; you stay alive and responsive regardless of what it's doing. You are never too busy for ${ownerName}.
+${identityModelBlock}
+
+${selfDescriptionGuidance}
+
+${constitutionBlock}
+${conflictSignalsBlock ? `\n${conflictSignalsBlock}\n` : ''}
+${memoryBlock}${valuesBlock ? `${valuesBlock}\n\n` : ''}${richContextBlock ? `${richContextBlock}\n\n` : ''}${capabilityBlock ? `${capabilityBlock}\n\n` : ''}${ambientMemoryBlock ? `${ambientMemoryBlock}\n\n` : ''}${awarenessBlock ? `${awarenessBlock}\n\n` : ''}${rhythmBlock ? `${rhythmBlock}\n\n` : ''}${coordinatorBlock ? `${coordinatorBlock}\n\n` : ''}${priorityBlock ? `${priorityBlock}\n\n` : ''}${computerBlock ? `${computerBlock}\n\n` : ''}${continuityBlock ? `${continuityBlock}\n\n` : ''}${commitmentsBlock ? `${commitmentsBlock}\n\n` : ''}${relationshipBlock ? `${relationshipBlock}\n\n` : ''}${lifeAreaBlock ? `${lifeAreaBlock}\n\n` : ''}${sessionModeBlock ? `${sessionModeBlock}\n\n` : ''}${runtimeContextBlock ? `${runtimeContextBlock}\n\n` : ''}${selfRepairBlock ? `${selfRepairBlock}\n\n` : ''}${initiativeBlock}
+
+You are the Local Brain — always present for real-time conversation. The Second Brain (Cloud) handles heavy background tasks in parallel; you stay alive and responsive regardless of what it's doing. You are never too busy for ${ownerName}.
 
 Use markdown when it improves clarity. Be concise unless depth is requested. Never cut off a thought mid-answer.`;
 }

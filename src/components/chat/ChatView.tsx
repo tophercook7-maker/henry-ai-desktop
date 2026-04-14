@@ -109,6 +109,8 @@ import {
   formatSourceCitations,
   type WebSource,
 } from '@/henry/webTools';
+import { shouldUseSelfTools, runSelfTools } from '@/henry/selfRepairTools';
+import { logError } from '@/henry/selfRepairStore';
 import {
   absorbBible,
   getBibleCorpusStatus,
@@ -1090,6 +1092,29 @@ export default function ChatView() {
       }
     }
 
+    // ── Self-repair tool auto-routing ───────────────────────────────────────
+    // When Henry's message touches his own systems, run self-repair tools and
+    // inject results as enriched context (same pattern as web tools above).
+    let selfRepairContextBlock = '';
+    if (shouldUseSelfTools(content)) {
+      try {
+        const selfResult = await runSelfTools(content, {
+          onStatus: (msg) =>
+            setCompanionStatus({ status: 'thinking', taskDescription: msg }),
+        });
+        selfRepairContextBlock = selfResult.contextBlock;
+      } catch (err) {
+        logError('tool_failure', `Self-repair tools failed to run: ${String(err)}`, {
+          severity: 'low',
+        });
+      } finally {
+        setCompanionStatus({
+          status: 'thinking',
+          taskDescription: tierLabel ? `Thinking… (${tierLabel})` : 'Thinking…',
+        });
+      }
+    }
+
     // Lean memory slices from DB (summary, facts, workspace hints); format in memoryContext.ts
     const emptyLean: HenryLeanMemoryParts = {
       conversationSummary: null,
@@ -1266,12 +1291,13 @@ export default function ChatView() {
     const emotionResult = detectEmotionalState(content);
     const emotionBlock = buildEmotionBlock(emotionResult);
 
-    // Enrich system prompt with deep memory layers + emotion + web + Bible
+    // Enrich system prompt with deep memory layers + emotion + web + Bible + self-repair
     const extraContext = [
       deepContextBlock,
       emotionBlock,
       webContextBlock,
       bibleContextBlock,
+      selfRepairContextBlock,
     ].filter(Boolean).join('\n\n');
     const enrichedSystemPrompt = extraContext
       ? `${systemPrompt}\n\n${extraContext}`

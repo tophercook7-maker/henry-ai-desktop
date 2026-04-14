@@ -13,6 +13,8 @@ import { registerOllamaCleanup } from './ipc/ollamaManager';
 import { registerTerminalHandlers } from './ipc/terminal';
 import { registerComputerHandlers } from './ipc/computer';
 import { registerPrinterHandlers } from './ipc/printer';
+import { registerGoogleAuthHandlers } from './ipc/googleAuth';
+import { registerSourceFileHandlers } from './ipc/sourceFiles';
 
 // ── Temporary diagnostics — remove when black-screen root cause is confirmed ──
 process.on('uncaughtException', (err) => {
@@ -120,6 +122,8 @@ app.whenReady().then(() => {
     registerTerminalHandlers(getMainWindow, henryDir);
     registerComputerHandlers(getMainWindow);
     registerPrinterHandlers(getMainWindow);
+    registerGoogleAuthHandlers(getMainWindow);
+    registerSourceFileHandlers();
   } else {
     // DB failed — register minimal stubs for the three channels called
     // unconditionally by the renderer's initApp() so they return safely instead

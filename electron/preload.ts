@@ -184,11 +184,17 @@ contextBridge.exposeInMainWorld('henryAPI', {
   scriptureCount: () => ipcRenderer.invoke('scripture:count'),
   pickScriptureImportJson: () => ipcRenderer.invoke('scripture:pickImportJson'),
 
-  // ── File System ───────────────────────────────────────────
+  // ── File System (workspace-scoped) ────────────────────────
   readDirectory: (dirPath?: string) => ipcRenderer.invoke('fs:readDirectory', dirPath),
   readFile: (filePath: string) => ipcRenderer.invoke('fs:readFile', filePath),
   pathExists: (filePath: string) => ipcRenderer.invoke('fs:pathExists', filePath) as Promise<boolean>,
   writeFile: (filePath: string, content: string) => ipcRenderer.invoke('fs:writeFile', { path: filePath, content }),
+
+  // ── Source Files (dev mode only — project root scoped) ────
+  readSourceFile: (filePath: string) => ipcRenderer.invoke('source:read', filePath) as Promise<string>,
+  writeSourceFile: (filePath: string, content: string) => ipcRenderer.invoke('source:write', filePath, content) as Promise<boolean>,
+  sourceFileExists: (filePath: string) => ipcRenderer.invoke('source:exists', filePath) as Promise<boolean>,
+  listSourceFiles: (dirPath: string) => ipcRenderer.invoke('source:list', dirPath) as Promise<string[]>,
 
   // ── Ollama ────────────────────────────────────────────────
   ollamaStatus: (baseUrl?: string) => ipcRenderer.invoke('ollama:status', baseUrl),
@@ -265,6 +271,23 @@ contextBridge.exposeInMainWorld('henryAPI', {
     const handler = (_: IpcRendererEvent, data: unknown) => cb(data);
     ipcRenderer.on('worker:message', handler);
     return () => ipcRenderer.removeListener('worker:message', handler);
+  },
+
+  // ── Google OAuth (desktop PKCE flow) ─────────────────────
+  googleStartAuth: (clientId: string, clientSecret: string) =>
+    ipcRenderer.invoke('google:startAuth', { clientId, clientSecret }) as Promise<{ accessToken: string; expiresAt: number }>,
+  googleGetToken: (clientId: string, clientSecret: string) =>
+    ipcRenderer.invoke('google:getToken', { clientId, clientSecret }) as Promise<{ accessToken: string; expiresAt: number } | null>,
+  googleRefreshToken: (clientId: string, clientSecret: string) =>
+    ipcRenderer.invoke('google:refreshToken', { clientId, clientSecret }) as Promise<{ accessToken: string; expiresAt: number }>,
+  googleHasCredentials: () =>
+    ipcRenderer.invoke('google:hasCredentials') as Promise<boolean>,
+  googleDisconnect: () =>
+    ipcRenderer.invoke('google:disconnect') as Promise<void>,
+  onGoogleTokenRevoked: (cb: () => void) => {
+    const handler = () => cb();
+    ipcRenderer.on('google:tokenRevoked', handler);
+    return () => ipcRenderer.removeListener('google:tokenRevoked', handler);
   },
 
   // ── Auto-updater ──────────────────────────────────────────
