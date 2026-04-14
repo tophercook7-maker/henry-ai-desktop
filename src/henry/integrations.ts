@@ -67,7 +67,7 @@ export const SERVICES: ServiceConfig[] = [
     tokenLabel: 'Personal Access Token',
     tokenHint: 'Create at github.com/settings/tokens — needs repo, issues scopes.',
     category: 'dev',
-    proxyBase: '/proxy/github',
+    proxyBase: 'https://api.github.com',
   },
   {
     id: 'linear',
@@ -83,7 +83,7 @@ export const SERVICES: ServiceConfig[] = [
     tokenLabel: 'API Key',
     tokenHint: 'Create at linear.app/settings/api.',
     category: 'dev',
-    proxyBase: '/proxy/linear',
+    proxyBase: 'https://api.linear.app',
   },
   {
     id: 'notion',
@@ -99,7 +99,7 @@ export const SERVICES: ServiceConfig[] = [
     tokenLabel: 'Integration Token',
     tokenHint: 'Create an internal integration at notion.so/my-integrations.',
     category: 'productivity',
-    proxyBase: '/proxy/notion',
+    proxyBase: 'https://api.notion.com',
   },
   {
     id: 'slack',
@@ -115,7 +115,7 @@ export const SERVICES: ServiceConfig[] = [
     tokenLabel: 'Bot Token',
     tokenHint: 'Create a Slack App at api.slack.com/apps, add OAuth scopes channels:read + chat:write + channels:history, install it, and copy the Bot User OAuth Token (starts with xoxb-).',
     category: 'productivity',
-    proxyBase: '/proxy/slack',
+    proxyBase: 'https://slack.com',
   },
   {
     id: 'stripe',
@@ -131,7 +131,7 @@ export const SERVICES: ServiceConfig[] = [
     tokenLabel: 'Secret Key',
     tokenHint: 'Find at dashboard.stripe.com/apikeys — use a Restricted Key with read-only access.',
     category: 'finance',
-    proxyBase: '/proxy/stripe',
+    proxyBase: 'https://api.stripe.com',
   },
   {
     id: 'gcal',
@@ -147,7 +147,7 @@ export const SERVICES: ServiceConfig[] = [
     tokenLabel: 'API Key or OAuth Token',
     tokenHint: 'Create credentials at console.cloud.google.com → APIs & Services.',
     category: 'productivity',
-    proxyBase: '/proxy/gcal',
+    proxyBase: 'https://www.googleapis.com',
   },
   {
     id: 'gmail',
@@ -163,7 +163,7 @@ export const SERVICES: ServiceConfig[] = [
     tokenLabel: 'OAuth Access Token',
     tokenHint: 'Sign in with Google to connect Gmail.',
     category: 'productivity',
-    proxyBase: '/proxy/gmail',
+    proxyBase: 'https://gmail.googleapis.com',
   },
   {
     id: 'gdrive',
@@ -179,7 +179,7 @@ export const SERVICES: ServiceConfig[] = [
     tokenLabel: 'OAuth Access Token',
     tokenHint: 'Sign in with Google to connect Drive.',
     category: 'productivity',
-    proxyBase: '/proxy/gdrive',
+    proxyBase: 'https://www.googleapis.com',
   },
 ];
 
@@ -279,7 +279,7 @@ function ghHeaders(): Record<string, string> {
 }
 
 async function ghFetch(path: string): Promise<Response> {
-  return fetch(`/proxy/github${path}`, { headers: ghHeaders() });
+  return fetch(`https://api.github.com${path}`, { headers: ghHeaders() });
 }
 
 export async function ghGetUser(): Promise<GHUser> {
@@ -307,7 +307,7 @@ export async function ghListPRs(repo: string, state: 'open' | 'closed' | 'all' =
 }
 
 export async function ghCreateIssue(repo: string, title: string, body: string, labels: string[] = []): Promise<GHIssue> {
-  const r = await fetch(`/proxy/github/repos/${repo}/issues`, {
+  const r = await fetch(`https://api.github.com/repos/${repo}/issues`, {
     method: 'POST',
     headers: { ...ghHeaders(), 'Content-Type': 'application/json' },
     body: JSON.stringify({ title, body, labels }),
@@ -340,7 +340,7 @@ function linearHeaders(): Record<string, string> {
 }
 
 export async function linearQuery<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
-  const r = await fetch('/proxy/linear/graphql', {
+  const r = await fetch('https://api.linear.app/graphql', {
     method: 'POST',
     headers: linearHeaders(),
     body: JSON.stringify({ query, variables }),
@@ -393,7 +393,7 @@ export interface NotionPage {
 }
 
 export async function notionSearch(query = ''): Promise<NotionPage[]> {
-  const r = await fetch('/proxy/notion/v1/search', {
+  const r = await fetch('https://api.notion.com/v1/search', {
     method: 'POST',
     headers: notionHeaders(),
     body: JSON.stringify({ query, sort: { direction: 'descending', timestamp: 'last_edited_time' }, page_size: 20 }),
@@ -431,7 +431,7 @@ function slackHeaders(): Record<string, string> {
 export async function slackListChannels(): Promise<SlackChannel[]> {
   const token = getToken('slack');
   if (!token) throw new Error('No Slack token configured. Add your bot token in Integrations.');
-  const r = await fetch('/proxy/slack/api/conversations.list?exclude_archived=true&limit=100&types=public_channel,private_channel', {
+  const r = await fetch('https://slack.com/api/conversations.list?exclude_archived=true&limit=100&types=public_channel,private_channel', {
     headers: slackHeaders(),
   });
   if (!r.ok) throw new Error(`Slack HTTP ${r.status}`);
@@ -448,7 +448,7 @@ export async function slackListChannels(): Promise<SlackChannel[]> {
 export async function slackGetHistory(channelId: string, limit = 30): Promise<SlackMessage[]> {
   const token = getToken('slack');
   if (!token) throw new Error('No Slack token configured.');
-  const r = await fetch(`/proxy/slack/api/conversations.history?channel=${channelId}&limit=${limit}`, {
+  const r = await fetch(`https://slack.com/api/conversations.history?channel=${channelId}&limit=${limit}`, {
     headers: slackHeaders(),
   });
   if (!r.ok) throw new Error(`Slack HTTP ${r.status}`);
@@ -473,7 +473,7 @@ async function slackResolveUserNames(userIds: string[]): Promise<Record<string, 
   await Promise.allSettled(
     userIds.slice(0, 10).map(async (uid) => {
       try {
-        const r = await fetch(`/proxy/slack/api/users.info?user=${uid}`, { headers: slackHeaders() });
+        const r = await fetch(`https://slack.com/api/users.info?user=${uid}`, { headers: slackHeaders() });
         if (!r.ok) return;
         const data = await r.json();
         if (data.ok && data.user) {
@@ -488,7 +488,7 @@ async function slackResolveUserNames(userIds: string[]): Promise<Record<string, 
 export async function slackPostMessage(channelId: string, text: string): Promise<void> {
   const token = getToken('slack');
   if (!token) throw new Error('No Slack token configured.');
-  const r = await fetch('/proxy/slack/api/chat.postMessage', {
+  const r = await fetch('https://slack.com/api/chat.postMessage', {
     method: 'POST',
     headers: slackHeaders(),
     body: JSON.stringify({ channel: channelId, text }),
@@ -510,7 +510,7 @@ export interface StripeBalance {
 }
 
 export async function stripeGetBalance(): Promise<StripeBalance> {
-  const r = await fetch('/proxy/stripe/v1/balance', { headers: stripeHeaders() });
+  const r = await fetch('https://api.stripe.com/v1/balance', { headers: stripeHeaders() });
   if (!r.ok) throw new Error(`Stripe ${r.status}`);
   return r.json();
 }
@@ -526,7 +526,7 @@ export interface StripeCharge {
 }
 
 export async function stripeListCharges(limit = 20): Promise<StripeCharge[]> {
-  const r = await fetch(`/proxy/stripe/v1/charges?limit=${limit}`, { headers: stripeHeaders() });
+  const r = await fetch(`https://api.stripe.com/v1/charges?limit=${limit}`, { headers: stripeHeaders() });
   if (!r.ok) throw new Error(`Stripe ${r.status}`);
   const data = await r.json();
   return data.data || [];
@@ -552,7 +552,7 @@ function driveHeaders(): Record<string, string> {
 export async function driveListFiles(pageSize = 20): Promise<DriveFile[]> {
   const fields = 'files(id,name,mimeType,modifiedTime,webViewLink,iconLink,size,owners)';
   const r = await fetch(
-    `/proxy/gdrive/drive/v3/files?orderBy=modifiedTime+desc&pageSize=${pageSize}&fields=${encodeURIComponent(fields)}`,
+    `https://www.googleapis.com/drive/v3/files?orderBy=modifiedTime+desc&pageSize=${pageSize}&fields=${encodeURIComponent(fields)}`,
     { headers: driveHeaders() }
   );
   if (!r.ok) {
@@ -584,7 +584,7 @@ export interface CalEventCreated {
 export async function gcalCreateEvent(payload: CalEventPayload): Promise<CalEventCreated> {
   const token = getGoogleToken();
   if (!token) throw new Error('Google account is not connected.');
-  const r = await fetch('/proxy/gcal/calendar/v3/calendars/primary/events', {
+  const r = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -619,9 +619,9 @@ export async function driveExportFileContent(fileId: string, mimeType: string): 
 
   let url: string;
   if (DRIVE_EXPORTABLE.has(mimeType)) {
-    url = `/proxy/gdrive/drive/v3/files/${encodeURIComponent(fileId)}/export?mimeType=text%2Fplain`;
+    url = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}/export?mimeType=text%2Fplain`;
   } else {
-    url = `/proxy/gdrive/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`;
+    url = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`;
   }
 
   const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
@@ -664,7 +664,7 @@ export async function gmailCreateDraft(
     .replace(/\//g, '_')
     .replace(/=+$/, '');
 
-  const r = await fetch('/proxy/gmail/gmail/v1/users/me/drafts', {
+  const r = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/drafts', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -725,7 +725,7 @@ export async function notionCreatePage(
     body.children = children.slice(0, 100); // Notion API max 100 blocks per request
   }
 
-  const r = await fetch('/proxy/notion/v1/pages', {
+  const r = await fetch('https://api.notion.com/v1/pages', {
     method: 'POST',
     headers: notionHeaders(),
     body: JSON.stringify(body),
@@ -778,7 +778,7 @@ export async function linearCreateIssue(
     },
   };
 
-  const r = await fetch('/proxy/linear/graphql', {
+  const r = await fetch('https://api.linear.app/graphql', {
     method: 'POST',
     headers: linearHeaders(),
     body: JSON.stringify({ query, variables }),
@@ -804,7 +804,7 @@ export async function gcalListEvents(days = 7): Promise<object[]> {
   const now = new Date().toISOString();
   const end = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
   const url =
-    `/proxy/gcal/calendar/v3/calendars/primary/events` +
+    `https://www.googleapis.com/calendar/v3/calendars/primary/events` +
     `?orderBy=startTime&singleEvents=true` +
     `&timeMin=${encodeURIComponent(now)}&timeMax=${encodeURIComponent(end)}` +
     `&maxResults=20`;

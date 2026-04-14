@@ -18,7 +18,7 @@ export interface CalEvent {
   hangoutLink?: string;
 }
 
-const BASE = '/proxy/gcal/calendar/v3';
+const BASE = 'https://www.googleapis.com/calendar/v3';
 
 function authHeader() {
   return { Authorization: `Bearer ${getGoogleToken()}` };

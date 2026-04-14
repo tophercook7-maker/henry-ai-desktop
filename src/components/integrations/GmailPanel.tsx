@@ -45,7 +45,7 @@ export default function GmailPanel() {
     setError('');
     try {
       const token = getGoogleToken();
-      const listR = await fetch('/proxy/gmail/gmail/v1/users/me/messages?labelIds=INBOX&maxResults=20', {
+      const listR = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages?labelIds=INBOX&maxResults=20', {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!listR.ok) {
@@ -58,7 +58,7 @@ export default function GmailPanel() {
       const fetched = await Promise.allSettled(
         ids.slice(0, 15).map((id) =>
           fetch(
-            `/proxy/gmail/gmail/v1/users/me/messages/${id}?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date`,
+            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date`,
             { headers: { Authorization: `Bearer ${token}` } }
           ).then((r) => r.json())
         )

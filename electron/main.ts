@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, ipcMain, Menu } from 'electron';
+import { app, BrowserWindow, shell, ipcMain, Menu, session } from 'electron';
 import path from 'path';
 import { autoUpdater } from 'electron-updater';
 import { initDatabase } from './ipc/database';
@@ -137,6 +137,20 @@ app.whenReady().then(() => {
   if (!fs.existsSync(henryDir)) {
     fs.mkdirSync(henryDir, { recursive: true });
   }
+
+  // ── CORS override — allow renderer to call external APIs directly ────────────
+  // Required because the renderer is loaded from file:// (packaged) or
+  // localhost (dev), neither of which Google/Slack/Stripe consider trusted origins.
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Access-Control-Allow-Origin': ['*'],
+        'Access-Control-Allow-Headers': ['*'],
+        'Access-Control-Allow-Methods': ['GET, POST, PUT, PATCH, DELETE, OPTIONS'],
+      },
+    });
+  });
 
   // ── 1. Init database ─────────────────────────────────────────────────────────
   let db: ReturnType<typeof initDatabase> | null = null;

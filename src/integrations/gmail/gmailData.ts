@@ -21,7 +21,7 @@ export interface GmailMessage {
   body?: string;
 }
 
-const BASE = '/proxy/gmail/gmail/v1/users/me';
+const BASE = 'https://gmail.googleapis.com/gmail/v1/users/me';
 
 function authHeader() {
   return { Authorization: `Bearer ${getGoogleToken()}` };

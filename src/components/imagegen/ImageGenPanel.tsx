@@ -52,7 +52,7 @@ export default function ImageGenPanel() {
     setGenerating(true);
     setError(null);
     try {
-      const res = await fetch('/proxy/openai/v1/images/generations', {
+      const res = await fetch('https://api.openai.com/v1/images/generations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${openaiKey}` },
         body: JSON.stringify({ model: 'dall-e-3', prompt: prompt.trim(), n: 1, size, style, response_format: 'b64_json' }),
