@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react';
-import { slackListChannels, slackGetHistory, slackPostMessage, isConnected, type SlackChannel, type SlackMessage } from '../../henry/integrations';
+import {
+  slackListChannels, slackGetHistory, slackPostMessage,
+  type SlackChannel, type SlackMessage,
+} from '../../henry/integrations';
 import { useStore } from '../../store';
-import { launchChat } from '../../henry/launchChat';
+import { useConnectionStore, selectStatus } from '../../henry/connectionStore';
+import ConnectScreen from './ConnectScreen';
 
 function buildSlackPrompt(channel: SlackChannel, messages: SlackMessage[]): string {
   const recent = [...messages].reverse().slice(-30);
-  const transcript = recent
-    .map((m) => `${m.username || m.user || 'Unknown'}: ${m.text}`)
-    .join('\n');
+  const transcript = recent.map((m) => `${m.username || m.user || 'Unknown'}: ${m.text}`).join('\n');
   return [
     `I need you to summarize and surface what matters from my Slack channel #${channel.name}.`,
     ``,
@@ -25,8 +27,8 @@ function buildSlackPrompt(channel: SlackChannel, messages: SlackMessage[]): stri
 
 export default function SlackPanel() {
   const setCurrentView = useStore((s) => s.setCurrentView);
-  const connected = isConnected('slack');
-
+  const status = useConnectionStore(selectStatus('slack'));
+  const { markExpired } = useConnectionStore();
   const [channels, setChannels] = useState<SlackChannel[]>([]);
   const [selected, setSelected] = useState<SlackChannel | null>(null);
   const [messages, setMessages] = useState<SlackMessage[]>([]);
@@ -37,8 +39,8 @@ export default function SlackPanel() {
   const [sending, setSending] = useState(false);
 
   useEffect(() => {
-    if (connected) loadChannels();
-  }, [connected]);
+    if (status === 'connected') loadChannels();
+  }, [status]);
 
   useEffect(() => {
     if (selected) loadMessages(selected.id);
@@ -84,27 +86,7 @@ export default function SlackPanel() {
     }
   }
 
-  if (!connected) {
-    return (
-      <div className="h-full flex flex-col items-center justify-center gap-4 p-8 text-center">
-        <div className="text-5xl">💬</div>
-        <div>
-          <h2 className="text-lg font-semibold text-henry-text mb-1">Slack not connected</h2>
-          <p className="text-sm text-henry-text-muted">Add your Slack Bot Token to read channels.</p>
-          <p className="text-xs text-henry-text-muted mt-2">
-            Create a Slack App at api.slack.com/apps and install it to your workspace.
-            Copy the Bot User OAuth Token (starts with xoxb-).
-          </p>
-        </div>
-        <button
-          onClick={() => setCurrentView('integrations')}
-          className="px-4 py-2 bg-henry-accent text-white rounded-xl text-sm font-semibold hover:bg-henry-accent/90 transition-colors"
-        >
-          Go to Integrations
-        </button>
-      </div>
-    );
-  }
+  if (status !== 'connected') return <ConnectScreen serviceId="slack" />;
 
   const filteredChannels = channels.filter((c) =>
     !channelSearch || c.name.toLowerCase().includes(channelSearch.toLowerCase())
@@ -136,6 +118,12 @@ export default function SlackPanel() {
               <div className="w-5 h-5 rounded-full border-2 border-henry-accent/30 border-t-henry-accent animate-spin" />
             </div>
           )}
+          {error && !selected && (
+            <div className="px-3 py-2 mx-2 mt-2 bg-henry-error/10 border border-henry-error/30 rounded-xl text-xs text-henry-error">
+              {error}
+              <button onClick={() => markExpired('slack')} className="block mt-1 text-henry-accent underline">Reconnect</button>
+            </div>
+          )}
           {filteredChannels.map((ch) => (
             <button
               key={ch.id}
@@ -153,7 +141,7 @@ export default function SlackPanel() {
               )}
             </button>
           ))}
-          {!loading && filteredChannels.length === 0 && (
+          {!loading && filteredChannels.length === 0 && !error && (
             <p className="text-xs text-henry-text-muted text-center py-6">No channels found.</p>
           )}
         </div>
@@ -174,7 +162,8 @@ export default function SlackPanel() {
                 <button
                   onClick={() => {
                     const prompt = buildSlackPrompt(selected, messages);
-                    launchChat('secretary', prompt);
+                    window.dispatchEvent(new CustomEvent('henry_mode_launch', { detail: { mode: 'secretary', prompt } }));
+                    setCurrentView('chat');
                   }}
                   className="ml-auto mr-1 px-3 py-1 text-[11px] font-medium bg-henry-accent/10 text-henry-accent border border-henry-accent/20 rounded-lg hover:bg-henry-accent/20 transition-colors"
                 >
@@ -183,7 +172,7 @@ export default function SlackPanel() {
               )}
               <button
                 onClick={() => loadMessages(selected.id)}
-                className={messages.length > 0 ? 'p-1.5 rounded-lg text-henry-text-muted hover:text-henry-text hover:bg-henry-hover/50 transition-colors' : 'ml-auto p-1.5 rounded-lg text-henry-text-muted hover:text-henry-text hover:bg-henry-hover/50 transition-colors'}
+                className={`${messages.length > 0 ? '' : 'ml-auto'} p-1.5 rounded-lg text-henry-text-muted hover:text-henry-text hover:bg-henry-hover/50 transition-colors`}
                 title="Refresh"
               >
                 <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -214,30 +203,22 @@ export default function SlackPanel() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-baseline gap-2">
-                      <span className="text-xs font-semibold text-henry-text">
-                        {msg.username || msg.user}
-                      </span>
+                      <span className="text-xs font-semibold text-henry-text">{msg.username || msg.user}</span>
                       <span className="text-[10px] text-henry-text-muted">{tsToTime(msg.ts)}</span>
                     </div>
-                    <p className="text-sm text-henry-text-dim mt-0.5 leading-relaxed break-words whitespace-pre-wrap">
-                      {msg.text}
-                    </p>
+                    <p className="text-sm text-henry-text-dim mt-0.5 leading-relaxed break-words whitespace-pre-wrap">{msg.text}</p>
                   </div>
                 </div>
               ))}
             </div>
 
-            {/* Compose */}
             <div className="shrink-0 p-3 border-t border-henry-border/20">
               <div className="flex gap-2 items-end">
                 <textarea
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      sendMessage();
-                    }
+                    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
                   }}
                   placeholder={`Message #${selected?.name || ''}…`}
                   rows={1}
