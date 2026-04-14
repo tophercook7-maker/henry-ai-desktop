@@ -57,6 +57,13 @@ export const MODEL_PRICING: Record<string, { input: number; output: number }> = 
   'gemini-1.5-pro': { input: 1.25, output: 5.0 },
   'gemini-1.5-flash': { input: 0.075, output: 0.3 },
   'gemini-2.0-flash': { input: 0.1, output: 0.4 },
+  // Groq
+  'llama-3.1-8b-instant': { input: 0.05, output: 0.08 },
+  'llama-3.3-70b-versatile': { input: 0.59, output: 0.79 },
+  'llama-3.1-70b-versatile': { input: 0.59, output: 0.79 },
+  'mixtral-8x7b-32768': { input: 0.24, output: 0.24 },
+  'gemma2-9b-it': { input: 0.20, output: 0.20 },
+  'llama3-groq-70b-8192-tool-use-preview': { input: 0.89, output: 0.89 },
   // Local
   'llama3.1:70b': { input: 0, output: 0 },
   'llama3.1:8b': { input: 0, output: 0 },
@@ -210,6 +217,42 @@ async function callOllamaProvider(params: AiRequest): Promise<{
   };
 }
 
+async function callGroq(params: AiRequest): Promise<{
+  content: string;
+  usage?: { input: number; output: number };
+}> {
+  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${params.apiKey}`,
+    },
+    body: JSON.stringify({
+      model: params.model,
+      messages: params.messages,
+      temperature: params.temperature ?? 0.7,
+      max_tokens: params.maxTokens ?? 4096,
+    }),
+    signal: params.signal,
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error((error as { error?: { message?: string } }).error?.message || `Groq API error: ${response.status}`);
+  }
+
+  const data = await response.json() as {
+    choices?: Array<{ message?: { content?: string } }>;
+    usage?: { prompt_tokens?: number; completion_tokens?: number };
+  };
+  return {
+    content: data.choices?.[0]?.message?.content || '',
+    usage: data.usage
+      ? { input: data.usage.prompt_tokens ?? 0, output: data.usage.completion_tokens ?? 0 }
+      : undefined,
+  };
+}
+
 // ── Exported callAI (used by taskBroker) ──────────────────────
 
 /**
@@ -239,6 +282,9 @@ export async function callAI(params: {
       break;
     case 'ollama':
       result = await callOllamaProvider(params);
+      break;
+    case 'groq':
+      result = await callGroq(params);
       break;
     default:
       throw new Error(`Unknown provider: ${params.provider}`);
@@ -466,6 +512,72 @@ async function streamAnthropic(
   }
 }
 
+async function streamGroq(
+  params: AiRequest,
+  onChunk: (text: string) => void,
+  onDone: (fullText: string, usage?: StreamTokenUsage) => void,
+  onError: (error: string) => void
+) {
+  let fullText = '';
+  let usage: StreamTokenUsage | undefined;
+
+  try {
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${params.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: params.model,
+        messages: params.messages,
+        temperature: params.temperature ?? 0.7,
+        max_tokens: params.maxTokens ?? 4096,
+        stream: true,
+        stream_options: { include_usage: true },
+      }),
+      signal: params.signal,
+    });
+
+    if (!response.ok) {
+      const error = (await response.json().catch(() => ({}))) as { error?: { message?: string } };
+      onError(error.error?.message || `Groq API error: ${response.status}`);
+      return;
+    }
+
+    await readSSEStream(response, (data) => {
+      if (data === '[DONE]') return;
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(data);
+      } catch {
+        return;
+      }
+      if (!parsed || typeof parsed !== 'object') return;
+      const p = parsed as {
+        choices?: Array<{ delta?: unknown }>;
+        usage?: { prompt_tokens?: number; completion_tokens?: number };
+      };
+      const delta = p.choices?.[0]?.delta;
+      const piece = extractOpenAIChatDeltaContent(delta);
+      if (piece.length > 0) {
+        fullText += piece;
+        onChunk(piece);
+      }
+      if (p.usage) {
+        usage = {
+          input: p.usage.prompt_tokens ?? 0,
+          output: p.usage.completion_tokens ?? 0,
+        };
+      }
+    });
+
+    onDone(fullText, usage);
+  } catch (err: unknown) {
+    onError(err instanceof Error ? err.message : 'Stream error');
+  }
+}
+
 // ── Active Streams (for cancellation) ─────────────────────────
 
 const activeStreams = new Map<string, AbortController>();
@@ -514,6 +626,9 @@ export function registerAIHandlers(_db: Database.Database, getWindow: WindowGett
           break;
         case 'anthropic':
           await streamAnthropic(paramsWithSignal, onChunk, onDone, onError);
+          break;
+        case 'groq':
+          await streamGroq(paramsWithSignal, onChunk, onDone, onError);
           break;
         default:
           try {
