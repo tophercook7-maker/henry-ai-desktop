@@ -41,17 +41,12 @@ interface RepairResult {
 // ── Focus Bar ─────────────────────────────────────────────────────────────────
 
 /**
- * Live mind bar — shows what Henry knows right now:
- * rhythm phase (from reflective mind), top focus, active thread,
- * suggested next move, and reconnect alerts.
+ * Minimal "what matters now" bar — reads from shared brain state.
  * Only renders when the background brain has produced meaningful output.
  */
 function WorkspaceFocusBar() {
-  const {
-    topFocus, activeThread, surfaceNow, reconnectNeeded,
-    priorityReadyAt, prioritySnapshot,
-    suggestedNextMove, rhythmLabel, driftWarnings,
-  } = useSharedBrainState();
+  const { topFocus, activeThread, surfaceNow, reconnectNeeded, priorityReadyAt, prioritySnapshot } =
+    useSharedBrainState();
 
   if (!priorityReadyAt) return null;
 
@@ -59,23 +54,16 @@ function WorkspaceFocusBar() {
   const thread = activeThread;
   const needsAttention = surfaceNow.length > 0 ? surfaceNow[0] : null;
   const reconnect = reconnectNeeded.length > 0 ? reconnectNeeded[0] : null;
-  const hasDrift = driftWarnings.length > 0;
 
   // Nothing meaningful to show — stay silent
-  if (!top && !thread && !needsAttention && !reconnect && !suggestedNextMove && !rhythmLabel) return null;
+  if (!top && !thread && !needsAttention && !reconnect) return null;
 
   const urgentCount = prioritySnapshot?.urgentNow.length ?? 0;
   const isUrgent = urgentCount > 0;
 
   return (
-    <div className={`shrink-0 px-6 py-2.5 border-b border-henry-border/30 bg-henry-surface/30 ${isUrgent ? 'border-l-2 border-l-henry-warning' : hasDrift ? 'border-l-2 border-l-henry-accent/40' : ''}`}>
+    <div className={`shrink-0 px-6 py-2.5 border-b border-henry-border/30 bg-henry-surface/30 ${isUrgent ? 'border-l-2 border-l-henry-warning' : ''}`}>
       <div className="flex items-start gap-6 flex-wrap">
-        {rhythmLabel && (
-          <div className="flex items-center gap-1.5 min-w-0">
-            <span className="text-[9px] font-semibold uppercase tracking-wider text-henry-text-dim shrink-0">Now</span>
-            <span className="text-[11px] text-henry-text-dim/70 truncate max-w-[120px]">{rhythmLabel}</span>
-          </div>
-        )}
         {top && (
           <div className="flex items-center gap-2 min-w-0">
             <span className={`text-[9px] font-semibold uppercase tracking-wider shrink-0 ${isUrgent ? 'text-henry-warning' : 'text-henry-text-muted'}`}>
@@ -90,13 +78,7 @@ function WorkspaceFocusBar() {
             <span className="text-[11px] text-henry-text-dim truncate max-w-[200px]" title={thread}>{thread}</span>
           </div>
         )}
-        {suggestedNextMove && !isUrgent && (
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="text-[9px] font-semibold uppercase tracking-wider text-henry-text-muted shrink-0">Next</span>
-            <span className="text-[11px] text-henry-text-dim truncate max-w-[240px]" title={suggestedNextMove}>{suggestedNextMove}</span>
-          </div>
-        )}
-        {needsAttention && !top && !suggestedNextMove && (
+        {needsAttention && !top && (
           <div className="flex items-center gap-2 min-w-0">
             <span className="text-[9px] font-semibold uppercase tracking-wider text-henry-text-muted shrink-0">Up next</span>
             <span className="text-[11px] text-henry-text-dim truncate max-w-[200px]">{needsAttention}</span>
@@ -106,12 +88,6 @@ function WorkspaceFocusBar() {
           <div className="flex items-center gap-2 min-w-0">
             <span className="text-[9px] font-semibold uppercase tracking-wider text-henry-warning shrink-0">Reconnect</span>
             <span className="text-[11px] text-henry-warning/80 truncate max-w-[160px]">{reconnect}</span>
-          </div>
-        )}
-        {hasDrift && !reconnect && !isUrgent && (
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="text-[9px] font-semibold uppercase tracking-wider text-henry-text-dim shrink-0">Drift</span>
-            <span className="text-[11px] text-henry-text-dim/60 truncate max-w-[200px]" title={driftWarnings[0]}>{driftWarnings[0]}</span>
           </div>
         )}
       </div>
