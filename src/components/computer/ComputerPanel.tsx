@@ -86,7 +86,6 @@ export default function ComputerPanel() {
   useEffect(() => {
     loadPermissions();
     loadSystemInfo();
-    addLog('info', 'Henry Computer Control ready.');
     if (!computerSnapshot || Date.now() - computerSnapshot.takenAt > 30 * 60 * 1000) {
       takeSnapshot();
     }
@@ -239,9 +238,9 @@ export default function ComputerPanel() {
           {/* Main tabs */}
           <div className="shrink-0 flex gap-1 px-4 pt-3 pb-2 border-b border-henry-border/30">
             {([
-              { id: 'overview', label: '🔐 Overview' },
-              { id: 'apps',     label: '📱 Apps' },
-              { id: 'actions',  label: '⚡ Actions' },
+              { id: 'overview', label: '💻 This Mac' },
+              { id: 'apps',     label: '📱 My Apps' },
+              { id: 'actions',  label: '⚡ Quick Actions' },
             ] as const).map((m) => (
               <button
                 key={m.id}
@@ -494,22 +493,19 @@ export default function ComputerPanel() {
                         key={action.label}
                         onClick={() => runQuickAction(action)}
                         disabled={running}
-                        className="text-left px-3 py-2.5 rounded-xl bg-henry-surface/30 border border-henry-border/30 hover:border-henry-accent/30 hover:bg-henry-surface/50 transition-colors disabled:opacity-40 group"
+                        className="text-left px-3 py-3 rounded-xl bg-henry-surface/30 border border-henry-border/30 hover:border-henry-accent/30 hover:bg-henry-surface/50 transition-colors disabled:opacity-40 group"
                       >
                         <p className="text-xs font-medium text-henry-text group-hover:text-henry-accent transition-colors">{action.label}</p>
-                        {action.type === 'shell' && (
-                          <p className="text-[10px] text-henry-text-muted/60 mt-0.5 font-mono truncate">{action.value}</p>
-                        )}
                       </button>
                     ))}
                   </div>
                 </div>
               ))}
 
-              {log.length > 0 && (
-                <div className="border-t border-henry-border/30 pt-3 max-h-28 overflow-y-auto font-mono text-xs space-y-0.5" ref={logRef}>
-                  {log.slice(-10).map((entry) => <div key={entry.id}><LogLine entry={entry} /></div>)}
-                  {running && <div className="text-henry-accent animate-pulse">▋ running…</div>}
+              {running && (
+                <div className="flex items-center gap-2 text-xs text-henry-text-muted pt-1">
+                  <div className="w-3 h-3 rounded-full border-2 border-henry-accent/30 border-t-henry-accent animate-spin" />
+                  Running…
                 </div>
               )}
             </div>
