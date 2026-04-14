@@ -1,5 +1,46 @@
 # Henry AI Desktop — Replit Setup
 
+## Recent Changes — Live Mind Architecture (Henry's Three-Mind System)
+
+**New: Reflective Mind layer** (`src/brain/reflectiveMind.ts`)
+- Third operating layer — runs after background brain completes, every background cycle
+- Pure heuristic, no AI calls, <5ms: reads priority snapshot, threads, commitments, rhythm
+- Produces: `suggestedNextMove` (single most actionable next step), `driftWarnings` (stalled threads), `neglectedItems` (lapsed commitments), `reflectiveNotes` (rhythm-aware context hints)
+- Checkpoints to localStorage to detect change between runs (new unresolved items, top focus shift, new threads)
+- Respects initiative mode: quiet mode suppresses suggestedNextMove
+
+**Updated: SharedBrainState** (`src/brain/sharedState.ts`)
+- Added reflective mind fields: `suggestedNextMove`, `rhythmPhase`, `rhythmLabel`, `driftWarnings`, `neglectedItems`, `reflectiveNotes`, `lastReflectiveRun`
+- Added `_setReflectiveOutput()` mutation
+- File header now documents the full three-mind architecture (Foreground / Background / Reflective)
+
+**Updated: BackgroundBrain** (`src/brain/backgroundBrain.ts`)
+- Added `jobRunReflection()` — calls `runReflectiveMind()` and writes output to shared state
+- Runs after all data jobs complete (priority, awareness, health, threads) so reflective mind always sees fresh data
+
+**Updated: Coordinator** (`src/brain/coordinator.ts`)
+- `buildCoordinatorBlock()` now includes reflective mind output in the system prompt block
+- Includes: suggestedNextMove, driftWarnings, neglectedItems, reflectiveNotes via `buildReflectiveMindBlock()`
+
+**Updated: WorkspaceFocusBar** (`src/components/workspace/WorkspaceView.tsx`)
+- Now shows rhythm phase label ("Focus block", "Morning setup", etc.) from reflective mind
+- Shows suggestedNextMove when non-urgent
+- Shows drift warning indicator when stalled threads detected
+
+**Three-mind architecture summary:**
+```
+Foreground Mind  → charter.ts + coordinator block   → what Henry says in conversation
+Background Mind  → backgroundBrain.ts + jobs        → what Henry knows (priority, awareness, threads)
+Reflective Mind  → reflectiveMind.ts                → what Henry has synthesized (drift, neglect, next move, rhythm)
+```
+
+## Previous Changes (commit `2a6bc6c`)
+
+- **`src/henry/audioStorage.ts`** — New IndexedDB helper: `saveAudio`, `loadAudioURL`, `deleteAudio`, `hasAudio`
+- **`MeetingRecorderPanel.tsx`** — Saves audio blobs to IndexedDB on stop; shows `<audio>` player with object URL lifecycle management; falls back gracefully for old recordings without audio
+- **`PrinterPanel.tsx`** — Connected state redesigned: "Status" tab (temperature gauges parsing M105 T:/B: format + heater presets), "Actions" tab (quick actions grid), "Console" tab (terminal moved here); firmware info parsed from M115; Emergency Stop always visible in header
+- **`ComputerPanel.tsx`** — Restructured: "Overview" tab (permissions cards + snapshot) is default; Apps + Actions remain tabs; Shell/AppleScript moved behind expandable "Advanced" section; `PermCard` sub-component with expandable fix instructions
+
 ## Overview
 
 Henry AI is Topher's personal AI presence — a local-first AI OS with a dual-engine architecture (Local Brain / Ollama + Cloud Brain). He has warmth, memory, and a can-do philosophy: he always finds a way to help, never dead-ends a request.
@@ -116,6 +157,15 @@ Supports OpenAI, Anthropic, Google Gemini, Groq, and Ollama. 11 built-in modes +
 - **Image Gen panel** — DALL-E 3 via OpenAI; size/style options; generated image gallery with download and reuse; requires OpenAI API key
 - **3D Printer panel** — USB serial G-code terminal (Electron desktop build only)
 - **3D/Design mode** — comprehensive slicer knowledge: material guide (PLA/PETG/ABS/ASA/TPU/Nylon/Resin), settings by use-case, failure diagnosis, Bambu/PrusaSlicer/Cura specifics, design-to-print pipeline, photo-to-3D workflows, OpenSCAD + Blender Python generation
+
+**Self-Repair / Self-Extension (commit 62c4fda)**
+- **selfRepairStore.ts** — localStorage-backed store for 4 data classes: `errorLog` (runtime crashes + AI failures), `lessonsLearned` (permanent lessons Henry notes), `constitutionOverrides` (custom rules Henry adds at runtime), `personalityPatches` (traits Henry consciously updates). Built-in charter block builder (`buildSelfRepairBlock`) injected into every system prompt.
+- **selfRepairTools.ts** — 8 Henry self-tools with `shouldUseSelfTools()` intent detection and `runSelfTools()` pre-execution pipeline (mirrors `runWebTools` pattern): `henry_get_errors`, `henry_learn_lesson`, `henry_update_constitution`, `henry_update_personality`, `henry_read_source_file`, `henry_write_source_file`, `henry_run_typecheck`, `henry_list_source_dir`.
+- **HenrySelfRepairBoundary.tsx** — React ErrorBoundary wrapping the entire app; on crash: logs to selfRepairStore, dispatches `henry_action_prompt` event so Henry opens in chat with the error pre-filled, and shows a recovery UI.
+- **sourceFiles.ts (Electron IPC)** — `source:read`, `source:write`, `source:exists`, `source:list` channels; scoped to `src/` and `electron/`; only active when `VITE_DEV_SERVER_URL` is set (dev mode only). Registered in main.ts, exposed via preload as `readSourceFile`, `writeSourceFile`, `sourceFileExists`, `listSourceFiles`.
+- **Charter integration** — `buildSelfRepairBlock()` called in `buildCompanionStreamSystemPrompt` and injected at the end of the system prompt; only appears when there's meaningful data.
+- **ChatView integration** — self-repair tools auto-route after web tools; `selfRepairContextBlock` added to `extraContext` array alongside web + Bible + emotion blocks.
+- **main.tsx** — global `error` and `unhandledrejection` listeners call `logError()` into selfRepairStore before anything else.
 
 **Dev Tools**
 - **Builder mode live preview** — streaming partial HTML rendered live; viewport toggle; download HTML
