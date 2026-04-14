@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useStore } from '../../store';
 import { HENRY_OPERATING_MODES, type HenryOperatingMode, isHenryOperatingMode } from '../../henry/charter';
+import type { ViewType } from '../../types';
 
 interface PaletteItem {
   id: string;
@@ -32,6 +33,11 @@ const MODE_ICONS: Record<HenryOperatingMode, string> = {
   coach: '🎯',
   strategic: '♟️',
   business: '🚀',
+  negotiator: '🤝',
+  health: '💪',
+  research: '🔬',
+  meal: '🍽️',
+  shopping: '🛒',
 };
 
 const MODE_LABELS: Record<HenryOperatingMode, string> = {
@@ -46,6 +52,11 @@ const MODE_LABELS: Record<HenryOperatingMode, string> = {
   coach: 'Coach mode',
   strategic: 'Strategic mode',
   business: 'Business Builder mode',
+  negotiator: 'Negotiator mode',
+  health: 'Health & Fitness mode',
+  research: 'Research mode',
+  meal: 'Meal Planning mode',
+  shopping: 'Shopping mode',
 };
 
 const QUICK_ACTIONS: Array<{ icon: string; label: string; mode: HenryOperatingMode; prompt: string }> = [
@@ -60,6 +71,11 @@ const QUICK_ACTIONS: Array<{ icon: string; label: string; mode: HenryOperatingMo
   { icon: '🎯', label: 'Coach session', mode: 'coach', prompt: 'I want to work through something I\'ve been stuck on. Help me get clear.' },
   { icon: '♟️', label: 'Strategic review', mode: 'strategic', prompt: 'Help me think strategically about what I\'m working on. I\'ll give you the context.' },
   { icon: '🚀', label: 'Build a business', mode: 'business', prompt: 'I have a business idea I want to develop. Let\'s work through the offer and plan.' },
+  { icon: '🤝', label: 'Negotiate something', mode: 'negotiator', prompt: 'I have a negotiation coming up. Help me prepare — I\'ll give you the context.' },
+  { icon: '💪', label: 'Health check-in', mode: 'health', prompt: 'Let\'s talk about my health, fitness, or energy. I\'ll tell you what\'s going on.' },
+  { icon: '🔬', label: 'Research a topic', mode: 'research', prompt: 'I need to research something thoroughly. Here\'s the topic:' },
+  { icon: '🍽️', label: 'Plan my meals', mode: 'meal', prompt: 'Help me plan my meals for the week. I\'ll tell you my preferences and goals.' },
+  { icon: '🛒', label: 'Find the best product', mode: 'shopping', prompt: 'I\'m looking to buy something. Help me find the best option. Here\'s what I need:' },
 ];
 
 interface StoredContact {
@@ -139,13 +155,18 @@ export default function CommandPalette({ open, onClose, onSetMode, onNewChat, on
     }
 
     // Nav
-    const navItems: Array<{ id: string; icon: string; label: string; view: string }> = [
+    const navItems: Array<{ id: string; icon: string; label: string; view: ViewType }> = [
       { id: 'nav-today', icon: '🏠', label: 'Go to Today', view: 'today' },
       { id: 'nav-settings', icon: '⚙️', label: 'Open Settings', view: 'settings' },
       { id: 'nav-tasks', icon: '📋', label: 'Open Tasks', view: 'tasks' },
       { id: 'nav-contacts', icon: '👥', label: 'Open Contacts', view: 'contacts' },
       { id: 'nav-files', icon: '📁', label: 'Open Files', view: 'files' },
       { id: 'nav-secretary', icon: '🗓️', label: 'Open Secretary', view: 'secretary' },
+      { id: 'nav-goals', icon: '🎯', label: 'Open Goals', view: 'goals' },
+      { id: 'nav-journal', icon: '📔', label: 'Open Journal', view: 'journal' },
+      { id: 'nav-integrations', icon: '🔌', label: 'Open Integrations', view: 'integrations' },
+      { id: 'nav-terminal', icon: '💻', label: 'Open Terminal', view: 'terminal' },
+      { id: 'nav-ide', icon: '✦', label: 'Open IDE', view: 'ide' },
     ];
     for (const nav of navItems) {
       items.push({
@@ -154,7 +175,7 @@ export default function CommandPalette({ open, onClose, onSetMode, onNewChat, on
         label: nav.label,
         category: 'nav',
         keywords: [nav.label.toLowerCase(), nav.view],
-        action: () => { setCurrentView(nav.view as any); onClose(); },
+        action: () => { setCurrentView(nav.view); onClose(); },
       });
     }
 

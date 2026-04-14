@@ -3,39 +3,13 @@ import Layout from './components/layout/Layout';
 import SetupWizard from './components/wizard/SetupWizard';
 import ElectronAutoSetup from './components/wizard/ElectronAutoSetup';
 import ClipboardAIToast from './components/ClipboardAIToast';
+import ErrorBoundary from './components/ErrorBoundary';
 import { useStore } from './store';
 import type { Task } from './types';
 import { startProactiveNudges, type HenryNudge } from './henry/proactiveNudges';
 import { seedWorkspace } from './henry/workspaceSeeder';
-
-// ── Temporary startup diagnostics — remove when hang is identified ──────────
-function withTimeout<T>(promise: Promise<T>, label: string, ms = 5000): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
-    ),
-  ]);
-}
-
-async function diagCall<T>(label: string, p: Promise<T>): Promise<T> {
-  console.log(`[Henry:diag] → ${label}`);
-  const t = Date.now();
-  const timer = setTimeout(
-    () => console.warn(`[Henry:diag] ⚠ ${label} still pending after 4 s — likely hanging`),
-    4000
-  );
-  try {
-    const result = await p;
-    clearTimeout(timer);
-    console.log(`[Henry:diag] ✓ ${label} resolved in ${Date.now() - t} ms`);
-    return result;
-  } catch (err) {
-    clearTimeout(timer);
-    console.error(`[Henry:diag] ✗ ${label} rejected in ${Date.now() - t} ms:`, err);
-    throw err;
-  }
-}
+import { startSelfHealing, type HenryRepairEvent } from './henry/selfHealing';
+import { getTodayBriefing, saveBriefing, buildBriefingPrompt, getTodayKey } from './henry/proactiveBriefing';
 
 const HENRY_FIRST_MESSAGE = `Hey. I'm up and running.
 
@@ -47,7 +21,9 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [updateState, setUpdateState] = useState<'none' | 'available' | 'downloaded'>('none');
   const [nudge, setNudge] = useState<HenryNudge | null>(null);
+  const [repair, setRepair] = useState<HenryRepairEvent | null>(null);
   const firstContactDone = useRef(false);
+  const briefingInjectedRef = useRef(false);
   const {
     setupComplete,
     setSetupComplete,
@@ -66,7 +42,21 @@ export default function App() {
     void initApp();
     const cleanup = setupEventListeners();
     const stopNudges = startProactiveNudges((n) => setNudge(n));
-    return () => { cleanup(); stopNudges(); };
+    const stopHealing = startSelfHealing((event) => {
+      setRepair(event);
+      setTimeout(() => setRepair(null), 8000);
+    });
+    return () => { cleanup(); stopNudges(); stopHealing(); };
+  }, []);
+
+  // Register service worker in production only
+  useEffect(() => {
+    if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+      navigator.serviceWorker
+        .register('/sw.js')
+        .then(() => console.log('[Henry] Service worker registered'))
+        .catch((err) => console.warn('[Henry] SW registration failed:', err));
+    }
   }, []);
 
   // Henry's autonomous first contact — fires once after wizard completes
@@ -78,6 +68,98 @@ export default function App() {
     firstContactDone.current = true;
     void triggerFirstContact();
   }, [setupComplete, settings.henry_first_launch]);
+
+  // Proactive daily briefing — inject into chat once per day, automatically
+  useEffect(() => {
+    if (!setupComplete || loading || briefingInjectedRef.current) return;
+
+    const injectedKey = `henry:briefing_chat_injected:${getTodayKey()}`;
+    if (localStorage.getItem(injectedKey) === 'true') return;
+
+    briefingInjectedRef.current = true;
+
+    // Delay slightly so the conversation list is loaded first
+    const timer = setTimeout(() => { void injectDailyBriefing(injectedKey); }, 3500);
+    return () => clearTimeout(timer);
+  }, [setupComplete, loading]);
+
+  async function injectDailyBriefing(injectedKey: string) {
+    try {
+      // If a briefing was already generated (in TodayPanel), reuse it
+      let content = getTodayBriefing()?.content ?? null;
+
+      if (!content) {
+        // Build context from memory facts
+        const facts: string[] = [];
+        try {
+          const raw = localStorage.getItem('henry:facts') || '[]';
+          const arr = JSON.parse(raw) as Array<{ content?: string; text?: string }>;
+          facts.push(...arr.slice(0, 20).map((f) => f.content || f.text || '').filter(Boolean));
+        } catch { /* ignore */ }
+
+        const factsStr = facts.slice(0, 10).join('\n');
+        const prompt = buildBriefingPrompt(factsStr);
+
+        // Build a simple non-streaming AI call using the companion provider
+        const st = useStore.getState();
+        const companionProvider = st.settings.companion_provider || 'groq';
+        const companionModel = st.settings.companion_model || 'llama-3.1-8b-instant';
+        const providerRecord = st.providers.find((p) => p.id === companionProvider);
+        const apiKey = providerRecord?.apiKey || '';
+
+        if (!apiKey) return; // No key configured — skip silently
+
+        const result = await window.henryAPI.sendMessage({
+          provider: companionProvider,
+          model: companionModel,
+          apiKey,
+          messages: [{ role: 'user', content: prompt }],
+          maxTokens: 200,
+        });
+
+        content = result.content || String(result ?? '');
+        if (content) saveBriefing(content, companionModel);
+      }
+
+      if (!content) return;
+
+      // Find active conversation, or use the most recent one
+      const st = useStore.getState();
+      let conversationId = st.activeConversationId;
+
+      if (!conversationId) {
+        const convos = await window.henryAPI.getConversations();
+        if (convos.length > 0) {
+          conversationId = convos[0].id;
+          setConversations(convos);
+          setActiveConversation(conversationId);
+        } else {
+          const newConvo = await window.henryAPI.createConversation('Today');
+          conversationId = newConvo.id;
+          const convos2 = await window.henryAPI.getConversations();
+          setConversations(convos2);
+          setActiveConversation(conversationId);
+        }
+      }
+
+      const msg = {
+        id: `briefing-${getTodayKey()}`,
+        conversation_id: conversationId,
+        role: 'assistant' as const,
+        content,
+        engine: 'companion' as const,
+        created_at: new Date().toISOString(),
+      };
+
+      await window.henryAPI.saveMessage(msg);
+      addMessage(msg);
+      setCurrentView('chat');
+
+      localStorage.setItem(injectedKey, 'true');
+    } catch (err) {
+      console.warn('[Henry] Daily briefing injection failed:', err);
+    }
+  }
 
   async function triggerFirstContact() {
     try {
@@ -108,7 +190,6 @@ export default function App() {
   }
 
   async function initApp() {
-    console.log('[INIT] start');
     try {
       // URL bypass: ?enter or #enter skips wizard immediately
       const urlBypass =
@@ -116,12 +197,11 @@ export default function App() {
         window.location.hash === '#enter' ||
         window.location.hash === '#henry';
       if (urlBypass) {
-        await diagCall('saveSetting(setup_complete)', window.henryAPI.saveSetting('setup_complete', 'true'));
+        await window.henryAPI.saveSetting('setup_complete', 'true');
         // Clean the URL without reload
         history.replaceState(null, '', window.location.pathname);
       }
 
-      console.log('[INIT] bootstrap providers');
       // ── Auto-bootstrap Groq from server env key (web/Replit preview mode) ──
       // Always refresh the key from the env var so stale/empty localStorage
       // entries never cause "Failed to fetch" errors.
@@ -130,19 +210,19 @@ export default function App() {
         const existingProviders: HenryProviderRecord[] = (() => {
           try { return JSON.parse(localStorage.getItem('henry:providers') || '[]'); } catch { return []; }
         })();
-        const savedGroq = existingProviders.find((p: any) => p.id === 'groq');
-        const savedKey = savedGroq?.api_key || (savedGroq as any)?.apiKey || '';
+        const savedGroq = existingProviders.find((p) => p.id === 'groq');
+        const savedKey = savedGroq?.api_key || savedGroq?.apiKey || '';
 
         // Always upsert if the stored key differs from the env key (covers first-run
         // AND any key rotation or storage corruption scenario)
         if (savedKey !== envGroqKey) {
-          await diagCall('saveProvider(groq)', window.henryAPI.saveProvider({
+          await window.henryAPI.saveProvider({
             id: 'groq',
             name: 'Groq',
             api_key: envGroqKey,
             enabled: 1,
             models: JSON.stringify([]),
-          } as any));
+          } as any);
           await window.henryAPI.saveSetting('companion_provider', 'groq');
           await window.henryAPI.saveSetting('companion_model', 'llama-3.1-8b-instant');
           await window.henryAPI.saveSetting('worker_provider', 'groq');
@@ -151,8 +231,7 @@ export default function App() {
         }
       }
 
-      console.log('[INIT] getSettings');
-      const settingsMap = (await diagCall('getSettings', window.henryAPI.getSettings())) as Record<string, string>;
+      const settingsMap = (await window.henryAPI.getSettings()) as Record<string, string>;
 
       Object.entries(settingsMap).forEach(([key, value]) => {
         useStore.getState().updateSetting(key, value);
@@ -203,24 +282,10 @@ export default function App() {
         // Seed workspace on first run (idempotent — safe to call every launch)
         try { seedWorkspace(); } catch { /* non-critical */ }
 
-        console.log('[INIT] getConversations');
-        const convos = await withTimeout(
+        const [convos, providers] = await Promise.all([
           window.henryAPI.getConversations(),
-          'getConversations'
-        ).catch((err: unknown) => {
-          console.error('[Henry] getConversations failed:', err);
-          return [] as Awaited<ReturnType<typeof window.henryAPI.getConversations>>;
-        });
-
-        console.log('[INIT] getProviders');
-        const providers = await withTimeout(
           window.henryAPI.getProviders(),
-          'getProviders'
-        ).catch((err: unknown) => {
-          console.error('[Henry] getProviders failed:', err);
-          return [] as Awaited<ReturnType<typeof window.henryAPI.getProviders>>;
-        });
-
+        ]);
         setConversations(convos);
         setProviders(
           providers.map((p: HenryProviderRecord) => ({
@@ -235,7 +300,6 @@ export default function App() {
     } catch (err) {
       console.error('Failed to init app:', err);
     } finally {
-      console.log('[INIT] done');
       setLoading(false);
     }
   }
@@ -308,8 +372,12 @@ export default function App() {
 
   if (loading) {
     return (
-      <div style={{ background: 'black', color: 'white', padding: 40, fontFamily: 'monospace' }}>
-        Henry is loading...
+      <div className="h-screen w-screen bg-henry-bg flex items-center justify-center">
+        <div className="text-center animate-fade-in">
+          <div className="text-5xl mb-4">🧠</div>
+          <h1 className="text-xl font-bold text-henry-text mb-2">Henry AI</h1>
+          <p className="text-sm text-henry-text-dim">Loading...</p>
+        </div>
       </div>
     );
   }
@@ -324,6 +392,7 @@ export default function App() {
   }
 
   return (
+    <ErrorBoundary>
     <div className="h-screen w-screen flex flex-col overflow-hidden">
       {updateState !== 'none' && (
         <div className="shrink-0 flex items-center justify-between px-4 py-2 bg-henry-accent/15 border-b border-henry-accent/25 text-sm text-henry-text">
@@ -382,8 +451,30 @@ export default function App() {
         </div>
       )}
 
+      {/* Self-repair notification — shown when Henry auto-fixes something */}
+      {repair && (
+        <div className="fixed bottom-6 right-6 z-50 animate-fade-in max-w-xs">
+          <div className="flex items-start gap-3 bg-henry-surface/95 border border-emerald-500/30 backdrop-blur-xl rounded-2xl shadow-xl px-4 py-3.5">
+            <span className="text-lg shrink-0 mt-0.5">🔧</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold text-emerald-400 mb-0.5">Henry self-repaired</p>
+              <p className="text-xs text-henry-text-dim leading-snug">{repair.action}</p>
+            </div>
+            <button
+              onClick={() => setRepair(null)}
+              className="shrink-0 text-henry-text-muted hover:text-henry-text transition-colors mt-0.5"
+            >
+              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Clipboard AI toast */}
       <ClipboardAIToast />
     </div>
+    </ErrorBoundary>
   );
 }

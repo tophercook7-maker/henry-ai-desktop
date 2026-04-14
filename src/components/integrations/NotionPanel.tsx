@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { notionSearch, isConnected, type NotionPage } from '../../henry/integrations';
-import ConnectPrompt from './ConnectPrompt';
+import { useStore } from '../../store';
 
 function getTitle(page: NotionPage): string {
   const props = page.properties;
@@ -23,7 +23,8 @@ function timeAgo(iso: string): string {
 }
 
 export default function NotionPanel() {
-  const [connected, setConnected] = useState(isConnected('notion'));
+  const setCurrentView = useStore((s) => s.setCurrentView);
+  const connected = isConnected('notion');
 
   const [pages, setPages] = useState<NotionPage[]>([]);
   const [loading, setLoading] = useState(false);
@@ -54,24 +55,19 @@ export default function NotionPanel() {
 
   if (!connected) {
     return (
-      <ConnectPrompt
-        serviceId="notion"
-        icon="📄"
-        name="Notion"
-        unlocks="Search and read your Notion pages and databases directly from Henry."
-        steps={[
-          'Go to notion.so/my-integrations and click "New integration"',
-          'Give it a name and select your workspace',
-          'Copy the Internal Integration Token (starts with secret_)',
-          'In each Notion page you want Henry to access, click Share → Invite your integration',
-          'Paste the token below',
-        ]}
-        tokenLabel="Notion Integration Token"
-        tokenPlaceholder="secret_…"
-        docsUrl="https://www.notion.so/my-integrations"
-        docsLabel="Open Notion integrations →"
-        onConnected={() => setConnected(true)}
-      />
+      <div className="h-full flex flex-col items-center justify-center gap-4 p-8 text-center">
+        <div className="text-5xl">📄</div>
+        <div>
+          <h2 className="text-lg font-semibold text-henry-text mb-1">Notion not connected</h2>
+          <p className="text-sm text-henry-text-muted">Add your Notion integration token to browse pages.</p>
+        </div>
+        <button
+          onClick={() => setCurrentView('integrations')}
+          className="px-4 py-2 bg-henry-accent text-white rounded-xl text-sm font-semibold hover:bg-henry-accent/90 transition-colors"
+        >
+          Go to Integrations
+        </button>
+      </div>
     );
   }
 

@@ -1,5 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
-import { useComputerSnapshotStore } from '../../henry/computerSnapshotStore';
+import { useStore } from '../../store';
+import {
+  planComputerTask, executeStep, RISK_LABELS, TASK_TEMPLATES,
+  type ComputerTask, type TaskStep,
+} from '../../henry/computerTasks';
 
 interface ActionLog {
   id: string;
@@ -18,87 +22,41 @@ interface Permissions {
   message?: string;
 }
 
-const QUICK_ACTION_GROUPS = [
-  {
-    label: 'Open apps',
-    icon: '📱',
-    actions: [
-      { label: 'Finder',           type: 'app'   as const, value: 'Finder' },
-      { label: 'Safari',           type: 'app'   as const, value: 'Safari' },
-      { label: 'Terminal',         type: 'app'   as const, value: 'Terminal' },
-      { label: 'System Settings',  type: 'app'   as const, value: 'System Settings' },
-      { label: 'Activity Monitor', type: 'app'   as const, value: 'Activity Monitor' },
-    ],
-  },
-  {
-    label: 'Files & folders',
-    icon: '📁',
-    actions: [
-      { label: 'Open home folder',   type: 'shell' as const, value: 'open ~' },
-      { label: 'Open Downloads',     type: 'shell' as const, value: 'open ~/Downloads' },
-      { label: 'Open Desktop',       type: 'shell' as const, value: 'open ~/Desktop' },
-      { label: 'List Desktop files', type: 'shell' as const, value: 'ls -la ~/Desktop' },
-      { label: 'Disk space',         type: 'shell' as const, value: 'df -h ~' },
-    ],
-  },
-  {
-    label: 'System info',
-    icon: '💻',
-    actions: [
-      { label: 'Check memory',     type: 'shell' as const, value: 'vm_stat | head -10' },
-      { label: 'Running processes',type: 'shell' as const, value: 'ps aux | head -20' },
-      { label: 'Network info',     type: 'shell' as const, value: 'ifconfig | grep "inet " | grep -v 127.0.0.1' },
-      { label: 'macOS version',    type: 'shell' as const, value: 'sw_vers' },
-      { label: 'Uptime',           type: 'shell' as const, value: 'uptime' },
-    ],
-  },
-  {
-    label: 'Automate',
-    icon: '⚡',
-    actions: [
-      { label: 'Take screenshot', type: 'screenshot' as const, value: '' },
-      { label: 'Empty trash',     type: 'shell' as const, value: 'osascript -e \'tell application "Finder" to empty trash\'' },
-      { label: 'Lock screen',     type: 'shell' as const, value: 'pmset displaysleepnow' },
-    ],
-  },
-];
-
-type MainTab = 'overview' | 'apps' | 'actions';
+type TabMode = 'task' | 'shell' | 'applescript';
 
 export default function ComputerPanel() {
+  const { settings } = useStore();
   const [permissions, setPermissions] = useState<Permissions | null>(null);
-  const [systemInfo, setSystemInfo]   = useState<any>(null);
-  const [log, setLog]                 = useState<ActionLog[]>([]);
-  const [running, setRunning]         = useState(false);
-  const [tab, setTab]                 = useState<MainTab>('overview');
-  const [screenshot, setScreenshot]   = useState<string | null>(null);
-  const [apps, setApps]               = useState<string[]>([]);
-  const [appFilter, setAppFilter]     = useState('');
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [advancedMode, setAdvancedMode] = useState<'shell' | 'applescript'>('shell');
-  const [shellInput, setShellInput]   = useState('');
-  const [history, setHistory]         = useState<string[]>([]);
-  const [historyIdx, setHistoryIdx]   = useState(-1);
-  const { snapshot: computerSnapshot, scanning: snapshotScanning, error: snapshotError, takeSnapshot } = useComputerSnapshotStore();
-  const logRef  = useRef<HTMLDivElement>(null);
-  const shellRef = useRef<HTMLInputElement>(null);
+  const [systemInfo, setSystemInfo] = useState<any>(null);
+  const [tab, setTab] = useState<TabMode>('task');
+  const [screenshot, setScreenshot] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadPermissions();
-    loadSystemInfo();
-    addLog('info', 'Henry Computer Control ready.');
-    if (!computerSnapshot || Date.now() - computerSnapshot.takenAt > 30 * 60 * 1000) {
-      takeSnapshot();
-    }
-  }, []);
+  const { providers } = useStore();
 
-  useEffect(() => {
-    logRef.current?.scrollTo(0, logRef.current.scrollHeight);
-  }, [log]);
+  // Task mode state
+  const [taskInput, setTaskInput] = useState('');
+  const [task, setTask] = useState<ComputerTask | null>(null);
+  const [planning, setPlanning] = useState(false);
+  const [planError, setPlanError] = useState('');
+  const [runningStepId, setRunningStepId] = useState<string | null>(null);
+  const [autoRun, setAutoRun] = useState(false);
 
-  useEffect(() => {
-    if (tab === 'apps') loadApps();
-  }, [tab]);
+  // Shell/AS mode state
+  const [shellInput, setShellInput] = useState('');
+  const [shellMode, setShellMode] = useState<'shell' | 'applescript'>('shell');
+  const [log, setLog] = useState<ActionLog[]>([]);
+  const [shellRunning, setShellRunning] = useState(false);
+  const [history, setHistory] = useState<string[]>([]);
+  const [historyIdx, setHistoryIdx] = useState(-1);
+
+  const logRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const taskInputRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => { loadPermissions(); loadSystemInfo(); }, []);
+  useEffect(() => { logRef.current?.scrollTo(0, logRef.current.scrollHeight); }, [log]);
+
+  const isDesktop = !!window.henryAPI?.computerRunShell;
 
   function addLog(type: ActionLog['type'], content: string, imageBase64?: string) {
     setLog((prev) => [...prev, { id: crypto.randomUUID(), type, content, timestamp: Date.now(), imageBase64 }]);
@@ -109,520 +67,491 @@ export default function ComputerPanel() {
       const perms = await window.henryAPI.computerCheckPermissions();
       setPermissions(perms);
     } catch {
-      setPermissions({ platform: 'unknown', accessibility: false, screenRecording: false });
+      setPermissions({ platform: 'web', accessibility: false, screenRecording: false, message: 'Desktop app not connected' });
     }
   }
 
   async function loadSystemInfo() {
-    try { setSystemInfo(await window.henryAPI.computerSystemInfo()); } catch {}
-  }
-
-  async function loadApps() {
-    try { const r = await window.henryAPI.computerListApps(); setApps(r.apps); } catch {}
-  }
-
-  async function runShell(cmd: string) {
-    setRunning(true);
-    addLog('command', `$ ${cmd}`);
     try {
-      const r = await window.henryAPI.computerRunShell({ command: cmd, timeout: 30000 });
-      if (r.output) addLog('result', r.output);
-      if (r.error && !r.success) addLog('error', r.error);
-    } catch (e: any) { addLog('error', e.message); }
-    finally { setRunning(false); }
+      const info = await window.henryAPI.computerSystemInfo();
+      setSystemInfo(info);
+    } catch {}
   }
+
+  // ── Task agent ─────────────────────────────────────────────────────────────
+
+  async function handlePlan() {
+    if (!taskInput.trim() || planning) return;
+    setPlanError('');
+    setTask(null);
+    setPlanning(true);
+    try {
+      const built = await planComputerTask(taskInput.trim(), settings as any, providers as any);
+      setTask(built);
+    } catch (err: any) {
+      setPlanError(err.message || 'Planning failed.');
+    } finally {
+      setPlanning(false);
+    }
+  }
+
+  async function runStep(step: TaskStep) {
+    if (!task) return;
+    setRunningStepId(step.id);
+
+    setTask((prev) => prev ? {
+      ...prev,
+      steps: prev.steps.map((s) => s.id === step.id ? { ...s, status: 'running', output: undefined, error: undefined } : s),
+    } : prev);
+
+    const result = await executeStep(step);
+
+    setTask((prev) => prev ? {
+      ...prev,
+      steps: prev.steps.map((s) => s.id === step.id ? {
+        ...s,
+        status: result.success ? 'done' : 'error',
+        output: result.output,
+        error: result.error,
+      } : s),
+    } : prev);
+
+    setRunningStepId(null);
+    return result.success;
+  }
+
+  async function runAllSteps() {
+    if (!task) return;
+    setAutoRun(true);
+    for (const step of task.steps) {
+      if (step.status === 'done' || step.status === 'skipped') continue;
+      if (step.risk === 'critical') break; // always pause on critical
+      const ok = await runStep(step);
+      if (!ok && !step.optional) break; // stop on non-optional failure
+    }
+    setAutoRun(false);
+  }
+
+  function skipStep(stepId: string) {
+    setTask((prev) => prev ? {
+      ...prev,
+      steps: prev.steps.map((s) => s.id === stepId ? { ...s, status: 'skipped' } : s),
+    } : prev);
+  }
+
+  function editStepCommand(stepId: string, command: string) {
+    setTask((prev) => prev ? {
+      ...prev,
+      steps: prev.steps.map((s) => s.id === stepId ? { ...s, command } : s),
+    } : prev);
+  }
+
+  function useTemplate(template: string) {
+    setTaskInput(template);
+    setTask(null);
+    setTimeout(() => taskInputRef.current?.focus(), 50);
+  }
+
+  function reset() {
+    setTask(null);
+    setTaskInput('');
+    setPlanError('');
+  }
+
+  const allDone = task?.steps.every((s) => s.status === 'done' || s.status === 'skipped');
+  const hasError = task?.steps.some((s) => s.status === 'error');
+  const pendingSteps = task?.steps.filter((s) => s.status === 'pending' || s.status === 'error') || [];
+  const nextStep = pendingSteps[0];
+
+  // ── Shell direct mode ──────────────────────────────────────────────────────
 
   async function executeShell() {
-    if (!shellInput.trim() || running) return;
+    if (!shellInput.trim() || shellRunning) return;
     const cmd = shellInput.trim();
     setShellInput('');
     setHistory((h) => [cmd, ...h.slice(0, 50)]);
     setHistoryIdx(-1);
-    setRunning(true);
-    addLog('command', advancedMode === 'shell' ? `$ ${cmd}` : cmd);
+    setShellRunning(true);
+    addLog('command', `$ ${cmd}`);
     try {
-      let r: any;
-      if (advancedMode === 'shell') {
-        r = await window.henryAPI.computerRunShell({ command: cmd, timeout: 30000 });
-        if (r.output) addLog('result', r.output);
-        if (r.error && !r.success) addLog('error', r.error);
-      } else {
-        r = await window.henryAPI.computerOsascript(cmd);
-        if (r.output) addLog('result', r.output);
-        if (r.error) addLog('error', r.error);
-      }
-    } catch (e: any) { addLog('error', e.message); }
-    finally { setRunning(false); }
-  }
-
-  async function openApp(appName: string) {
-    setRunning(true);
-    addLog('info', `Opening ${appName}…`);
-    try {
-      const r = await window.henryAPI.computerOpenApp(appName);
-      addLog(r.success ? 'result' : 'error', r.output);
-    } catch (e: any) { addLog('error', e.message); }
-    finally { setRunning(false); }
-  }
-
-  async function takeScreenshot() {
-    setRunning(true);
-    addLog('info', 'Taking screenshot…');
-    try {
-      const r = await window.henryAPI.computerScreenshot();
-      if (r.success && r.base64) {
-        setScreenshot(`data:${r.mimeType || 'image/png'};base64,${r.base64}`);
-        addLog('screenshot', 'Screenshot captured.');
-      } else {
-        addLog('error', r.error || 'Screenshot failed.');
-      }
-    } catch (e: any) { addLog('error', e.message); }
-    finally { setRunning(false); }
-  }
-
-  async function runQuickAction(action: { type: 'shell' | 'app' | 'screenshot'; value: string }) {
-    if (running) return;
-    if      (action.type === 'screenshot') await takeScreenshot();
-    else if (action.type === 'app')        await openApp(action.value);
-    else                                   await runShell(action.value);
-  }
-
-  function handleShellKeyDown(e: React.KeyboardEvent) {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); executeShell(); }
-    else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      const next = Math.min(historyIdx + 1, history.length - 1);
-      setHistoryIdx(next); if (history[next]) setShellInput(history[next]);
-    } else if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      const next = Math.max(historyIdx - 1, -1);
-      setHistoryIdx(next); setShellInput(next >= 0 ? history[next] : '');
+      const result = shellMode === 'shell'
+        ? await window.henryAPI.computerRunShell({ command: cmd, timeout: 30000 })
+        : await window.henryAPI.computerOsascript(cmd);
+      if (result.output) addLog('result', result.output);
+      if (result.error && !result.success) addLog('error', result.error);
+    } catch (e: any) {
+      addLog('error', e.message);
+    } finally {
+      setShellRunning(false);
     }
   }
 
-  const isDesktop     = permissions?.platform !== 'web';
-  const allPermsOk    = permissions?.accessibility && permissions?.screenRecording;
-  const filteredApps  = apps.filter((a) => a.toLowerCase().includes(appFilter.toLowerCase()));
+  async function takeScreenshot() {
+    try {
+      const result = await window.henryAPI.computerScreenshot();
+      if (result.success && result.base64) {
+        setScreenshot(`data:${result.mimeType || 'image/png'};base64,${result.base64}`);
+      }
+    } catch {}
+  }
 
   return (
     <div className="h-full flex flex-col bg-henry-bg text-henry-text overflow-hidden">
       {/* Header */}
-      <div className="shrink-0 px-6 py-4 border-b border-henry-border/50 bg-henry-surface/20">
+      <div className="shrink-0 px-6 py-4 border-b border-henry-border/50 bg-henry-surface/30">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-base font-semibold text-henry-text flex items-center gap-2">
-              🖥️ My Computer
+            <h2 className="text-lg font-semibold text-henry-text flex items-center gap-2">
+              🖥️ Computer
               {!isDesktop && (
-                <span className="text-[11px] px-2 py-0.5 rounded-full bg-henry-warning/15 text-henry-warning font-normal">
-                  Desktop app required
-                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-yellow-400/15 text-yellow-400 font-normal">Desktop app needed</span>
               )}
             </h2>
             {systemInfo && (
               <p className="text-xs text-henry-text-muted mt-0.5">
-                {systemInfo.hostname} · {systemInfo.platform} · {systemInfo.freeMemoryGB}GB free
+                {systemInfo.platform} · {systemInfo.hostname}
+                {systemInfo.macOS && ` · ${systemInfo.macOS.split('\n')[0]}`}
               </p>
             )}
           </div>
-          <button
-            onClick={takeScreenshot}
-            disabled={running}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-henry-surface border border-henry-border/50 hover:border-henry-accent/50 text-henry-text-dim hover:text-henry-text transition-all disabled:opacity-50"
-          >
-            📸 Screenshot
-          </button>
+          <div className="flex gap-2">
+            <button onClick={takeScreenshot} className="text-xs px-3 py-1.5 rounded-lg bg-henry-surface border border-henry-border/30 text-henry-text-muted hover:text-henry-text transition-all">📸</button>
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex gap-1 mt-3">
+          {([['task', '🤖 Task'], ['shell', '💻 Shell'], ['applescript', '🍎 AppleScript']] as const).map(([t, label]) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={`px-3 py-1 text-xs rounded-lg font-medium transition-all ${
+                tab === t ? 'bg-henry-accent text-white' : 'bg-henry-hover text-henry-text-dim hover:text-henry-text'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
       </div>
 
+      {/* Content */}
       <div className="flex-1 flex overflow-hidden">
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Main tabs */}
-          <div className="shrink-0 flex gap-1 px-4 pt-3 pb-2 border-b border-henry-border/30">
-            {([
-              { id: 'overview', label: '🔐 Overview' },
-              { id: 'apps',     label: '📱 Apps' },
-              { id: 'actions',  label: '⚡ Actions' },
-            ] as const).map((m) => (
-              <button
-                key={m.id}
-                onClick={() => setTab(m.id)}
-                className={`px-3 py-1.5 text-xs rounded-lg font-medium transition-all ${
-                  tab === m.id
-                    ? 'bg-henry-accent/10 text-henry-accent border border-henry-accent/20'
-                    : 'text-henry-text-muted hover:text-henry-text hover:bg-henry-hover/50'
-                }`}
-              >
-                {m.label}
-              </button>
-            ))}
-          </div>
+        <div className="flex-1 overflow-hidden flex flex-col">
 
-          {/* ── OVERVIEW TAB ─────────────────────────────────────────────────── */}
-          {tab === 'overview' && (
-            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          {/* ── TASK TAB ── */}
+          {tab === 'task' && (
+            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
 
-              {/* Access status — most prominent thing */}
-              <div className={`rounded-2xl border p-4 ${allPermsOk ? 'bg-henry-success/5 border-henry-success/20' : 'bg-henry-warning/5 border-henry-warning/20'}`}>
-                <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl ${allPermsOk ? 'bg-henry-success/15' : 'bg-henry-warning/15'}`}>
-                    {allPermsOk ? '✓' : '⚠'}
-                  </div>
-                  <div>
-                    <p className={`text-sm font-semibold ${allPermsOk ? 'text-henry-success' : 'text-henry-warning'}`}>
-                      {allPermsOk ? 'Henry has full access' : 'Some permissions needed'}
-                    </p>
-                    <p className="text-xs text-henry-text-muted mt-0.5">
-                      {allPermsOk
-                        ? 'Henry can open apps, control the screen, and run commands.'
-                        : 'Grant the permissions below to unlock full computer control.'}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Permission cards */}
-              {permissions && (
-                <div className="space-y-2">
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-henry-text-muted">Permissions</p>
-                  <PermCard
-                    icon="♿"
-                    label="Accessibility"
-                    granted={permissions.accessibility}
-                    what="Lets Henry control apps, click UI elements, and automate tasks."
-                    instructions={permissions.accessibilityInstructions}
-                  />
-                  <PermCard
-                    icon="📹"
-                    label="Screen Recording"
-                    granted={permissions.screenRecording}
-                    what="Lets Henry take screenshots and see what's on screen."
-                    instructions={permissions.screenRecordingInstructions}
-                  />
-                </div>
-              )}
-
-              {/* Snapshot / machine info */}
-              <div className="flex items-center justify-between">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-henry-text-muted">This Mac</p>
-                <button
-                  onClick={() => takeSnapshot()}
-                  disabled={snapshotScanning}
-                  className="text-xs text-henry-accent hover:underline disabled:opacity-40"
-                >
-                  {snapshotScanning ? '⏳ Scanning…' : '↻ Refresh'}
-                </button>
-              </div>
-
-              {snapshotError && (
-                <div className="p-3 rounded-xl bg-henry-error/10 border border-henry-error/20 text-xs text-henry-error">{snapshotError}</div>
-              )}
-
-              {!computerSnapshot && !snapshotScanning && !snapshotError && (
-                <div className="p-6 rounded-xl bg-henry-surface/30 border border-henry-border/30 text-center">
-                  <p className="text-sm text-henry-text-muted mb-2">No snapshot yet</p>
-                  <button onClick={() => takeSnapshot()} className="text-xs text-henry-accent hover:underline">Scan now →</button>
-                </div>
-              )}
-
-              {computerSnapshot && (
-                <div className="space-y-2">
-                  <InfoCard title="System" icon="💻">
-                    <InfoRow label="Device"  value={computerSnapshot.hostname} />
-                    <InfoRow label="System"  value={`${computerSnapshot.platform}${computerSnapshot.osVersion ? ` · ${computerSnapshot.osVersion}` : ''}`} />
-                    {computerSnapshot.freeMemoryGB != null && (
-                      <InfoRow label="Memory" value={`${computerSnapshot.freeMemoryGB}GB free${computerSnapshot.totalMemoryGB ? ` of ${computerSnapshot.totalMemoryGB}GB` : ''}`} />
-                    )}
-                    {computerSnapshot.uptime && <InfoRow label="Uptime" value={computerSnapshot.uptime} />}
-                  </InfoCard>
-
-                  {computerSnapshot.activeApp && (
-                    <InfoCard title="Active now" icon="🎯">
-                      <InfoRow label="App in focus" value={computerSnapshot.activeApp} />
-                    </InfoCard>
-                  )}
-
-                  {computerSnapshot.runningApps.length > 0 && (
-                    <InfoCard title="Open apps" icon="📱">
-                      <div className="flex flex-wrap gap-1.5 mt-1">
-                        {computerSnapshot.runningApps.slice(0, 12).map((app) => (
-                          <span key={app} className="px-2 py-0.5 rounded-full bg-henry-bg border border-henry-border/40 text-[10px] text-henry-text-dim">{app}</span>
-                        ))}
-                        {computerSnapshot.runningApps.length > 12 && (
-                          <span className="px-2 py-0.5 rounded-full bg-henry-bg border border-henry-border/40 text-[10px] text-henry-text-muted">
-                            +{computerSnapshot.runningApps.length - 12} more
+              {/* Input area */}
+              {!task && (
+                <>
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-henry-text">What do you want done?</p>
+                    <p className="text-xs text-henry-text-muted">Describe any task in plain English — Henry will plan and execute it step by step on your computer.</p>
+                    <textarea
+                      ref={taskInputRef}
+                      value={taskInput}
+                      onChange={(e) => setTaskInput(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handlePlan(); }}
+                      placeholder="e.g. Create a new Next.js app on my Desktop called MyStartup and open it in Cursor"
+                      rows={3}
+                      className="w-full bg-henry-surface/40 border border-henry-border/30 rounded-xl px-4 py-3 text-sm text-henry-text placeholder-henry-text-muted outline-none focus:border-henry-accent/50 resize-none"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handlePlan}
+                        disabled={planning || !taskInput.trim()}
+                        className="px-5 py-2 bg-henry-accent text-white text-sm font-medium rounded-xl hover:bg-henry-accent/90 disabled:opacity-40 transition-all"
+                      >
+                        {planning ? (
+                          <span className="flex items-center gap-2">
+                            <span className="w-3 h-3 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                            Planning…
                           </span>
-                        )}
-                      </div>
-                    </InfoCard>
+                        ) : 'Plan this task'}
+                      </button>
+                      <span className="text-xs text-henry-text-muted self-center">⌘↵ to plan</span>
+                    </div>
+                  </div>
+
+                  {planError && (
+                    <div className="rounded-xl bg-red-400/10 border border-red-400/20 p-3 text-sm text-red-400">{planError}</div>
                   )}
 
-                  {computerSnapshot.recentFiles.length > 0 && (
-                    <InfoCard title="Recent Downloads" icon="📁">
-                      <div className="space-y-1 mt-1">
-                        {computerSnapshot.recentFiles.map((f) => (
-                          <p key={f} className="text-[11px] text-henry-text-dim font-mono truncate">{f}</p>
-                        ))}
-                      </div>
-                    </InfoCard>
-                  )}
-                </div>
-              )}
-
-              {/* Advanced section */}
-              <div className="border-t border-henry-border/20 pt-4">
-                <button
-                  onClick={() => setShowAdvanced((v) => !v)}
-                  className="flex items-center gap-2 text-xs text-henry-text-muted hover:text-henry-text transition-colors"
-                >
-                  <svg className={`w-3.5 h-3.5 transition-transform ${showAdvanced ? 'rotate-90' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <polyline points="9 18 15 12 9 6" />
-                  </svg>
-                  Advanced — Shell &amp; AppleScript
-                </button>
-
-                {showAdvanced && (
-                  <div className="mt-4 space-y-3">
-                    <div className="flex gap-1">
-                      {(['shell', 'applescript'] as const).map((m) => (
+                  {/* Quick templates */}
+                  <div>
+                    <p className="text-xs font-medium text-henry-text-muted mb-2 uppercase tracking-wider">Quick starts</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {TASK_TEMPLATES.map((t) => (
                         <button
-                          key={m}
-                          onClick={() => setAdvancedMode(m)}
-                          className={`px-3 py-1.5 text-xs rounded-lg font-medium transition-all ${
-                            advancedMode === m
-                              ? 'bg-henry-accent/10 text-henry-accent border border-henry-accent/20'
-                              : 'text-henry-text-muted hover:text-henry-text hover:bg-henry-hover/50'
-                          }`}
+                          key={t.label}
+                          onClick={() => useTemplate(t.template)}
+                          className="flex items-start gap-2 p-3 rounded-xl bg-henry-surface/20 border border-henry-border/20 hover:border-henry-accent/30 hover:bg-henry-surface/40 text-left transition-all"
                         >
-                          {m === 'shell' ? '💻 Shell' : '🍎 AppleScript'}
+                          <span className="text-base shrink-0 mt-0.5">{t.icon}</span>
+                          <div>
+                            <p className="text-xs font-medium text-henry-text">{t.label}</p>
+                            <p className="text-[10px] text-henry-text-muted mt-0.5 line-clamp-1">{t.template}</p>
+                          </div>
                         </button>
                       ))}
                     </div>
-
-                    <div ref={logRef} className="rounded-xl bg-henry-surface/20 border border-henry-border/20 p-3 font-mono text-xs space-y-0.5 max-h-40 overflow-y-auto">
-                      {log.length === 0 && <p className="text-henry-text-muted/50">No output yet.</p>}
-                      {log.map((entry) => (
-                        <div key={entry.id}>
-                          <LogLine entry={entry} />
-                        </div>
-                      ))}
-                      {running && <div className="text-henry-accent animate-pulse">▋ running…</div>}
-                    </div>
-
-                    <div className="flex gap-2">
-                      <input
-                        ref={shellRef}
-                        type="text"
-                        value={shellInput}
-                        onChange={(e) => setShellInput(e.target.value)}
-                        onKeyDown={handleShellKeyDown}
-                        disabled={running}
-                        placeholder={advancedMode === 'shell' ? 'Shell command… (↑↓ history)' : 'AppleScript…'}
-                        className="flex-1 bg-henry-bg border border-henry-border rounded-xl px-4 py-2.5 text-sm text-henry-text font-mono outline-none focus:border-henry-accent/50 disabled:opacity-50"
-                      />
-                      <button
-                        onClick={executeShell}
-                        disabled={running || !shellInput.trim()}
-                        className="px-4 py-2.5 bg-henry-accent text-white rounded-xl text-sm font-medium hover:bg-henry-accent/90 transition-colors disabled:opacity-50"
-                      >
-                        Run
-                      </button>
-                    </div>
-                    <p className="text-[10px] text-henry-text-muted px-1">
-                      {advancedMode === 'shell'
-                        ? 'Commands run in your henry-workspace. Use absolute paths for other locations.'
-                        : 'AppleScript requires Accessibility permission.'}
-                    </p>
                   </div>
-                )}
-              </div>
-            </div>
-          )}
 
-          {/* ── APPS TAB ─────────────────────────────────────────────────────── */}
-          {tab === 'apps' && (
-            <div className="flex-1 overflow-y-auto p-4">
-              <input
-                type="text"
-                value={appFilter}
-                onChange={(e) => setAppFilter(e.target.value)}
-                placeholder="Search apps…"
-                className="w-full bg-henry-bg border border-henry-border rounded-xl px-3 py-2.5 text-sm text-henry-text outline-none focus:border-henry-accent/50 mb-3"
-              />
-              {filteredApps.length === 0 && !apps.length ? (
-                <div className="text-center py-8">
-                  <p className="text-sm text-henry-text-muted">No apps loaded yet</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-3 gap-2">
-                  {filteredApps.map((app) => (
-                    <button
-                      key={app}
-                      onClick={() => openApp(app)}
-                      disabled={running}
-                      className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-henry-surface/30 border border-henry-border/30 hover:border-henry-accent/50 hover:bg-henry-accent/5 text-henry-text-dim hover:text-henry-text transition-all disabled:opacity-50"
-                    >
-                      <div className="w-9 h-9 rounded-xl bg-henry-bg border border-henry-border/40 flex items-center justify-center text-lg">
-                        💻
-                      </div>
-                      <span className="text-[10px] text-center leading-tight truncate w-full">{app}</span>
+                  {!isDesktop && (
+                    <div className="rounded-xl bg-henry-accent/5 border border-henry-accent/20 p-4">
+                      <p className="text-sm font-medium text-henry-text mb-1">Desktop app required to execute tasks</p>
+                      <p className="text-xs text-henry-text-muted leading-relaxed">Henry can plan tasks right now, but executing them requires the Henry desktop app (Electron). Build it with <code className="text-henry-accent">npm run build:mac</code> and run it locally.</p>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* Task plan view */}
+              {task && (
+                <div className="space-y-3">
+                  {/* Goal header */}
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs text-henry-text-muted uppercase tracking-wider mb-1">Goal</p>
+                      <p className="text-sm font-medium text-henry-text">{task.goal}</p>
+                    </div>
+                    <button onClick={reset} className="text-xs px-3 py-1.5 rounded-lg text-henry-text-muted hover:text-henry-text border border-henry-border/30 hover:border-henry-border/60 transition-all shrink-0">
+                      New task
                     </button>
-                  ))}
-                </div>
-              )}
+                  </div>
 
-              {/* Activity log */}
-              {log.length > 0 && (
-                <div className="mt-4 border-t border-henry-border/30 pt-3 max-h-28 overflow-y-auto font-mono text-xs space-y-0.5">
-                  {log.slice(-10).map((entry) => <div key={entry.id}><LogLine entry={entry} /></div>)}
-                  {running && <div className="text-henry-accent animate-pulse">▋</div>}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ── ACTIONS TAB ──────────────────────────────────────────────────── */}
-          {tab === 'actions' && (
-            <div className="flex-1 overflow-y-auto p-4 space-y-5">
-              {QUICK_ACTION_GROUPS.map((group) => (
-                <div key={group.label}>
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-henry-text-muted mb-2 flex items-center gap-1.5">
-                    <span>{group.icon}</span>{group.label}
-                  </p>
-                  <div className="grid grid-cols-2 gap-2">
-                    {group.actions.map((action) => (
+                  {/* Run all button */}
+                  {!allDone && !autoRun && (
+                    <div className="flex gap-2">
                       <button
-                        key={action.label}
-                        onClick={() => runQuickAction(action)}
-                        disabled={running}
-                        className="text-left px-3 py-2.5 rounded-xl bg-henry-surface/30 border border-henry-border/30 hover:border-henry-accent/30 hover:bg-henry-surface/50 transition-colors disabled:opacity-40 group"
+                        onClick={runAllSteps}
+                        disabled={!!runningStepId || !isDesktop}
+                        className="px-4 py-2 bg-henry-accent text-white text-sm font-medium rounded-xl hover:bg-henry-accent/90 disabled:opacity-40 transition-all"
                       >
-                        <p className="text-xs font-medium text-henry-text group-hover:text-henry-accent transition-colors">{action.label}</p>
-                        {action.type === 'shell' && (
-                          <p className="text-[10px] text-henry-text-muted/60 mt-0.5 font-mono truncate">{action.value}</p>
-                        )}
+                        ▶ Run all steps
                       </button>
+                      {nextStep && (
+                        <button
+                          onClick={() => runStep(nextStep)}
+                          disabled={!!runningStepId || !isDesktop}
+                          className="px-4 py-2 bg-henry-surface border border-henry-border/40 text-henry-text text-sm rounded-xl hover:bg-henry-hover/50 disabled:opacity-40 transition-all"
+                        >
+                          Run next step only
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {autoRun && (
+                    <div className="flex items-center gap-2 text-xs text-henry-accent">
+                      <span className="w-3 h-3 rounded-full border-2 border-henry-accent/30 border-t-henry-accent animate-spin" />
+                      Running steps…
+                    </div>
+                  )}
+
+                  {allDone && (
+                    <div className="rounded-xl bg-green-400/10 border border-green-400/20 px-4 py-3 flex items-center gap-2">
+                      <span className="text-green-400 text-base">✓</span>
+                      <p className="text-sm text-green-400 font-medium">All steps complete</p>
+                    </div>
+                  )}
+
+                  {hasError && !allDone && (
+                    <div className="rounded-xl bg-orange-400/10 border border-orange-400/20 px-4 py-3 text-xs text-orange-400">
+                      One or more steps failed. Review them below, edit the command if needed, and re-run.
+                    </div>
+                  )}
+
+                  {/* Steps list */}
+                  <div className="space-y-2">
+                    {task.steps.map((step, i) => (
+                      <StepCard
+                        key={step.id}
+                        step={step}
+                        index={i + 1}
+                        isRunning={runningStepId === step.id}
+                        isDesktop={isDesktop}
+                        onRun={() => runStep(step)}
+                        onSkip={() => skipStep(step.id)}
+                        onEditCommand={(cmd) => editStepCommand(step.id, cmd)}
+                      />
                     ))}
                   </div>
                 </div>
-              ))}
-
-              {log.length > 0 && (
-                <div className="border-t border-henry-border/30 pt-3 max-h-28 overflow-y-auto font-mono text-xs space-y-0.5" ref={logRef}>
-                  {log.slice(-10).map((entry) => <div key={entry.id}><LogLine entry={entry} /></div>)}
-                  {running && <div className="text-henry-accent animate-pulse">▋ running…</div>}
-                </div>
               )}
             </div>
           )}
+
+          {/* ── SHELL / APPLESCRIPT TAB ── */}
+          {(tab === 'shell' || tab === 'applescript') && (
+            <>
+              <div className="flex-1 overflow-y-auto px-4 py-3 font-mono text-xs space-y-1" ref={logRef}>
+                {log.length === 0 && (
+                  <p className="text-henry-text-muted italic">Ready. Enter a command below.</p>
+                )}
+                {log.map((entry) => (
+                  <div key={entry.id}>
+                    <LogLine entry={entry} />
+                  </div>
+                ))}
+                {shellRunning && <div className="text-henry-accent animate-pulse">▋ running…</div>}
+              </div>
+              <div className="shrink-0 p-4 border-t border-henry-border/30">
+                <div className="flex gap-2">
+                  <input
+                    ref={inputRef}
+                    type="text"
+                    value={shellInput}
+                    onChange={(e) => setShellInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') { e.preventDefault(); executeShell(); }
+                      else if (e.key === 'ArrowUp') { e.preventDefault(); const n = Math.min(historyIdx+1,history.length-1); setHistoryIdx(n); if(history[n]) setShellInput(history[n]); }
+                      else if (e.key === 'ArrowDown') { e.preventDefault(); const n = Math.max(historyIdx-1,-1); setHistoryIdx(n); setShellInput(n>=0?history[n]:''); }
+                    }}
+                    disabled={shellRunning}
+                    placeholder={tab === 'shell' ? 'Shell command… (↑↓ for history)' : 'AppleScript… e.g. tell application "Finder" to activate'}
+                    className="flex-1 bg-henry-bg border border-henry-border rounded-xl px-4 py-2.5 text-sm text-henry-text font-mono outline-none focus:border-henry-accent/50 disabled:opacity-50"
+                  />
+                  <button
+                    onClick={executeShell}
+                    disabled={shellRunning || !shellInput.trim()}
+                    className="px-4 py-2.5 bg-henry-accent text-white rounded-xl text-sm font-medium hover:bg-henry-accent/90 transition-all disabled:opacity-50"
+                  >
+                    Run
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
         </div>
 
-        {/* Screenshot side panel */}
+        {/* Screenshot panel */}
         {screenshot && (
           <div className="w-72 shrink-0 border-l border-henry-border/50 flex flex-col">
             <div className="flex items-center justify-between px-3 py-2 border-b border-henry-border/30 text-xs text-henry-text-muted">
               <span>Screenshot</span>
-              <button onClick={() => setScreenshot(null)} className="hover:text-henry-text transition-colors">✕</button>
+              <button onClick={() => setScreenshot(null)} className="hover:text-henry-text">✕</button>
             </div>
             <div className="flex-1 overflow-auto p-2">
               <img src={screenshot} alt="Screenshot" className="w-full rounded border border-henry-border/30" />
             </div>
-            <div className="p-2 border-t border-henry-border/30">
-              <button
-                onClick={takeScreenshot}
-                className="w-full text-xs py-1.5 rounded-lg bg-henry-surface hover:bg-henry-hover text-henry-text-dim hover:text-henry-text transition-all"
-              >
-                📸 Refresh
-              </button>
-            </div>
           </div>
         )}
       </div>
-
-      {/* Desktop app CTA */}
-      {!isDesktop && (
-        <div className="shrink-0 mx-4 mb-4 p-4 rounded-xl bg-henry-accent/5 border border-henry-accent/20">
-          <p className="text-sm font-medium text-henry-text mb-1">Full computer control requires the desktop app</p>
-          <p className="text-xs text-henry-text-dim leading-relaxed">
-            The Henry desktop app gives Henry real ability to open apps, take screenshots, and run shell commands.
-          </p>
-        </div>
-      )}
     </div>
   );
 }
 
-// ── Sub-components ────────────────────────────────────────────────────────────
-
-function PermCard({
-  icon, label, granted, what, instructions,
+function StepCard({
+  step, index, isRunning, isDesktop, onRun, onSkip, onEditCommand,
 }: {
-  icon: string; label: string; granted: boolean; what: string; instructions?: string | null;
+  step: TaskStep;
+  index: number;
+  isRunning: boolean;
+  isDesktop: boolean;
+  onRun: () => void;
+  onSkip: () => void;
+  onEditCommand: (cmd: string) => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [editVal, setEditVal] = useState(step.command);
+  const risk = RISK_LABELS[step.risk];
+
+  const statusIcon =
+    step.status === 'done'    ? <span className="text-green-400 text-sm">✓</span> :
+    step.status === 'error'   ? <span className="text-red-400 text-sm">✕</span> :
+    step.status === 'skipped' ? <span className="text-henry-text-muted text-sm">–</span> :
+    isRunning                 ? <span className="w-3 h-3 rounded-full border-2 border-henry-accent/30 border-t-henry-accent animate-spin shrink-0" /> :
+    <span className="text-[11px] font-semibold text-henry-text-muted">{index}</span>;
+
+  const cardBg =
+    step.status === 'done'    ? 'border-green-400/20 bg-green-400/5' :
+    step.status === 'error'   ? 'border-red-400/20 bg-red-400/5' :
+    step.status === 'skipped' ? 'border-henry-border/10 opacity-50' :
+    isRunning                 ? 'border-henry-accent/30 bg-henry-accent/5' :
+    'border-henry-border/20 bg-henry-surface/10';
+
   return (
-    <div className={`rounded-xl border p-3 transition-all ${granted ? 'bg-henry-surface/20 border-henry-border/30' : 'bg-henry-warning/5 border-henry-warning/20'}`}>
-      <div className="flex items-center gap-3">
-        <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-base ${granted ? 'bg-henry-success/10' : 'bg-henry-warning/10'}`}>
-          {icon}
+    <div className={`rounded-xl border p-3 transition-all ${cardBg}`}>
+      <div className="flex items-start gap-3">
+        <div className="w-6 h-6 rounded-full bg-henry-surface/40 flex items-center justify-center shrink-0 mt-0.5">
+          {statusIcon}
         </div>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-henry-text">{label}</span>
-            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${granted ? 'bg-henry-success/15 text-henry-success' : 'bg-henry-warning/15 text-henry-warning'}`}>
-              {granted ? 'Enabled' : 'Not granted'}
-            </span>
+          <div className="flex items-center gap-2 mb-1">
+            <p className="text-xs font-semibold text-henry-text">{step.label}</p>
+            <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${risk.bg} ${risk.color}`}>{risk.label}</span>
+            {step.optional && <span className="text-[9px] text-henry-text-muted">optional</span>}
           </div>
-          <p className="text-[11px] text-henry-text-muted mt-0.5">{what}</p>
+          <p className="text-[11px] text-henry-text-muted mb-1.5">{step.description}</p>
+
+          {/* Command display / edit */}
+          {editMode ? (
+            <div className="flex gap-2 mt-1">
+              <input
+                value={editVal}
+                onChange={(e) => setEditVal(e.target.value)}
+                className="flex-1 text-[11px] font-mono bg-henry-bg border border-henry-border/40 rounded-lg px-2 py-1 text-henry-text outline-none focus:border-henry-accent/50"
+              />
+              <button
+                onClick={() => { onEditCommand(editVal); setEditMode(false); }}
+                className="text-[11px] px-2 py-1 rounded-lg bg-henry-accent text-white"
+              >Save</button>
+              <button onClick={() => setEditMode(false)} className="text-[11px] px-2 py-1 rounded-lg border border-henry-border/30 text-henry-text-muted">Cancel</button>
+            </div>
+          ) : (
+            <code
+              className="block text-[11px] font-mono text-henry-accent/90 bg-henry-surface/40 rounded-lg px-2 py-1.5 break-all cursor-pointer hover:bg-henry-surface/70 transition-all"
+              title="Click to edit"
+              onClick={() => { setEditVal(step.command); setEditMode(true); }}
+            >
+              {step.command}
+            </code>
+          )}
+
+          {/* Output */}
+          {step.output && (
+            <pre className={`text-[10px] mt-2 px-2 py-1.5 rounded-lg bg-henry-bg/60 whitespace-pre-wrap break-all max-h-32 overflow-y-auto ${
+              step.status === 'error' ? 'text-red-400' : 'text-green-400/80'
+            }`}>{step.output || step.error}</pre>
+          )}
+          {step.error && step.status === 'error' && !step.output && (
+            <p className="text-[10px] text-red-400 mt-1.5 font-mono">{step.error}</p>
+          )}
         </div>
-        {!granted && instructions && (
-          <button
-            onClick={() => setExpanded((v) => !v)}
-            className="shrink-0 text-xs text-henry-accent hover:underline"
-          >
-            {expanded ? 'Hide' : 'How to fix →'}
-          </button>
+
+        {/* Action buttons */}
+        {(step.status === 'pending' || step.status === 'error') && !isRunning && (
+          <div className="flex flex-col gap-1 shrink-0">
+            <button
+              onClick={onRun}
+              disabled={!isDesktop}
+              className="text-[11px] px-2.5 py-1 rounded-lg bg-henry-accent text-white hover:bg-henry-accent/90 disabled:opacity-40 transition-all"
+            >
+              {step.status === 'error' ? 'Retry' : 'Run'}
+            </button>
+            <button
+              onClick={onSkip}
+              className="text-[11px] px-2.5 py-1 rounded-lg border border-henry-border/30 text-henry-text-muted hover:text-henry-text transition-all"
+            >
+              Skip
+            </button>
+          </div>
         )}
       </div>
-      {expanded && instructions && (
-        <div className="mt-3 pl-11 text-xs text-henry-text-dim leading-relaxed border-t border-henry-border/20 pt-3">
-          {instructions}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function InfoCard({ title, icon, children }: { title: string; icon: string; children: React.ReactNode }) {
-  return (
-    <div className="rounded-xl bg-henry-surface/30 border border-henry-border/30 p-4">
-      <p className="text-[11px] font-semibold uppercase tracking-wider text-henry-text-muted mb-2 flex items-center gap-1.5">
-        <span>{icon}</span>{title}
-      </p>
-      {children}
-    </div>
-  );
-}
-
-function InfoRow({ label, value, ok }: { label: string; value: string; ok?: boolean }) {
-  return (
-    <div className="flex items-center justify-between py-0.5">
-      <span className="text-[11px] text-henry-text-muted">{label}</span>
-      <span className={`text-[11px] font-medium ${ok === false ? 'text-henry-warning' : ok === true ? 'text-henry-success' : 'text-henry-text-dim'}`}>{value}</span>
     </div>
   );
 }
 
 function LogLine({ entry }: { entry: ActionLog }) {
   const colors: Record<ActionLog['type'], string> = {
-    command:    'text-henry-accent',
-    result:     'text-henry-success',
+    command: 'text-henry-accent',
+    result: 'text-henry-success',
     screenshot: 'text-henry-worker',
-    error:      'text-henry-error',
-    info:       'text-henry-text-muted',
+    error: 'text-henry-error',
+    info: 'text-henry-text-muted',
   };
-  return (
-    <div className={`${colors[entry.type]} leading-relaxed whitespace-pre-wrap break-all`}>
-      {entry.content}
-    </div>
-  );
+  return <div className={`${colors[entry.type]} leading-relaxed whitespace-pre-wrap break-all`}>{entry.content}</div>;
 }

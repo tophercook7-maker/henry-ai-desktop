@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { linearGetMyIssues, isConnected, type LinearIssue } from '../../henry/integrations';
-import ConnectPrompt from './ConnectPrompt';
+import { useStore } from '../../store';
 
 function priorityIcon(p: number): string {
   return ['', '🔴', '🟠', '🔵', '⚪', '⚪'][p] || '⚪';
@@ -20,7 +20,8 @@ function timeAgo(iso: string): string {
 }
 
 export default function LinearPanel() {
-  const [connected, setConnected] = useState(isConnected('linear'));
+  const setCurrentView = useStore((s) => s.setCurrentView);
+  const connected = isConnected('linear');
 
   const [issues, setIssues] = useState<LinearIssue[]>([]);
   const [loading, setLoading] = useState(false);
@@ -47,22 +48,19 @@ export default function LinearPanel() {
 
   if (!connected) {
     return (
-      <ConnectPrompt
-        serviceId="linear"
-        icon="🔷"
-        name="Linear"
-        unlocks="See all issues assigned to you, filtered by priority, grouped by team."
-        steps={[
-          'Go to linear.app/settings/api',
-          'Click "Create key", give it a label, and copy the key (starts with lin_api_)',
-          'Paste it below',
-        ]}
-        tokenLabel="Linear API Key"
-        tokenPlaceholder="lin_api_…"
-        docsUrl="https://linear.app/settings/api"
-        docsLabel="Open Linear API settings →"
-        onConnected={() => setConnected(true)}
-      />
+      <div className="h-full flex flex-col items-center justify-center gap-4 p-8 text-center">
+        <div className="text-5xl">🔷</div>
+        <div>
+          <h2 className="text-lg font-semibold text-henry-text mb-1">Linear not connected</h2>
+          <p className="text-sm text-henry-text-muted">Add your Linear API key to see your issues.</p>
+        </div>
+        <button
+          onClick={() => setCurrentView('integrations')}
+          className="px-4 py-2 bg-henry-accent text-white rounded-xl text-sm font-semibold hover:bg-henry-accent/90 transition-colors"
+        >
+          Go to Integrations
+        </button>
+      </div>
     );
   }
 

@@ -1,5 +1,7 @@
-import { useState, useRef, useEffect, useLayoutEffect } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
 import { useStore } from '../../store';
+import { autoSelectModels } from '@/henry/modelPriority';
+import { consumePendingChatPrompt } from '@/henry/launchChat';
 import type { HenryLeanMemoryParts, Message } from '../../types';
 import ChatInput from './ChatInput';
 import EngineSelector from './EngineSelector';
@@ -109,8 +111,6 @@ import {
   formatSourceCitations,
   type WebSource,
 } from '@/henry/webTools';
-import { shouldUseSelfTools, runSelfTools } from '@/henry/selfRepairTools';
-import { logError } from '@/henry/selfRepairStore';
 import {
   absorbBible,
   getBibleCorpusStatus,
@@ -122,7 +122,6 @@ import { logAction } from '@/henry/auditLog';
 import { extractHtmlFromMessage } from '@/henry/builderPreview';
 import { detectEmotionalState, buildEmotionBlock } from '@/henry/emotionDetector';
 import { autoSaveCommitments, addWorkingItem } from '@/henry/workingMemory';
-import { autoExtractUserCommitments, autoExtractHenryCommitments } from '@/henry/commitmentExtractor';
 import {
   sessionStart,
   sessionTick,
@@ -131,8 +130,6 @@ import {
 } from '@/henry/sessionLifecycle';
 import { formatDeepContext } from '@/henry/memoryRetrieval';
 import BuilderPreviewPanel from './BuilderPreviewPanel';
-import { useSharedBrainState } from '../../brain/sharedState';
-import { hasAnythingToSurface, evaluateInitiative } from '../../core/initiative/initiativeEngine';
 
 const HENRY_OPERATING_MODE_KEY = 'henry_operating_mode';
 const HENRY_BIBLICAL_PROFILE_KEY = 'henry_biblical_source_profile';
@@ -191,6 +188,11 @@ const MODE_HUMAN_LABELS: Record<HenryOperatingMode, string> = {
   coach: 'Coach',
   strategic: 'Strategic',
   business: 'Business',
+  negotiator: 'Negotiator',
+  health: 'Health',
+  research: 'Research',
+  meal: 'Meals',
+  shopping: 'Shopping',
 };
 
 const BIBLICAL_BOOKS = [
@@ -312,7 +314,9 @@ export default function ChatView() {
     readStoredDesign3dWorkflow
   );
   const [saveWorkspaceDraftBusy, setSaveWorkspaceDraftBusy] = useState(false);
-  const [chatInject, setChatInject] = useState<{ id: number; text: string } | null>(null);
+  const [chatInject, setChatInject] = useState<{ id: number; text: string; autoSend?: boolean } | null>(null);
+  // Stable reference — prevents ChatInput's inject useEffect from re-firing on every render
+  const handleInjectConsumed = useCallback(() => setChatInject(null), []);
   const [isSearching, setIsSearching] = useState(false);
   const [lastWebSources, setLastWebSources] = useState<WebSource[]>([]);
   const [bibleStatus, setBibleStatus] = useState<BibleCorpusStatus>({ loaded: false, bookCount: 0, verseCount: 0, sizeBytes: 0 });
@@ -352,40 +356,33 @@ export default function ChatView() {
   const sessionAsyncResumeStartedRef = useRef(false);
   const wakeHandleSendRef = useRef<((content: string) => void) | null>(null);
 
-  // ── Proactive initiative surfacing ────────────────────────────────────────
-  const [proactiveSuggestion, setProactiveSuggestion] = useState<string | null>(null);
-  const proactiveFiredRef = useRef(false);
-  const { priorityReadyAt } = useSharedBrainState();
-
-  // When the background brain has run and the conversation is empty,
-  // ask the initiative engine if there's anything worth saying first.
+  // On mount: consume any prompt queued before this component mounted.
+  // henry_mode_launch / henry_secretary_prompt fire BEFORE useEffect listeners attach,
+  // so launchChat() also writes to localStorage as a reliable fallback.
   useEffect(() => {
-    if (proactiveFiredRef.current) return;         // only once per session
-    if (messages.length > 0) return;              // don't interrupt existing conversation
-    if (!priorityReadyAt) return;                 // brain hasn't run yet
-
-    const delay = setTimeout(() => {
-      if (proactiveFiredRef.current) return;
-      if (messages.length > 0) return;            // user may have started typing
-
-      if (!hasAnythingToSurface()) return;
-
-      const result = evaluateInitiative();
-      if (result.shouldSurface && result.message) {
-        proactiveFiredRef.current = true;
-        setProactiveSuggestion(result.message);
-      }
-    }, 2200); // give the brain a moment to settle after first run
-
-    return () => clearTimeout(delay);
-  }, [priorityReadyAt, messages.length]);
-
-  // Clear the proactive suggestion once the user engages
-  useEffect(() => {
-    if (messages.length > 0 && proactiveSuggestion) {
-      setProactiveSuggestion(null);
+    const pending = consumePendingChatPrompt();
+    if (pending) {
+      if (isHenryOperatingMode(pending.mode)) setOperatingMode(pending.mode);
+      if (pending.prompt) setChatInject({ id: Date.now(), text: pending.prompt, autoSend: true });
     }
-  }, [messages.length, proactiveSuggestion]);
+    // Defensive reset: if a previous stream was orphaned (user navigated away mid-stream),
+    // isStreaming may still be true in the store. Clear it so the input isn't permanently locked.
+    setIsStreaming(false);
+    setStreamingContent('');
+    setCompanionStatus({ status: 'idle' });
+
+    // Unmount: cancel any in-flight stream so it doesn't hold isStreaming=true in the background
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.cancel();
+        streamRef.current = null;
+      }
+      setIsStreaming(false);
+      setStreamingContent('');
+      setCompanionStatus({ status: 'idle' });
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     function handleSecretaryPrompt(e: Event) {
@@ -393,7 +390,7 @@ export default function ChatView() {
       const mode = detail.mode && isHenryOperatingMode(detail.mode) ? detail.mode : 'secretary';
       setOperatingMode(mode);
       if (detail.prompt) {
-        setChatInject({ id: Date.now(), text: detail.prompt });
+        setChatInject({ id: Date.now(), text: detail.prompt, autoSend: true });
       }
     }
     function handleModeLaunch(e: Event) {
@@ -401,7 +398,7 @@ export default function ChatView() {
       const mode = detail.mode && isHenryOperatingMode(detail.mode) ? detail.mode : 'companion';
       setOperatingMode(mode);
       if (detail.prompt) {
-        setChatInject({ id: Date.now(), text: detail.prompt });
+        setChatInject({ id: Date.now(), text: detail.prompt, autoSend: true });
       }
     }
     function handleNewChat() {
@@ -423,22 +420,15 @@ export default function ChatView() {
       }, 80);
     }
 
-    function handleActionPrompt(e: Event) {
-      const { prompt } = (e as CustomEvent<{ prompt: string }>).detail;
-      if (prompt) setChatInject({ id: Date.now(), text: prompt });
-    }
-
     window.addEventListener('henry_secretary_prompt', handleSecretaryPrompt);
     window.addEventListener('henry_mode_launch', handleModeLaunch);
     window.addEventListener('henry_new_chat', handleNewChat);
     window.addEventListener('henry_wake_word', handleWakeWord);
-    window.addEventListener('henry_action_prompt', handleActionPrompt);
     return () => {
       window.removeEventListener('henry_secretary_prompt', handleSecretaryPrompt);
       window.removeEventListener('henry_mode_launch', handleModeLaunch);
       window.removeEventListener('henry_new_chat', handleNewChat);
       window.removeEventListener('henry_wake_word', handleWakeWord);
-      window.removeEventListener('henry_action_prompt', handleActionPrompt);
     };
   }, []);
 
@@ -464,7 +454,6 @@ export default function ChatView() {
         if (!ollamaEnabled) return;
         if (s.companion_model) return; // already configured, don't override
 
-        const { autoSelectModels } = await import('@/henry/modelPriority');
         const ollamaUrl = s.ollama_base_url || 'http://localhost:11434';
         const raw = await window.henryAPI.ollamaModels(ollamaUrl) as any;
         const installed: string[] = (raw?.models ?? []).map((m: any) => m.name as string);
@@ -589,15 +578,21 @@ export default function ChatView() {
     })();
   }, [conversations.length]);
 
-  useEffect(() => {
-    const container = scrollContainerRef.current;
-    if (!container) return;
-    if (isStreaming) {
-      container.scrollTop = container.scrollHeight;
-    } else {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  // Sticky-bottom scroll: only auto-scroll when user is already near the bottom.
+  // Uses direct scrollTop assignment (no 'smooth') to prevent animation pile-up
+  // that can scroll the entire iframe instead of just the message container.
+  const scrollToBottom = useCallback((force = false) => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
+    if (force || atBottom) {
+      el.scrollTop = el.scrollHeight;
     }
-  }, [messages, streamingContent, isStreaming]);
+  }, []);
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, streamingContent, scrollToBottom]);
 
   useEffect(() => {
     try {
@@ -1005,6 +1000,7 @@ export default function ChatView() {
       created_at: new Date().toISOString(),
     };
     addMessage(userMsg);
+    scrollToBottom(true); // force jump to bottom when a new message is sent
     try { await window.henryAPI.saveMessage(userMsg); } catch { /* optional */ }
     await handleCompanionStream(enrichedContent, convId, detectedMode);
   }
@@ -1092,29 +1088,6 @@ export default function ChatView() {
       }
     }
 
-    // ── Self-repair tool auto-routing ───────────────────────────────────────
-    // When Henry's message touches his own systems, run self-repair tools and
-    // inject results as enriched context (same pattern as web tools above).
-    let selfRepairContextBlock = '';
-    if (shouldUseSelfTools(content)) {
-      try {
-        const selfResult = await runSelfTools(content, {
-          onStatus: (msg) =>
-            setCompanionStatus({ status: 'thinking', taskDescription: msg }),
-        });
-        selfRepairContextBlock = selfResult.contextBlock;
-      } catch (err) {
-        logError('tool_failure', `Self-repair tools failed to run: ${String(err)}`, {
-          severity: 'low',
-        });
-      } finally {
-        setCompanionStatus({
-          status: 'thinking',
-          taskDescription: tierLabel ? `Thinking… (${tierLabel})` : 'Thinking…',
-        });
-      }
-    }
-
     // Lean memory slices from DB (summary, facts, workspace hints); format in memoryContext.ts
     const emptyLean: HenryLeanMemoryParts = {
       conversationSummary: null,
@@ -1133,7 +1106,7 @@ export default function ChatView() {
       lean = ctx.lean;
       // Format extended memory layers (Layer 3–7) into system prompt block
       if (ctx.extended) {
-        const formatted = formatDeepContext(ctx, { bandwidth, maxTokenBudget: 12_000 });
+        const formatted = formatDeepContext(ctx, { bandwidth, maxTokenBudget: 2_000 });
         deepContextBlock = formatted.systemBlock;
       }
     } catch {
@@ -1291,17 +1264,24 @@ export default function ChatView() {
     const emotionResult = detectEmotionalState(content);
     const emotionBlock = buildEmotionBlock(emotionResult);
 
-    // Enrich system prompt with deep memory layers + emotion + web + Bible + self-repair
+    // Enrich system prompt with deep memory layers + emotion + web + Bible
     const extraContext = [
       deepContextBlock,
       emotionBlock,
       webContextBlock,
       bibleContextBlock,
-      selfRepairContextBlock,
     ].filter(Boolean).join('\n\n');
-    const enrichedSystemPrompt = extraContext
+    const rawEnrichedSystemPrompt = extraContext
       ? `${systemPrompt}\n\n${extraContext}`
       : systemPrompt;
+
+    // Hard cap: keep system prompt under ~1 500 tokens on Groq free-tier (6 000 TPM).
+    // Budget split: ~1 500 sys + ~1 500 history + ~50 user msg + ~2 000 response = ~5 050 total.
+    // ~6 000 chars ≈ 1 500 tokens at 4 chars/token.
+    const MAX_SYSTEM_CHARS = 6_000;
+    const enrichedSystemPrompt = rawEnrichedSystemPrompt.length > MAX_SYSTEM_CHARS
+      ? rawEnrichedSystemPrompt.slice(0, MAX_SYSTEM_CHARS)
+      : rawEnrichedSystemPrompt;
 
     const messagesPayload: HenryAIMessage[] = [
       { role: 'system', content: enrichedSystemPrompt },
@@ -1347,11 +1327,12 @@ export default function ChatView() {
     try {
       setCompanionStatus({ status: 'streaming' });
 
-      // Max output tokens — sized to realistic response lengths, not theoretical max.
-      // Smaller ceilings reduce TTFT because models reserve capacity before streaming.
+      // Max output tokens — biblical mode and quality tasks get larger budgets
+      // Keep max_tokens conservative so prompt + max_tokens stays within Groq's free-tier budget.
+      // Groq 8B-instant free tier: 6 000 TPM — with ~2 000 prompt tokens we can afford ~2 048 out.
       const maxOutputTokens = effectiveMode === 'biblical'
-        ? 8_192
-        : presenceTier === 'quality' ? 6_000 : presenceTier === 'fast' ? 1_500 : 3_000;
+        ? 2_048
+        : presenceTier === 'quality' ? 2_048 : 1_024;
 
       const stream = window.henryAPI.streamMessage({
         provider: companionProvider,
@@ -1398,9 +1379,6 @@ export default function ChatView() {
         // Auto-extract Henry's commitments and next steps into working memory
         if (fullText.length > 80) {
           autoSaveCommitments(fullText, convId);
-          // Also check for durable commitments on both sides of the conversation
-          autoExtractUserCommitments(content, convId);
-          autoExtractHenryCommitments(fullText, convId);
         }
 
         // Tick session tracker — track message count + emotional pattern
@@ -1709,7 +1687,7 @@ export default function ChatView() {
   return (
     <div className="h-full flex min-h-0">
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
-      {/* Messages area */}
+      {/* Messages area — ref used for sticky-bottom scroll (no scrollIntoView) */}
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-3 sm:px-6 py-4">
         {recoveryBannerOpen && recoverySnapshot && (
           <div className="max-w-3xl mx-auto mb-4 rounded-lg border border-henry-accent/25 bg-henry-surface/30 px-3 py-2.5 text-xs text-henry-text">
@@ -1819,7 +1797,6 @@ export default function ChatView() {
               setOperatingMode(mode);
               setChatInject({ id: Date.now(), text });
             }}
-            proactiveSuggestion={proactiveSuggestion}
           />
         ) : (
           <div className="max-w-3xl mx-auto space-y-4">
@@ -1931,13 +1908,16 @@ export default function ChatView() {
       </div>
 
       {/* Input area */}
-      <div className="shrink-0 border-t border-henry-border/30 bg-henry-surface/20 px-3 sm:px-6 py-3 sm:py-4">
+      <div
+        className="shrink-0 border-t border-henry-border/30 bg-henry-surface/20 px-3 sm:px-6 py-3 sm:py-4"
+        style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
+      >
         <div className="max-w-3xl mx-auto">
           {operatingMode === 'biblical' && (
             <>
               <ScriptureToolsPanel
                 disabled={isStreaming}
-                onInjectChat={(text) => setChatInject({ id: Date.now(), text })}
+                onInjectChat={(text) => setChatInject({ id: Date.now(), text, autoSend: true })}
                 onRequestExportPack={() => openExportPack('biblical_study_pack')}
               />
               {/* Bible corpus absorption panel */}
@@ -1987,7 +1967,7 @@ export default function ChatView() {
               referencePath={design3dRefPath}
               workflowTypeId={design3dWorkflowTypeId}
               onWorkflowChange={setDesign3dWorkflowTypeId}
-              onInjectChat={(text) => setChatInject({ id: Date.now(), text })}
+              onInjectChat={(text) => setChatInject({ id: Date.now(), text, autoSend: true })}
               disabled={isStreaming}
               onRequestExportPack={() => openExportPack('design3d_handoff')}
             />
@@ -1996,7 +1976,7 @@ export default function ChatView() {
             <WriterDraftLibrary
               writerDocumentTypeId={writerDocumentTypeId}
               activeDraftPath={writerActiveDraftPath}
-              onInjectChat={(text) => setChatInject({ id: Date.now(), text })}
+              onInjectChat={(text) => setChatInject({ id: Date.now(), text, autoSend: true })}
               disabled={isStreaming}
               onRequestExportPack={() => openExportPack('writer_handoff')}
             />
@@ -2005,7 +1985,7 @@ export default function ChatView() {
             <WorkspaceContextStrip
               context={activeWorkspaceContext}
               indexHintForCopy={workspaceContextIndexHint}
-              onInjectChat={(text) => setChatInject({ id: Date.now(), text })}
+              onInjectChat={(text) => setChatInject({ id: Date.now(), text, autoSend: true })}
               disabled={isStreaming}
             />
           )}
@@ -2122,15 +2102,38 @@ export default function ChatView() {
               </button>
             </div>
           )}
-          <div className="flex items-end gap-2 md:gap-3 overflow-x-auto scrollbar-none pb-0.5">
+          {/* Input — always full-width and visible on mobile */}
+          <div className="mb-2">
+            <ChatInput
+              onSend={handleSend}
+              isStreaming={isStreaming}
+              onCancel={isStreaming ? cancelStream : undefined}
+              injectDraft={chatInject}
+              onInjectConsumed={handleInjectConsumed}
+              placeholder="Message Henry…"
+              ttsEnabled={ttsEnabled}
+              onToggleTts={toggleTts}
+              onSearch={handleSearch}
+              isSearching={isSearching}
+              ambientMode={settings.ambient_mode === 'on'}
+              onFileIngest={(content, fileName) => {
+                handleSend(
+                  `I'm sharing a file with you — **${fileName}**. Here's the content:\n\n\`\`\`\n${content}\n\`\`\`\n\nGive me your honest, multi-angle take on it. What stands out? What questions does it raise? And ask me what I'd like to do with it.`
+                );
+              }}
+            />
+          </div>
+
+          {/* Controls row — scrolls horizontally if needed but doesn't push input off-screen */}
+          <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pb-0.5">
             <EngineSelector
               selectedEngine={selectedEngine}
               onSelect={setSelectedEngine}
             />
-            <label className="flex flex-col gap-1 shrink-0 text-[10px] text-henry-text-muted uppercase tracking-wide">
+            <label className="flex items-center gap-1.5 shrink-0 text-[10px] text-henry-text-muted uppercase tracking-wide">
               Mode
               <select
-                className="text-xs font-medium normal-case tracking-normal rounded-lg border border-henry-border/40 bg-henry-surface/40 text-henry-text px-2 py-1.5 min-w-[8.5rem] focus:outline-none focus:ring-1 focus:ring-henry-accent/50"
+                className="text-xs font-medium normal-case tracking-normal rounded-lg border border-henry-border/40 bg-henry-surface/40 text-henry-text px-2 py-1 min-w-[8rem] focus:outline-none focus:ring-1 focus:ring-henry-accent/50"
                 value={operatingMode}
                 onChange={(e) => {
                   const v = e.target.value;
@@ -2146,10 +2149,10 @@ export default function ChatView() {
               </select>
             </label>
             {operatingMode === 'design3d' && (
-              <label className="flex flex-col gap-1 shrink-0 text-[10px] text-henry-text-muted uppercase tracking-wide">
+              <label className="flex items-center gap-1.5 shrink-0 text-[10px] text-henry-text-muted uppercase tracking-wide">
                 Workflow
                 <select
-                  className="text-xs font-medium normal-case tracking-normal rounded-lg border border-henry-border/40 bg-henry-surface/40 text-henry-text px-2 py-1.5 max-w-[10.5rem] focus:outline-none focus:ring-1 focus:ring-henry-accent/50"
+                  className="text-xs font-medium normal-case tracking-normal rounded-lg border border-henry-border/40 bg-henry-surface/40 text-henry-text px-2 py-1 max-w-[10rem] focus:outline-none focus:ring-1 focus:ring-henry-accent/50"
                   value={design3dWorkflowTypeId}
                   onChange={(e) => {
                     const v = e.target.value;
@@ -2166,10 +2169,10 @@ export default function ChatView() {
               </label>
             )}
             {operatingMode === 'writer' && (
-              <label className="flex flex-col gap-1 shrink-0 text-[10px] text-henry-text-muted uppercase tracking-wide">
+              <label className="flex items-center gap-1.5 shrink-0 text-[10px] text-henry-text-muted uppercase tracking-wide">
                 Doc type
                 <select
-                  className="text-xs font-medium normal-case tracking-normal rounded-lg border border-henry-border/40 bg-henry-surface/40 text-henry-text px-2 py-1.5 max-w-[10rem] focus:outline-none focus:ring-1 focus:ring-henry-accent/50"
+                  className="text-xs font-medium normal-case tracking-normal rounded-lg border border-henry-border/40 bg-henry-surface/40 text-henry-text px-2 py-1 max-w-[9rem] focus:outline-none focus:ring-1 focus:ring-henry-accent/50"
                   value={writerDocumentTypeId}
                   onChange={(e) => {
                     const v = e.target.value;
@@ -2186,10 +2189,10 @@ export default function ChatView() {
               </label>
             )}
             {operatingMode === 'biblical' && (
-              <label className="flex flex-col gap-1 shrink-0 text-[10px] text-henry-text-muted uppercase tracking-wide">
+              <label className="flex items-center gap-1.5 shrink-0 text-[10px] text-henry-text-muted uppercase tracking-wide">
                 Bible source
                 <select
-                  className="text-xs font-medium normal-case tracking-normal rounded-lg border border-henry-border/40 bg-henry-surface/40 text-henry-text px-2 py-1.5 max-w-[11rem] focus:outline-none focus:ring-1 focus:ring-henry-accent/50"
+                  className="text-xs font-medium normal-case tracking-normal rounded-lg border border-henry-border/40 bg-henry-surface/40 text-henry-text px-2 py-1 max-w-[10rem] focus:outline-none focus:ring-1 focus:ring-henry-accent/50"
                   value={biblicalSourceProfileId}
                   onChange={(e) => {
                     const v = e.target.value;
@@ -2205,26 +2208,6 @@ export default function ChatView() {
                 </select>
               </label>
             )}
-            <div className="flex-1">
-              <ChatInput
-                onSend={handleSend}
-                isStreaming={isStreaming}
-                onCancel={isStreaming ? cancelStream : undefined}
-                injectDraft={chatInject}
-                onInjectConsumed={() => setChatInject(null)}
-                placeholder="Message Henry…"
-                ttsEnabled={ttsEnabled}
-                onToggleTts={toggleTts}
-                onSearch={handleSearch}
-                isSearching={isSearching}
-                ambientMode={settings.ambient_mode === 'on'}
-                onFileIngest={(content, fileName) => {
-                  handleSend(
-                    `I'm sharing a file with you — **${fileName}**. Here's the content:\n\n\`\`\`\n${content}\n\`\`\`\n\nGive me your honest, multi-angle take on it. What stands out? What questions does it raise? And ask me what I'd like to do with it.`
-                  );
-                }}
-              />
-            </div>
           </div>
           {operatingMode === 'biblical' && (
             <p className="text-[10px] text-henry-text-muted mt-2 leading-relaxed">
@@ -2504,29 +2487,71 @@ const DISCOVERY_MODES: Array<{
       'What\'s the fastest path to a first paying customer?',
     ],
   },
+  {
+    mode: 'negotiator',
+    icon: '🤝',
+    title: 'Negotiate',
+    desc: 'Deals, rates, counter-offers, conflict resolution. Henry gives you exact scripts to use.',
+    examples: [
+      'I need to negotiate my salary — help me prepare',
+      'A vendor is charging too much — write me a counter-offer',
+      'How do I handle a difficult conversation with a client?',
+    ],
+  },
+  {
+    mode: 'health',
+    icon: '💪',
+    title: 'Health & Fitness',
+    desc: 'Training, nutrition, recovery, and energy — practical and personalized to you.',
+    examples: [
+      'Design me a workout plan for the next 4 weeks',
+      'What should I eat to improve my energy in the afternoon?',
+      'Help me interpret my sleep data and improve my recovery',
+    ],
+  },
+  {
+    mode: 'research',
+    icon: '🔬',
+    title: 'Research',
+    desc: 'Deep dives, synthesis, and clear summaries. Henry goes beyond surface-level answers.',
+    examples: [
+      'Research the best MQTT brokers for IoT projects',
+      'What do we know about the health effects of seed oils?',
+      'Compare the top 3 options for [product] and tell me which to buy',
+    ],
+  },
+  {
+    mode: 'meal',
+    icon: '🍽️',
+    title: 'Meal Planning',
+    desc: 'Weekly plans, recipes, shopping lists — food that works for your goals and schedule.',
+    examples: [
+      'Plan my meals for this week — high protein, easy to prep',
+      'What can I make with chicken, rice, and broccoli?',
+      'Give me a shopping list for a week of healthy dinners',
+    ],
+  },
+  {
+    mode: 'shopping',
+    icon: '🛒',
+    title: 'Shopping',
+    desc: 'Product research, comparisons, and deal evaluation — no guessing, just the right pick.',
+    examples: [
+      'What\'s the best mechanical keyboard under $150?',
+      'Compare the top air fryers — which one should I actually buy?',
+      'Find me a gift for someone who loves cooking, budget $80',
+    ],
+  },
 ];
 
 function EmptyChat({
   onModeAndInject,
-  proactiveSuggestion,
 }: {
   onModeAndInject: (mode: HenryOperatingMode, text: string) => void;
-  proactiveSuggestion?: string | null;
 }) {
   return (
     <div className="h-full flex items-start justify-center pt-8 pb-6 overflow-y-auto">
       <div className="w-full max-w-2xl px-4 animate-fade-in">
-
-        {/* Proactive suggestion from initiative engine */}
-        {proactiveSuggestion && (
-          <div className="mb-5 flex items-start gap-3 px-4 py-3 rounded-xl bg-henry-surface/40 border border-henry-border/30">
-            <div className="shrink-0 mt-0.5 w-5 h-5 rounded-full bg-henry-accent/15 flex items-center justify-center">
-              <span className="text-[9px] text-henry-accent font-bold">H</span>
-            </div>
-            <p className="text-[13px] text-henry-text leading-relaxed">{proactiveSuggestion}</p>
-          </div>
-        )}
-
         <div className="text-center mb-7">
           <div className="text-5xl mb-3">🧠</div>
           <h2 className="text-xl font-bold text-henry-text mb-1">Henry AI</h2>

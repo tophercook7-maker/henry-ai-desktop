@@ -141,8 +141,8 @@ export default function TitleBar() {
             Cloud
             <span className="hidden sm:inline text-henry-text-muted">
               {' '}{workerStatus.status === 'idle' ? 'ready' : workerStatus.status}
-              {(workerStatus as any).queueLength > 0 &&
-                ` (${(workerStatus as any).queueLength} queued)`}
+              {(workerStatus.queueLength ?? 0) > 0 &&
+                ` (${workerStatus.queueLength} queued)`}
             </span>
           </span>
         </div>
