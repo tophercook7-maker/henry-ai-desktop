@@ -109,10 +109,12 @@ function categoryBadgeClass(source: string): string {
 function WorkspaceTop3() {
   const { prioritySnapshot, priorityReadyAt } = useSharedBrainState();
 
-  if (!priorityReadyAt || !prioritySnapshot) return null;
+  if (!priorityReadyAt || !prioritySnapshot) {
+    return <WorkspaceFocusPrompt />;
+  }
 
   const items = (prioritySnapshot.top3 ?? []).slice(0, 3);
-  if (items.length === 0) return null;
+  if (items.length === 0) return <WorkspaceFocusPrompt />;
 
   return (
     <div>
@@ -141,6 +143,53 @@ function WorkspaceTop3() {
             )}
           </div>
         ))}
+        <button
+          onClick={() => {
+            window.dispatchEvent(new CustomEvent('henry_mode_launch', {
+              detail: { mode: 'secretary', prompt: "What are my top priorities right now and what should I focus on first?" }
+            }));
+            useStore.getState().setCurrentView('chat');
+          }}
+          className="w-full text-left text-[10px] text-henry-text-muted hover:text-henry-accent transition-colors py-1 px-1"
+        >
+          Ask Henry to re-prioritize →
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function WorkspaceFocusPrompt() {
+  const setCurrentView = useStore((s) => s.setCurrentView);
+  const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+
+  return (
+    <div className="rounded-2xl border border-henry-border/30 bg-henry-surface/20 p-5">
+      <div className="flex items-start gap-4">
+        <div className="w-9 h-9 rounded-xl bg-henry-accent/10 flex items-center justify-center text-lg shrink-0">🎯</div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-henry-text mb-0.5">What's the focus for today?</p>
+          <p className="text-[11px] text-henry-text-muted mb-3">{today}</p>
+          <div className="flex gap-2 flex-wrap">
+            <button
+              onClick={() => {
+                window.dispatchEvent(new CustomEvent('henry_mode_launch', {
+                  detail: { mode: 'secretary', prompt: "Good morning. What should I focus on today? Help me prioritize." }
+                }));
+                setCurrentView('chat');
+              }}
+              className="px-3 py-1.5 bg-henry-accent text-white rounded-lg text-xs font-medium hover:bg-henry-accent/90 transition-colors"
+            >
+              Plan my day with Henry
+            </button>
+            <button
+              onClick={() => setCurrentView('tasks')}
+              className="px-3 py-1.5 bg-henry-surface/60 border border-henry-border/40 text-henry-text-dim rounded-lg text-xs font-medium hover:text-henry-text hover:border-henry-border/70 transition-colors"
+            >
+              View tasks
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
