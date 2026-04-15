@@ -212,6 +212,12 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      // Redirect native-only barcode scanner to a web stub so the dev server
+      // and production build don't fail trying to resolve the native package.
+      '@capacitor-mlkit/barcode-scanning': path.resolve(
+        __dirname,
+        './src/stubs/barcodeScanning.ts'
+      ),
     },
   },
   define: {
@@ -219,10 +225,15 @@ export default defineConfig({
     // auto-bootstrap the Groq provider without the setup wizard.
     __GROQ_API_KEY__: JSON.stringify(process.env.GROQ_API_KEY || ''),
   },
+  // ── Native-only Capacitor plugins ─────────────────────────────────────────
+  // These packages are native-only and are only dynamically imported by
+  // mobile companion screens. Exclude them from both the dev optimizer
+  // (esbuild scan) and the production Rollup bundle.
+  optimizeDeps: {
+    exclude: ['@capacitor-mlkit/barcode-scanning'],
+  },
   build: {
     rollupOptions: {
-      // Native-only Capacitor plugins are dynamically imported in mobile
-      // companion components; they are never bundled for the web build.
       external: [
         '@capacitor-mlkit/barcode-scanning',
       ],
