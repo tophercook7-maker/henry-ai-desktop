@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useStore } from '../../store';
 import { transcribeWithGroq } from '../../henry/ttsService';
+import { useAmbientStore } from '../../henry/ambientStateStore';
 
 interface ChatInputProps {
   onSend: (content: string) => void;
@@ -94,6 +95,8 @@ export default function ChatInput({
   }, [ambientMode, ttsEnabled, isStreaming]);
 
   async function startGroqWhisper() {
+    useAmbientStore.getState().setState('listening');
+    useAmbientStore.getState().startSession();
     try {
       // Detect supported audio MIME type
       const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
@@ -154,6 +157,7 @@ export default function ChatInput({
     setListening(false);
     setTranscribing(true);
     setInterimTranscript('');
+    useAmbientStore.getState().setState('thinking');
   }
 
   async function transcribeAudio() {
@@ -198,6 +202,7 @@ export default function ChatInput({
       console.warn('Whisper transcription failed:', err);
     } finally {
       setTranscribing(false);
+      useAmbientStore.getState().setState('ready');
     }
   }
 
