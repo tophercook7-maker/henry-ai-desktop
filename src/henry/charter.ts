@@ -21,6 +21,7 @@ import { buildWorkingMemoryBlock, buildNarrativeBlock } from './workingMemory';
 import { buildPersonalityBlock } from './personality';
 import { buildAmbientMemoryBlock } from '../ambient/memoryRecall';
 import { buildInitiativeModeBlock } from './initiativeStore';
+import { buildExecutionModeBlock } from './executionModeStore';
 import { buildAwarenessBlock } from './awarenessStore';
 import { buildComputerSnapshotBlock } from './computerSnapshotStore';
 import { buildPriorityBlock } from './priority/prioritySelectors';
@@ -668,6 +669,7 @@ Priorities — when ${ownerName}'s profile or memory indicates they value certai
     ['commitments',      commitmentsBlock],
     ['continuity',       continuityBlock],
     ['initiative',       initiativeBlock],
+    ['executionMode',    buildExecutionModeBlock()],
     ['sessionMode',      sessionModeBlock],
     ['conflicts',        conflictSignalsBlock],
     ['relationships',    relationshipBlock],
