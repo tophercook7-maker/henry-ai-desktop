@@ -10,7 +10,7 @@
  */
 
 import { useEffect, useState, useCallback } from 'react';
-import type { SyncServerState } from '../../sync/types';
+import type { CompanionDeviceCapability, SyncServerState } from '../../sync/types';
 import { buildPairCodePayload } from '../../sync/deviceLink';
 
 const isElectron = typeof window !== 'undefined' && !!window.henryAPI?.syncGetState;
@@ -43,6 +43,14 @@ export default function DeviceLinkPanel() {
 
   useEffect(() => {
     void loadState();
+  }, [loadState]);
+
+  useEffect(() => {
+    const onDevices = () => {
+      void loadState();
+    };
+    window.addEventListener('henry_companion_devices_changed', onDevices);
+    return () => window.removeEventListener('henry_companion_devices_changed', onDevices);
   }, [loadState]);
 
   // Countdown timer for pair code
@@ -204,8 +212,8 @@ export default function DeviceLinkPanel() {
 
             <div className="bg-henry-accent/10 border border-henry-accent/20 rounded-xl px-3 py-2.5">
               <p className="text-xs text-henry-accent leading-relaxed">
-                On your iPhone/iPad: Open Henry → Companion Devices → Connect to Desktop → enter the code above.
-                Both devices must be on the same WiFi network.
+                On your iPhone/iPad: open Henry → use pairing / connect flow → enter the code above (or scan the QR).
+                Both devices must be on the same Wi‑Fi network.
               </p>
             </div>
           </div>
@@ -230,30 +238,62 @@ export default function DeviceLinkPanel() {
       {/* Linked devices */}
       {serverState?.linkedDevices && serverState.linkedDevices.length > 0 && (
         <div className="bg-henry-surface rounded-2xl border border-henry-border/20 p-4 space-y-3">
-          <p className="text-sm font-semibold text-henry-text">
-            Linked Devices ({serverState.linkedDevices.length})
-          </p>
+          <div className="flex items-start justify-between gap-2">
+            <p className="text-sm font-semibold text-henry-text">
+              Linked devices ({serverState.linkedDevices.length})
+            </p>
+            <p className="text-[10px] text-henry-text-muted text-right max-w-[12rem] leading-snug">
+              To add again after unlink, generate a new pairing code.
+            </p>
+          </div>
           {serverState.linkedDevices.map((device) => (
             <div
               key={device.id}
-              className="flex items-center gap-3 bg-henry-bg rounded-xl px-3 py-2.5"
+              className="flex flex-col gap-2 bg-henry-bg rounded-xl px-3 py-2.5"
             >
-              <span className="text-xl shrink-0">
-                {device.platform === 'ios' ? '📱' : device.platform === 'android' ? '🤖' : '💻'}
-              </span>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-henry-text truncate">{device.name}</p>
-                <p className="text-[10px] text-henry-text-muted">
-                  {device.platform} · Linked {new Date(device.linkedAt).toLocaleDateString()}
-                  {device.lastSeen && ` · Seen ${formatAge(Date.now() - new Date(device.lastSeen).getTime())} ago`}
-                </p>
+              <div className="flex items-center gap-3">
+                <span className="text-xl shrink-0">
+                  {device.platform === 'ios'
+                    ? device.appleProduct === 'ipad'
+                      ? '📋'
+                      : '📱'
+                    : device.platform === 'android'
+                      ? '🤖'
+                      : '💻'}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-henry-text truncate">{device.name}</p>
+                  <p className="text-[10px] text-henry-text-muted">
+                    {device.platform}
+                    {device.appleProduct && device.appleProduct !== 'unknown'
+                      ? ` · ${device.appleProduct}`
+                      : ''}{' '}
+                    · Linked {new Date(device.linkedAt).toLocaleDateString()}
+                    {device.lastSeen && ` · Seen ${formatAge(Date.now() - new Date(device.lastSeen).getTime())} ago`}
+                    {device.lastSyncAt &&
+                      ` · Sync ${formatAge(Date.now() - new Date(device.lastSyncAt).getTime())} ago`}
+                  </p>
+                  {device.linkStatus && (
+                    <p className="text-[10px] text-henry-success mt-0.5 capitalize">
+                      {device.linkStatus}
+                    </p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void unlinkDevice(device.id)}
+                  className="text-xs text-henry-error active:opacity-60 transition-opacity shrink-0"
+                >
+                  Unlink
+                </button>
               </div>
-              <button
-                onClick={() => void unlinkDevice(device.id)}
-                className="text-xs text-henry-error active:opacity-60 transition-opacity shrink-0"
-              >
-                Unlink
-              </button>
+              {device.capabilities && device.capabilities.length > 0 && (
+                <div className="flex flex-wrap gap-1 pl-11">
+                  {device.capabilities.map((c) => (
+                    <CapabilityChip key={c} cap={c} />
+                  ))}
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -278,4 +318,20 @@ function formatAge(ms: number): string {
   if (m < 60) return `${m}m`;
   const h = Math.floor(m / 60);
   return h < 24 ? `${h}h` : `${Math.floor(h / 24)}d`;
+}
+
+const CAP_LABELS: Record<CompanionDeviceCapability, string> = {
+  chat_summaries: 'Chat summaries',
+  tasks: 'Tasks',
+  approvals: 'Approvals',
+  captures: 'Captures',
+  notifications: 'Notifications',
+};
+
+function CapabilityChip({ cap }: { cap: CompanionDeviceCapability }) {
+  return (
+    <span className="text-[9px] px-2 py-0.5 rounded-md bg-henry-surface border border-henry-border/40 text-henry-text-muted">
+      {CAP_LABELS[cap] ?? cap}
+    </span>
+  );
 }

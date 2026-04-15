@@ -2,8 +2,8 @@
  * Companion Pairing Screen (mobile side)
  *
  * When no desktop connection is stored, guides the user through pairing:
- *   1. Open Henry on your Mac and go to Settings → Companion Devices
- *   2. Click "Add Device" to show a QR code / pairing code
+ *   1. Open Henry on your Mac → Settings → Companion tab
+ *   2. Generate a pairing code (QR or manual)
  *   3. On iPhone: scan QR with the camera button, or type the code manually
  *   4. Tap "Link" to complete pairing
  */

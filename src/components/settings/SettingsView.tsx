@@ -19,9 +19,12 @@ import {
   type HenryProject, type HenryGoal, type HenryPerson,
 } from '../../henry/richMemory';
 import { useDebugStore } from '../../henry/debugStore';
+import DeviceLinkPanel from './DeviceLinkPanel';
 
 export default function SettingsView() {
-  const [activeTab, setActiveTab] = useState<'providers' | 'engines' | 'voice' | 'general' | 'memory'>('providers');
+  const [activeTab, setActiveTab] = useState<
+    'providers' | 'engines' | 'voice' | 'general' | 'memory' | 'companion'
+  >('providers');
 
   const tabs = [
     { id: 'providers' as const, label: 'AI Providers' },
@@ -29,6 +32,7 @@ export default function SettingsView() {
     { id: 'voice' as const, label: 'Voice & Model' },
     { id: 'general' as const, label: 'General' },
     { id: 'memory' as const, label: 'Memory' },
+    { id: 'companion' as const, label: 'Companion' },
   ];
 
   return (
@@ -59,6 +63,7 @@ export default function SettingsView() {
           {activeTab === 'voice' && <VoiceModelTab />}
           {activeTab === 'general' && <GeneralTab />}
           {activeTab === 'memory' && <MemoryTab />}
+          {activeTab === 'companion' && <CompanionTab />}
         </div>
       </div>
     </div>
@@ -482,6 +487,17 @@ function ProviderWizard({
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+function CompanionTab() {
+  return (
+    <div className="space-y-2">
+      <p className="text-sm text-henry-text-dim mb-4 leading-relaxed">
+        Link iPhone and iPad companion apps to this Mac. Henry on the desktop remains the source of truth; devices pair over your local network and stay in sync for capture, tasks, and approvals.
+      </p>
+      <DeviceLinkPanel />
     </div>
   );
 }

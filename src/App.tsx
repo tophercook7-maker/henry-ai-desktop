@@ -77,6 +77,29 @@ export default function App() {
     }
   }, []);
 
+  // Electron: companion sync bridge → renderer (Settings / chat can listen)
+  useEffect(() => {
+    const api = window.henryAPI;
+    if (typeof api?.onCompanionDeviceLinked !== 'function') return;
+
+    const bridge = (name: string, detail: unknown) => {
+      window.dispatchEvent(new CustomEvent('henry_companion_bridge', { detail: { name, detail } }));
+      window.dispatchEvent(new CustomEvent('henry_companion_devices_changed'));
+    };
+
+    const u0 = api.onCompanionDeviceLinked!((device) => bridge('device-linked', device));
+    const u1 = api.onCompanionCapture!((capture) => bridge('capture', capture));
+    const u2 = api.onCompanionPrompt!((data) => bridge('prompt', data));
+    const u3 = api.onCompanionActionDecision!((decision) => bridge('action-decision', decision));
+
+    return () => {
+      u0();
+      u1();
+      u2();
+      u3();
+    };
+  }, []);
+
   // Henry's autonomous first contact — fires once after wizard completes
   useEffect(() => {
     if (!setupComplete || firstContactDone.current) return;
