@@ -12,6 +12,8 @@ type AIInvokeParams = {
   messages: Array<{ role: string; content: string }>;
   temperature?: number;
   maxTokens?: number;
+  /** Ollama: base URL from settings, e.g. http://localhost:11434 */
+  apiUrl?: string;
 };
 
 type TaskUpdatePayload = Partial<Task> & { id: string };
