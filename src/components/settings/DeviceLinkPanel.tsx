@@ -25,7 +25,7 @@ export default function DeviceLinkPanel() {
   const loadState = useCallback(async () => {
     if (!isElectron) return;
     try {
-      const state = await window.henryAPI.syncGetState();
+      const state = await window.henryAPI.syncGetState!();
       setServerState(state);
       if (state.pairToken && state.pairTokenExpiry) {
         const payload = buildPairCodePayload(
@@ -65,7 +65,7 @@ export default function DeviceLinkPanel() {
     if (!isElectron) return;
     setLoading(true);
     try {
-      await window.henryAPI.syncStart();
+      await window.henryAPI.syncStart!();
       await loadState();
     } finally {
       setLoading(false);
@@ -76,9 +76,9 @@ export default function DeviceLinkPanel() {
     if (!isElectron) return;
     setLoading(true);
     try {
-      if (!serverState?.running) await window.henryAPI.syncStart();
-      const token = await window.henryAPI.syncGeneratePairToken();
-      const state = await window.henryAPI.syncGetState();
+      if (!serverState?.running) await window.henryAPI.syncStart!();
+      const token = await window.henryAPI.syncGeneratePairToken!();
+      const state = await window.henryAPI.syncGetState!();
       setServerState(state);
       const payload = buildPairCodePayload(
         state.localIp,
@@ -94,14 +94,14 @@ export default function DeviceLinkPanel() {
 
   async function revokeCode() {
     if (!isElectron) return;
-    await window.henryAPI.syncRevokePairToken();
+    await window.henryAPI.syncRevokePairToken!();
     setPairCode(null);
     setCodeExpiry(null);
   }
 
   async function unlinkDevice(deviceId: string) {
     if (!isElectron) return;
-    await window.henryAPI.syncUnlinkDevice(deviceId);
+    await window.henryAPI.syncUnlinkDevice!(deviceId);
     await loadState();
   }
 
