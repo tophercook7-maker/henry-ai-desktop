@@ -19,6 +19,10 @@ import { useStore } from '../../store';
 import { useConnectionStore } from '../../henry/connectionStore';
 import { getFocusNow } from '../../henry/getFocusNow';
 import { getIntegrationCapabilities } from '../../henry/capabilityRegistry';
+import { useExecutionModeStore, inferExecutionMode, EXECUTION_MODE_CONFIGS, type ExecutionMode } from '../../henry/executionModeStore';
+import { computeInstinctFromState } from '../../henry/instinctEngine';
+import { computeMomentum } from '../../henry/momentumEngine';
+import { useInitiativeStore } from '../../henry/initiativeStore';
 
 interface SectionProps {
   title: string;
@@ -75,9 +79,16 @@ export default function HenryDebugPanel({ onClose }: { onClose: () => void }) {
   const { lastDecision, lastModels, lastTokens, updatedAt } = useDebugStore();
   const { settings, providers } = useStore();
   const { getStatus } = useConnectionStore();
+  const execMode = useExecutionModeStore((s) => s.mode);
+  const execSource = useExecutionModeStore((s) => s.source);
+  const setExecMode = useExecutionModeStore((s) => s.setMode);
+  const initiativeMode = useInitiativeStore((s) => s.mode);
 
   const focus = getFocusNow();
   const integrationCaps = getIntegrationCapabilities();
+  const momentum = computeMomentum();
+  const instinct = computeInstinctFromState(execMode, initiativeMode);
+  const inferred = inferExecutionMode();
 
   function safeJSON<T>(key: string, fallback: T): T {
     try { return JSON.parse(localStorage.getItem(key) || 'null') ?? fallback; }
@@ -284,6 +295,73 @@ export default function HenryDebugPanel({ onClose }: { onClose: () => void }) {
             ) : (
               <p className="text-xs text-henry-text-muted">No actual call recorded yet — send a message first.</p>
             )}
+          </Section>
+
+          {/* G. Instinct & Momentum */}
+          <Section letter="G" title="Instinct & Momentum">
+            {/* Execution Mode selector */}
+            <div className="space-y-1">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-henry-text-muted">Execution Mode</span>
+              <div className="flex flex-wrap gap-1.5 mt-1">
+                {(Object.keys(EXECUTION_MODE_CONFIGS) as ExecutionMode[]).map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => setExecMode(m, 'manual')}
+                    title={EXECUTION_MODE_CONFIGS[m].description}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-all ${
+                      execMode === m
+                        ? 'bg-henry-accent/15 border-henry-accent/40 text-henry-accent'
+                        : 'bg-henry-surface border-henry-border/30 text-henry-text-muted hover:text-henry-text'
+                    }`}
+                  >
+                    {EXECUTION_MODE_CONFIGS[m].label}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[10px] text-henry-text-muted mt-0.5">
+                Source: {execSource} · Initiative: {initiativeMode}
+              </p>
+              {inferred && inferred.mode !== execMode && (
+                <p className="text-[10px] text-henry-warning mt-0.5">
+                  Inferred: {EXECUTION_MODE_CONFIGS[inferred.mode].label} — {inferred.reason}
+                </p>
+              )}
+            </div>
+
+            {/* Momentum */}
+            <div className="h-px bg-henry-border/30 my-2" />
+            <Row
+              label="Momentum"
+              value={momentum.state.toUpperCase()}
+              accent={momentum.state === 'strong' || momentum.state === 'building'}
+            />
+            <Row label="Reason" value={momentum.reason} />
+            {momentum.oneNextStep && (
+              <Row label="One next step" value={momentum.oneNextStep} accent />
+            )}
+            <Row label="Protect flow" value={momentum.protect ? 'yes' : 'no'} />
+
+            {/* Instinct Decision */}
+            <div className="h-px bg-henry-border/30 my-2" />
+            <Row
+              label="Instinct"
+              value={`${instinct.decision.toUpperCase()} (${instinct.confidence} confidence)`}
+              accent={instinct.decision === 'act' || instinct.decision === 'escalate'}
+            />
+            <Row label="Phrase style" value={instinct.phraseStyle} />
+            <Row label="Reason" value={instinct.reason} />
+
+            {/* Raw signals */}
+            <div className="h-px bg-henry-border/30 my-2" />
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-henry-text-muted">Signals</span>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1 mt-1">
+              <Row label="Pending tasks" value={String(momentum.signals.pendingTasks)} />
+              <Row label="Failed tasks" value={String(momentum.signals.failedTasks)} />
+              <Row label="Overdue" value={String(momentum.signals.overdueReminders)} />
+              <Row label="Expired conns" value={String(momentum.signals.expiredConnections)} />
+              <Row label="Unrouted caps" value={String(momentum.signals.unroutedCaptures)} />
+              <Row label="Active projects" value={String(momentum.signals.activeProjects)} />
+            </div>
           </Section>
 
         </div>
