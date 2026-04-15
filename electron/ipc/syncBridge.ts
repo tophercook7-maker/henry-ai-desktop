@@ -43,11 +43,11 @@ interface SSEClient {
 
 let server: http.Server | null = null;
 let sseClients: SSEClient[] = [];
-let linkedDevices: Map<string, DeviceInfo> = new Map();
-let companionTokens: Map<string, string> = new Map(); // token → deviceId
+const linkedDevices: Map<string, DeviceInfo> = new Map();
+const companionTokens: Map<string, string> = new Map(); // token → deviceId
 let pairToken: string | null = null;
 let pairTokenExpiry = 0;
-let pendingActions: Map<string, PendingAction> = new Map();
+const pendingActions: Map<string, PendingAction> = new Map();
 let eventLog: SyncEvent[] = [];
 let currentPort = 4242;
 
@@ -360,10 +360,16 @@ async function handleRequest(
     const client: SSEClient = { deviceId, res };
     sseClients.push(client);
 
-    // Send a heartbeat every 25 s
+    // Send a heartbeat every 25 s; clean up eagerly on write failure.
     const heartbeat = setInterval(() => {
-      try { res.write(': ping\n\n'); } catch { /* disconnected */ }
-    }, 25000);
+      try {
+        res.write(': ping\n\n');
+      } catch {
+        // Client disconnected before the 'close' event fired
+        clearInterval(heartbeat);
+        sseClients = sseClients.filter((c) => c !== client);
+      }
+    }, 25_000);
 
     req.on('close', () => {
       clearInterval(heartbeat);
@@ -444,18 +450,32 @@ async function handleRequest(
 
 // ── Body reader ────────────────────────────────────────────────────────────
 
-function readBody<T>(req: http.IncomingMessage): Promise<T | null> {
+function readBody<T>(req: http.IncomingMessage, timeoutMs = 30_000): Promise<T | null> {
   return new Promise((resolve) => {
     const chunks: Buffer[] = [];
+    let settled = false;
+
+    const done = (val: T | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(val);
+    };
+
+    const timer = setTimeout(() => {
+      req.destroy(new Error('readBody timeout'));
+      done(null);
+    }, timeoutMs);
+
     req.on('data', (c: Buffer) => chunks.push(c));
     req.on('end', () => {
       try {
-        resolve(JSON.parse(Buffer.concat(chunks).toString()) as T);
+        done(JSON.parse(Buffer.concat(chunks).toString()) as T);
       } catch {
-        resolve(null);
+        done(null);
       }
     });
-    req.on('error', () => resolve(null));
+    req.on('error', () => done(null));
   });
 }
 
