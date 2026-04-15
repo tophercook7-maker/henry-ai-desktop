@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useStore } from '../../store';
 import { wakeWordManager } from '../../henry/wakeWord';
 import { useCapturesStore, selectUnroutedCaptures } from '../../ambient/capturesStore';
+import { useAmbientStore } from '../../henry/ambientStateStore';
 
 export default function TitleBar() {
   const { companionStatus, workerStatus, setCurrentView, viewHistory, goBack } = useStore();
@@ -40,6 +41,16 @@ export default function TitleBar() {
       unsubReady?.();
     };
   }, []);
+
+  // Sync wake word → ambient state
+  useEffect(() => {
+    const { setState } = useAmbientStore.getState();
+    if (wakeActive) {
+      setState('listening');
+    } else {
+      setState('ready');
+    }
+  }, [wakeActive]);
 
   // Sync wake word state
   useEffect(() => {
