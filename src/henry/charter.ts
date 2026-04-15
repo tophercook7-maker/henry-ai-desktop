@@ -410,6 +410,11 @@ export interface CompanionStreamPromptOptions {
   design3dReferencePath?: string | null;
   /** Live weather snapshot to inject into the system prompt. */
   weather?: WeatherSnapshot | null;
+  /**
+   * True when web search results are present in this request.
+   * Injects the tool-use guide block only when actually needed (saves ~175 tokens otherwise).
+   */
+  hasWebContext?: boolean;
 }
 
 /**
@@ -635,40 +640,58 @@ Priorities — when ${ownerName}'s profile or memory indicates they value certai
   const runtimeContextBlock = buildRuntimeContextBlock();
   const selfRepairBlock = buildSelfRepairBlock();
 
-  // Optional context blocks — budgeted to keep the system prompt lean.
-  // Listed in descending priority: earlier entries survive budget cuts.
-  // Budget: 4,500 chars (~1,125 tokens). Blocks that push over the limit are dropped.
-  const OPTIONAL_BUDGET = 4_500;
-  const optionalCandidates = [
-    capabilityBlock,
-    memoryBlock,
-    awarenessBlock,
-    valuesBlock,
-    richContextBlock,
-    ambientMemoryBlock,
-    rhythmBlock,
-    coordinatorBlock || priorityBlock,
-    computerBlock,
-    commitmentsBlock,
-    continuityBlock,
-    initiativeBlock,
-    sessionModeBlock,
-    conflictSignalsBlock,
-    relationshipBlock,
-    lifeAreaBlock,
-    runtimeContextBlock,
-    selfRepairBlock,
-  ].filter(Boolean) as string[];
+  // ── Optional context pool ─────────────────────────────────────────────────
+  // Blocks below are prioritized: the first ones that fit within OPTIONAL_BUDGET survive.
+  // Heavy mandatory blocks (actionBehavior, liveHonesty, disclaimer) stay above.
+  // Budget: 2,500 chars (~625 tokens). Each block that fits is included in order.
+  //
+  // Blocks moved HERE (off mandatory) vs old approach:
+  //   toolUseBlock, identityModelBlock, selfDescriptionGuidance,
+  //   capabilityRegistryBlock, constitutionBlock
+  //
+  const OPTIONAL_BUDGET = 2_500;
+  const optionalCandidates: Array<[string, string]> = [
+    ['memory',           memoryBlock],
+    ['toolGuide',        options?.hasWebContext ? toolUseBlock : ''],
+    ['capability',       capabilityBlock],
+    ['awareness',        awarenessBlock],
+    ['values',           valuesBlock],
+    ['identity',         identityModelBlock],
+    ['selfDescription',  selfDescriptionGuidance],
+    ['capabilityReg',    buildCapabilityRegistryBlock()],
+    ['constitution',     constitutionBlock],
+    ['richContext',      richContextBlock],
+    ['ambient',          ambientMemoryBlock],
+    ['rhythm',           rhythmBlock],
+    ['coordinator',      coordinatorBlock || priorityBlock],
+    ['computer',         computerBlock],
+    ['commitments',      commitmentsBlock],
+    ['continuity',       continuityBlock],
+    ['initiative',       initiativeBlock],
+    ['sessionMode',      sessionModeBlock],
+    ['conflicts',        conflictSignalsBlock],
+    ['relationships',    relationshipBlock],
+    ['lifeArea',         lifeAreaBlock],
+    ['runtime',          runtimeContextBlock],
+    ['selfRepair',       selfRepairBlock],
+  ].filter(([, block]) => Boolean(block)) as Array<[string, string]>;
 
   let optionalChars = 0;
   const selectedOptional: string[] = [];
-  for (const block of optionalCandidates) {
-    if (optionalChars + block.length > OPTIONAL_BUDGET) break;
+  const includedBlockNames: string[] = [];
+  for (const [name, block] of optionalCandidates) {
+    if (optionalChars + block.length > OPTIONAL_BUDGET) continue;
     selectedOptional.push(block);
+    includedBlockNames.push(name);
     optionalChars += block.length;
   }
 
   const optionalContext = selectedOptional.join('\n\n');
+
+  // Log which optional blocks were included (visible in browser console as [Henry:ctx:blocks])
+  if (includedBlockNames.length > 0) {
+    console.log(`[Henry:ctx:blocks] optional(${includedBlockNames.length}): ${includedBlockNames.join(', ')} — ${optionalChars}/${OPTIONAL_BUDGET} chars`);
+  }
 
   return `${buildCoreIdentity()}
 
@@ -677,17 +700,9 @@ ${buildPersonalityBlock()}
 ${timeBlock}
 ${getModeInstruction(mode)}
 ${writerBlock}${design3dBlock}${biblicalBlock}
-${toolUseBlock}
 ${actionBehaviorBlock}
 ${liveDataHonestyBlock}
 ${aiDisclaimerBlock}
-${identityModelBlock}
-
-${selfDescriptionGuidance}
-
-${buildCapabilityRegistryBlock()}
-
-${constitutionBlock}
 ${optionalContext ? `\n${optionalContext}\n` : ''}
 You are the Local Brain — always present for real-time conversation. The Second Brain (Cloud) handles heavy background tasks in parallel; you stay alive and responsive regardless of what it's doing. You are never too busy for ${ownerName}.
 
