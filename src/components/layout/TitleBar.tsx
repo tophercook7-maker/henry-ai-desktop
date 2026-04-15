@@ -4,7 +4,7 @@ import { wakeWordManager } from '../../henry/wakeWord';
 import { useCapturesStore, selectUnroutedCaptures } from '../../ambient/capturesStore';
 
 export default function TitleBar() {
-  const { companionStatus, workerStatus, setCurrentView } = useStore();
+  const { companionStatus, workerStatus, setCurrentView, viewHistory, goBack } = useStore();
   const captures = useCapturesStore((s) => s.captures);
   const unroutedCount = selectUnroutedCaptures(captures).length;
   const [installPrompt, setInstallPrompt] = useState<any>(null);
@@ -99,8 +99,20 @@ export default function TitleBar() {
 
   return (
     <div className="titlebar-drag h-12 flex items-center justify-between px-3 md:px-4 bg-henry-surface/50 border-b border-henry-border/50 shrink-0 gap-2 relative">
-      {/* Left: wordmark (mobile) | install button (desktop) */}
-      <div className="titlebar-no-drag flex items-center min-w-0 shrink-0">
+      {/* Left: back button + wordmark (mobile) | install button (desktop) */}
+      <div className="titlebar-no-drag flex items-center gap-2 min-w-0 shrink-0">
+        {/* Back button — visible when history exists */}
+        {viewHistory.length > 0 && (
+          <button
+            onClick={goBack}
+            title="Go back"
+            className="flex items-center justify-center w-7 h-7 rounded-lg text-henry-text-muted hover:text-henry-text hover:bg-henry-hover/50 transition-all"
+          >
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="15 18 9 12 15 6" />
+            </svg>
+          </button>
+        )}
         <span className="md:hidden text-sm font-semibold text-henry-text tracking-tight">Henry</span>
         <div className="hidden md:flex items-center w-20">
           {installPrompt && !installed && (
@@ -124,9 +136,9 @@ export default function TitleBar() {
         <div className="flex items-center gap-1.5 md:gap-2">
           <div className={`w-1.5 h-1.5 md:w-2 md:h-2 rounded-full ${statusColor(companionStatus.status)}`} />
           <span className="text-henry-text-dim">
-            Local
+            Advisor
             <span className="hidden sm:inline text-henry-text-muted">
-              {' '}{companionStatus.status === 'idle' ? 'ready' : companionStatus.status}
+              {' '}{companionStatus.status === 'idle' ? 'standby' : companionStatus.status}
             </span>
           </span>
         </div>
@@ -134,9 +146,9 @@ export default function TitleBar() {
         <div className="flex items-center gap-1.5 md:gap-2">
           <div className={`w-1.5 h-1.5 md:w-2 md:h-2 rounded-full ${statusColor(workerStatus.status)}`} />
           <span className="text-henry-text-dim">
-            Cloud
+            Worker
             <span className="hidden sm:inline text-henry-text-muted">
-              {' '}{workerStatus.status === 'idle' ? 'ready' : workerStatus.status}
+              {' '}{workerStatus.status === 'idle' ? 'standby' : workerStatus.status}
               {(workerStatus as any).queueLength > 0 &&
                 ` (${(workerStatus as any).queueLength} queued)`}
             </span>
