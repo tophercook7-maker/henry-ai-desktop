@@ -35,6 +35,14 @@ import {
 } from '@/henry/contextTier';
 import { routeRequest } from '@/core/router/brainRouter';
 import { getWeather, type WeatherSnapshot } from '@/henry/weatherContext';
+import {
+  buildFallbackNotice,
+  buildBothFailedError,
+  buildStreamError,
+  buildStartError,
+  buildBinaryContentError,
+  isBinaryContent,
+} from '@/henry/errorMessages';
 import { resolveChat, requiresQualityModel, modelShortName } from '@/henry/modelRouter';
 import { speak as ttsSpeakFn, cancelTTS } from '@/henry/ttsService';
 import { getPresencePhrase, speakPresence, detectPresenceTier } from '@/henry/ambientBrain';
@@ -1221,6 +1229,12 @@ export default function ChatView() {
       return;
     }
 
+    // Deferred actions: let Henry respond naturally but prepend a quiet note
+    // (the note is folded into the system prompt context, not shown in chat)
+    const deferNote = brainDecision.actionGate.decision === 'defer'
+      ? `\n\n[Note: This action is deferred. Respond helpfully but do not execute the action — suggest it as a next step instead.]`
+      : '';
+
     // ── Context tier (from brain router, replaces standalone selectContextTier call)
     const intent: MessageIntent = classifyMessageIntent(content);
     const tier: ContextTier = brainDecision.contextTier;
@@ -1393,9 +1407,9 @@ export default function ChatView() {
       ? [emotionBlock, webContextBlock, bibleContextBlock]
       : [deepContextBlock, emotionBlock, webContextBlock, bibleContextBlock, selfRepairContextBlock];
     const extraContext = extraContextParts.filter(Boolean).join('\n\n');
-    const enrichedSystemPrompt = extraContext
+    const enrichedSystemPrompt = (extraContext
       ? `${systemPrompt}\n\n${extraContext}`
-      : systemPrompt;
+      : systemPrompt) + deferNote;
 
     // ── Token guard ──────────────────────────────────────────────────────────
     const systemTokens = estimateTokens(enrichedSystemPrompt);
@@ -1491,6 +1505,23 @@ export default function ChatView() {
         if (import.meta.env.DEV) {
           console.debug('[Henry] stream done', { fullLen: fullText?.length ?? 0, usage });
         }
+
+        // Binary content guard — bail with explanation rather than rendering garbage
+        if (isBinaryContent(fullText)) {
+          addMessage({
+            id: crypto.randomUUID(),
+            conversation_id: convId,
+            role: 'assistant',
+            content: buildBinaryContentError(companionProvider, companionModel),
+            engine: 'companion',
+            created_at: new Date().toISOString(),
+          });
+          setStreamingContent('');
+          setIsStreaming(false);
+          setCompanionStatus({ status: 'idle' });
+          return;
+        }
+
         // Save assistant message
         const assistantMsg = {
           id: crypto.randomUUID(),
@@ -1583,7 +1614,9 @@ export default function ChatView() {
 
         if (fallbackM && fallbackP && !usedFallback && fallbackM !== companionModel) {
           setStreamingContent('');
-          setCompanionStatus({ status: 'thinking' });
+          setCompanionStatus({ status: 'thinking', taskDescription: `Switching to ${fallbackM}…` });
+          // Show a quiet inline notice so the user knows something switched
+          appendStreamingContent(buildFallbackNotice(companionModel, fallbackM) + '\n\n');
           // Swap to fallback and retry the exact same call
           const fallbackProviders = await window.henryAPI.getProviders();
           const fbProvider = fallbackProviders.find((p: any) => p.id === fallbackP);
@@ -1627,13 +1660,13 @@ export default function ChatView() {
               id: crypto.randomUUID(),
               conversation_id: convId,
               role: 'assistant',
-              content: `❌ Both models failed.\nPrimary (${companionModel}): ${error}\nFallback (${fallbackM}): ${fbError}`,
+              content: buildBothFailedError(companionProvider, companionModel, error, fallbackM, fbError),
               engine: 'companion',
               created_at: new Date().toISOString(),
             });
             setStreamingContent('');
             setIsStreaming(false);
-            setCompanionStatus({ status: 'error', message: fbError });
+            setCompanionStatus({ status: 'error', message: 'Both models failed' });
             setTimeout(() => setCompanionStatus({ status: 'idle' }), 3000);
           });
           return;
@@ -1689,7 +1722,7 @@ export default function ChatView() {
         } else if (isOllama) {
           errorContent = `**Ollama error.** ${error}\n\nCheck the model name and Ollama status in **Settings → Engines**.`;
         } else {
-          errorContent = `❌ **Error:** ${error}`;
+          errorContent = buildStreamError(companionProvider, companionModel, error);
         }
 
         addMessage({
@@ -1705,12 +1738,12 @@ export default function ChatView() {
         setCompanionStatus({ status: 'error', message: error });
         setTimeout(() => setCompanionStatus({ status: 'idle' }), 3000);
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       addMessage({
         id: crypto.randomUUID(),
         conversation_id: convId,
         role: 'assistant',
-        content: `❌ Failed to start stream: ${err.message}`,
+        content: buildStartError(err),
         engine: 'companion',
         created_at: new Date().toISOString(),
       });
