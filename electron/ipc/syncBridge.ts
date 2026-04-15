@@ -29,6 +29,7 @@ import type {
   CapturePayload,
   SyncEvent,
   SyncSnapshot,
+  SyncMessage,
   DesktopStatus,
 } from '../../src/sync/types';
 
@@ -170,7 +171,7 @@ function buildSnapshot(status: DesktopStatus): SyncSnapshot {
 
   // Last 30 messages across recent 5 conversations
   const recentConvoIds = conversations.slice(0, 5).map((c) => c.id);
-  const recentMessages =
+  const recentMessages: SyncMessage[] =
     recentConvoIds.length > 0
       ? dbGet<{
           id: string;
@@ -186,7 +187,10 @@ function buildSnapshot(status: DesktopStatus): SyncSnapshot {
             ORDER BY created_at DESC
             LIMIT 30`,
           ...recentConvoIds
-        )
+        ).map((m) => ({
+          ...m,
+          role: m.role as SyncMessage['role'],
+        }))
       : [];
 
   const tasks = dbGet<{
