@@ -6,6 +6,14 @@ dist/
 dist-electron/
 release/
 
+# Vite / test / lint caches (local only)
+.vite/
+coverage/
+.eslintcache
+
+# macOS duplicate-drop folder name (never commit)
+scripts 2/
+
 # Environment
 .env
 .env.local
@@ -26,11 +34,11 @@ Thumbs.db
 *.log
 npm-debug.log*
 
-# TypeScript incremental caches (must never be committed)
-tsconfig.node.tsbuildinfo
-
 # Database (user data, not committed)
 *.db
 *.db-journal
 *.db-wal
+
+# TypeScript incremental / project-info caches (never commit)
 *.tsbuildinfo
+tsconfig.node.tsbuildinfo
