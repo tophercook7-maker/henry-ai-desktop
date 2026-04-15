@@ -199,8 +199,12 @@ export interface AppState {
   // Memory
   facts: MemoryFact[];
 
+  // Navigation history
+  viewHistory: ViewType[];
+
   // Actions
   setCurrentView: (view: ViewType) => void;
+  goBack: () => void;
   setSetupComplete: (complete: boolean) => void;
   setConversations: (convos: Conversation[]) => void;
   setActiveConversation: (id: string | null) => void;
