@@ -12,8 +12,6 @@ type AIInvokeParams = {
   messages: Array<{ role: string; content: string }>;
   temperature?: number;
   maxTokens?: number;
-  /** Ollama: base URL from settings, e.g. http://localhost:11434 */
-  apiUrl?: string;
 };
 
 type TaskUpdatePayload = Partial<Task> & { id: string };
@@ -186,17 +184,11 @@ contextBridge.exposeInMainWorld('henryAPI', {
   scriptureCount: () => ipcRenderer.invoke('scripture:count'),
   pickScriptureImportJson: () => ipcRenderer.invoke('scripture:pickImportJson'),
 
-  // ── File System (workspace-scoped) ────────────────────────
+  // ── File System ───────────────────────────────────────────
   readDirectory: (dirPath?: string) => ipcRenderer.invoke('fs:readDirectory', dirPath),
   readFile: (filePath: string) => ipcRenderer.invoke('fs:readFile', filePath),
   pathExists: (filePath: string) => ipcRenderer.invoke('fs:pathExists', filePath) as Promise<boolean>,
   writeFile: (filePath: string, content: string) => ipcRenderer.invoke('fs:writeFile', { path: filePath, content }),
-
-  // ── Source Files (dev mode only — project root scoped) ────
-  readSourceFile: (filePath: string) => ipcRenderer.invoke('source:read', filePath) as Promise<string>,
-  writeSourceFile: (filePath: string, content: string) => ipcRenderer.invoke('source:write', filePath, content) as Promise<boolean>,
-  sourceFileExists: (filePath: string) => ipcRenderer.invoke('source:exists', filePath) as Promise<boolean>,
-  listSourceFiles: (dirPath: string) => ipcRenderer.invoke('source:list', dirPath) as Promise<string[]>,
 
   // ── Ollama ────────────────────────────────────────────────
   ollamaStatus: (baseUrl?: string) => ipcRenderer.invoke('ollama:status', baseUrl),
@@ -275,21 +267,72 @@ contextBridge.exposeInMainWorld('henryAPI', {
     return () => ipcRenderer.removeListener('worker:message', handler);
   },
 
-  // ── Google OAuth (desktop PKCE flow) ─────────────────────
-  googleStartAuth: (clientId: string, clientSecret: string) =>
-    ipcRenderer.invoke('google:startAuth', { clientId, clientSecret }) as Promise<{ accessToken: string; expiresAt: number }>,
-  googleGetToken: (clientId: string, clientSecret: string) =>
-    ipcRenderer.invoke('google:getToken', { clientId, clientSecret }) as Promise<{ accessToken: string; expiresAt: number } | null>,
-  googleRefreshToken: (clientId: string, clientSecret: string) =>
-    ipcRenderer.invoke('google:refreshToken', { clientId, clientSecret }) as Promise<{ accessToken: string; expiresAt: number }>,
-  googleHasCredentials: () =>
-    ipcRenderer.invoke('google:hasCredentials') as Promise<boolean>,
-  googleDisconnect: () =>
-    ipcRenderer.invoke('google:disconnect') as Promise<void>,
-  onGoogleTokenRevoked: (cb: () => void) => {
-    const handler = () => cb();
-    ipcRenderer.on('google:tokenRevoked', handler);
-    return () => ipcRenderer.removeListener('google:tokenRevoked', handler);
+  // ── Whisper STT ───────────────────────────────────────────
+  // Implemented directly in the renderer since it's a plain HTTPS fetch to Groq.
+  // The renderer process in Electron has full network access.
+  whisperTranscribe: async (audioBlob: Blob, apiKey: string): Promise<string> => {
+    const MIME_TO_EXT: Record<string, string> = {
+      'audio/webm': 'webm', 'audio/mp4': 'mp4', 'audio/mpeg': 'mp3',
+      'audio/ogg': 'ogg', 'audio/wav': 'wav', 'audio/x-m4a': 'm4a',
+    };
+    const baseType = audioBlob.type.split(';')[0].trim();
+    const ext = MIME_TO_EXT[baseType] || 'webm';
+    const form = new FormData();
+    form.append('file', audioBlob, `recording.${ext}`);
+    form.append('model', 'whisper-large-v3');
+    form.append('response_format', 'text');
+    const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}` },
+      body: form,
+    });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      throw new Error(`Whisper error ${res.status}${errText ? ': ' + errText.slice(0, 200) : ''}`);
+    }
+    return res.text();
+  },
+
+  // ── Companion Sync Bridge ─────────────────────────────────
+  syncStart: (port?: number) => ipcRenderer.invoke('henry:sync:start', port),
+  syncStop: () => ipcRenderer.invoke('henry:sync:stop'),
+  syncGetState: () => ipcRenderer.invoke('henry:sync:state'),
+  syncGeneratePairToken: (ttlMs?: number) => ipcRenderer.invoke('henry:sync:generate-pair-token', ttlMs),
+  syncRevokePairToken: () => ipcRenderer.invoke('henry:sync:revoke-pair-token'),
+  syncUnlinkDevice: (deviceId: string) => ipcRenderer.invoke('henry:sync:unlink-device', deviceId),
+  syncPushEvent: (event: unknown) => ipcRenderer.invoke('henry:sync:push-event', event),
+  syncAddPendingAction: (action: unknown) => ipcRenderer.invoke('henry:sync:add-pending-action', action),
+  syncUpdateNotes: (notes: unknown[]) => ipcRenderer.invoke('henry:sync:update-notes', notes),
+  syncUpdateSettings: (settings: Record<string, unknown>) => ipcRenderer.invoke('henry:sync:update-settings', settings),
+
+  // Companion events from mobile → desktop renderer
+  onCompanionCapture: (cb: (capture: unknown) => void) => {
+    const handler = (_e: IpcRendererEvent, data: unknown) => cb(data);
+    ipcRenderer.on('henry:companion:capture', handler);
+    return () => ipcRenderer.removeListener('henry:companion:capture', handler);
+  },
+  onCompanionPrompt: (cb: (data: unknown) => void) => {
+    const handler = (_e: IpcRendererEvent, data: unknown) => cb(data);
+    ipcRenderer.on('henry:companion:prompt', handler);
+    return () => ipcRenderer.removeListener('henry:companion:prompt', handler);
+  },
+  onCompanionActionDecision: (cb: (decision: unknown) => void) => {
+    const handler = (_e: IpcRendererEvent, data: unknown) => cb(data);
+    ipcRenderer.on('henry:companion:action-decision', handler);
+    return () => ipcRenderer.removeListener('henry:companion:action-decision', handler);
+  },
+  onCompanionDeviceLinked: (cb: (device: unknown) => void) => {
+    const handler = (_e: IpcRendererEvent, data: unknown) => cb(data);
+    ipcRenderer.on('henry:companion:device-linked', handler);
+    return () => ipcRenderer.removeListener('henry:companion:device-linked', handler);
+  },
+  onSyncRequestStatus: (cb: (replyChannel: string) => void) => {
+    const handler = (_e: IpcRendererEvent, data: { replyChannel: string }) => cb(data.replyChannel);
+    ipcRenderer.on('henry:sync:request-status', handler);
+    return () => ipcRenderer.removeListener('henry:sync:request-status', handler);
+  },
+  replySyncStatus: (channel: string, status: unknown) => {
+    ipcRenderer.send(channel, status);
   },
 
   // ── Auto-updater ──────────────────────────────────────────
