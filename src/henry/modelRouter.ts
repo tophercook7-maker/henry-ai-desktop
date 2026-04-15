@@ -165,14 +165,40 @@ export function resolveChat(
 
   if (!apiKey && chosenProvider !== primaryProvider) {
     const primary = providers.find((p: any) => p.id === primaryProvider);
-    return {
-      provider: primaryProvider,
-      model: primaryModel,
-      apiKey: primary?.api_key || primary?.apiKey || '',
-    };
+    const primaryKey = primary?.api_key || primary?.apiKey || '';
+    if (!primaryKey) {
+      // Neither tier provider nor primary has a key — surface a clear error
+      throw new Error(
+        'No API key configured for any provider. Please add a provider in Settings → Engines.'
+      );
+    }
+    // Validate the model exists in the primary provider's model list
+    const primaryModels: string[] = (() => {
+      try {
+        const m = primary?.models;
+        return Array.isArray(m) ? m : (typeof m === 'string' ? JSON.parse(m) : []);
+      } catch { return []; }
+    })();
+    const resolvedModel =
+      primaryModels.length === 0 || primaryModels.includes(primaryModel)
+        ? primaryModel
+        : primaryModels[0];
+    return { provider: primaryProvider, model: resolvedModel, apiKey: primaryKey };
   }
 
-  return { provider: chosenProvider, model: chosenModel, apiKey };
+  // Validate that the chosen model actually exists in this provider's model list
+  const providerModels: string[] = (() => {
+    try {
+      const m = provObj?.models;
+      return Array.isArray(m) ? m : (typeof m === 'string' ? JSON.parse(m) : []);
+    } catch { return []; }
+  })();
+  const finalModel =
+    providerModels.length === 0 || providerModels.includes(chosenModel)
+      ? chosenModel
+      : providerModels[0] || chosenModel;
+
+  return { provider: chosenProvider, model: finalModel, apiKey };
 }
 
 /** Resolve STT route — Groq Whisper, with retry model available. */
@@ -228,5 +254,13 @@ export function modelShortName(modelId: string): string {
   if (modelId.includes('mixtral')) return 'Mixtral';
   if (modelId.includes('gemma')) return 'Gemma';
   if (modelId.includes('deepseek')) return 'DeepSeek';
+  if (modelId.includes('claude-opus-4')) return 'Opus 4';
+  if (modelId.includes('claude-sonnet-4')) return 'Sonnet 4';
+  if (modelId.includes('claude-3-5-haiku')) return 'Haiku 3.5';
+  if (modelId.includes('gpt-4o-mini')) return 'GPT-4o Mini';
+  if (modelId.includes('gpt-4o')) return 'GPT-4o';
+  if (modelId.includes('gemini-2')) return 'Gemini 2';
+  if (modelId.includes('gemini-1.5-pro')) return 'Gemini 1.5 Pro';
+  if (modelId.includes('gemini-1.5-flash')) return 'Gemini 1.5 Flash';
   return modelId.split('-').slice(-1)[0] ?? modelId;
 }

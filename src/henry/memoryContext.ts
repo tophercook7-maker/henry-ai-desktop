@@ -26,8 +26,12 @@ export const HENRY_MEMORY_CAPS = {
   maxMessageCharsEach: 8_000,
 } as const;
 
-export function normalizeFactKey(text: string): string {
-  return text.toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 240);
+export function normalizeFactKey(text: string, category?: string): string {
+  // Use category prefix + first 100 chars so "AI safety research" and "AI safety ethics"
+  // are not treated as duplicates — they share a prefix but differ in meaning.
+  const cat = (category || '').toLowerCase().trim().slice(0, 30);
+  const body = text.toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 100);
+  return cat ? `${cat}::${body}` : body;
 }
 
 /**
@@ -40,7 +44,7 @@ export function dedupeFactsTop(
   const seen = new Set<string>();
   const out: Array<{ fact: string; category: string }> = [];
   for (const f of facts) {
-    const k = normalizeFactKey(f.fact);
+    const k = normalizeFactKey(f.fact, f.category);
     if (!k || seen.has(k)) continue;
     seen.add(k);
     out.push({ fact: f.fact.trim(), category: (f.category || 'general').trim() || 'general' });
@@ -52,7 +56,8 @@ export function dedupeFactsTop(
 export function capMessageContent(content: string, max: number): string {
   const t = content.trim();
   if (t.length <= max) return t;
-  return `${t.slice(0, max)}…`;
+  const remaining = t.length - max;
+  return `${t.slice(0, max)}… [+${remaining} chars]`;
 }
 
 export function sliceRecentThreadMessages<T extends { role: string; content: string }>(
@@ -117,6 +122,9 @@ export function buildHenryMemoryContextBlock(input: BuildHenryMemoryContextInput
 
   const summary = input.lean.conversationSummary?.trim();
   if (summary) {
+    if (summary.length > HENRY_MEMORY_CAPS.maxSummaryChars) {
+      console.warn(`[Henry] Conversation summary exceeds cap (${summary.length} chars) — clipping`);
+    }
     const clipped =
       summary.length > HENRY_MEMORY_CAPS.maxSummaryChars
         ? `${summary.slice(0, HENRY_MEMORY_CAPS.maxSummaryChars)}…`
@@ -134,12 +142,21 @@ export function buildHenryMemoryContextBlock(input: BuildHenryMemoryContextInput
     }
   }
 
-  const hints = input.lean.workspaceHints.slice(0, HENRY_MEMORY_CAPS.maxWorkspaceHints);
+  // Sort by recency and mention count so active files surface first
+  const sortedHints = [...input.lean.workspaceHints].sort((a, b) => {
+    const mentionDiff = ((b as any).mentioned_count || 0) - ((a as any).mentioned_count || 0);
+    if (mentionDiff !== 0) return mentionDiff;
+    const aDate = (a as any).last_indexed ? new Date((a as any).last_indexed).getTime() : 0;
+    const bDate = (b as any).last_indexed ? new Date((b as any).last_indexed).getTime() : 0;
+    return bDate - aDate;
+  });
+  const hints = sortedHints.slice(0, HENRY_MEMORY_CAPS.maxWorkspaceHints);
   if (hints.length > 0) {
     lines.push('');
     lines.push('## Indexed workspace (relevant)');
     for (const h of hints) {
-      const sum = (h.summary || '').trim();
+      // Truncate long summaries to keep context lean
+      const sum = (h.summary || '').trim().slice(0, 150);
       lines.push(`- \`${h.file_path}\`${sum ? `: ${sum}` : ''}`);
     }
   }

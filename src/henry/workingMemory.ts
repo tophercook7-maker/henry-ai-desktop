@@ -40,6 +40,15 @@ function load(): WorkingMemoryItem[] {
     const raw = localStorage.getItem(WM_KEY);
     return raw ? (JSON.parse(raw) as WorkingMemoryItem[]) : [];
   } catch {
+    // Backup corrupted data before discarding so it can be recovered manually
+    try {
+      const corrupted = localStorage.getItem(WM_KEY);
+      if (corrupted) {
+        const backupKey = `henry:working_memory:corrupted_backup:${Date.now()}`;
+        localStorage.setItem(backupKey, corrupted);
+        console.warn('[Henry] Working memory corrupted — backed up to', backupKey);
+      }
+    } catch { /* ignore backup failure */ }
     return [];
   }
 }
@@ -105,8 +114,9 @@ const COMMITMENT_PATTERNS = [
   /\bi'?ll\s+(do|check|find|look|search|research|create|build|draft|write|send|review|follow up|get|set|make|update|summarize|prepare|help)\b.{5,80}/gi,
   /\blet me\s+(do|check|find|look|search|try|get|help|show|pull|build|draft|review)\b.{5,80}/gi,
   /\bi will\s+(do|check|find|look|search|research|create|build|draft|write|help|follow)\b.{5,80}/gi,
-  /\bI'?m going to\s+\w.{5,60}/gi,
+  /\bI'?m going to\s+(?:try\s+(?:to\s+)?)?\w.{5,60}/gi,
   /\bI can\s+(do|handle|help|check|build|create|write|find|look into)\b.{5,60}/gi,
+  /\bgoing to\s+(?:try\s+(?:to\s+)?)?(?:go ahead and\s+)?\w.{5,60}/gi,
 ];
 
 const NEXT_STEP_PATTERNS = [
@@ -243,6 +253,13 @@ export function loadNarrativeMemory(): NarrativeEntry[] {
     const raw = localStorage.getItem(NARRATIVE_KEY);
     return raw ? (JSON.parse(raw) as NarrativeEntry[]) : [];
   } catch {
+    try {
+      const corrupted = localStorage.getItem(NARRATIVE_KEY);
+      if (corrupted) {
+        localStorage.setItem(`henry:narrative_memory:corrupted_backup:${Date.now()}`, corrupted);
+        console.warn('[Henry] Narrative memory corrupted — backed up');
+      }
+    } catch { /* ignore */ }
     return [];
   }
 }
@@ -278,8 +295,8 @@ export function buildNarrativeBlock(): string {
   // Group by week, take top 4 entries
   const recent = entries.slice(0, 4);
   const lines = recent.map((e) => {
-    const themes = e.themes.length > 0 ? ` [${e.themes.join(', ')}]` : '';
-    return `- ${e.weekLabel}${themes}: ${e.summary}`;
+    const themes = e.themes.length > 0 ? ` [${e.themes.slice(0, 5).join(', ')}]` : '';
+    return `- ${e.weekLabel}${themes}: ${e.summary.slice(0, 400)}`;
   });
 
   const allChars = lines.join('\n').length;

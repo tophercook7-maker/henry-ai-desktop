@@ -191,9 +191,20 @@ export async function checkSessionPathsStale(
   return report;
 }
 
+/** Returns a YYYY-MM-DD key for today, used to make dismissal persist for the day. */
+function getTodayDismissalKey(): string {
+  const today = new Date().toISOString().slice(0, 10); // e.g. "2026-04-15"
+  return `${HENRY_SESSION_RECOVERY_DISMISSED_KEY}:${today}`;
+}
+
 export function recoveryBannerDismissedThisAppSession(): boolean {
   try {
-    return sessionStorage.getItem(HENRY_SESSION_RECOVERY_DISMISSED_KEY) === '1';
+    // Check both localStorage (persists through refresh) and sessionStorage (legacy)
+    const dailyKey = getTodayDismissalKey();
+    return (
+      localStorage.getItem(dailyKey) === '1' ||
+      sessionStorage.getItem(HENRY_SESSION_RECOVERY_DISMISSED_KEY) === '1'
+    );
   } catch {
     return false;
   }
@@ -201,6 +212,8 @@ export function recoveryBannerDismissedThisAppSession(): boolean {
 
 export function setRecoveryBannerDismissedThisSession(): void {
   try {
+    // Persist in localStorage with a daily key so refresh doesn't re-show the banner
+    localStorage.setItem(getTodayDismissalKey(), '1');
     sessionStorage.setItem(HENRY_SESSION_RECOVERY_DISMISSED_KEY, '1');
   } catch {
     /* ignore */
@@ -209,6 +222,7 @@ export function setRecoveryBannerDismissedThisSession(): void {
 
 export function clearRecoveryBannerDismissedThisSession(): void {
   try {
+    localStorage.removeItem(getTodayDismissalKey());
     sessionStorage.removeItem(HENRY_SESSION_RECOVERY_DISMISSED_KEY);
   } catch {
     /* ignore */

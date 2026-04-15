@@ -19,6 +19,10 @@ export function prependWriterDraftMetadata(
   body: string,
   meta: WriterDraftMetadataFields
 ): string {
+  // Idempotent: don't prepend if metadata comment already exists
+  if (body.trimStart().startsWith('<!--') && body.includes('Henry Writer draft')) {
+    return body;
+  }
   const t = getWriterDocumentType(meta.documentTypeId);
   const when = new Date().toISOString();
   const ws = meta.workspaceHint?.trim();

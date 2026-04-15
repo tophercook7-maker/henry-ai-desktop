@@ -117,8 +117,6 @@ export default function App() {
     const injectedKey = `henry:briefing_chat_injected:${getTodayKey()}`;
     if (localStorage.getItem(injectedKey) === 'true') return;
 
-    briefingInjectedRef.current = true;
-
     // Delay slightly so the conversation list is loaded first
     const timer = setTimeout(() => { void injectDailyBriefing(injectedKey); }, 3500);
     return () => clearTimeout(timer);
@@ -164,6 +162,10 @@ export default function App() {
 
       if (!content) return;
 
+      // Mark injected BEFORE saving so we don't retry on errors mid-save
+      briefingInjectedRef.current = true;
+      localStorage.setItem(injectedKey, 'true');
+
       // Find active conversation, or use the most recent one
       const st = useStore.getState();
       let conversationId = st.activeConversationId;
@@ -195,9 +197,10 @@ export default function App() {
       await window.henryAPI.saveMessage(msg);
       addMessage(msg);
       setCurrentView('chat');
-
-      localStorage.setItem(injectedKey, 'true');
     } catch (err) {
+      // Reset flags so next app launch can retry
+      briefingInjectedRef.current = false;
+      try { localStorage.removeItem(injectedKey); } catch { /* ignore */ }
       console.warn('[Henry] Daily briefing injection failed:', err);
     }
   }
@@ -233,12 +236,18 @@ export default function App() {
   async function initApp() {
     try {
       // URL bypass: ?enter or #enter skips wizard immediately
+      // Only allowed if at least one provider is already configured
       const urlBypass =
         window.location.search.includes('enter') ||
         window.location.hash === '#enter' ||
         window.location.hash === '#henry';
       if (urlBypass) {
-        await window.henryAPI.saveSetting('setup_complete', 'true');
+        const earlyProviders: Array<{ id: string }> = (() => {
+          try { return JSON.parse(localStorage.getItem('henry:providers') || '[]'); } catch { return []; }
+        })();
+        if (earlyProviders.length > 0) {
+          await window.henryAPI.saveSetting('setup_complete', 'true');
+        }
         // Clean the URL without reload
         history.replaceState(null, '', window.location.pathname);
       }
@@ -324,8 +333,14 @@ export default function App() {
         try { seedWorkspace(); } catch { /* non-critical */ }
 
         const [convos, providers] = await Promise.all([
-          window.henryAPI.getConversations(),
-          window.henryAPI.getProviders(),
+          window.henryAPI.getConversations().catch((e: unknown) => {
+            console.error('[Henry] Failed to load conversations:', e);
+            return [] as Awaited<ReturnType<typeof window.henryAPI.getConversations>>;
+          }),
+          window.henryAPI.getProviders().catch((e: unknown) => {
+            console.error('[Henry] Failed to load providers:', e);
+            return [] as Awaited<ReturnType<typeof window.henryAPI.getProviders>>;
+          }),
         ]);
         setConversations(convos);
         setProviders(
@@ -334,9 +349,17 @@ export default function App() {
             name: p.name,
             apiKey: p.api_key || p.apiKey || '',
             enabled: Boolean(p.enabled),
-            models: typeof p.models === 'string'
-              ? (() => { try { return JSON.parse(p.models || '[]'); } catch { return []; } })()
-              : (p.models || []),
+            models: (() => {
+              try {
+                const m = p.models;
+                if (Array.isArray(m)) return m;
+                if (typeof m === 'string' && m) return JSON.parse(m);
+                return [];
+              } catch (e) {
+                console.error('[Henry] Failed to parse models for provider', p.id, e);
+                return [];
+              }
+            })(),
           }))
         );
       }

@@ -51,7 +51,9 @@ export async function speak(
   if (!clean) return;
 
   if (provider === 'groq') {
-    await speakGroq(clean, settings, providers);
+    // Only fall back to browser if user hasn't explicitly disabled it
+    const allowFallback = (settings.tts_fallback_to_browser ?? 'true') !== 'false';
+    await speakGroq(clean, settings, providers, allowFallback);
   } else {
     speakBrowser(clean);
   }
@@ -62,17 +64,21 @@ async function speakGroq(
   text: string,
   settings: Record<string, string>,
   providers: any[],
+  allowBrowserFallback = true,
 ): Promise<void> {
   const groq = providers.find((p: any) => p.id === 'groq');
   const apiKey = groq?.api_key || groq?.apiKey || '';
 
   if (!apiKey) {
-    speakBrowser(text);
+    if (allowBrowserFallback) speakBrowser(text);
     return;
   }
 
   const model = settings.tts_model_groq || 'playai-tts';
-  const voice = settings.tts_voice_groq || 'Fritz-PlayAI';
+  // Validate voice against known list to avoid silent API errors
+  const requestedVoice = settings.tts_voice_groq || 'Fritz-PlayAI';
+  const validVoiceIds = GROQ_TTS_VOICES.map((v) => v.id);
+  const voice = validVoiceIds.includes(requestedVoice) ? requestedVoice : 'Fritz-PlayAI';
 
   try {
     const res = await fetch('https://api.groq.com/openai/v1/audio/speech', {
@@ -90,8 +96,9 @@ async function speakGroq(
     });
 
     if (!res.ok) {
-      console.warn(`[Henry TTS] Groq returned ${res.status}, falling back to browser`);
-      speakBrowser(text);
+      const errBody = await res.text().catch(() => '');
+      console.warn(`[Henry TTS] Groq returned ${res.status}${errBody ? ': ' + errBody.slice(0, 200) : ''}, falling back to browser`);
+      if (allowBrowserFallback) speakBrowser(text);
       return;
     }
 
@@ -110,13 +117,13 @@ async function speakGroq(
       URL.revokeObjectURL(url);
       currentAudio = null;
       console.warn('[Henry TTS] Audio playback error, falling back to browser');
-      speakBrowser(text);
+      if (allowBrowserFallback) speakBrowser(text);
     };
 
     await audio.play();
   } catch (err) {
     console.warn('[Henry TTS] Groq TTS failed, falling back to browser:', err);
-    speakBrowser(text);
+    if (allowBrowserFallback) speakBrowser(text);
   }
 }
 
