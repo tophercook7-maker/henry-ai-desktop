@@ -1311,6 +1311,7 @@ export default function ChatView() {
       // FULL tier or mode-specific (biblical/writer/design3d) always use the rich system prompt
       systemPrompt = buildCompanionStreamSystemPrompt(effectiveMode, memoryContext, {
         weather: currentWeather,
+        hasWebContext: webContextBlock.length > 0,
         ...(effectiveMode === 'biblical' ? { biblicalSourceProfileId } : {}),
         ...(effectiveMode === 'writer'
           ? { writerDocumentTypeId, writerActiveDraftRelativePath: writerActiveDraftPath }
