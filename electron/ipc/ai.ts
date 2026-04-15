@@ -38,6 +38,11 @@ interface AiRequest {
   maxTokens?: number;
   channelId?: string;
   signal?: AbortSignal;
+  /**
+   * Optional base URL override. Used by Ollama to pass the configured
+   * endpoint from settings instead of defaulting to localhost:11434.
+   */
+  apiUrl?: string;
 }
 
 // ── Pricing ───────────────────────────────────────────────────
@@ -187,11 +192,40 @@ async function callGoogle(params: AiRequest): Promise<{
   };
 }
 
+/**
+ * Quick liveness check for Ollama — hits /api/version with a short timeout.
+ * Returns true if Ollama responded OK, false if unreachable or timed out.
+ */
+async function pingOllama(baseUrl: string, timeoutMs = 3_000): Promise<boolean> {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const res = await fetch(`${baseUrl}/api/version`, {
+      method: 'GET',
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 async function callOllamaProvider(params: AiRequest): Promise<{
   content: string;
   usage?: { input: number; output: number };
 }> {
-  const response = await fetch('http://localhost:11434/api/chat', {
+  const base = (params.apiUrl || 'http://localhost:11434').replace(/\/$/, '');
+
+  // Pre-flight: confirm Ollama is reachable before attempting the actual call.
+  const running = await pingOllama(base);
+  if (!running) {
+    throw new Error(
+      `Ollama isn't running. Start it in Terminal:\n\n  ollama serve\n\nIf Ollama is on a different machine, update the URL in Settings → Engines.`
+    );
+  }
+
+  const response = await fetch(`${base}/api/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -207,7 +241,15 @@ async function callOllamaProvider(params: AiRequest): Promise<{
   });
 
   if (!response.ok) {
-    throw new Error(`Ollama error: ${response.status}. Is Ollama running?`);
+    if (response.status === 404) {
+      throw new Error(
+        `Model "${params.model}" isn't loaded in Ollama.\n\nRun this in Terminal:\n\n  ollama pull ${params.model}`
+      );
+    }
+    const errText = await response.text().catch(() => '');
+    throw new Error(
+      `Ollama returned an error (${response.status}${errText ? ': ' + errText.slice(0, 120) : ''}). Check the model name in Settings → Engines.`
+    );
   }
 
   const data = await response.json();
