@@ -17,6 +17,7 @@ const config: CapacitorConfig = {
     contentInset: 'always',
     preferredContentMode: 'mobile',
     backgroundColor: '#0a0a12',
+    minVersion: '14.0',
   },
 
   android: {
@@ -27,6 +28,9 @@ const config: CapacitorConfig = {
   },
 
   plugins: {
+    Camera: {
+      permissions: ['camera', 'photos'],
+    },
     SplashScreen: {
       launchShowDuration: 1800,
       launchAutoHide: false,
