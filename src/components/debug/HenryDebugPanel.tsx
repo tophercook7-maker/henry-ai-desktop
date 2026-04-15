@@ -11,6 +11,8 @@
  *   D. Capability Truth   — integrations, AI, computer/printer
  *   E. Action Decision    — gate decision and reason
  *   F. Provider / Model   — configured vs actual, fallback
+ *   G. Instinct & Momentum — live signals, mode, decision, phase
+ *   H. Presence           — state, trigger, mode influence, suppression
  */
 
 import { useState } from 'react';
@@ -23,6 +25,7 @@ import { useExecutionModeStore, inferExecutionMode, EXECUTION_MODE_CONFIGS, type
 import { computeInstinctFromState } from '../../henry/instinctEngine';
 import { computeMomentum } from '../../henry/momentumEngine';
 import { useInitiativeStore } from '../../henry/initiativeStore';
+import { useAmbientStore } from '../../henry/ambientStateStore';
 
 interface SectionProps {
   title: string;
@@ -72,6 +75,46 @@ function Pill({ ok, label }: { ok: boolean | null; label: string }) {
       <span>{dot}</span>
       {label}
     </span>
+  );
+}
+
+function PresenceSection() {
+  const ambientState   = useAmbientStore((s) => s.state);
+  const isMuted        = useAmbientStore((s) => s.isMuted);
+  const presenceExpanded = useAmbientStore((s) => s.presenceExpanded);
+  const execMode       = useExecutionModeStore((s) => s.mode);
+  const execSource     = useExecutionModeStore((s) => s.source);
+  const config         = EXECUTION_MODE_CONFIGS[execMode];
+
+  const suppressionColor = config.suppressionLevel === 'high'
+    ? 'text-henry-error'
+    : config.suppressionLevel === 'medium'
+    ? 'text-henry-warning'
+    : 'text-henry-success';
+
+  return (
+    <Section letter="H" title="Presence">
+      <div className="space-y-1.5">
+        <Row label="State"          value={ambientState} />
+        <Row label="Muted"          value={isMuted ? 'yes — user paused Henry' : 'no'} />
+        <Row label="Panel open"     value={presenceExpanded ? 'yes' : 'no'} />
+        <Row label="Exec mode"      value={`${execMode} (${execSource})`} />
+        <Row label="Suppression"    value={config.suppressionLevel} accent={config.suppressionLevel === 'high'} />
+        <Row label="Initiative ×"   value={String(config.initiativeMultiplier)} />
+        <Row label="Emphasize"      value={config.emphasize.join(', ')} />
+        <Row label="Suppress"       value={config.suppress.join(', ')} />
+      </div>
+      <div className="mt-2 pt-2 border-t border-henry-border/20">
+        <p className="text-[10px] text-henry-text-muted uppercase tracking-wider mb-1">Mode influence on presence</p>
+        <p className={`text-[11px] ${suppressionColor}`}>
+          {config.suppressionLevel === 'high'
+            ? 'Focus mode: presence is minimal. Only critical signals surface.'
+            : config.suppressionLevel === 'medium'
+            ? 'Moderate suppression: low-value signals filtered from presence.'
+            : 'Low suppression: all signals surface normally.'}
+        </p>
+      </div>
+    </Section>
   );
 }
 
@@ -363,6 +406,9 @@ export default function HenryDebugPanel({ onClose }: { onClose: () => void }) {
               <Row label="Active projects" value={String(momentum.signals.activeProjects)} />
             </div>
           </Section>
+
+          {/* ── H. Presence ─────────────────────────────────────────────── */}
+          <PresenceSection />
 
         </div>
       </div>
