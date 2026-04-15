@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import TitleBar from './TitleBar';
+import PresenceBar from './PresenceBar';
 import Sidebar from './Sidebar';
 import MobileNav from './MobileNav';
 import ChatView from '../chat/ChatView';
@@ -77,6 +78,7 @@ export default function Layout() {
   return (
     <div className="h-full w-full flex flex-col bg-henry-bg overflow-hidden">
       <TitleBar />
+      <PresenceBar />
 
       {/* Main body: sidebar (desktop) + content */}
       <div className="flex-1 flex overflow-hidden min-h-0">
