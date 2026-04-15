@@ -13,6 +13,7 @@ import type {
 export const useStore = create<AppState>((set, get) => ({
   // UI
   currentView: 'today',
+  viewHistory: [] as import('../types').ViewType[],
   setupComplete: false,
 
   // Conversations
@@ -38,7 +39,19 @@ export const useStore = create<AppState>((set, get) => ({
 
   // ── Actions ──────────────────────────────────────────────
 
-  setCurrentView: (view: ViewType) => set({ currentView: view }),
+  setCurrentView: (view: ViewType) => set((state) => ({
+    viewHistory: state.currentView !== view
+      ? [...state.viewHistory.slice(-14), state.currentView]
+      : state.viewHistory,
+    currentView: view,
+  })),
+
+  goBack: () => set((state) => {
+    const history = state.viewHistory;
+    if (history.length === 0) return state;
+    const prev = history[history.length - 1];
+    return { currentView: prev, viewHistory: history.slice(0, -1) };
+  }),
 
   setSetupComplete: (complete: boolean) => set({ setupComplete: complete }),
 
