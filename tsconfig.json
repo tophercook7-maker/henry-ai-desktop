@@ -19,7 +19,8 @@
     "esModuleInterop": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["src/*"],
+      "@capacitor-mlkit/barcode-scanning": ["./src/stubs/barcodeScanning.ts"]
     }
   },
   "include": ["src"]

@@ -6,4 +6,9 @@
  * On the real native app the Capacitor plugin is used directly.
  */
 
-export const BarcodeScanner = null;
+export interface BarcodeScanResult {
+  barcodes?: Array<{ rawValue?: string }>;
+}
+
+/** Non-null shape matches the native plugin; value is always `null` in web/Electron bundles. */
+export const BarcodeScanner: { scan: () => Promise<BarcodeScanResult> } | null = null;

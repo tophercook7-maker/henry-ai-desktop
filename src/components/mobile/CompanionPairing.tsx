@@ -57,10 +57,8 @@ export default function CompanionPairing({ onPaired }: Props) {
       return;
     }
     try {
-      // Try to use the BarcodeScanner plugin if available
-      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-      // @ts-expect-error — native-only package not in web bundle
-      const { BarcodeScanner } = await import(/* @vite-ignore */ '@capacitor-mlkit/barcode-scanning').catch(() => ({ BarcodeScanner: null as unknown }));
+      // Try to use the BarcodeScanner plugin if available (Vite/tsconfig alias this to a web stub outside native builds)
+      const { BarcodeScanner } = await import('@capacitor-mlkit/barcode-scanning');
       if (!BarcodeScanner) {
         setError('QR scanner not available. Please type the code manually.');
         setStep('code-entry');

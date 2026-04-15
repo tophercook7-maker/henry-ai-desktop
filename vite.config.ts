@@ -40,9 +40,16 @@ export default defineConfig({
   build: {
     outDir: 'renderer',
   },
+  optimizeDeps: {
+    exclude: ['@capacitor-mlkit/barcode-scanning'],
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      '@capacitor-mlkit/barcode-scanning': path.resolve(
+        __dirname,
+        './src/stubs/barcodeScanning.ts'
+      ),
     },
   },
 });
