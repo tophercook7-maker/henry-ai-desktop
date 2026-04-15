@@ -59,6 +59,7 @@ declare global {
     taskId?: string;
     taskDescription?: string;
     message?: string;
+    queueLength?: number;
   }
 
   interface HenryAIMessage {
@@ -73,8 +74,6 @@ declare global {
     messages: HenryAIMessage[];
     temperature?: number;
     maxTokens?: number;
-    /** Ollama: base URL from settings, e.g. http://localhost:11434 */
-    apiUrl?: string;
   }
 
   interface HenryAIUsage {
@@ -352,6 +351,24 @@ declare global {
 
     whisperTranscribe?: (audioBlob: Blob, apiKey: string) => Promise<string>;
     createTask?: (params: { description: string; type: string; priority?: number; payload?: unknown }) => Promise<{ id: string }>;
+
+    // ── Companion Sync Bridge ─────────────────────────────────────────────
+    syncStart?: (port?: number) => Promise<import('./sync/types').SyncServerState>;
+    syncStop?: () => Promise<{ ok: boolean }>;
+    syncGetState?: () => Promise<import('./sync/types').SyncServerState>;
+    syncGeneratePairToken?: (ttlMs?: number) => Promise<string>;
+    syncRevokePairToken?: () => Promise<{ ok: boolean }>;
+    syncUnlinkDevice?: (deviceId: string) => Promise<{ ok: boolean }>;
+    syncPushEvent?: (event: unknown) => Promise<{ ok: boolean }>;
+    syncAddPendingAction?: (action: unknown) => Promise<{ ok: boolean }>;
+    syncUpdateNotes?: (notes: unknown[]) => Promise<{ ok: boolean }>;
+    syncUpdateSettings?: (settings: Record<string, unknown>) => Promise<{ ok: boolean }>;
+    onCompanionCapture?: (cb: (capture: unknown) => void) => () => void;
+    onCompanionPrompt?: (cb: (data: unknown) => void) => () => void;
+    onCompanionActionDecision?: (cb: (decision: unknown) => void) => () => void;
+    onCompanionDeviceLinked?: (cb: (device: unknown) => void) => () => void;
+    onSyncRequestStatus?: (cb: (replyChannel: string) => void) => () => void;
+    replySyncStatus?: (channel: string, status: unknown) => void;
   }
 
   interface Window {
