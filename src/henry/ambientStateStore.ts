@@ -6,18 +6,25 @@ export type AmbientStateValue =
   | 'listening'
   | 'thinking'
   | 'responding'
-  | 'muted';
+  | 'muted'
+  | 'blocked'
+  | 'reconnect_needed'
+  | 'focused';
 
 interface AmbientStore {
   state: AmbientStateValue;
   activeBrain: string | null;
   sessionActive: boolean;
+  presenceExpanded: boolean;
+  isMuted: boolean;
   _idleTimer: ReturnType<typeof setTimeout> | null;
 
   setState: (s: AmbientStateValue) => void;
   setActiveBrain: (brain: string | null) => void;
   startSession: () => void;
   endSession: () => void;
+  toggleExpanded: () => void;
+  toggleMuted: () => void;
 }
 
 const IDLE_TIMEOUT_MS = 90_000;
@@ -26,9 +33,13 @@ export const useAmbientStore = create<AmbientStore>((set, get) => ({
   state: 'idle',
   activeBrain: null,
   sessionActive: false,
+  presenceExpanded: false,
+  isMuted: false,
   _idleTimer: null,
 
   setState: (s: AmbientStateValue) => {
+    if (get().isMuted && s !== 'muted') return;
+
     const prev = get()._idleTimer;
     if (prev) clearTimeout(prev);
 
@@ -51,5 +62,16 @@ export const useAmbientStore = create<AmbientStore>((set, get) => ({
     const prev = get()._idleTimer;
     if (prev) clearTimeout(prev);
     set({ sessionActive: false, state: 'idle', _idleTimer: null });
+  },
+
+  toggleExpanded: () => set((s) => ({ presenceExpanded: !s.presenceExpanded })),
+
+  toggleMuted: () => {
+    const { isMuted } = get();
+    if (!isMuted) {
+      set({ isMuted: true, state: 'muted' });
+    } else {
+      set({ isMuted: false, state: 'ready' });
+    }
   },
 }));
