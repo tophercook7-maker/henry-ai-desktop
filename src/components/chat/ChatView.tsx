@@ -33,6 +33,7 @@ import {
   type ContextTier,
   type MessageIntent,
 } from '@/henry/contextTier';
+import { routeRequest } from '@/core/router/brainRouter';
 import { getWeather, type WeatherSnapshot } from '@/henry/weatherContext';
 import { resolveChat, requiresQualityModel, modelShortName } from '@/henry/modelRouter';
 import { speak as ttsSpeakFn, cancelTTS } from '@/henry/ttsService';
@@ -1180,15 +1181,49 @@ export default function ChatView() {
         ? buildWorkspaceContextPromptSection(wsCtx, { indexSummaryHint: wsIndexHint })
         : '';
 
-    // ── Context tier decision ─────────────────────────────────────────────
-    const intent: MessageIntent = classifyMessageIntent(content);
+    // ── Brain Router decision ─────────────────────────────────────────────
+    // Build connected services list early (used by router + service map below)
+    const _connectedServicesEarly: string[] = (() => {
+      try {
+        const raw = localStorage.getItem('henry:connections');
+        if (!raw) return [];
+        const obj = JSON.parse(raw) as Record<string, { status?: string }>;
+        return Object.entries(obj).filter(([, v]) => v?.status === 'connected').map(([k]) => k);
+      } catch { return []; }
+    })();
+
     const threadMessagesLive = useStore.getState().messages.filter((m) => m.conversation_id === convId);
-    const tier: ContextTier = selectContextTier(
-      intent,
-      threadMessagesLive.length,
-      !!activeWorkspaceContext,
-      effectiveMode === 'biblical'
-    );
+
+    const brainDecision = routeRequest({
+      message: content,
+      connectedServices: _connectedServicesEarly,
+      mode: effectiveMode,
+      historyLength: threadMessagesLive.length,
+      hasWorkspaceContext: !!activeWorkspaceContext,
+      isBiblicalMode: effectiveMode === 'biblical',
+    });
+
+    // Gate blocked actions before touching the model at all
+    if (brainDecision.actionGate.decision === 'block') {
+      const blockMsg = brainDecision.actionGate.reason
+        ?? `That action isn't available right now.`;
+      addMessage({
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: blockMsg,
+        conversation_id: convId,
+        created_at: new Date().toISOString(),
+        model: 'router',
+        provider: 'henry',
+      });
+      setIsStreaming(false);
+      setCompanionStatus({ status: 'idle' });
+      return;
+    }
+
+    // ── Context tier (from brain router, replaces standalone selectContextTier call)
+    const intent: MessageIntent = classifyMessageIntent(content);
+    const tier: ContextTier = brainDecision.contextTier;
     const tierHistoryCaps = TIER_HISTORY_CAPS[tier];
     const tierMemoryCaps  = TIER_MEMORY_CAPS[tier];
 
@@ -1282,15 +1317,8 @@ export default function ChatView() {
     const customModeRaw = (() => { try { return localStorage.getItem('henry_custom_mode_override'); } catch { return null; } })();
     const customModeOverride = customModeRaw ? (() => { try { return JSON.parse(customModeRaw) as { systemPrompt?: string; name?: string }; } catch { return null; } })() : null;
 
-    // Connected services list (for awareness/integration blocks)
-    const _connectedServices: string[] = (() => {
-      try {
-        const raw = localStorage.getItem('henry:connections');
-        if (!raw) return [];
-        const obj = JSON.parse(raw) as Record<string, { status?: string }>;
-        return Object.entries(obj).filter(([, v]) => v?.status === 'connected').map(([k]) => k);
-      } catch { return []; }
-    })();
+    // Connected services list — already computed above for brain router
+    const _connectedServices = _connectedServicesEarly;
 
     // Map intent → integration service label + id
     const INTEGRATION_SERVICE_MAP: Partial<Record<MessageIntent, { label: string; serviceId: string }>> = {
