@@ -14,7 +14,7 @@
 import { useState } from 'react';
 import { useSyncStore } from '../../sync/syncStore';
 import { sendActionDecision } from '../../sync/syncClient';
-import type { PendingAction, ActionRisk } from '../../sync/types';
+import type { PendingAction, ActionRisk, CompanionConnectionConfig } from '../../sync/types';
 import { hapticSuccess, hapticError, hapticMedium } from '../../capacitor';
 
 const RISK_CONFIG: Record<ActionRisk, { color: string; badge: string; border: string }> = {
@@ -79,7 +79,7 @@ function ActionCard({
   config,
 }: {
   action: PendingAction;
-  config: ReturnType<typeof useSyncStore>['config'];
+  config: CompanionConnectionConfig | null;
 }) {
   const { removeAction } = useSyncStore();
   const [note, setNote] = useState('');
