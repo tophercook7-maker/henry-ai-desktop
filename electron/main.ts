@@ -1,5 +1,6 @@
-import { app, BrowserWindow, shell, ipcMain, Menu, session } from 'electron';
+import { app, BrowserWindow, shell, ipcMain } from 'electron';
 import path from 'path';
+import fs from 'fs';
 import { autoUpdater } from 'electron-updater';
 import { initDatabase } from './ipc/database';
 import { registerSettingsHandlers } from './ipc/settings';
@@ -13,16 +14,7 @@ import { registerOllamaCleanup } from './ipc/ollamaManager';
 import { registerTerminalHandlers } from './ipc/terminal';
 import { registerComputerHandlers } from './ipc/computer';
 import { registerPrinterHandlers } from './ipc/printer';
-import { registerGoogleAuthHandlers } from './ipc/googleAuth';
-import { registerSourceFileHandlers } from './ipc/sourceFiles';
-
-// ── Temporary diagnostics — remove when black-screen root cause is confirmed ──
-process.on('uncaughtException', (err) => {
-  console.error('[Henry] uncaughtException in main process:', err);
-});
-process.on('unhandledRejection', (reason) => {
-  console.error('[Henry] unhandledRejection in main process:', reason);
-});
+import { registerSyncBridgeIpc, setSyncDb, startSyncServer } from './ipc/syncBridge';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -55,11 +47,7 @@ function createWindow() {
       mainWindow.webContents.openDevTools({ mode: 'detach' });
     }
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
-    // Temporary: open DevTools in packaged mode when HENRY_DEBUG=true
-    if (process.env.HENRY_DEBUG === 'true') {
-      mainWindow.webContents.openDevTools({ mode: 'detach' });
-    }
+    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -67,174 +55,63 @@ function createWindow() {
     return { action: 'deny' };
   });
 
-  // Surface renderer load failures in the main-process console (visible in crash logs).
-  mainWindow.webContents.on('did-fail-load', (_e, code, desc, url) => {
-    console.error(`[Henry] Renderer failed to load — code=${code} desc=${desc} url=${url}`);
-  });
-
-  mainWindow.webContents.on('render-process-gone', (_e, details) => {
-    console.error(`[Henry] Render process gone — reason=${details.reason} exitCode=${details.exitCode}`);
-  });
-
-  // Temporary: pipe all renderer console output to the main-process log
-  mainWindow.webContents.on('console-message', (_e, level, message, line, sourceId) => {
-    const tag = ['verbose', 'info', 'warning', 'error'][level] ?? 'log';
-    console.log(`[Henry:renderer:${tag}] ${message}  (${sourceId}:${line})`);
-  });
-
-  // ── Global right-click context menu ────────────────────────────────────────
-  // Provides Copy/Cut/Paste/Select All everywhere in the app.
-  // Inspect Element is shown only in development mode.
-  const isDev = !!process.env.VITE_DEV_SERVER_URL;
-  mainWindow.webContents.on('context-menu', (_event, params) => {
-    const win = getMainWindow();
-    if (!win) return;
-
-    const template: Electron.MenuItemConstructorOptions[] = [
-      {
-        label: 'Cut',
-        role: 'cut',
-        enabled: params.isEditable && params.editFlags.canCut,
-      },
-      {
-        label: 'Copy',
-        role: 'copy',
-        enabled: params.editFlags.canCopy,
-      },
-      {
-        label: 'Paste',
-        role: 'paste',
-        enabled: params.isEditable && params.editFlags.canPaste,
-      },
-      { type: 'separator' },
-      {
-        label: 'Select All',
-        role: 'selectAll',
-        enabled: params.editFlags.canSelectAll,
-      },
-    ];
-
-    if (isDev) {
-      template.push(
-        { type: 'separator' },
-        {
-          label: 'Inspect Element',
-          click: () => win.webContents.inspectElement(params.x, params.y),
-        }
-      );
-    }
-
-    Menu.buildFromTemplate(template).popup({ window: win });
-  });
-
   mainWindow.on('closed', () => { mainWindow = null; });
 }
 
 app.whenReady().then(() => {
-  const fs = require('fs');
   const userDataPath = app.getPath('userData');
   const henryDir = path.join(userDataPath, 'henry-workspace');
   if (!fs.existsSync(henryDir)) {
     fs.mkdirSync(henryDir, { recursive: true });
   }
 
-  // ── CORS override — allow renderer to call external APIs directly ────────────
-  // Required because the renderer is loaded from file:// (packaged) or
-  // localhost (dev), neither of which Google/Slack/Stripe consider trusted origins.
-  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-    callback({
-      responseHeaders: {
-        ...details.responseHeaders,
-        'Access-Control-Allow-Origin': ['*'],
-        'Access-Control-Allow-Headers': ['*'],
-        'Access-Control-Allow-Methods': ['GET, POST, PUT, PATCH, DELETE, OPTIONS'],
-      },
-    });
+  const db = initDatabase(henryDir);
+
+  createWindow();
+
+  registerSettingsHandlers(db);
+  registerAIHandlers(db, getMainWindow);
+  registerFilesystemHandlers(henryDir);
+  registerTaskBrokerHandlers(db, getMainWindow, henryDir);
+  registerMemoryHandlers(db);
+  registerScriptureHandlers(db, getMainWindow);
+  registerOllamaHandlers(getMainWindow);
+  registerOllamaCleanup();
+  registerTerminalHandlers(getMainWindow, henryDir);
+  registerComputerHandlers(getMainWindow);
+  registerPrinterHandlers(getMainWindow);
+
+  // ── Companion Sync Bridge ────────────────────────────────────────────────
+  setSyncDb(db);
+  registerSyncBridgeIpc();
+  // Auto-start sync server so companion devices can connect immediately
+  startSyncServer(4242);
+
+  // ── Auto-updater ────────────────────────────────────────────────────────────
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on('update-available', () => {
+    getMainWindow()?.webContents.send('updater:update-available');
+  });
+  autoUpdater.on('update-downloaded', () => {
+    getMainWindow()?.webContents.send('updater:update-downloaded');
+  });
+  autoUpdater.on('error', (err: Error) => {
+    console.error('[AutoUpdater] Error:', err.message);
   });
 
-  // ── 1. Init database ─────────────────────────────────────────────────────────
-  let db: ReturnType<typeof initDatabase> | null = null;
-  let dbError: string | null = null;
-  try {
-    db = initDatabase(henryDir);
-  } catch (err) {
-    dbError = String(err);
-    console.error('[Henry] Database init failed:', err);
-  }
-
-  // ── 2. Register all IPC handlers before the window opens ────────────────────
-  //
-  // The window is intentionally created AFTER all handlers are registered so
-  // the renderer can never call window.henryAPI before a matching ipcMain.handle
-  // exists.  Previously createWindow() was called first, introducing a race where
-  // the renderer's initApp() IPC calls could fire before handlers were ready.
-  //
-  if (db) {
-    registerSettingsHandlers(db);
-    registerAIHandlers(db, getMainWindow);
-    registerFilesystemHandlers(henryDir);
-    registerTaskBrokerHandlers(db, getMainWindow, henryDir);
-    registerMemoryHandlers(db);
-    registerScriptureHandlers(db, getMainWindow);
-    registerOllamaHandlers(getMainWindow);
-    registerOllamaCleanup();
-    registerTerminalHandlers(getMainWindow, henryDir);
-    registerComputerHandlers(getMainWindow);
-    registerPrinterHandlers(getMainWindow);
-    registerGoogleAuthHandlers(getMainWindow);
-    registerSourceFileHandlers();
-  } else {
-    // DB failed — register minimal stubs for the three channels called
-    // unconditionally by the renderer's initApp() so they return safely instead
-    // of hanging (Electron 31 rejects unregistered invokes, but being explicit is
-    // safer and surfaces the real error rather than a generic IPC rejection).
-    ipcMain.handle('settings:getAll', () => ({}));
-    ipcMain.handle('settings:save', () => false);
-    ipcMain.handle('providers:getAll', () => []);
-    ipcMain.handle('providers:save', () => false);
-    ipcMain.handle('conversations:getAll', () => []);
-  }
-
-  // ── 3. Register updater IPC handlers ────────────────────────────────────────
-  const updaterEnabled = process.platform !== 'darwin';
-
-  if (updaterEnabled) {
-    autoUpdater.autoDownload = true;
-    autoUpdater.autoInstallOnAppQuit = true;
-
-    autoUpdater.on('update-available', () => {
-      getMainWindow()?.webContents.send('updater:update-available');
-    });
-    autoUpdater.on('update-downloaded', () => {
-      getMainWindow()?.webContents.send('updater:update-downloaded');
-    });
-    autoUpdater.on('error', (err: Error) => {
-      console.error('[AutoUpdater] Error:', err.message);
-    });
-
-    setTimeout(() => {
-      autoUpdater.checkForUpdates().catch(() => null);
-    }, 10_000);
-  }
-
   ipcMain.handle('updater:check', () => {
-    if (!updaterEnabled) return null;
     return autoUpdater.checkForUpdates().catch(() => null);
   });
   ipcMain.handle('updater:install', () => {
-    if (!updaterEnabled) return;
     autoUpdater.quitAndInstall(false, true);
   });
 
-  // ── 4. Open the window — every ipcMain.handle is now registered ─────────────
-  createWindow();
-
-  // Surface DB error to the renderer after its page finishes loading.
-  if (dbError) {
-    getMainWindow()?.webContents.once('did-finish-load', () => {
-      getMainWindow()?.webContents.send('henry:db-error', dbError);
-    });
-  }
+  // Check silently after 10 s so first launch isn't slowed down
+  setTimeout(() => {
+    autoUpdater.checkForUpdates().catch(() => null);
+  }, 10_000);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
