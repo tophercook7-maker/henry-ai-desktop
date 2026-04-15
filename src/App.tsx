@@ -3,6 +3,7 @@ import Layout from './components/layout/Layout';
 import SetupWizard from './components/wizard/SetupWizard';
 import ElectronAutoSetup from './components/wizard/ElectronAutoSetup';
 import ClipboardAIToast from './components/ClipboardAIToast';
+import HenryDebugPanel from './components/debug/HenryDebugPanel';
 import { useStore } from './store';
 import type { Task } from './types';
 import { startProactiveNudges, type HenryNudge } from './henry/proactiveNudges';
@@ -51,6 +52,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [updateState, setUpdateState] = useState<'none' | 'available' | 'downloaded'>('none');
   const [nudge, setNudge] = useState<HenryNudge | null>(null);
+  const [debugOpen, setDebugOpen] = useState(false);
   const firstContactDone = useRef(false);
   const {
     setupComplete,
@@ -71,7 +73,17 @@ export default function App() {
     const cleanup = setupEventListeners();
     const stopNudges = startProactiveNudges((n) => setNudge(n));
     const stopBrain = startBackgroundBrain();
-    return () => { cleanup(); stopNudges(); stopBrain(); };
+
+    // Cmd+Shift+D → toggle debug panel
+    function handleDebugShortcut(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'D') {
+        e.preventDefault();
+        setDebugOpen((v) => !v);
+      }
+    }
+    window.addEventListener('keydown', handleDebugShortcut);
+
+    return () => { cleanup(); stopNudges(); stopBrain(); window.removeEventListener('keydown', handleDebugShortcut); };
   }, []);
 
   // Henry's autonomous first contact — fires once after wizard completes
@@ -393,6 +405,9 @@ export default function App() {
 
       {/* Clipboard AI toast */}
       <ClipboardAIToast />
+
+      {/* Debug panel — Cmd+Shift+D */}
+      {debugOpen && <HenryDebugPanel onClose={() => setDebugOpen(false)} />}
     </div>
   );
 }
