@@ -34,6 +34,8 @@ import {
   type MessageIntent,
 } from '@/henry/contextTier';
 import { routeRequest } from '@/core/router/brainRouter';
+import { useDebugStore } from '@/henry/debugStore';
+import FocusCard from '@/components/focus/FocusCard';
 import { getWeather, type WeatherSnapshot } from '@/henry/weatherContext';
 import {
   buildFallbackNotice,
@@ -1211,6 +1213,9 @@ export default function ChatView() {
       isBiblicalMode: effectiveMode === 'biblical',
     });
 
+    // ── Debug store: capture routing decision ─────────────────────────────
+    useDebugStore.getState().setDecision(brainDecision);
+
     // Gate blocked actions before touching the model at all
     if (brainDecision.actionGate.decision === 'block') {
       const blockMsg = brainDecision.actionGate.reason
@@ -1430,6 +1435,14 @@ export default function ChatView() {
       trimmed: guardedHistory.length < history.length,
     });
 
+    // ── Debug store: capture token/context snapshot ───────────────────────
+    useDebugStore.getState().setTokens({
+      estimated: systemTokens + historyTokensAfter,
+      historyTrimmed: guardedHistory.length < history.length,
+      tier,
+      tierReason: brainDecision.rationale,
+    });
+
     const messagesPayload: HenryAIMessage[] = [
       { role: 'system', content: enrichedSystemPrompt },
       ...guardedHistory.map((m) => ({
@@ -1542,6 +1555,11 @@ export default function ChatView() {
         setCompanionStatus({ status: 'done' });
         setTimeout(() => setCompanionStatus({ status: 'idle' }), 1500);
 
+        // ── Debug store: record actual model used ─────────────────────────
+        useDebugStore.getState().setModels([
+          { role: 'companion', provider: companionProvider, model: companionModel, isFallback: false },
+        ]);
+
         // Auto-extract Henry's commitments and next steps into working memory
         if (fullText.length > 80) {
           autoSaveCommitments(fullText, convId);
@@ -1649,6 +1667,10 @@ export default function ChatView() {
             setStreamingContent('');
             setIsStreaming(false);
             setCompanionStatus({ status: 'idle' });
+            // ── Debug store: fallback model used ─────────────────────────
+            useDebugStore.getState().setModels([
+              { role: 'companion', provider: fallbackP, model: fallbackM, isFallback: true },
+            ]);
             if (effectiveMode === 'builder') {
               const extracted = extractHtmlFromMessage(fullText);
               if (extracted) { setBuilderPreviewHtml(extracted); setBuilderPreviewOpen(true); }
@@ -1992,13 +2014,18 @@ export default function ChatView() {
           </div>
         )}
         {messages.length === 0 && !isStreaming ? (
-          <EmptyChat
-            onModeAndInject={(mode, text) => {
-              setOperatingMode(mode);
-              setChatInject({ id: Date.now(), text });
-            }}
-            proactiveSuggestion={proactiveSuggestion}
-          />
+          <>
+            <FocusCard
+              onFocus={(text) => setChatInject({ id: Date.now(), text })}
+            />
+            <EmptyChat
+              onModeAndInject={(mode, text) => {
+                setOperatingMode(mode);
+                setChatInject({ id: Date.now(), text });
+              }}
+              proactiveSuggestion={proactiveSuggestion}
+            />
+          </>
         ) : (
           <div className="max-w-3xl mx-auto space-y-4">
             {messages.map((msg) => {
