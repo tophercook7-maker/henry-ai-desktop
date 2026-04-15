@@ -62,14 +62,14 @@ contextBridge.exposeInMainWorld('henryAPI', {
       if (data.channelId === channelId && onChunkCb) onChunkCb(data.chunk);
     };
     const doneHandler = (_: IpcRendererEvent, data: { channelId: string; fullText: string; usage?: Record<string, unknown> }) => {
-      if (data.channelId === channelId && onDoneCb) {
-        onDoneCb(data.fullText, data.usage);
+      if (data.channelId === channelId) {
+        onDoneCb?.(data.fullText, data.usage);
         cleanup();
       }
     };
     const errorHandler = (_: IpcRendererEvent, data: { channelId: string; error: string }) => {
-      if (data.channelId === channelId && onErrorCb) {
-        onErrorCb(data.error);
+      if (data.channelId === channelId) {
+        onErrorCb?.(data.error);
         cleanup();
       }
     };
