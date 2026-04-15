@@ -34,31 +34,44 @@ export function estimatePayloadTokens(
   return messages.reduce((sum, m) => sum + estimateTokens(m.content) + 4, 0);
 }
 
-/** Hard cap: never send more than this many tokens to any provider. */
-export const TOKEN_HARD_LIMIT = 8_000;
+/**
+ * Hard cap: never send more than this many tokens to any provider.
+ * Groq free-tier TPM limits make 6k the safe ceiling.
+ */
+export const TOKEN_HARD_LIMIT = 6_000;
 
 // ── Context tiers ─────────────────────────────────────────────────────────────
 
 export type ContextTier = 'light' | 'medium' | 'full';
 
-/** Per-tier history caps (message count, chars per message). */
+/**
+ * Per-tier history caps (message count, chars per message).
+ * LIGHT: 6 recent messages, 1,200 chars each (~300 tokens ea)
+ * MEDIUM: 10 messages, 2,000 chars each
+ * FULL: 16 messages, 3,000 chars each
+ */
 export const TIER_HISTORY_CAPS: Record<
   ContextTier,
   { maxMessages: number; maxCharsEach: number }
 > = {
-  light:  { maxMessages: 8,  maxCharsEach: 2_000 },
-  medium: { maxMessages: 16, maxCharsEach: 4_000 },
-  full:   { maxMessages: 40, maxCharsEach: 8_000 },
+  light:  { maxMessages: 6,  maxCharsEach: 1_200 },
+  medium: { maxMessages: 10, maxCharsEach: 2_000 },
+  full:   { maxMessages: 16, maxCharsEach: 3_000 },
 };
 
-/** Per-tier memory block caps (facts, summary chars, workspace hints). */
+/**
+ * Per-tier memory block caps (facts, summary chars, workspace hints).
+ * LIGHT sends no memory at all — identity + mode is enough for quick turns.
+ * MEDIUM: top 3 facts + 600-char summary (fits ~150 tokens).
+ * FULL: top 8 facts + 1,600-char summary.
+ */
 export const TIER_MEMORY_CAPS: Record<
   ContextTier,
   { maxFacts: number; maxSummaryChars: number; maxWorkspaceHints: number }
 > = {
-  light:  { maxFacts: 0,  maxSummaryChars: 0,      maxWorkspaceHints: 0  },
-  medium: { maxFacts: 5,  maxSummaryChars: 1_000,  maxWorkspaceHints: 3  },
-  full:   { maxFacts: 50, maxSummaryChars: 12_000, maxWorkspaceHints: 20 },
+  light:  { maxFacts: 0, maxSummaryChars: 0,     maxWorkspaceHints: 0 },
+  medium: { maxFacts: 3, maxSummaryChars: 600,   maxWorkspaceHints: 2 },
+  full:   { maxFacts: 8, maxSummaryChars: 1_600, maxWorkspaceHints: 4 },
 };
 
 // ── Intent classification ─────────────────────────────────────────────────────
@@ -170,15 +183,21 @@ export interface ContextLog {
   historyCountBefore: number;
   historyCountAfter: number;
   trimmed: boolean;
+  /** Optional list of named context blocks included in the system prompt. */
+  includedBlocks?: string[];
 }
 
 export function logContextDecision(log: ContextLog): void {
+  const over = log.totalTokens > TOKEN_HARD_LIMIT ? ` ⚠️ OVER LIMIT` : '';
   const trimNote = log.trimmed
-    ? ` [TRIMMED ${log.historyCountBefore - log.historyCountAfter} msgs, saved ${log.historyTokensBefore - log.historyTokensAfter} tokens]`
+    ? ` [trimmed ${log.historyCountBefore - log.historyCountAfter} msgs, -${log.historyTokensBefore - log.historyTokensAfter}t]`
+    : '';
+  const blocksNote = log.includedBlocks && log.includedBlocks.length > 0
+    ? ` | blocks: ${log.includedBlocks.join(', ')}`
     : '';
   console.log(
     `[Henry:ctx] tier=${log.tier} intent=${log.intent} ` +
     `sys=${log.systemTokens}t hist=${log.historyTokensAfter}t ` +
-    `total=${log.totalTokens}t${trimNote}`
+    `total=${log.totalTokens}t${over}${trimNote}${blocksNote}`
   );
 }
