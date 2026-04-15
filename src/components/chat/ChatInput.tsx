@@ -282,6 +282,38 @@ export default function ChatInput({
         />
 
         <div className="flex items-center gap-1.5 shrink-0">
+          {/* Mic button — Groq Whisper — first and prominent */}
+          {micAvailable && (
+            <button
+              onClick={toggleVoice}
+              disabled={transcribing || isStreaming}
+              title={listening ? 'Stop recording' : transcribing ? 'Transcribing…' : 'Voice input (Groq Whisper)'}
+              className={`p-2.5 rounded-xl transition-all ${
+                listening
+                  ? 'bg-henry-error/20 text-henry-error animate-pulse hover:bg-henry-error/30 ring-1 ring-henry-error/40'
+                  : transcribing
+                  ? 'text-henry-accent animate-pulse bg-henry-accent/10'
+                  : isStreaming
+                  ? 'text-henry-text-muted opacity-40 cursor-not-allowed'
+                  : 'text-henry-text-muted hover:text-henry-accent hover:bg-henry-accent/10'
+              }`}
+            >
+              {transcribing ? (
+                <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="10" strokeOpacity="0.3" />
+                  <path d="M12 2a10 10 0 0 1 10 10" />
+                </svg>
+              ) : (
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                  <line x1="12" y1="19" x2="12" y2="23" />
+                  <line x1="8" y1="23" x2="16" y2="23" />
+                </svg>
+              )}
+            </button>
+          )}
+
           {/* TTS toggle */}
           {onToggleTts && (
             <button
@@ -353,36 +385,6 @@ export default function ChatInput({
                 <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="11" cy="11" r="8" />
                   <line x1="21" y1="21" x2="16.65" y2="16.65" />
-                </svg>
-              )}
-            </button>
-          )}
-
-          {/* Mic button — Groq Whisper */}
-          {micAvailable && !isStreaming && (
-            <button
-              onClick={toggleVoice}
-              disabled={transcribing}
-              title={listening ? 'Stop and transcribe' : transcribing ? 'Transcribing…' : 'Voice input (Groq Whisper)'}
-              className={`p-2 rounded-lg transition-all ${
-                listening
-                  ? 'bg-henry-error/20 text-henry-error animate-pulse hover:bg-henry-error/30'
-                  : transcribing
-                  ? 'text-henry-accent animate-pulse bg-henry-accent/10'
-                  : 'text-henry-text-muted hover:text-henry-text hover:bg-henry-hover/50'
-              }`}
-            >
-              {transcribing ? (
-                <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <circle cx="12" cy="12" r="10" strokeOpacity="0.3" />
-                  <path d="M12 2a10 10 0 0 1 10 10" />
-                </svg>
-              ) : (
-                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                  <line x1="12" y1="19" x2="12" y2="23" />
-                  <line x1="8" y1="23" x2="16" y2="23" />
                 </svg>
               )}
             </button>
