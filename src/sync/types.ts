@@ -11,13 +11,39 @@ export type CompanionConnectionStatus =
   | 'syncing'
   | 'error';
 
+/** What a linked handset is allowed to do in Phase 1 (desktop authorizes at pair time). */
+export type CompanionDeviceCapability =
+  | 'chat_summaries'
+  | 'tasks'
+  | 'approvals'
+  | 'captures'
+  | 'notifications';
+
+/** Default capability set for new companion devices (full Phase 1 surface). */
+export const COMPANION_DEFAULT_DEVICE_CAPABILITIES: readonly CompanionDeviceCapability[] = [
+  'chat_summaries',
+  'tasks',
+  'approvals',
+  'captures',
+  'notifications',
+] as const;
+
+/** Desktop’s view of whether the handset session is still valid (in-memory only today). */
+export type CompanionLinkStatus = 'linked' | 'revoked';
+
 export interface DeviceInfo {
   id: string;
   name: string;
   platform: 'desktop' | 'ios' | 'android' | 'web';
   linkedAt: string;
   lastSeen?: string;
+  /** ISO time of last successful authenticated sync (snapshot or delta pull). */
+  lastSyncAt?: string;
   pushToken?: string;
+  linkStatus?: CompanionLinkStatus;
+  capabilities?: CompanionDeviceCapability[];
+  /** When `platform === 'ios'`, distinguishes iPhone vs iPad when the client reports it. */
+  appleProduct?: 'iphone' | 'ipad' | 'unknown';
 }
 
 // ── Pairing ────────────────────────────────────────────────────────────────
@@ -27,6 +53,8 @@ export interface PairRequest {
   deviceName: string;
   platform: string;
   pushToken?: string;
+  /** Optional: `iphone` | `ipad` from Capacitor client for clearer desktop UI. */
+  appleProduct?: 'iphone' | 'ipad' | 'unknown';
 }
 
 export interface PairResponse {
