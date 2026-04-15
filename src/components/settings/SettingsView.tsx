@@ -18,6 +18,7 @@ import {
   loadPeople, savePerson, deletePerson, newPerson,
   type HenryProject, type HenryGoal, type HenryPerson,
 } from '../../henry/richMemory';
+import { useDebugStore } from '../../henry/debugStore';
 
 export default function SettingsView() {
   const [activeTab, setActiveTab] = useState<'providers' | 'engines' | 'voice' | 'general' | 'memory'>('providers');
@@ -559,6 +560,7 @@ function ProvidersTab() {
 
 function EnginesTab() {
   const { settings, providers } = useStore();
+  const lastModels = useDebugStore((s) => s.lastModels);
   const [customModel, setCustomModel] = useState({ companion: '', worker: '' });
   const [saving, setSaving] = useState<string | null>(null);
   const [autoDetecting, setAutoDetecting] = useState(false);
@@ -702,8 +704,93 @@ function EnginesTab() {
     );
   }
 
+  function brainLabel(provider: string | undefined, model: string | undefined, hasKey: boolean): string {
+    if (!provider || !model) return 'Not configured';
+    if (provider === 'ollama') return 'Local AI';
+    return hasKey ? 'Cloud AI — key ✓' : 'Cloud AI — no key';
+  }
+
+  const companionProvider = settings.companion_provider;
+  const companionModel = settings.companion_model;
+  const companionKey = !!providers.find((p) => p.id === companionProvider)?.apiKey;
+  const fallbackProvider = settings.companion_provider_2;
+  const fallbackModel = settings.companion_model_2;
+  const fallbackKey = !!providers.find((p) => p.id === fallbackProvider)?.apiKey;
+  const workerProvider = settings.worker_provider;
+  const workerModel = settings.worker_model;
+  const workerKey = !!providers.find((p) => p.id === workerProvider)?.apiKey;
+
+  const lastCompanion = lastModels.find((m) => m.role === 'companion');
+  const lastWorker = lastModels.find((m) => m.role === 'worker');
+
   return (
     <div className="space-y-5">
+
+      {/* ── Brain Status Now ── */}
+      <div className="rounded-xl border border-henry-border bg-henry-surface/40 p-4 space-y-3">
+        <div className="text-xs font-semibold text-henry-text uppercase tracking-wider">Brain Status Now</div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {/* Advisor Brain */}
+          <div className="rounded-lg bg-henry-bg/60 border border-henry-border/50 px-3 py-2.5">
+            <div className="text-[10px] uppercase tracking-wider text-henry-text-muted mb-1">Advisor Brain</div>
+            {companionProvider && companionModel ? (
+              <>
+                <div className="text-xs font-medium text-henry-text truncate">{companionModel}</div>
+                <div className={`text-[11px] mt-0.5 ${companionProvider === 'ollama' ? 'text-henry-success' : companionKey ? 'text-henry-accent' : 'text-henry-error'}`}>
+                  {brainLabel(companionProvider, companionModel, companionKey)}
+                </div>
+              </>
+            ) : (
+              <div className="text-[11px] text-henry-error">Not configured</div>
+            )}
+            {lastCompanion && (
+              <div className="text-[10px] text-henry-text-muted mt-1 truncate">
+                Last used: {lastCompanion.model}{lastCompanion.isFallback ? ' ⚡fallback' : ''}
+              </div>
+            )}
+          </div>
+
+          {/* Advisor Fallback */}
+          <div className="rounded-lg bg-henry-bg/60 border border-henry-border/50 px-3 py-2.5">
+            <div className="text-[10px] uppercase tracking-wider text-henry-text-muted mb-1">Advisor Fallback</div>
+            {fallbackProvider && fallbackModel ? (
+              <>
+                <div className="text-xs font-medium text-henry-text truncate">{fallbackModel}</div>
+                <div className={`text-[11px] mt-0.5 ${fallbackProvider === 'ollama' ? 'text-henry-success' : fallbackKey ? 'text-henry-accent' : 'text-henry-error'}`}>
+                  {brainLabel(fallbackProvider, fallbackModel, fallbackKey)}
+                </div>
+              </>
+            ) : (
+              <div className="text-[11px] text-henry-text-muted">None set</div>
+            )}
+          </div>
+
+          {/* Worker Brain */}
+          <div className="rounded-lg bg-henry-bg/60 border border-henry-border/50 px-3 py-2.5">
+            <div className="text-[10px] uppercase tracking-wider text-henry-text-muted mb-1">Worker Brain</div>
+            {workerProvider && workerModel ? (
+              <>
+                <div className="text-xs font-medium text-henry-text truncate">{workerModel}</div>
+                <div className={`text-[11px] mt-0.5 ${workerProvider === 'ollama' ? 'text-henry-success' : workerKey ? 'text-henry-accent' : 'text-henry-error'}`}>
+                  {brainLabel(workerProvider, workerModel, workerKey)}
+                </div>
+              </>
+            ) : (
+              <div className="text-[11px] text-henry-error">Not configured</div>
+            )}
+            {lastWorker && (
+              <div className="text-[10px] text-henry-text-muted mt-1 truncate">
+                Last used: {lastWorker.model}{lastWorker.isFallback ? ' ⚡fallback' : ''}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {lastModels.length === 0 && (
+          <div className="text-[11px] text-henry-text-muted">No messages sent yet — status updates after first AI response.</div>
+        )}
+      </div>
 
       {/* ── Groq defaults banner ── */}
       {groqEnabled && (
