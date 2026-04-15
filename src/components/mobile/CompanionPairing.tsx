@@ -58,7 +58,9 @@ export default function CompanionPairing({ onPaired }: Props) {
     }
     try {
       // Try to use the BarcodeScanner plugin if available
-      const { BarcodeScanner } = await import('@capacitor-mlkit/barcode-scanning').catch(() => ({ BarcodeScanner: null }));
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-expect-error — native-only package not in web bundle
+      const { BarcodeScanner } = await import(/* @vite-ignore */ '@capacitor-mlkit/barcode-scanning').catch(() => ({ BarcodeScanner: null as unknown }));
       if (!BarcodeScanner) {
         setError('QR scanner not available. Please type the code manually.');
         setStep('code-entry');
