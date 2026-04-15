@@ -311,7 +311,9 @@ export default function App() {
             name: p.name,
             apiKey: p.api_key || p.apiKey || '',
             enabled: Boolean(p.enabled),
-            models: typeof p.models === 'string' ? JSON.parse(p.models || '[]') : (p.models || []),
+            models: typeof p.models === 'string'
+              ? (() => { try { return JSON.parse(p.models || '[]'); } catch { return []; } })()
+              : (p.models || []),
           }))
         );
       }
