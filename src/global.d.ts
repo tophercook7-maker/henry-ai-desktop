@@ -73,6 +73,8 @@ declare global {
     messages: HenryAIMessage[];
     temperature?: number;
     maxTokens?: number;
+    /** Ollama: base URL from settings, e.g. http://localhost:11434 */
+    apiUrl?: string;
   }
 
   interface HenryAIUsage {
