@@ -1445,6 +1445,9 @@ export default function ChatView() {
         messages: messagesPayload,
         temperature: 0.7,
         maxTokens: maxOutputTokens,
+        apiUrl: companionProvider === 'ollama'
+          ? (s.ollama_base_url || 'http://localhost:11434')
+          : undefined,
       });
 
       streamRef.current = stream;
@@ -1611,9 +1614,36 @@ export default function ChatView() {
         const isNetworkBlock = /load failed|failed to fetch|networkerror|network request failed|couldn't reach|could not reach|connection error|network error/i.test(error);
         const isOllama = companionProvider === 'ollama';
         const isHttpsCtx = window.location.protocol === 'https:';
+        const isOllamaNotRunning = isOllama && /ollama isn't running|ollama not running/i.test(error);
+        const isOllamaModelMissing = isOllama && /isn't loaded in ollama|not found in ollama/i.test(error);
+        const ollamaBase = s.ollama_base_url || 'http://localhost:11434';
 
         let errorContent: string;
-        if (isNetworkBlock && isOllama && isHttpsCtx) {
+        if (isOllamaNotRunning) {
+          errorContent = [
+            `**Ollama isn't running.**`,
+            ``,
+            `I tried to use your local model at \`${ollamaBase}\` but couldn't reach it.`,
+            ``,
+            `**Start it in Terminal:**`,
+            `\`\`\``,
+            `ollama serve`,
+            `\`\`\``,
+            `Then send your message again.`,
+            ``,
+            `Or switch to a cloud provider (Groq / OpenAI / Anthropic) in **Settings → Engines** — those work without Ollama.`,
+          ].join('\n');
+        } else if (isOllamaModelMissing) {
+          errorContent = [
+            `**Model not found in Ollama.**`,
+            ``,
+            `\`${companionModel}\` isn't loaded yet. Pull it in Terminal:`,
+            `\`\`\``,
+            `ollama pull ${companionModel}`,
+            `\`\`\``,
+            `Then try again.`,
+          ].join('\n');
+        } else if (isNetworkBlock && isOllama && isHttpsCtx) {
           errorContent = [
             `🔒 **Henry can't reach Ollama from this browser page**`,
             ``,
@@ -1628,6 +1658,8 @@ export default function ChatView() {
           errorContent = alreadyFriendly
             ? `❌ ${error}`
             : `❌ **Connection failed** — Henry couldn't reach the AI provider. Check your API key in **Settings → AI Providers**, or try again in a moment.`;
+        } else if (isOllama) {
+          errorContent = `**Ollama error.** ${error}\n\nCheck the model name and Ollama status in **Settings → Engines**.`;
         } else {
           errorContent = `❌ **Error:** ${error}`;
         }
