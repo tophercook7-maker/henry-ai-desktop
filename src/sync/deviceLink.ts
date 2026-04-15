@@ -13,7 +13,7 @@ import type {
   CompanionConnectionConfig,
 } from './types';
 import { saveConnectionConfig, clearConnectionConfig } from './syncClient';
-import { isIos, isAndroid, platform } from '../capacitor';
+import { platform, getAppleHandsetProduct } from '../capacitor';
 import { Capacitor } from '@capacitor/core';
 
 // ── Pair code parsing ──────────────────────────────────────────────────────
@@ -80,7 +80,10 @@ export function buildPairCodePayload(
 
 function deviceName(): string {
   const p = Capacitor.getPlatform();
-  if (p === 'ios') return 'iPhone';
+  if (p === 'ios') {
+    const kind = getAppleHandsetProduct();
+    return kind === 'ipad' ? 'iPad' : 'iPhone';
+  }
   if (p === 'android') return 'Android';
   return 'Mobile';
 }
@@ -101,6 +104,7 @@ export async function completePairing(
     deviceName: opts.deviceName ?? deviceName(),
     platform: platform,
     pushToken: opts.pushToken,
+    appleProduct: platform === 'ios' ? getAppleHandsetProduct() : undefined,
   };
 
   const ctrl = new AbortController();

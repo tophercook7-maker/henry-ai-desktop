@@ -13,6 +13,23 @@ export const platform = Capacitor.getPlatform(); // 'ios' | 'android' | 'web'
 export const isIos = platform === 'ios';
 export const isAndroid = platform === 'android';
 
+/**
+ * Best-effort iPhone vs iPad detection for companion pairing metadata.
+ * Native iOS reports `ipad` for compatible iPad apps; web UA may contain "iPad".
+ */
+export function getAppleHandsetProduct(): 'iphone' | 'ipad' | 'unknown' {
+  if (!isIos) return 'unknown';
+  try {
+    const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
+    if (/iPad/i.test(ua)) return 'ipad';
+    // iOS 13+ iPad may declare as Macintosh with touch — treat as iPad
+    if (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) return 'ipad';
+    return 'iphone';
+  } catch {
+    return 'unknown';
+  }
+}
+
 export async function initCapacitor() {
   if (!isNative) return;
 

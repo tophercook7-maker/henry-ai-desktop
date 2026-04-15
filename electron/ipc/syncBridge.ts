@@ -19,18 +19,19 @@ import http from 'http';
 import crypto from 'crypto';
 import os from 'os';
 import { ipcMain, BrowserWindow, webContents } from 'electron';
-import type {
-  SyncServerState,
-  DeviceInfo,
-  PairRequest,
-  PairResponse,
-  PendingAction,
-  ActionDecision,
-  CapturePayload,
-  SyncEvent,
-  SyncSnapshot,
-  SyncMessage,
-  DesktopStatus,
+import {
+  COMPANION_DEFAULT_DEVICE_CAPABILITIES,
+  type SyncServerState,
+  type DeviceInfo,
+  type PairRequest,
+  type PairResponse,
+  type PendingAction,
+  type ActionDecision,
+  type CapturePayload,
+  type SyncEvent,
+  type SyncSnapshot,
+  type SyncMessage,
+  type DesktopStatus,
 } from '../../src/sync/types';
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -285,13 +286,21 @@ async function handleRequest(
     const companionToken = generateToken(32);
     companionTokens.set(companionToken, deviceId);
 
+    const ap = body.appleProduct;
+    const appleProduct: DeviceInfo['appleProduct'] =
+      ap === 'ipad' ? 'ipad' : ap === 'iphone' ? 'iphone' : 'unknown';
+
     const device: DeviceInfo = {
       id: deviceId,
       name: body.deviceName ?? 'Unknown',
       platform: (body.platform as DeviceInfo['platform']) ?? 'ios',
       linkedAt: new Date().toISOString(),
       lastSeen: new Date().toISOString(),
+      lastSyncAt: new Date().toISOString(),
       pushToken: body.pushToken,
+      linkStatus: 'linked',
+      capabilities: [...COMPANION_DEFAULT_DEVICE_CAPABILITIES],
+      appleProduct,
     };
     linkedDevices.set(deviceId, device);
 
@@ -317,9 +326,17 @@ async function handleRequest(
     return;
   }
 
-  // Update last seen
+  // Update last seen (+ sync time for companion device model)
+  const nowIso = new Date().toISOString();
   const dev = linkedDevices.get(deviceId);
-  if (dev) linkedDevices.set(deviceId, { ...dev, lastSeen: new Date().toISOString() });
+  if (dev) {
+    linkedDevices.set(deviceId, {
+      ...dev,
+      lastSeen: nowIso,
+      lastSyncAt: nowIso,
+      linkStatus: 'linked',
+    });
+  }
 
   // ── Snapshot ──────────────────────────────────────────────────────────
   if (path === '/sync/snapshot' && req.method === 'GET') {
@@ -339,9 +356,15 @@ async function handleRequest(
 
   // ── Messages for a conversation ───────────────────────────────────────
   if (path.startsWith('/sync/conversations/') && req.method === 'GET') {
-    const parts = path.split('/');
-    const convId = parts[3];
+    const parts = path.split('/').filter(Boolean);
+    // /sync/conversations/:id or /sync/conversations/:id/messages
+    const convId = parts[2];
+    const tail = parts[3];
     if (!convId) { jsonResponse(res, 400, { error: 'Missing conversationId' }); return; }
+    if (tail && tail !== 'messages') {
+      jsonResponse(res, 404, { error: 'Unknown route' });
+      return;
+    }
     const msgs = dbGet(
       `SELECT id, conversation_id, role, content, model, created_at
          FROM messages WHERE conversation_id = ? ORDER BY created_at ASC`,

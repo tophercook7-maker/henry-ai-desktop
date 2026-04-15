@@ -19,6 +19,7 @@ import type {
   CaptureResult,
   ActionDecision,
   SyncNotification,
+  DeviceInfo,
 } from './types';
 
 const LS_CONFIG_KEY = 'henry:companion:config';
@@ -158,7 +159,14 @@ export async function fetchMessages(
   config: CompanionConnectionConfig,
   conversationId: string
 ) {
-  return get<unknown[]>(config, `/sync/conversations/${conversationId}/messages`);
+  return get<unknown[]>(config, `/sync/conversations/${conversationId}`);
+}
+
+/** Linked devices as seen by the desktop sync server (same token scope). */
+export async function fetchLinkedDevices(
+  config: CompanionConnectionConfig
+): Promise<DeviceInfo[]> {
+  return get<DeviceInfo[]>(config, '/sync/devices');
 }
 
 /** Send a text/voice/photo/file capture to the desktop. */
