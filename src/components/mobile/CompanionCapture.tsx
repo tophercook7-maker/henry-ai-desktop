@@ -49,8 +49,8 @@ export default function CompanionCapture({ onDone }: Props) {
     try {
       // Dynamically import Capacitor SpeechRecognition
       const { SpeechRecognition } = await import('@capacitor-community/speech-recognition');
-      const perm = await SpeechRecognition.requestPermission();
-      if (perm.speechRecognition !== 'granted') return;
+      const perm = await SpeechRecognition.requestPermissions();
+      if ((perm as { speechRecognition?: string }).speechRecognition !== 'granted') return;
 
       setRecording(true);
       setTranscript('');
@@ -76,8 +76,8 @@ export default function CompanionCapture({ onDone }: Props) {
     if (!isNative) return;
     try {
       const { SpeechRecognition } = await import('@capacitor-community/speech-recognition');
-      const result = await SpeechRecognition.stop();
-      const text = result?.matches?.[0] ?? transcript;
+      const result = await SpeechRecognition.stop() as { matches?: string[] } | void;
+      const text = (result as { matches?: string[] } | undefined)?.matches?.[0] ?? transcript;
       setTranscript(text);
       setRecording(false);
       void hapticLight();
