@@ -7,22 +7,35 @@ import type { IncomingMessage, ServerResponse } from 'http';
 
 // ── AI Proxy Plugin ──────────────────────────────────────────────────────────
 // Manually proxies /proxy/{provider}/* → external API server-side.
-// This avoids browser CORS/mixed-content blocks and Vite proxy streaming issues.
+//
+// Only providers that BLOCK browser CORS are listed here — all others are
+// called directly from the browser (OpenAI, OpenRouter, Google, Groq all
+// support browser CORS natively and are fetched directly in webMock.ts).
+//
+// Active proxy routes (only services that BLOCK browser CORS remain here):
+//
+//   /proxy/anthropic  — Anthropic blocks CORS at their edge; static-safe fallback
+//                       error thrown by anthropicFetch() in webMock.ts
+//   /proxy/ddg        — DuckDuckGo CORS unreliable; webSearch.ts falls back to
+//                       public CORS proxies (corsproxy.io, allorigins) if 404
+//
+// Productivity services that block CORS (dev-mode only):
+//   /proxy/notion     — Notion blocks browser CORS; notionSearch() throws clear error if 404
+//   /proxy/stripe     — Stripe blocks browser CORS; stripeFetch() throws clear error if 404
+//   /proxy/gcal       — Google Calendar (not yet called from browser code)
+//   /proxy/gmail      — Gmail (not yet called from browser code)
+//
+// REMOVED — now use direct browser CORS calls:
+//   github.com  → ghFetch() in integrations.ts calls https://api.github.com directly
+//   linear.app  → linearQuery() in integrations.ts calls https://api.linear.app directly
+//   Slack       → slackFetch() calls https://slack.com/api/ with stored Bot Token
 const routes: Record<string, string> = {
-  '/proxy/openai':      'api.openai.com',
   '/proxy/anthropic':   'api.anthropic.com',
-  '/proxy/google':      'generativelanguage.googleapis.com',
-  '/proxy/groq':        'api.groq.com',
-  '/proxy/openrouter':  'openrouter.ai',
   '/proxy/ddg':         'api.duckduckgo.com',
-  // Dev & productivity services (user-token-based)
-  '/proxy/github':      'api.github.com',
-  '/proxy/linear':      'api.linear.app',
   '/proxy/notion':      'api.notion.com',
   '/proxy/stripe':      'api.stripe.com',
   '/proxy/gcal':        'www.googleapis.com',
   '/proxy/gmail':       'gmail.googleapis.com',
-  '/proxy/slack':       'slack.com',
 };
 
 function aiProxyPlugin(): Plugin {
@@ -206,11 +219,45 @@ export default defineConfig({
     // auto-bootstrap the Groq provider without the setup wizard.
     __GROQ_API_KEY__: JSON.stringify(process.env.GROQ_API_KEY || ''),
   },
+  build: {
+    rollupOptions: {
+      // Native-only Capacitor plugins are dynamically imported in mobile
+      // companion components; they are never bundled for the web build.
+      external: [
+        '@capacitor-mlkit/barcode-scanning',
+      ],
+      output: {
+        manualChunks(id) {
+          // All node_modules go into a single vendor chunk for stable caching.
+          // Splitting react-dom from the rest creates circular deps between chunks.
+          if (id.includes('node_modules/')) {
+            return 'vendor';
+          }
+          // App split: scripture / Bible corpus (large data)
+          if (id.includes('/henry/scripture') || id.includes('/henry/biblicalProfiles') || id.includes('/henry/scriptureImport')) {
+            return 'bible';
+          }
+          // App split: heavy UI panels that are navigated to, not always visible
+          if (id.includes('/components/workspace/') || id.includes('/components/terminal/') || id.includes('/components/recorder/')) {
+            return 'panels-heavy';
+          }
+          // App split: integration panels
+          if (id.includes('/components/integrations/') || id.includes('/henry/integrations')) {
+            return 'panels-integrations';
+          }
+        },
+      },
+    },
+  },
   server: {
     host: '0.0.0.0',
     port: 5000,
     allowedHosts: true,
-    hmr: true,
+    hmr: {
+      // Extend timeout so rapid streaming re-renders (many chunk updates/sec)
+      // don't cause the HMR WebSocket to drop and trigger a full page reload.
+      timeout: 120000,
+    },
     headers: {
       'Cache-Control': 'no-store, no-cache, must-revalidate',
       'Pragma': 'no-cache',
