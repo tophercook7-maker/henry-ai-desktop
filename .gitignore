@@ -26,6 +26,9 @@ Thumbs.db
 *.log
 npm-debug.log*
 
+# TypeScript incremental caches (must never be committed)
+tsconfig.node.tsbuildinfo
+
 # Database (user data, not committed)
 *.db
 *.db-journal

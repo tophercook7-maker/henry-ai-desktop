@@ -1,21 +1,25 @@
 {
   "compilerOptions": {
     "target": "ES2020",
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
-    "composite": true,
     "skipLibCheck": true,
     "noEmit": true,
     "strict": true,
-    "esModuleInterop": true
+    "esModuleInterop": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"],
+      "@capacitor-mlkit/barcode-scanning": ["./src/stubs/barcodeScanning.ts"]
+    }
   },
   "include": [
     "vite.config.ts",
+    "vite.web.config.ts",
+    "capacitor.config.ts",
     "electron/**/*.ts",
-    "src/types/**/*.ts",
-    "src/henry/**/*.ts",
-    "src/sync/types.ts",
-    "src/store/**/*.ts"
+    "src/global.d.ts"
   ]
 }

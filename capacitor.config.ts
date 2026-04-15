@@ -18,7 +18,7 @@ const config: CapacitorConfig = {
     preferredContentMode: 'mobile',
     backgroundColor: '#0a0a12',
     minVersion: '14.0',
-  },
+  } as CapacitorConfig['ios'],
 
   android: {
     backgroundColor: '#0a0a12',
