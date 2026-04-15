@@ -81,9 +81,16 @@ export default function App() {
         setDebugOpen((v) => !v);
       }
     }
+    // henry:debug:open → open debug panel from presence home
+    function handleDebugOpen() { setDebugOpen(true); }
     window.addEventListener('keydown', handleDebugShortcut);
+    window.addEventListener('henry:debug:open', handleDebugOpen);
 
-    return () => { cleanup(); stopNudges(); stopBrain(); window.removeEventListener('keydown', handleDebugShortcut); };
+    return () => {
+      cleanup(); stopNudges(); stopBrain();
+      window.removeEventListener('keydown', handleDebugShortcut);
+      window.removeEventListener('henry:debug:open', handleDebugOpen);
+    };
   }, []);
 
   // Henry's autonomous first contact — fires once after wizard completes
