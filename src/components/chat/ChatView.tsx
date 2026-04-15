@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { useStore } from '../../store';
+import { useAmbientStore } from '../../henry/ambientStateStore';
 import type { HenryLeanMemoryParts, Message } from '../../types';
 import ChatInput from './ChatInput';
 import EngineSelector from './EngineSelector';
@@ -624,6 +625,15 @@ export default function ChatView() {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages, streamingContent, isStreaming]);
+
+  useEffect(() => {
+    const { setState } = useAmbientStore.getState();
+    if (isStreaming) {
+      setState('responding');
+    } else {
+      setState('ready');
+    }
+  }, [isStreaming]);
 
   useEffect(() => {
     try {
