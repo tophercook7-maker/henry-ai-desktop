@@ -203,6 +203,38 @@ async function runWorkerAI(params: {
   }
 }
 
+// Token/cost estimator for web-mode cost tracking (no DB cost_log in browser)
+function estimateUsage(
+  fullText: string,
+  params: { model?: string; messages?: { content: string }[] }
+): { prompt_tokens: number; completion_tokens: number; total_tokens: number; cost: number } {
+  const outputTokens = Math.ceil(fullText.length / 4);
+  const inputTokens = Math.ceil(
+    (params.messages || []).reduce((s, m) => s + (m.content || '').length, 0) / 4
+  );
+  const MODEL_RATES: Record<string, [number, number]> = {
+    'llama-3.1-8b-instant':      [0.06,  0.08],
+    'llama-3.3-70b-versatile':   [0.59,  0.79],
+    'llama-4-scout-17b-16e-instruct': [0.11, 0.34],
+    'gpt-4o':                    [2.5,  10.0],
+    'gpt-4o-mini':               [0.15,  0.60],
+    'claude-sonnet-4-20250514':  [3.0,  15.0],
+    'claude-3-5-haiku-20241022': [0.8,   4.0],
+    'gemini-2.0-flash':          [0.1,   0.4],
+    'gemini-2.5-pro':            [1.25, 10.0],
+    'gemini-2.5-flash':          [0.15,  0.6],
+  };
+  const [inRate, outRate] = MODEL_RATES[params.model || ''] || [0.06, 0.08];
+  const cost = (inputTokens / 1_000_000) * inRate + (outputTokens / 1_000_000) * outRate;
+  return {
+    prompt_tokens: inputTokens,
+    completion_tokens: outputTokens,
+    total_tokens: inputTokens + outputTokens,
+    cost: Math.round(cost * 1_000_000) / 1_000_000,
+  };
+}
+
+
 const henryAPI: Window['henryAPI'] = {
   getSettings: async () => {
     return getStore<Record<string, string>>('henry:settings', {});
@@ -415,7 +447,7 @@ const henryAPI: Window['henryAPI'] = {
             throw new Error(errMsg);
           }
           await readOpenAIStream(res);
-          doneCb?.(fullText);
+          doneCb?.(fullText, estimateUsage(fullText, params));
         } else if (provider === 'groq') {
           const res = await groqFetch('/openai/v1/chat/completions', {
             method: 'POST',
@@ -430,7 +462,7 @@ const henryAPI: Window['henryAPI'] = {
             throw new Error(errMsg);
           }
           await readOpenAIStream(res);
-          doneCb?.(fullText);
+          doneCb?.(fullText, estimateUsage(fullText, params));
         } else if (provider === 'openrouter') {
           const res = await proxyFetch('/proxy/openrouter/api/v1/chat/completions', {
             method: 'POST',
@@ -450,7 +482,7 @@ const henryAPI: Window['henryAPI'] = {
             throw new Error(errMsg);
           }
           await readOpenAIStream(res);
-          doneCb?.(fullText);
+          doneCb?.(fullText, estimateUsage(fullText, params));
         } else if (provider === 'anthropic') {
           const systemMsg = messages.find((m) => m.role === 'system');
           const userMsgs = messages.filter((m) => m.role !== 'system');
@@ -495,7 +527,7 @@ const henryAPI: Window['henryAPI'] = {
               } catch { /* skip */ }
             }
           }
-          doneCb?.(fullText);
+          doneCb?.(fullText, estimateUsage(fullText, params));
         } else if (provider === 'google') {
           const contents = messages
             .filter((m) => m.role !== 'system')
@@ -534,7 +566,7 @@ const henryAPI: Window['henryAPI'] = {
               } catch { /* skip */ }
             }
           }
-          doneCb?.(fullText);
+          doneCb?.(fullText, estimateUsage(fullText, params));
         } else if (provider === 'ollama') {
           const settings = getStore<Record<string, string>>('henry:settings', {});
           const baseUrl = (settings.ollama_base_url || 'http://localhost:11434').replace(/\/$/, '');
@@ -612,7 +644,7 @@ const henryAPI: Window['henryAPI'] = {
               }
             } catch { /* ignore trailing partial line */ }
           }
-          doneCb?.(fullText);
+          doneCb?.(fullText, estimateUsage(fullText, params));
         } else {
           errorCb?.(`Unsupported provider: ${provider}`);
         }
@@ -1336,8 +1368,27 @@ const henryAPI: Window['henryAPI'] = {
   }),
   onPrinterData: (cb) => on('printer:data', cb),
 
-  getCostLog: async () => {
-    return getStore('henry:costlog', []);
+  getCostLog: async (period?: string) => {
+    // Messages are stored at flat key 'henry:messages', NOT per-conversation keys
+    const allMessages = getStore<import('./types').Message[]>('henry:messages', []);
+    const now = Date.now();
+    const cutoff = period === '7d' ? now - 7 * 86400000
+      : period === '30d' ? now - 30 * 86400000
+      : 0;
+    return allMessages
+      .filter(m => m.role === 'assistant' && m.cost && m.cost > 0)
+      .filter(m => cutoff === 0 || new Date(m.created_at).getTime() > cutoff)
+      .map(m => ({
+        id: m.id,
+        provider: m.provider || 'unknown',
+        model: m.model || 'unknown',
+        tokens_input: Math.floor((m.tokens_used || 0) * 0.4),
+        tokens_output: Math.floor((m.tokens_used || 0) * 0.6),
+        cost: m.cost || 0,
+        conversation_id: m.conversation_id || null,
+        task_id: null,
+        created_at: m.created_at || new Date().toISOString(),
+      }));
   },
 
   onTaskUpdate: (cb) => on('task:update', cb),

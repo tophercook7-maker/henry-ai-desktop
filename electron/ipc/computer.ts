@@ -71,168 +71,218 @@ export function registerComputerHandlers(winGetter: WindowGetter) {
 
   // ── Open App ──────────────────────────────────────────────────────────
   ipcMain.handle('computer:openApp', async (_event, appName: string) => {
-    let cmd: string;
-    if (platform === 'darwin') {
-      cmd = `open -a "${appName}" 2>&1`;
-    } else if (platform === 'win32') {
-      cmd = `start "" "${appName}"`;
-    } else {
-      cmd = `xdg-open "${appName}" 2>&1 || gtk-launch "${appName}" 2>&1`;
+    try {  
+      let cmd: string;
+      if (platform === 'darwin') {
+        cmd = `open -a "${appName}" 2>&1`;
+      } else if (platform === 'win32') {
+        cmd = `start "" "${appName}"`;
+      } else {
+        cmd = `xdg-open "${appName}" 2>&1 || gtk-launch "${appName}" 2>&1`;
+      }
+      const result = await runCmd(cmd, 10000);
+      return {
+        success: result.exitCode === 0,
+        output: result.stdout || result.stderr,
+      };    } catch (e: unknown) {
+      console.error('[computer:openApp]', e instanceof Error ? e.message : String(e));
+      throw e;
     }
-    const result = await runCmd(cmd, 10000);
-    return {
-      success: result.exitCode === 0,
-      output: result.stdout || result.stderr,
-    };
+
   });
 
   // ── Open URL in default browser ───────────────────────────────────────
   ipcMain.handle('computer:openUrl', async (_event, url: string) => {
-    let cmd: string;
-    if (platform === 'darwin') {
-      cmd = `open "${url}"`;
-    } else if (platform === 'win32') {
-      cmd = `start "" "${url}"`;
-    } else {
-      cmd = `xdg-open "${url}"`;
+    try {  
+      let cmd: string;
+      if (platform === 'darwin') {
+        cmd = `open "${url}"`;
+      } else if (platform === 'win32') {
+        cmd = `start "" "${url}"`;
+      } else {
+        cmd = `xdg-open "${url}"`;
+      }
+      const result = await runCmd(cmd, 5000);
+      return { success: result.exitCode === 0, output: result.stdout || result.stderr };    } catch (e: unknown) {
+      console.error('[computer:openUrl]', e instanceof Error ? e.message : String(e));
+      throw e;
     }
-    const result = await runCmd(cmd, 5000);
-    return { success: result.exitCode === 0, output: result.stdout || result.stderr };
+
   });
 
   // ── AppleScript ───────────────────────────────────────────────────────
   ipcMain.handle('computer:osascript', async (_event, script: string) => {
-    if (platform !== 'darwin') {
-      return { success: false, error: 'AppleScript only supported on macOS', output: '' };
+    try {  
+      if (platform !== 'darwin') {
+        return { success: false, error: 'AppleScript only supported on macOS', output: '' };
+      }
+      const result = await runCmd(`osascript -e '${script.replace(/'/g, "'\\''")}'`, 30000);
+      return {
+        success: result.exitCode === 0,
+        output: result.stdout.trim(),
+        error: result.exitCode !== 0 ? result.stderr.trim() : undefined,
+      };    } catch (e: unknown) {
+      console.error('[computer:osascript]', e instanceof Error ? e.message : String(e));
+      throw e;
     }
-    const result = await runCmd(`osascript -e '${script.replace(/'/g, "'\\''")}'`, 30000);
-    return {
-      success: result.exitCode === 0,
-      output: result.stdout.trim(),
-      error: result.exitCode !== 0 ? result.stderr.trim() : undefined,
-    };
+
   });
 
   // ── Run shell command (with allowlist safety) ─────────────────────────
   ipcMain.handle('computer:runShell', async (_event, params: { command: string; timeout?: number }) => {
-    const BLOCKED = ['rm -rf /', 'mkfs', 'shutdown', 'reboot', 'halt', ':(){:|:&};:'];
-    const lower = params.command.toLowerCase();
-    for (const b of BLOCKED) {
-      if (lower.includes(b)) {
-        return { success: false, error: `Command blocked: "${b}"`, output: '' };
+    try {  
+      const BLOCKED = ['rm -rf /', 'mkfs', 'shutdown', 'reboot', 'halt', ':(){:|:&};:'];
+      const lower = params.command.toLowerCase();
+      for (const b of BLOCKED) {
+        if (lower.includes(b)) {
+          return { success: false, error: `Command blocked: "${b}"`, output: '' };
+        }
       }
+      const result = await runCmd(params.command, params.timeout || 30000);
+      return {
+        success: result.exitCode === 0,
+        output: result.stdout,
+        error: result.stderr || undefined,
+        exitCode: result.exitCode,
+      };    } catch (e: unknown) {
+      console.error('[computer:runShell]', e instanceof Error ? e.message : String(e));
+      throw e;
     }
-    const result = await runCmd(params.command, params.timeout || 30000);
-    return {
-      success: result.exitCode === 0,
-      output: result.stdout,
-      error: result.stderr || undefined,
-      exitCode: result.exitCode,
-    };
+
   });
 
   // ── Get running apps ──────────────────────────────────────────────────
   ipcMain.handle('computer:listApps', async () => {
-    let cmd: string;
-    if (platform === 'darwin') {
-      cmd = `ls /Applications/*.app | sed 's|/Applications/||' | sed 's|.app||' | head -60`;
-    } else if (platform === 'win32') {
-      cmd = `powershell -Command "Get-StartApps | Select-Object -First 60 Name | ConvertTo-Json"`;
-    } else {
-      cmd = `ls /usr/share/applications/*.desktop | sed 's|/usr/share/applications/||' | sed 's|.desktop||' | head -60`;
+    try {  
+      let cmd: string;
+      if (platform === 'darwin') {
+        cmd = `ls /Applications/*.app | sed 's|/Applications/||' | sed 's|.app||' | head -60`;
+      } else if (platform === 'win32') {
+        cmd = `powershell -Command "Get-StartApps | Select-Object -First 60 Name | ConvertTo-Json"`;
+      } else {
+        cmd = `ls /usr/share/applications/*.desktop | sed 's|/usr/share/applications/||' | sed 's|.desktop||' | head -60`;
+      }
+      const result = await runCmd(cmd, 5000);
+      const apps = result.stdout.trim().split('\n').filter(Boolean).map(a => a.trim());
+      return { apps, platform };    } catch (e: unknown) {
+      console.error('[computer:listApps]', e instanceof Error ? e.message : String(e));
+      throw e;
     }
-    const result = await runCmd(cmd, 5000);
-    const apps = result.stdout.trim().split('\n').filter(Boolean).map(a => a.trim());
-    return { apps, platform };
+
   });
 
   // ── Get running processes ─────────────────────────────────────────────
   ipcMain.handle('computer:listProcesses', async () => {
-    let cmd: string;
-    if (platform === 'darwin') {
-      cmd = `ps aux | awk 'NR>1 {print $11}' | sort -u | grep -v '\\[' | head -40`;
-    } else if (platform === 'win32') {
-      cmd = `tasklist /FO CSV | head -40`;
-    } else {
-      cmd = `ps aux | awk 'NR>1 {print $11}' | sort -u | head -40`;
+    try {  
+      let cmd: string;
+      if (platform === 'darwin') {
+        cmd = `ps aux | awk 'NR>1 {print $11}' | sort -u | grep -v '\\[' | head -40`;
+      } else if (platform === 'win32') {
+        cmd = `tasklist /FO CSV | head -40`;
+      } else {
+        cmd = `ps aux | awk 'NR>1 {print $11}' | sort -u | head -40`;
+      }
+      const result = await runCmd(cmd, 5000);
+      return { processes: result.stdout.trim().split('\n').filter(Boolean) };    } catch (e: unknown) {
+      console.error('[computer:listProcesses]', e instanceof Error ? e.message : String(e));
+      throw e;
     }
-    const result = await runCmd(cmd, 5000);
-    return { processes: result.stdout.trim().split('\n').filter(Boolean) };
+
   });
 
   // ── Permission check ──────────────────────────────────────────────────
   ipcMain.handle('computer:checkPermissions', async () => {
-    if (platform !== 'darwin') {
-      return { platform, accessibility: true, screenRecording: true, message: 'Permissions apply to macOS only.' };
+    try {  
+      if (platform !== 'darwin') {
+        return { platform, accessibility: true, screenRecording: true, message: 'Permissions apply to macOS only.' };
+      }
+  
+      // Check Accessibility
+      const accessResult = await runCmd(
+        `osascript -e 'tell application "System Events" to return name of first process whose frontmost is true' 2>&1`,
+        5000
+      );
+      const hasAccessibility = accessResult.exitCode === 0 && !accessResult.stdout.includes('not allowed');
+  
+      // Check Screen Recording (try screenshot)
+      const tmpCheck = path.join(os.tmpdir(), 'henry_perm_check.png');
+      const srResult = await runCmd(`screencapture -x "${tmpCheck}" 2>&1 && rm -f "${tmpCheck}"`, 5000);
+      const hasScreenRecording = srResult.exitCode === 0;
+  
+      return {
+        platform: 'darwin',
+        accessibility: hasAccessibility,
+        screenRecording: hasScreenRecording,
+        accessibilityInstructions: !hasAccessibility
+          ? 'Open System Settings → Privacy & Security → Accessibility → enable Henry AI'
+          : null,
+        screenRecordingInstructions: !hasScreenRecording
+          ? 'Open System Settings → Privacy & Security → Screen Recording → enable Henry AI'
+          : null,
+      };    } catch (e: unknown) {
+      console.error('[computer:checkPermissions]', e instanceof Error ? e.message : String(e));
+      throw e;
     }
 
-    // Check Accessibility
-    const accessResult = await runCmd(
-      `osascript -e 'tell application "System Events" to return name of first process whose frontmost is true' 2>&1`,
-      5000
-    );
-    const hasAccessibility = accessResult.exitCode === 0 && !accessResult.stdout.includes('not allowed');
-
-    // Check Screen Recording (try screenshot)
-    const tmpCheck = path.join(os.tmpdir(), 'henry_perm_check.png');
-    const srResult = await runCmd(`screencapture -x "${tmpCheck}" 2>&1 && rm -f "${tmpCheck}"`, 5000);
-    const hasScreenRecording = srResult.exitCode === 0;
-
-    return {
-      platform: 'darwin',
-      accessibility: hasAccessibility,
-      screenRecording: hasScreenRecording,
-      accessibilityInstructions: !hasAccessibility
-        ? 'Open System Settings → Privacy & Security → Accessibility → enable Henry AI'
-        : null,
-      screenRecordingInstructions: !hasScreenRecording
-        ? 'Open System Settings → Privacy & Security → Screen Recording → enable Henry AI'
-        : null,
-    };
   });
 
   // ── Type text (requires Accessibility) ───────────────────────────────
   ipcMain.handle('computer:typeText', async (_event, text: string) => {
-    if (platform !== 'darwin') {
-      return { success: false, error: 'Keyboard control via AppleScript is macOS only.' };
+    try {  
+      if (platform !== 'darwin') {
+        return { success: false, error: 'Keyboard control via AppleScript is macOS only.' };
+      }
+      const escaped = text.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+      const result = await runCmd(
+        `osascript -e 'tell application "System Events" to keystroke "${escaped}"'`,
+        10000
+      );
+      return { success: result.exitCode === 0, error: result.exitCode !== 0 ? result.stderr : undefined };    } catch (e: unknown) {
+      console.error('[computer:typeText]', e instanceof Error ? e.message : String(e));
+      throw e;
     }
-    const escaped = text.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-    const result = await runCmd(
-      `osascript -e 'tell application "System Events" to keystroke "${escaped}"'`,
-      10000
-    );
-    return { success: result.exitCode === 0, error: result.exitCode !== 0 ? result.stderr : undefined };
+
   });
 
   // ── Click at coordinates (requires Accessibility) ─────────────────────
   ipcMain.handle('computer:click', async (_event, params: { x: number; y: number; button?: string }) => {
-    if (platform !== 'darwin') {
-      return { success: false, error: 'Mouse control via AppleScript is macOS only.' };
+    try {  
+      if (platform !== 'darwin') {
+        return { success: false, error: 'Mouse control via AppleScript is macOS only.' };
+      }
+      const { x, y, button = 'primary' } = params;
+      const btnStr = button === 'right' ? 'right' : '';
+      const result = await runCmd(
+        `osascript -e 'tell application "System Events" to ${btnStr ? 'right ' : ''}click at {${x}, ${y}}'`,
+        10000
+      );
+      return { success: result.exitCode === 0, error: result.exitCode !== 0 ? result.stderr : undefined };    } catch (e: unknown) {
+      console.error('[computer:click]', e instanceof Error ? e.message : String(e));
+      throw e;
     }
-    const { x, y, button = 'primary' } = params;
-    const btnStr = button === 'right' ? 'right' : '';
-    const result = await runCmd(
-      `osascript -e 'tell application "System Events" to ${btnStr ? 'right ' : ''}click at {${x}, ${y}}'`,
-      10000
-    );
-    return { success: result.exitCode === 0, error: result.exitCode !== 0 ? result.stderr : undefined };
+
   });
 
   // ── Get system info ───────────────────────────────────────────────────
   ipcMain.handle('computer:systemInfo', async () => {
-    const info: Record<string, unknown> = {
-      platform,
-      arch: process.arch,
-      hostname: os.hostname(),
-      homeDir: os.homedir(),
-      appVersion: app.getVersion(),
-      totalMemoryGB: (os.totalmem() / 1024 / 1024 / 1024).toFixed(1),
-      freeMemoryGB: (os.freemem() / 1024 / 1024 / 1024).toFixed(1),
-    };
-    if (platform === 'darwin') {
-      const sw = await runCmd('sw_vers', 3000);
-      info.macOS = sw.stdout.trim();
+    try {  
+      const info: Record<string, unknown> = {
+        platform,
+        arch: process.arch,
+        hostname: os.hostname(),
+        homeDir: os.homedir(),
+        appVersion: app.getVersion(),
+        totalMemoryGB: (os.totalmem() / 1024 / 1024 / 1024).toFixed(1),
+        freeMemoryGB: (os.freemem() / 1024 / 1024 / 1024).toFixed(1),
+      };
+      if (platform === 'darwin') {
+        const sw = await runCmd('sw_vers', 3000);
+        info.macOS = sw.stdout.trim();
+      }
+      return info;    } catch (e: unknown) {
+      console.error('[computer:systemInfo]', e instanceof Error ? e.message : String(e));
+      throw e;
     }
-    return info;
+
   });
 }

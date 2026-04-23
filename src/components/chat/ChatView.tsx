@@ -1908,6 +1908,24 @@ export default function ChatView() {
       streamRef.current.cancel();
       streamRef.current = null;
     }
+    // Stamp the in-flight message as cancelled so user knows it wasn't a crash
+    const currentContent = useStore.getState().streamingContent;
+    if (currentContent && currentContent.trim()) {
+      const msgs = useStore.getState().messages;
+      const lastMsg = msgs[msgs.length - 1];
+      if (lastMsg?.role === 'assistant') {
+        const cancelledContent = currentContent.trimEnd() + '\n\n*[Cancelled]*';
+        useStore.getState().updateMessage(lastMsg.id, {
+          content: cancelledContent,
+          isStreaming: false,
+        });
+        window.henryAPI.saveMessage({
+          ...lastMsg,
+          content: cancelledContent,
+          isStreaming: false,
+        }).catch(() => {});
+      }
+    }
     setStreamingContent('');
     setIsStreaming(false);
     setCompanionStatus({ status: 'idle' });

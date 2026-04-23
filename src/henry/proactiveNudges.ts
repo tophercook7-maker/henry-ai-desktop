@@ -113,8 +113,45 @@ function selectNudge(): HenryNudge | null {
     });
   }
 
+  // Unread captures
+  try {
+    const captures = JSON.parse(localStorage.getItem('henry:captures') || '[]') as any[];
+    const unrouted = captures.filter((c: any) => !c.routed && !c.dismissed);
+    if (unrouted.length >= 3) {
+      nudges.push({
+        id: 'unrouted_captures',
+        icon: '🎙',
+        message: `You have ${unrouted.length} unreviewed captures waiting to be routed.`,
+        cta: '',
+        action: { label: 'Review captures', view: 'captures' },
+        type: 'reminder',
+      });
+    }
+  } catch { /* ignore */ }
+
+  // Weekly review nudge — Friday afternoons
+  const dayOfWeek = new Date().getDay(); // 0=Sun, 5=Fri
+  if (dayOfWeek === 5 && h >= 15 && h <= 18) {
+    const lastReview = localStorage.getItem('henry:weekly_review_last') || '';
+    const weekStart = new Date();
+    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+    if (!lastReview || new Date(lastReview) < weekStart) {
+      nudges.push({
+        id: 'weekly_review',
+        icon: '📅',
+        message: "It's Friday afternoon. Good time for a weekly review.",
+        cta: '',
+        action: { label: 'Weekly Review', view: 'weekly' },
+        type: 'info',
+      });
+    }
+  }
+
   if (!nudges.length) return null;
-  return nudges[Math.floor(Math.random() * nudges.length)];
+  // Prefer reminders over info, weight by type
+  const reminders = nudges.filter(n => n.type === 'reminder');
+  const pool = reminders.length > 0 ? reminders : nudges;
+  return pool[Math.floor(Math.random() * pool.length)];
 }
 
 let nudgeInterval: ReturnType<typeof setInterval> | null = null;

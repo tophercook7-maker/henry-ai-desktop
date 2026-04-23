@@ -16,6 +16,19 @@ import { registerComputerHandlers } from './ipc/computer';
 import { registerPrinterHandlers } from './ipc/printer';
 import { registerSyncBridgeIpc, setSyncDb, startSyncServer } from './ipc/syncBridge';
 
+
+// Global IPC error handler — prevents any single handler crash from killing the process
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[Henry:main] Unhandled IPC rejection:', reason);
+  // Don't exit — let the renderer receive the error via the normal IPC error channel
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('[Henry:main] Uncaught exception:', err.message);
+  // Log but don't crash — try to keep running
+});
+
+
 let mainWindow: BrowserWindow | null = null;
 
 export function getMainWindow(): BrowserWindow | null {

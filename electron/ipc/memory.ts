@@ -52,6 +52,18 @@ function computeRetrievalScore(row: {
 
 // ── Registration ──────────────────────────────────────────────────────────────
 
+// ── Safe DB helper — wraps any IPC handler body to prevent main-process crashes ──
+function safeHandle<T>(channel: string, fn: () => T): T {
+  try {
+    return fn();
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(`[${channel}] DB error:`, msg);
+    throw new Error(`Henry memory error: ${msg}`);
+  }
+}
+
+
 export function registerMemoryHandlers(database: Database.Database) {
   db = database;
 
@@ -65,28 +77,33 @@ export function registerMemoryHandlers(database: Database.Database) {
     category?: string;
     importance?: number;
   }) => {
-    const convId = fact.conversationId || fact.conversation_id || null;
-    const id = crypto.randomUUID();
-    db.prepare(`
-      INSERT INTO memory_facts (id, conversation_id, fact, category, importance, created_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(id, convId, fact.fact, fact.category || 'general', fact.importance || 1, new Date().toISOString());
+    try {
+      const convId = fact.conversationId || fact.conversation_id || null;
+      const id = crypto.randomUUID();
+      db.prepare(`
+        INSERT INTO memory_facts (id, conversation_id, fact, category, importance, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(id, convId, fact.fact, fact.category || 'general', fact.importance || 1, new Date().toISOString());
 
-    // Mirror into personal_memory for scored retrieval
-    db.prepare(`
-      INSERT INTO personal_memory
-        (id, memory_key, memory_value, memory_type, confidence_score, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      crypto.randomUUID(),
-      fact.category || 'general',
-      fact.fact,
-      fact.category || 'general',
-      (fact.importance || 1) / 10,
-      new Date().toISOString(),
-      new Date().toISOString(),
-    );
-    return { id };
+      // Mirror into personal_memory for scored retrieval
+      db.prepare(`
+        INSERT INTO personal_memory
+          (id, memory_key, memory_value, memory_type, confidence_score, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        crypto.randomUUID(),
+        fact.category || 'general',
+        fact.fact,
+        fact.category || 'general',
+        (fact.importance || 1) / 10,
+        new Date().toISOString(),
+        new Date().toISOString(),
+      );
+      return { id };
+    } catch (e: unknown) {
+      console.error('[memory:saveFact]', e instanceof Error ? e.message : String(e));
+      return null as any;
+    }
   });
 
   ipcMain.handle('memory:searchFacts', async (_e, query: {
@@ -129,14 +146,24 @@ export function registerMemoryHandlers(database: Database.Database) {
   );
 
   ipcMain.handle('memory:deleteFact', async (_e, factId: string) => {
-    db.prepare('DELETE FROM memory_facts WHERE id = ?').run(factId);
-    return { deleted: true };
+    try {
+      db.prepare('DELETE FROM memory_facts WHERE id = ?').run(factId);
+      return { deleted: true };
+    } catch (e: unknown) {
+      console.error('[memory:deleteFact]', e instanceof Error ? e.message : String(e));
+      return null as any;
+    }
   });
 
   ipcMain.handle('memory:clearConversation', async (_e, conversationId: string) => {
-    db.prepare('DELETE FROM memory_facts WHERE conversation_id = ?').run(conversationId);
-    db.prepare('DELETE FROM conversation_summaries WHERE conversation_id = ?').run(conversationId);
-    return { cleared: true };
+    try {
+      db.prepare('DELETE FROM memory_facts WHERE conversation_id = ?').run(conversationId);
+      db.prepare('DELETE FROM conversation_summaries WHERE conversation_id = ?').run(conversationId);
+      return { cleared: true };
+    } catch (e: unknown) {
+      console.error('[memory:clearConversation]', e instanceof Error ? e.message : String(e));
+      return null as any;
+    }
   });
 
   // ══════════════════════════════════════════════════════════════════════
@@ -144,23 +171,28 @@ export function registerMemoryHandlers(database: Database.Database) {
   // ══════════════════════════════════════════════════════════════════════
 
   ipcMain.handle('memory:saveSummary', async (_e, payload: Record<string, unknown>) => {
-    const conversationId =
-      (typeof payload.conversationId === 'string' && payload.conversationId) ||
-      (typeof payload.conversation_id === 'string' && payload.conversation_id) || '';
-    const summaryText = typeof payload.summary === 'string' ? payload.summary : '';
-    if (!conversationId.trim() || !summaryText.trim())
-      return { id: null as string | null, error: 'conversationId and summary are required.' };
-    const messageCount = (typeof payload.messageCount === 'number' ? payload.messageCount
-      : typeof payload.message_count === 'number' ? payload.message_count : 0);
-    const tokenCount = (typeof payload.tokenCount === 'number' ? payload.tokenCount
-      : typeof payload.token_count === 'number' ? payload.token_count
-      : Math.ceil(summaryText.length / 4));
-    const id = crypto.randomUUID();
-    db.prepare(`
-      INSERT INTO conversation_summaries (id, conversation_id, summary, message_count, token_count, created_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(id, conversationId, summaryText, messageCount, tokenCount, new Date().toISOString());
-    return { id };
+    try {
+      const conversationId =
+        (typeof payload.conversationId === 'string' && payload.conversationId) ||
+        (typeof payload.conversation_id === 'string' && payload.conversation_id) || '';
+      const summaryText = typeof payload.summary === 'string' ? payload.summary : '';
+      if (!conversationId.trim() || !summaryText.trim())
+        return { id: null as string | null, error: 'conversationId and summary are required.' };
+      const messageCount = (typeof payload.messageCount === 'number' ? payload.messageCount
+        : typeof payload.message_count === 'number' ? payload.message_count : 0);
+      const tokenCount = (typeof payload.tokenCount === 'number' ? payload.tokenCount
+        : typeof payload.token_count === 'number' ? payload.token_count
+        : Math.ceil(summaryText.length / 4));
+      const id = crypto.randomUUID();
+      db.prepare(`
+        INSERT INTO conversation_summaries (id, conversation_id, summary, message_count, token_count, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(id, conversationId, summaryText, messageCount, tokenCount, new Date().toISOString());
+      return { id };
+    } catch (e: unknown) {
+      console.error('[memory:saveSummary]', e instanceof Error ? e.message : String(e));
+      return null as any;
+    }
   });
 
   ipcMain.handle('memory:getSummary', async (_e, conversationId: string) =>
@@ -175,10 +207,15 @@ export function registerMemoryHandlers(database: Database.Database) {
   ipcMain.handle('memory:indexFile', async (_e, file: {
     path: string; type: string; summary: string; sizeBytes: number;
   }) => {
-    const id = crypto.randomUUID();
-    db.prepare(`INSERT OR REPLACE INTO workspace_index (id, file_path, file_type, summary, last_indexed, size_bytes) VALUES (?, ?, ?, ?, ?, ?)`)
-      .run(id, file.path, file.type, file.summary, new Date().toISOString(), file.sizeBytes);
-    return { id };
+    try {
+      const id = crypto.randomUUID();
+      db.prepare(`INSERT OR REPLACE INTO workspace_index (id, file_path, file_type, summary, last_indexed, size_bytes) VALUES (?, ?, ?, ?, ?, ?)`)
+        .run(id, file.path, file.type, file.summary, new Date().toISOString(), file.sizeBytes);
+      return { id };
+    } catch (e: unknown) {
+      console.error('[memory:indexFile]', e instanceof Error ? e.message : String(e));
+      return null as any;
+    }
   });
 
   ipcMain.handle('memory:searchWorkspace', async (_e, query: string) => {
@@ -207,66 +244,91 @@ export function registerMemoryHandlers(database: Database.Database) {
     strategicSignificanceScore?: number;
     tags?: string[];
   }) => {
-    const id = crypto.randomUUID();
-    const now = new Date().toISOString();
-    db.prepare(`
-      INSERT INTO personal_memory
-        (id, memory_key, memory_value, memory_type, summary, source,
-         confidence_score, emotional_significance_score, strategic_significance_score,
-         tags_json, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      id, item.memoryKey, item.memoryValue, item.memoryType || 'general',
-      item.summary || null, item.source || null,
-      item.confidenceScore ?? 0.7,
-      item.emotionalSignificanceScore ?? 0.3,
-      item.strategicSignificanceScore ?? 0.5,
-      JSON.stringify(item.tags || []),
-      now, now,
-    );
-    return { id };
+    try {
+      const id = crypto.randomUUID();
+      const now = new Date().toISOString();
+      db.prepare(`
+        INSERT INTO personal_memory
+          (id, memory_key, memory_value, memory_type, summary, source,
+           confidence_score, emotional_significance_score, strategic_significance_score,
+           tags_json, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        id, item.memoryKey, item.memoryValue, item.memoryType || 'general',
+        item.summary || null, item.source || null,
+        item.confidenceScore ?? 0.7,
+        item.emotionalSignificanceScore ?? 0.3,
+        item.strategicSignificanceScore ?? 0.5,
+        JSON.stringify(item.tags || []),
+        now, now,
+      );
+      return { id };
+    } catch (e: unknown) {
+      console.error('[memory:savePersonalMemory]', e instanceof Error ? e.message : String(e));
+      return null as any;
+    }
   });
 
   ipcMain.handle('memory:getPersonalMemory', async (_e, opts: {
     memoryType?: string; limit?: number; activeOnly?: boolean;
   } = {}) => {
-    let sql = 'SELECT * FROM personal_memory WHERE 1=1';
-    const params: (string | number)[] = [];
-    if (opts.activeOnly !== false) { sql += ' AND active_status = 1'; }
-    if (opts.memoryType)           { sql += ' AND memory_type = ?'; params.push(opts.memoryType); }
-    sql += ' ORDER BY strategic_significance_score DESC, emotional_significance_score DESC, created_at DESC LIMIT ?';
-    params.push(opts.limit || 50);
-    const rows = db.prepare(sql).all(...params) as any[];
-    return rows
-      .map((r) => ({ ...r, _retrieval_score: computeRetrievalScore(r) }))
-      .sort((a, b) => b._retrieval_score - a._retrieval_score);
+    try {
+      let sql = 'SELECT * FROM personal_memory WHERE 1=1';
+      const params: (string | number)[] = [];
+      if (opts.activeOnly !== false) { sql += ' AND active_status = 1'; }
+      if (opts.memoryType)           { sql += ' AND memory_type = ?'; params.push(opts.memoryType); }
+      sql += ' ORDER BY strategic_significance_score DESC, emotional_significance_score DESC, created_at DESC LIMIT ?';
+      params.push(opts.limit || 50);
+      const rows = db.prepare(sql).all(...params) as any[];
+      return rows
+        .map((r) => ({ ...r, _retrieval_score: computeRetrievalScore(r) }))
+        .sort((a, b) => b._retrieval_score - a._retrieval_score);
+    } catch (e: unknown) {
+      console.error('[memory:getPersonalMemory]', e instanceof Error ? e.message : String(e));
+      return null as any;
+    }
   });
 
   ipcMain.handle('memory:updatePersonalMemory', async (_e, id: string, updates: Record<string, unknown>) => {
-    const allowed = ['memory_value','summary','confidence_score','emotional_significance_score',
-                     'strategic_significance_score','active_status','tags_json'];
-    const sets: string[] = [];
-    const vals: unknown[] = [];
-    for (const key of allowed) {
-      if (key in updates) { sets.push(`${key} = ?`); vals.push(updates[key]); }
+    try {
+      const allowed = ['memory_value','summary','confidence_score','emotional_significance_score',
+                       'strategic_significance_score','active_status','tags_json'];
+      const sets: string[] = [];
+      const vals: unknown[] = [];
+      for (const key of allowed) {
+        if (key in updates) { sets.push(`${key} = ?`); vals.push(updates[key]); }
+      }
+      if (sets.length === 0) return { updated: false };
+      sets.push('updated_at = ?');
+      vals.push(new Date().toISOString());
+      vals.push(id);
+      db.prepare(`UPDATE personal_memory SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
+      return { updated: true };
+    } catch (e: unknown) {
+      console.error('[memory:updatePersonalMemory]', e instanceof Error ? e.message : String(e));
+      return null as any;
     }
-    if (sets.length === 0) return { updated: false };
-    sets.push('updated_at = ?');
-    vals.push(new Date().toISOString());
-    vals.push(id);
-    db.prepare(`UPDATE personal_memory SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
-    return { updated: true };
   });
 
   ipcMain.handle('memory:deletePersonalMemory', async (_e, id: string) => {
-    db.prepare('UPDATE personal_memory SET active_status = 0, updated_at = ? WHERE id = ?')
-      .run(new Date().toISOString(), id);
-    return { deleted: true };
+    try {
+      db.prepare('UPDATE personal_memory SET active_status = 0, updated_at = ? WHERE id = ?')
+        .run(new Date().toISOString(), id);
+      return { deleted: true };
+    } catch (e: unknown) {
+      console.error('[memory:deletePersonalMemory]', e instanceof Error ? e.message : String(e));
+      return null as any;
+    }
   });
 
   ipcMain.handle('memory:recallPersonalMemory', async (_e, id: string) => {
-    db.prepare('UPDATE personal_memory SET last_recalled_at = ? WHERE id = ?')
-      .run(new Date().toISOString(), id);
+    try {
+      db.prepare('UPDATE personal_memory SET last_recalled_at = ? WHERE id = ?')
+        .run(new Date().toISOString(), id);
+    } catch (e: unknown) {
+      console.error('[memory:recallPersonalMemory]', e instanceof Error ? e.message : String(e));
+      return null as any;
+    }
   });
 
   // ══════════════════════════════════════════════════════════════════════
@@ -277,37 +339,52 @@ export function registerMemoryHandlers(database: Database.Database) {
     name: string; type?: string; summary?: string;
     strategicImportanceScore?: number; emotionalImportanceScore?: number;
   }) => {
-    const id = crypto.randomUUID();
-    const now = new Date().toISOString();
-    db.prepare(`
-      INSERT INTO projects (id, name, type, summary, strategic_importance_score, emotional_importance_score, created_at, updated_at, last_active_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, project.name, project.type || 'general', project.summary || null,
-           project.strategicImportanceScore ?? 0.5, project.emotionalImportanceScore ?? 0.5,
-           now, now, now);
-    return { id };
+    try {
+      const id = crypto.randomUUID();
+      const now = new Date().toISOString();
+      db.prepare(`
+        INSERT INTO projects (id, name, type, summary, strategic_importance_score, emotional_importance_score, created_at, updated_at, last_active_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(id, project.name, project.type || 'general', project.summary || null,
+             project.strategicImportanceScore ?? 0.5, project.emotionalImportanceScore ?? 0.5,
+             now, now, now);
+      return { id };
+    } catch (e: unknown) {
+      console.error('[memory:saveProject]', e instanceof Error ? e.message : String(e));
+      return null as any;
+    }
   });
 
   ipcMain.handle('memory:getProjects', async (_e, opts: { status?: string; limit?: number } = {}) => {
-    let sql = 'SELECT * FROM projects WHERE 1=1';
-    const params: (string | number)[] = [];
-    if (opts.status) { sql += ' AND status = ?'; params.push(opts.status); }
-    sql += ' ORDER BY strategic_importance_score DESC, last_active_at DESC LIMIT ?';
-    params.push(opts.limit || 20);
-    return db.prepare(sql).all(...params);
+    try {
+      let sql = 'SELECT * FROM projects WHERE 1=1';
+      const params: (string | number)[] = [];
+      if (opts.status) { sql += ' AND status = ?'; params.push(opts.status); }
+      sql += ' ORDER BY strategic_importance_score DESC, last_active_at DESC LIMIT ?';
+      params.push(opts.limit || 20);
+      return db.prepare(sql).all(...params);
+    } catch (e: unknown) {
+      console.error('[memory:getProjects]', e instanceof Error ? e.message : String(e));
+      return null as any;
+    }
   });
 
   ipcMain.handle('memory:updateProject', async (_e, id: string, updates: Record<string, unknown>) => {
-    const allowed = ['name','type','status','summary','strategic_importance_score','emotional_importance_score'];
-    const sets: string[] = [];
-    const vals: unknown[] = [];
-    for (const k of allowed) { if (k in updates) { sets.push(`${k} = ?`); vals.push(updates[k]); } }
-    if (sets.length === 0) return { updated: false };
-    sets.push('updated_at = ?', 'last_active_at = ?');
-    const now = new Date().toISOString();
-    vals.push(now, now, id);
-    db.prepare(`UPDATE projects SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
-    return { updated: true };
+    try {
+      const allowed = ['name','type','status','summary','strategic_importance_score','emotional_importance_score'];
+      const sets: string[] = [];
+      const vals: unknown[] = [];
+      for (const k of allowed) { if (k in updates) { sets.push(`${k} = ?`); vals.push(updates[k]); } }
+      if (sets.length === 0) return { updated: false };
+      sets.push('updated_at = ?', 'last_active_at = ?');
+      const now = new Date().toISOString();
+      vals.push(now, now, id);
+      db.prepare(`UPDATE projects SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
+      return { updated: true };
+    } catch (e: unknown) {
+      console.error('[memory:updateProject]', e instanceof Error ? e.message : String(e));
+      return null as any;
+    }
   });
 
   ipcMain.handle('memory:saveProjectMemory', async (_e, item: {
@@ -315,20 +392,25 @@ export function registerMemoryHandlers(database: Database.Database) {
     summary?: string; blockerFlag?: boolean; deadline?: string;
     confidenceScore?: number; relevanceScore?: number;
   }) => {
-    const id = crypto.randomUUID();
-    const now = new Date().toISOString();
-    db.prepare(`
-      INSERT INTO project_memory
-        (id, project_id, memory_key, memory_value, summary, blocker_flag, deadline,
-         confidence_score, relevance_score, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, item.projectId, item.memoryKey, item.memoryValue,
-           item.summary || null, item.blockerFlag ? 1 : 0,
-           item.deadline || null, item.confidenceScore ?? 0.8, item.relevanceScore ?? 0.7,
-           now, now);
-    // Touch project last_active_at
-    db.prepare(`UPDATE projects SET last_active_at = ? WHERE id = ?`).run(now, item.projectId);
-    return { id };
+    try {
+      const id = crypto.randomUUID();
+      const now = new Date().toISOString();
+      db.prepare(`
+        INSERT INTO project_memory
+          (id, project_id, memory_key, memory_value, summary, blocker_flag, deadline,
+           confidence_score, relevance_score, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(id, item.projectId, item.memoryKey, item.memoryValue,
+             item.summary || null, item.blockerFlag ? 1 : 0,
+             item.deadline || null, item.confidenceScore ?? 0.8, item.relevanceScore ?? 0.7,
+             now, now);
+      // Touch project last_active_at
+      db.prepare(`UPDATE projects SET last_active_at = ? WHERE id = ?`).run(now, item.projectId);
+      return { id };
+    } catch (e: unknown) {
+      console.error('[memory:saveProjectMemory]', e instanceof Error ? e.message : String(e));
+      return null as any;
+    }
   });
 
   ipcMain.handle('memory:getProjectMemory', async (_e, projectId: string) =>
@@ -345,49 +427,54 @@ export function registerMemoryHandlers(database: Database.Database) {
     activeGoals?: string[]; activeTasks?: string[]; activeFiles?: string[];
     emotionalPattern?: string; unresolvedItems?: string[]; projectId?: string;
   }) => {
-    const now = new Date().toISOString();
-    const existing = db.prepare('SELECT id FROM session_memory WHERE conversation_id = ?')
-      .get(session.conversationId) as { id: string } | undefined;
-    if (existing) {
+    try {
+      const now = new Date().toISOString();
+      const existing = db.prepare('SELECT id FROM session_memory WHERE conversation_id = ?')
+        .get(session.conversationId) as { id: string } | undefined;
+      if (existing) {
+        db.prepare(`
+          UPDATE session_memory SET
+            summary = COALESCE(?, summary),
+            active_goals_json = ?,
+            active_tasks_json = ?,
+            active_files_json = ?,
+            emotional_pattern = COALESCE(?, emotional_pattern),
+            unresolved_items_json = ?,
+            project_id = COALESCE(?, project_id),
+            updated_at = ?
+          WHERE conversation_id = ?
+        `).run(
+          session.summary || null,
+          JSON.stringify(session.activeGoals || []),
+          JSON.stringify(session.activeTasks || []),
+          JSON.stringify(session.activeFiles || []),
+          session.emotionalPattern || null,
+          JSON.stringify(session.unresolvedItems || []),
+          session.projectId || null, now,
+          session.conversationId,
+        );
+        return { id: existing.id, updated: true };
+      }
+      const id = crypto.randomUUID();
       db.prepare(`
-        UPDATE session_memory SET
-          summary = COALESCE(?, summary),
-          active_goals_json = ?,
-          active_tasks_json = ?,
-          active_files_json = ?,
-          emotional_pattern = COALESCE(?, emotional_pattern),
-          unresolved_items_json = ?,
-          project_id = COALESCE(?, project_id),
-          updated_at = ?
-        WHERE conversation_id = ?
+        INSERT INTO session_memory
+          (id, conversation_id, summary, active_goals_json, active_tasks_json,
+           active_files_json, emotional_pattern, unresolved_items_json, project_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
-        session.summary || null,
+        id, session.conversationId, session.summary || null,
         JSON.stringify(session.activeGoals || []),
         JSON.stringify(session.activeTasks || []),
         JSON.stringify(session.activeFiles || []),
         session.emotionalPattern || null,
         JSON.stringify(session.unresolvedItems || []),
-        session.projectId || null, now,
-        session.conversationId,
+        session.projectId || null, now, now,
       );
-      return { id: existing.id, updated: true };
+      return { id, created: true };
+    } catch (e: unknown) {
+      console.error('[memory:saveSessionMemory]', e instanceof Error ? e.message : String(e));
+      return null as any;
     }
-    const id = crypto.randomUUID();
-    db.prepare(`
-      INSERT INTO session_memory
-        (id, conversation_id, summary, active_goals_json, active_tasks_json,
-         active_files_json, emotional_pattern, unresolved_items_json, project_id, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      id, session.conversationId, session.summary || null,
-      JSON.stringify(session.activeGoals || []),
-      JSON.stringify(session.activeTasks || []),
-      JSON.stringify(session.activeFiles || []),
-      session.emotionalPattern || null,
-      JSON.stringify(session.unresolvedItems || []),
-      session.projectId || null, now, now,
-    );
-    return { id, created: true };
   });
 
   ipcMain.handle('memory:getSessionMemory', async (_e, conversationId: string) =>
@@ -412,38 +499,43 @@ export function registerMemoryHandlers(database: Database.Database) {
     relevantFileIds?: string[];
     relevantMemoryIds?: string[];
   }) => {
-    const userId = updates.userId || 'default';
-    const now = new Date().toISOString();
-    const existing = db.prepare('SELECT id FROM working_memory WHERE user_id = ?').get(userId);
-    if (existing) {
-      const sets: string[] = ['refreshed_at = ?'];
-      const vals: unknown[] = [now];
-      if (updates.activeContextSummary !== undefined) { sets.push('active_context_summary = ?'); vals.push(updates.activeContextSummary); }
-      if (updates.activeProjectIds)                   { sets.push('active_project_ids_json = ?'); vals.push(JSON.stringify(updates.activeProjectIds)); }
-      if (updates.activeGoalIds)                      { sets.push('active_goal_ids_json = ?'); vals.push(JSON.stringify(updates.activeGoalIds)); }
-      if (updates.pendingCommitments)                 { sets.push('pending_commitments_json = ?'); vals.push(JSON.stringify(updates.pendingCommitments)); }
-      if (updates.relevantFileIds)                    { sets.push('relevant_file_ids_json = ?'); vals.push(JSON.stringify(updates.relevantFileIds)); }
-      if (updates.relevantMemoryIds)                  { sets.push('relevant_memory_ids_json = ?'); vals.push(JSON.stringify(updates.relevantMemoryIds)); }
-      vals.push(userId);
-      db.prepare(`UPDATE working_memory SET ${sets.join(', ')} WHERE user_id = ?`).run(...vals);
-    } else {
-      db.prepare(`
-        INSERT INTO working_memory
-          (id, user_id, active_context_summary, active_project_ids_json, active_goal_ids_json,
-           pending_commitments_json, relevant_file_ids_json, relevant_memory_ids_json, refreshed_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        crypto.randomUUID(), userId,
-        updates.activeContextSummary || null,
-        JSON.stringify(updates.activeProjectIds || []),
-        JSON.stringify(updates.activeGoalIds || []),
-        JSON.stringify(updates.pendingCommitments || []),
-        JSON.stringify(updates.relevantFileIds || []),
-        JSON.stringify(updates.relevantMemoryIds || []),
-        now,
-      );
+    try {
+      const userId = updates.userId || 'default';
+      const now = new Date().toISOString();
+      const existing = db.prepare('SELECT id FROM working_memory WHERE user_id = ?').get(userId);
+      if (existing) {
+        const sets: string[] = ['refreshed_at = ?'];
+        const vals: unknown[] = [now];
+        if (updates.activeContextSummary !== undefined) { sets.push('active_context_summary = ?'); vals.push(updates.activeContextSummary); }
+        if (updates.activeProjectIds)                   { sets.push('active_project_ids_json = ?'); vals.push(JSON.stringify(updates.activeProjectIds)); }
+        if (updates.activeGoalIds)                      { sets.push('active_goal_ids_json = ?'); vals.push(JSON.stringify(updates.activeGoalIds)); }
+        if (updates.pendingCommitments)                 { sets.push('pending_commitments_json = ?'); vals.push(JSON.stringify(updates.pendingCommitments)); }
+        if (updates.relevantFileIds)                    { sets.push('relevant_file_ids_json = ?'); vals.push(JSON.stringify(updates.relevantFileIds)); }
+        if (updates.relevantMemoryIds)                  { sets.push('relevant_memory_ids_json = ?'); vals.push(JSON.stringify(updates.relevantMemoryIds)); }
+        vals.push(userId);
+        db.prepare(`UPDATE working_memory SET ${sets.join(', ')} WHERE user_id = ?`).run(...vals);
+      } else {
+        db.prepare(`
+          INSERT INTO working_memory
+            (id, user_id, active_context_summary, active_project_ids_json, active_goal_ids_json,
+             pending_commitments_json, relevant_file_ids_json, relevant_memory_ids_json, refreshed_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          crypto.randomUUID(), userId,
+          updates.activeContextSummary || null,
+          JSON.stringify(updates.activeProjectIds || []),
+          JSON.stringify(updates.activeGoalIds || []),
+          JSON.stringify(updates.pendingCommitments || []),
+          JSON.stringify(updates.relevantFileIds || []),
+          JSON.stringify(updates.relevantMemoryIds || []),
+          now,
+        );
+      }
+      return { updated: true };
+    } catch (e: unknown) {
+      console.error('[memory:updateWorkingMemory]', e instanceof Error ? e.message : String(e));
+      return null as any;
     }
-    return { updated: true };
   });
 
   // ══════════════════════════════════════════════════════════════════════
@@ -454,38 +546,53 @@ export function registerMemoryHandlers(database: Database.Database) {
     title: string; summary?: string;
     priorityScore?: number; emotionalSignificanceScore?: number; strategicSignificanceScore?: number;
   }) => {
-    const id = crypto.randomUUID();
-    const now = new Date().toISOString();
-    db.prepare(`
-      INSERT INTO goals (id, title, summary, priority_score, emotional_significance_score, strategic_significance_score, created_at, updated_at, last_active_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, goal.title, goal.summary || null,
-           goal.priorityScore ?? 0.5, goal.emotionalSignificanceScore ?? 0.5, goal.strategicSignificanceScore ?? 0.5,
-           now, now, now);
-    return { id };
+    try {
+      const id = crypto.randomUUID();
+      const now = new Date().toISOString();
+      db.prepare(`
+        INSERT INTO goals (id, title, summary, priority_score, emotional_significance_score, strategic_significance_score, created_at, updated_at, last_active_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(id, goal.title, goal.summary || null,
+             goal.priorityScore ?? 0.5, goal.emotionalSignificanceScore ?? 0.5, goal.strategicSignificanceScore ?? 0.5,
+             now, now, now);
+      return { id };
+    } catch (e: unknown) {
+      console.error('[memory:saveGoal]', e instanceof Error ? e.message : String(e));
+      return null as any;
+    }
   });
 
   ipcMain.handle('memory:getGoals', async (_e, opts: { status?: string; limit?: number } = {}) => {
-    let sql = 'SELECT * FROM goals WHERE 1=1';
-    const params: (string | number)[] = [];
-    if (opts.status) { sql += ' AND status = ?'; params.push(opts.status); }
-    else { sql += " AND status = 'active'"; }
-    sql += ' ORDER BY priority_score DESC, strategic_significance_score DESC LIMIT ?';
-    params.push(opts.limit || 20);
-    return db.prepare(sql).all(...params);
+    try {
+      let sql = 'SELECT * FROM goals WHERE 1=1';
+      const params: (string | number)[] = [];
+      if (opts.status) { sql += ' AND status = ?'; params.push(opts.status); }
+      else { sql += " AND status = 'active'"; }
+      sql += ' ORDER BY priority_score DESC, strategic_significance_score DESC LIMIT ?';
+      params.push(opts.limit || 20);
+      return db.prepare(sql).all(...params);
+    } catch (e: unknown) {
+      console.error('[memory:getGoals]', e instanceof Error ? e.message : String(e));
+      return null as any;
+    }
   });
 
   ipcMain.handle('memory:updateGoal', async (_e, id: string, updates: Record<string, unknown>) => {
-    const allowed = ['title','summary','status','priority_score','emotional_significance_score','strategic_significance_score'];
-    const sets: string[] = [];
-    const vals: unknown[] = [];
-    for (const k of allowed) { if (k in updates) { sets.push(`${k} = ?`); vals.push(updates[k]); } }
-    if (sets.length === 0) return { updated: false };
-    sets.push('updated_at = ?', 'last_active_at = ?');
-    const now = new Date().toISOString();
-    vals.push(now, now, id);
-    db.prepare(`UPDATE goals SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
-    return { updated: true };
+    try {
+      const allowed = ['title','summary','status','priority_score','emotional_significance_score','strategic_significance_score'];
+      const sets: string[] = [];
+      const vals: unknown[] = [];
+      for (const k of allowed) { if (k in updates) { sets.push(`${k} = ?`); vals.push(updates[k]); } }
+      if (sets.length === 0) return { updated: false };
+      sets.push('updated_at = ?', 'last_active_at = ?');
+      const now = new Date().toISOString();
+      vals.push(now, now, id);
+      db.prepare(`UPDATE goals SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
+      return { updated: true };
+    } catch (e: unknown) {
+      console.error('[memory:updateGoal]', e instanceof Error ? e.message : String(e));
+      return null as any;
+    }
   });
 
   // ══════════════════════════════════════════════════════════════════════
@@ -496,43 +603,63 @@ export function registerMemoryHandlers(database: Database.Database) {
     description: string; sourceConversationId?: string; projectId?: string;
     dueDate?: string; importanceScore?: number;
   }) => {
-    const id = crypto.randomUUID();
-    const now = new Date().toISOString();
-    db.prepare(`
-      INSERT INTO commitments (id, source_conversation_id, project_id, description, importance_score, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(id, c.sourceConversationId || null, c.projectId || null,
-           c.description, c.importanceScore ?? 0.5, now, now);
-    return { id };
+    try {
+      const id = crypto.randomUUID();
+      const now = new Date().toISOString();
+      db.prepare(`
+        INSERT INTO commitments (id, source_conversation_id, project_id, description, importance_score, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(id, c.sourceConversationId || null, c.projectId || null,
+             c.description, c.importanceScore ?? 0.5, now, now);
+      return { id };
+    } catch (e: unknown) {
+      console.error('[memory:saveCommitment]', e instanceof Error ? e.message : String(e));
+      return null as any;
+    }
   });
 
   ipcMain.handle('memory:getCommitments', async (_e, opts: { status?: string; limit?: number } = {}) => {
-    let sql = 'SELECT * FROM commitments WHERE 1=1';
-    const params: (string | number)[] = [];
-    if (opts.status) { sql += ' AND status = ?'; params.push(opts.status); }
-    else { sql += " AND status IN ('open','in_progress')"; }
-    sql += ' ORDER BY importance_score DESC, created_at ASC LIMIT ?';
-    params.push(opts.limit || 30);
-    return db.prepare(sql).all(...params);
+    try {
+      let sql = 'SELECT * FROM commitments WHERE 1=1';
+      const params: (string | number)[] = [];
+      if (opts.status) { sql += ' AND status = ?'; params.push(opts.status); }
+      else { sql += " AND status IN ('open','in_progress')"; }
+      sql += ' ORDER BY importance_score DESC, created_at ASC LIMIT ?';
+      params.push(opts.limit || 30);
+      return db.prepare(sql).all(...params);
+    } catch (e: unknown) {
+      console.error('[memory:getCommitments]', e instanceof Error ? e.message : String(e));
+      return null as any;
+    }
   });
 
   ipcMain.handle('memory:resolveCommitment', async (_e, id: string) => {
-    const now = new Date().toISOString();
-    db.prepare(`UPDATE commitments SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?`)
-      .run(now, now, id);
-    return { resolved: true };
+    try {
+      const now = new Date().toISOString();
+      db.prepare(`UPDATE commitments SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?`)
+        .run(now, now, id);
+      return { resolved: true };
+    } catch (e: unknown) {
+      console.error('[memory:resolveCommitment]', e instanceof Error ? e.message : String(e));
+      return null as any;
+    }
   });
 
   ipcMain.handle('memory:updateCommitment', async (_e, id: string, updates: Record<string, unknown>) => {
-    const allowed = ['description','status','due_date','importance_score','project_id'];
-    const sets: string[] = [];
-    const vals: unknown[] = [];
-    for (const k of allowed) { if (k in updates) { sets.push(`${k} = ?`); vals.push(updates[k]); } }
-    if (sets.length === 0) return { updated: false };
-    sets.push('updated_at = ?');
-    vals.push(new Date().toISOString(), id);
-    db.prepare(`UPDATE commitments SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
-    return { updated: true };
+    try {
+      const allowed = ['description','status','due_date','importance_score','project_id'];
+      const sets: string[] = [];
+      const vals: unknown[] = [];
+      for (const k of allowed) { if (k in updates) { sets.push(`${k} = ?`); vals.push(updates[k]); } }
+      if (sets.length === 0) return { updated: false };
+      sets.push('updated_at = ?');
+      vals.push(new Date().toISOString(), id);
+      db.prepare(`UPDATE commitments SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
+      return { updated: true };
+    } catch (e: unknown) {
+      console.error('[memory:updateCommitment]', e instanceof Error ? e.message : String(e));
+      return null as any;
+    }
   });
 
   // ══════════════════════════════════════════════════════════════════════
@@ -543,22 +670,32 @@ export function registerMemoryHandlers(database: Database.Database) {
     title: string; summary?: string; milestoneType?: string;
     projectId?: string; significanceScore?: number;
   }) => {
-    const id = crypto.randomUUID();
-    db.prepare(`
-      INSERT INTO milestones (id, project_id, title, summary, milestone_type, significance_score, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(id, m.projectId || null, m.title, m.summary || null,
-           m.milestoneType || 'win', m.significanceScore ?? 0.7, new Date().toISOString());
-    return { id };
+    try {
+      const id = crypto.randomUUID();
+      db.prepare(`
+        INSERT INTO milestones (id, project_id, title, summary, milestone_type, significance_score, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(id, m.projectId || null, m.title, m.summary || null,
+             m.milestoneType || 'win', m.significanceScore ?? 0.7, new Date().toISOString());
+      return { id };
+    } catch (e: unknown) {
+      console.error('[memory:saveMilestone]', e instanceof Error ? e.message : String(e));
+      return null as any;
+    }
   });
 
   ipcMain.handle('memory:getMilestones', async (_e, opts: { projectId?: string; limit?: number } = {}) => {
-    let sql = 'SELECT * FROM milestones WHERE 1=1';
-    const params: (string | number)[] = [];
-    if (opts.projectId) { sql += ' AND project_id = ?'; params.push(opts.projectId); }
-    sql += ' ORDER BY significance_score DESC, created_at DESC LIMIT ?';
-    params.push(opts.limit || 20);
-    return db.prepare(sql).all(...params);
+    try {
+      let sql = 'SELECT * FROM milestones WHERE 1=1';
+      const params: (string | number)[] = [];
+      if (opts.projectId) { sql += ' AND project_id = ?'; params.push(opts.projectId); }
+      sql += ' ORDER BY significance_score DESC, created_at DESC LIMIT ?';
+      params.push(opts.limit || 20);
+      return db.prepare(sql).all(...params);
+    } catch (e: unknown) {
+      console.error('[memory:getMilestones]', e instanceof Error ? e.message : String(e));
+      return null as any;
+    }
   });
 
   // ══════════════════════════════════════════════════════════════════════
@@ -570,23 +707,28 @@ export function registerMemoryHandlers(database: Database.Database) {
     supportPreference?: string; contextTrigger?: string;
     confidenceScore?: number; relevanceScore?: number;
   }) => {
-    const now = new Date().toISOString();
-    // Upsert by pattern_type — merge with existing if confidence is higher
-    const existing = db.prepare('SELECT id, confidence_score FROM relationship_memory WHERE pattern_type = ? ORDER BY confidence_score DESC LIMIT 1')
-      .get(item.patternType) as { id: string; confidence_score: number } | undefined;
-    if (existing && (item.confidenceScore ?? 0.5) < existing.confidence_score) {
-      return { id: existing.id, skipped: true };
+    try {
+      const now = new Date().toISOString();
+      // Upsert by pattern_type — merge with existing if confidence is higher
+      const existing = db.prepare('SELECT id, confidence_score FROM relationship_memory WHERE pattern_type = ? ORDER BY confidence_score DESC LIMIT 1')
+        .get(item.patternType) as { id: string; confidence_score: number } | undefined;
+      if (existing && (item.confidenceScore ?? 0.5) < existing.confidence_score) {
+        return { id: existing.id, skipped: true };
+      }
+      const id = crypto.randomUUID();
+      db.prepare(`
+        INSERT INTO relationship_memory
+          (id, pattern_type, summary, support_preference, context_trigger, confidence_score, relevance_score, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(id, item.patternType, item.summary,
+             item.supportPreference || null, item.contextTrigger || null,
+             item.confidenceScore ?? 0.5, item.relevanceScore ?? 0.5,
+             now, now);
+      return { id };
+    } catch (e: unknown) {
+      console.error('[memory:saveRelationshipMemory]', e instanceof Error ? e.message : String(e));
+      return null as any;
     }
-    const id = crypto.randomUUID();
-    db.prepare(`
-      INSERT INTO relationship_memory
-        (id, pattern_type, summary, support_preference, context_trigger, confidence_score, relevance_score, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, item.patternType, item.summary,
-           item.supportPreference || null, item.contextTrigger || null,
-           item.confidenceScore ?? 0.5, item.relevanceScore ?? 0.5,
-           now, now);
-    return { id };
   });
 
   ipcMain.handle('memory:getRelationshipMemory', async (_e, opts: { limit?: number } = {}) =>
@@ -602,36 +744,46 @@ export function registerMemoryHandlers(database: Database.Database) {
     arcName: string; summary: string; startDate?: string; endDate?: string;
     importanceScore?: number; linkedProjectIds?: string[]; linkedMemoryIds?: string[];
   }) => {
-    const now = new Date().toISOString();
-    // Update existing arc by name if it exists
-    const existing = db.prepare('SELECT id FROM narrative_memory WHERE arc_name = ? AND active_status = 1 LIMIT 1')
-      .get(arc.arcName) as { id: string } | undefined;
-    if (existing) {
-      db.prepare(`UPDATE narrative_memory SET summary = ?, importance_score = COALESCE(?, importance_score), linked_project_ids_json = COALESCE(?, linked_project_ids_json), updated_at = ? WHERE id = ?`)
-        .run(arc.summary, arc.importanceScore || null, arc.linkedProjectIds ? JSON.stringify(arc.linkedProjectIds) : null, now, existing.id);
-      return { id: existing.id, updated: true };
+    try {
+      const now = new Date().toISOString();
+      // Update existing arc by name if it exists
+      const existing = db.prepare('SELECT id FROM narrative_memory WHERE arc_name = ? AND active_status = 1 LIMIT 1')
+        .get(arc.arcName) as { id: string } | undefined;
+      if (existing) {
+        db.prepare(`UPDATE narrative_memory SET summary = ?, importance_score = COALESCE(?, importance_score), linked_project_ids_json = COALESCE(?, linked_project_ids_json), updated_at = ? WHERE id = ?`)
+          .run(arc.summary, arc.importanceScore || null, arc.linkedProjectIds ? JSON.stringify(arc.linkedProjectIds) : null, now, existing.id);
+        return { id: existing.id, updated: true };
+      }
+      const id = crypto.randomUUID();
+      db.prepare(`
+        INSERT INTO narrative_memory
+          (id, arc_name, summary, start_date, end_date, importance_score,
+           linked_project_ids_json, linked_memory_ids_json, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(id, arc.arcName, arc.summary, arc.startDate || null, arc.endDate || null,
+             arc.importanceScore ?? 0.7,
+             JSON.stringify(arc.linkedProjectIds || []),
+             JSON.stringify(arc.linkedMemoryIds || []),
+             now, now);
+      return { id, created: true };
+    } catch (e: unknown) {
+      console.error('[memory:saveNarrativeMemory]', e instanceof Error ? e.message : String(e));
+      return null as any;
     }
-    const id = crypto.randomUUID();
-    db.prepare(`
-      INSERT INTO narrative_memory
-        (id, arc_name, summary, start_date, end_date, importance_score,
-         linked_project_ids_json, linked_memory_ids_json, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, arc.arcName, arc.summary, arc.startDate || null, arc.endDate || null,
-           arc.importanceScore ?? 0.7,
-           JSON.stringify(arc.linkedProjectIds || []),
-           JSON.stringify(arc.linkedMemoryIds || []),
-           now, now);
-    return { id, created: true };
   });
 
   ipcMain.handle('memory:getNarrativeMemory', async (_e, opts: { activeOnly?: boolean; limit?: number } = {}) => {
-    let sql = 'SELECT * FROM narrative_memory WHERE 1=1';
-    const params: (string | number)[] = [];
-    if (opts.activeOnly !== false) { sql += ' AND active_status = 1'; }
-    sql += ' ORDER BY importance_score DESC, updated_at DESC LIMIT ?';
-    params.push(opts.limit || 10);
-    return db.prepare(sql).all(...params);
+    try {
+      let sql = 'SELECT * FROM narrative_memory WHERE 1=1';
+      const params: (string | number)[] = [];
+      if (opts.activeOnly !== false) { sql += ' AND active_status = 1'; }
+      sql += ' ORDER BY importance_score DESC, updated_at DESC LIMIT ?';
+      params.push(opts.limit || 10);
+      return db.prepare(sql).all(...params);
+    } catch (e: unknown) {
+      console.error('[memory:getNarrativeMemory]', e instanceof Error ? e.message : String(e));
+      return null as any;
+    }
   });
 
   // ══════════════════════════════════════════════════════════════════════
@@ -642,27 +794,37 @@ export function registerMemoryHandlers(database: Database.Database) {
     summaryType: string; periodLabel?: string; summary: string;
     linkedMemoryIds?: string[]; linkedProjectIds?: string[];
   }) => {
-    const id = crypto.randomUUID();
-    db.prepare(`
-      INSERT INTO memory_summaries
-        (id, summary_type, period_label, summary, linked_memory_ids_json, linked_project_ids_json, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(id, s.summaryType, s.periodLabel || null, s.summary,
-           JSON.stringify(s.linkedMemoryIds || []),
-           JSON.stringify(s.linkedProjectIds || []),
-           new Date().toISOString());
-    return { id };
+    try {
+      const id = crypto.randomUUID();
+      db.prepare(`
+        INSERT INTO memory_summaries
+          (id, summary_type, period_label, summary, linked_memory_ids_json, linked_project_ids_json, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(id, s.summaryType, s.periodLabel || null, s.summary,
+             JSON.stringify(s.linkedMemoryIds || []),
+             JSON.stringify(s.linkedProjectIds || []),
+             new Date().toISOString());
+      return { id };
+    } catch (e: unknown) {
+      console.error('[memory:saveMemorySummary]', e instanceof Error ? e.message : String(e));
+      return null as any;
+    }
   });
 
   ipcMain.handle('memory:getMemorySummaries', async (_e, opts: {
     summaryType?: string; limit?: number;
   } = {}) => {
-    let sql = 'SELECT * FROM memory_summaries WHERE 1=1';
-    const params: (string | number)[] = [];
-    if (opts.summaryType) { sql += ' AND summary_type = ?'; params.push(opts.summaryType); }
-    sql += ' ORDER BY created_at DESC LIMIT ?';
-    params.push(opts.limit || 10);
-    return db.prepare(sql).all(...params);
+    try {
+      let sql = 'SELECT * FROM memory_summaries WHERE 1=1';
+      const params: (string | number)[] = [];
+      if (opts.summaryType) { sql += ' AND summary_type = ?'; params.push(opts.summaryType); }
+      sql += ' ORDER BY created_at DESC LIMIT ?';
+      params.push(opts.limit || 10);
+      return db.prepare(sql).all(...params);
+    } catch (e: unknown) {
+      console.error('[memory:getMemorySummaries]', e instanceof Error ? e.message : String(e));
+      return null as any;
+    }
   });
 
   // ══════════════════════════════════════════════════════════════════════
@@ -674,30 +836,40 @@ export function registerMemoryHandlers(database: Database.Database) {
     toEntityType: string; toEntityId: string;
     relationshipType: string; weightScore?: number;
   }) => {
-    const id = crypto.randomUUID();
-    const now = new Date().toISOString();
-    db.prepare(`
-      INSERT OR REPLACE INTO memory_graph_edges
-        (id, from_entity_type, from_entity_id, to_entity_type, to_entity_id, relationship_type, weight_score, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, edge.fromEntityType, edge.fromEntityId,
-           edge.toEntityType, edge.toEntityId,
-           edge.relationshipType, edge.weightScore ?? 0.5, now, now);
-    return { id };
+    try {
+      const id = crypto.randomUUID();
+      const now = new Date().toISOString();
+      db.prepare(`
+        INSERT OR REPLACE INTO memory_graph_edges
+          (id, from_entity_type, from_entity_id, to_entity_type, to_entity_id, relationship_type, weight_score, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(id, edge.fromEntityType, edge.fromEntityId,
+             edge.toEntityType, edge.toEntityId,
+             edge.relationshipType, edge.weightScore ?? 0.5, now, now);
+      return { id };
+    } catch (e: unknown) {
+      console.error('[memory:saveGraphEdge]', e instanceof Error ? e.message : String(e));
+      return null as any;
+    }
   });
 
   ipcMain.handle('memory:getGraphEdges', async (_e, opts: {
     fromEntityId?: string; toEntityId?: string;
     fromEntityType?: string; relationshipType?: string;
   } = {}) => {
-    let sql = 'SELECT * FROM memory_graph_edges WHERE 1=1';
-    const params: string[] = [];
-    if (opts.fromEntityId)    { sql += ' AND from_entity_id = ?';    params.push(opts.fromEntityId); }
-    if (opts.toEntityId)      { sql += ' AND to_entity_id = ?';      params.push(opts.toEntityId); }
-    if (opts.fromEntityType)  { sql += ' AND from_entity_type = ?';  params.push(opts.fromEntityType); }
-    if (opts.relationshipType){ sql += ' AND relationship_type = ?'; params.push(opts.relationshipType); }
-    sql += ' ORDER BY weight_score DESC LIMIT 50';
-    return db.prepare(sql).all(...params);
+    try {
+      let sql = 'SELECT * FROM memory_graph_edges WHERE 1=1';
+      const params: string[] = [];
+      if (opts.fromEntityId)    { sql += ' AND from_entity_id = ?';    params.push(opts.fromEntityId); }
+      if (opts.toEntityId)      { sql += ' AND to_entity_id = ?';      params.push(opts.toEntityId); }
+      if (opts.fromEntityType)  { sql += ' AND from_entity_type = ?';  params.push(opts.fromEntityType); }
+      if (opts.relationshipType){ sql += ' AND relationship_type = ?'; params.push(opts.relationshipType); }
+      sql += ' ORDER BY weight_score DESC LIMIT 50';
+      return db.prepare(sql).all(...params);
+    } catch (e: unknown) {
+      console.error('[memory:getGraphEdges]', e instanceof Error ? e.message : String(e));
+      return null as any;
+    }
   });
 
   // ══════════════════════════════════════════════════════════════════════
@@ -712,8 +884,13 @@ export function registerMemoryHandlers(database: Database.Database) {
     maxFactsFetch?: number;
     bandwidth?: 'shallow' | 'normal' | 'deep' | 'maximum';
   }) => {
-    const bandwidth = params.bandwidth || 'normal';
-    return buildDeepContext(params.conversationId, params.query || '', params.maxFactsFetch, bandwidth);
+    try {
+      const bandwidth = params.bandwidth || 'normal';
+      return buildDeepContext(params.conversationId, params.query || '', params.maxFactsFetch, bandwidth);
+    } catch (e: unknown) {
+      console.error('[memory:buildContext]', e instanceof Error ? e.message : String(e));
+      return null as any;
+    }
   });
 
   ipcMain.handle('memory:buildDeepContext', async (_e, params: {
@@ -721,7 +898,12 @@ export function registerMemoryHandlers(database: Database.Database) {
     query?: string;
     bandwidth?: 'shallow' | 'normal' | 'deep' | 'maximum';
   }) => {
-    return buildDeepContext(params.conversationId, params.query || '', undefined, params.bandwidth || 'maximum');
+    try {
+      return buildDeepContext(params.conversationId, params.query || '', undefined, params.bandwidth || 'maximum');
+    } catch (e: unknown) {
+      console.error('[memory:buildDeepContext]', e instanceof Error ? e.message : String(e));
+      return null as any;
+    }
   });
 
   // ══════════════════════════════════════════════════════════════════════
@@ -729,18 +911,28 @@ export function registerMemoryHandlers(database: Database.Database) {
   // ══════════════════════════════════════════════════════════════════════
 
   ipcMain.handle('memory:getWhereWeLeftOff', async () => {
-    return buildWhereWeLeftOff();
+    try {
+      return buildWhereWeLeftOff();
+    } catch (e: unknown) {
+      console.error('[memory:getWhereWeLeftOff]', e instanceof Error ? e.message : String(e));
+      return null as any;
+    }
   });
 
   ipcMain.handle('memory:saveWhereWeLeftOff', async (_e, summary: string) => {
-    const id = crypto.randomUUID();
-    const now = new Date().toISOString();
-    // Keep only last 3 where-we-left-off entries
-    const old = db.prepare(`SELECT id FROM memory_summaries WHERE summary_type = 'where_we_left_off' ORDER BY created_at DESC LIMIT -1 OFFSET 3`).all() as { id: string }[];
-    for (const o of old) db.prepare('DELETE FROM memory_summaries WHERE id = ?').run(o.id);
-    db.prepare(`INSERT INTO memory_summaries (id, summary_type, period_label, summary, created_at) VALUES (?, 'where_we_left_off', ?, ?, ?)`)
-      .run(id, new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }), summary, now);
-    return { id };
+    try {
+      const id = crypto.randomUUID();
+      const now = new Date().toISOString();
+      // Keep only last 3 where-we-left-off entries
+      const old = db.prepare(`SELECT id FROM memory_summaries WHERE summary_type = 'where_we_left_off' ORDER BY created_at DESC LIMIT -1 OFFSET 3`).all() as { id: string }[];
+      for (const o of old) db.prepare('DELETE FROM memory_summaries WHERE id = ?').run(o.id);
+      db.prepare(`INSERT INTO memory_summaries (id, summary_type, period_label, summary, created_at) VALUES (?, 'where_we_left_off', ?, ?, ?)`)
+        .run(id, new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }), summary, now);
+      return { id };
+    } catch (e: unknown) {
+      console.error('[memory:saveWhereWeLeftOff]', e instanceof Error ? e.message : String(e));
+      return null as any;
+    }
   });
 
   // ══════════════════════════════════════════════════════════════════════
@@ -753,28 +945,33 @@ export function registerMemoryHandlers(database: Database.Database) {
     unresolvedItems?: string[];
     emotionalPattern?: string;
   }) => {
-    const now = new Date().toISOString();
-    // Save session end summary
-    const id = crypto.randomUUID();
-    db.prepare(`
-      INSERT INTO memory_summaries (id, summary_type, period_label, summary, created_at)
-      VALUES (?, 'session_end', ?, ?, ?)
-    `).run(id, `Session ${opts.conversationId.slice(0, 8)}`, opts.summary, now);
-
-    // Update session memory with final state
-    if (opts.unresolvedItems || opts.emotionalPattern) {
+    try {
+      const now = new Date().toISOString();
+      // Save session end summary
+      const id = crypto.randomUUID();
       db.prepare(`
-        UPDATE session_memory SET
-          summary = COALESCE(?, summary),
-          unresolved_items_json = COALESCE(?, unresolved_items_json),
-          emotional_pattern = COALESCE(?, emotional_pattern),
-          updated_at = ?
-        WHERE conversation_id = ?
-      `).run(opts.summary, opts.unresolvedItems ? JSON.stringify(opts.unresolvedItems) : null,
-             opts.emotionalPattern || null, now, opts.conversationId);
-    }
+        INSERT INTO memory_summaries (id, summary_type, period_label, summary, created_at)
+        VALUES (?, 'session_end', ?, ?, ?)
+      `).run(id, `Session ${opts.conversationId.slice(0, 8)}`, opts.summary, now);
 
-    return { compressed: true, summaryId: id };
+      // Update session memory with final state
+      if (opts.unresolvedItems || opts.emotionalPattern) {
+        db.prepare(`
+          UPDATE session_memory SET
+            summary = COALESCE(?, summary),
+            unresolved_items_json = COALESCE(?, unresolved_items_json),
+            emotional_pattern = COALESCE(?, emotional_pattern),
+            updated_at = ?
+          WHERE conversation_id = ?
+        `).run(opts.summary, opts.unresolvedItems ? JSON.stringify(opts.unresolvedItems) : null,
+               opts.emotionalPattern || null, now, opts.conversationId);
+      }
+
+      return { compressed: true, summaryId: id };
+    } catch (e: unknown) {
+      console.error('[memory:compressSession]', e instanceof Error ? e.message : String(e));
+      return null as any;
+    }
   });
 }
 

@@ -508,8 +508,15 @@ export default function App() {
             <p className="text-sm text-henry-text leading-snug flex-1">{nudge.message}</p>
             <button
               onClick={() => {
-                useStore.getState().setCurrentView('chat');
-                window.dispatchEvent(new CustomEvent('henry_inject_draft', { detail: { text: nudge.cta ?? nudge.message } }));
+                const view = (nudge as any).action?.view;
+                if (view && view !== 'chat') {
+                  useStore.getState().setCurrentView(view as any);
+                } else {
+                  useStore.getState().setCurrentView('chat');
+                  if (nudge.cta ?? nudge.message) {
+                    window.dispatchEvent(new CustomEvent('henry_inject_draft', { detail: { text: nudge.cta ?? nudge.message } }));
+                  }
+                }
                 setNudge(null);
               }}
               className="shrink-0 px-3 py-1.5 rounded-xl text-xs font-semibold bg-henry-accent/15 text-henry-accent border border-henry-accent/20 hover:bg-henry-accent/25 transition-all"

@@ -1,4 +1,3 @@
-/// <reference types="vite/client" />
 
 import { getOllamaBaseUrl, OLLAMA_DEFAULT_MODEL } from './ollamaConfig';
 import { ollamaChatAdapter } from './ollamaProviderAdapter';

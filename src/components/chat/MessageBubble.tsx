@@ -205,7 +205,7 @@ export default function MessageBubble({
                 ? 'bg-henry-companion/10 text-henry-companion'
                 : 'bg-henry-worker/10 text-henry-worker'
             }`}>
-              {message.engine === 'companion' ? 'Local' : 'Cloud'}
+              {message.engine === 'companion' ? '🧠 Advisor' : '⚡ Worker'}
             </span>
             {message.model && (
               <span className="text-[10px] text-henry-text-muted">{message.model}</span>

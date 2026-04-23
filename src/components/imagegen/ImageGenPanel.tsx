@@ -22,16 +22,17 @@ function loadHistory(): GeneratedImage[] {
   try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); } catch { return []; }
 }
 function saveToHistory(img: GeneratedImage) {
-  const h = loadHistory();
-  h.unshift(img);
-  // Keep fewer images since each is a full base64 data-URI (~1–2 MB)
+  // Store only metadata, not the base64 data — keeps localStorage lean
+  const meta = { ...img, url: img.url.startsWith('data:') ? '[base64-omitted]' : img.url };
+  const h = loadHistory().filter(i => i.id !== img.id);
+  h.unshift(meta);
   try {
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(h.slice(0, 20)));
-  } catch {
-    // localStorage full — keep only the newest 5
-    try { localStorage.setItem(HISTORY_KEY, JSON.stringify(h.slice(0, 5))); } catch { /* give up */ }
-  }
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(h.slice(0, 50)));
+  } catch { /* ignore */ }
 }
+
+// In-session image store (keeps base64 alive until page reload)
+const SESSION_IMAGES = new Map<string, string>();
 
 export default function ImageGenPanel() {
   const { providers } = useStore();

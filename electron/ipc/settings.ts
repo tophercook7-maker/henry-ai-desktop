@@ -16,24 +16,22 @@ export function registerSettingsHandlers(db: Database.Database) {
 
   // Returns a Record<string, string>
   ipcMain.handle('settings:getAll', () => {
-    const rows = db.prepare('SELECT key, value FROM settings').all() as Array<{
-      key: string;
-      value: string;
-    }>;
-    const settings: Record<string, string> = {};
-    rows.forEach((row) => {
-      settings[row.key] = row.value;
-    });
-    return settings;
+    try {
+      const rows = db.prepare('SELECT key, value FROM settings').all() as Array<{ key: string; value: string }>;
+      const settings: Record<string, string> = {};
+      rows.forEach((row) => { settings[row.key] = row.value; });
+      return settings;
+    } catch (e) { console.error('[settings:getAll]', e); return {}; }
   });
 
-  // preload sends { key, value }
   ipcMain.handle('settings:save', (_, data: { key: string; value: string }) => {
-    db.prepare(
-      `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
-       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`
-    ).run(data.key, data.value);
-    return true;
+    try {
+      db.prepare(
+        `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`
+      ).run(data.key, data.value);
+      return true;
+    } catch (e) { console.error('[settings:save]', e); return false; }
   });
 
   // ── Providers ───────────────────────────────────────────────
@@ -82,9 +80,8 @@ export function registerSettingsHandlers(db: Database.Database) {
   // ── Conversations ───────────────────────────────────────────
 
   ipcMain.handle('conversations:getAll', () => {
-    return db
-      .prepare('SELECT * FROM conversations ORDER BY updated_at DESC')
-      .all();
+    try { return db.prepare('SELECT * FROM conversations ORDER BY updated_at DESC').all(); }
+    catch (e) { console.error('[conversations:getAll]', e); return []; }
   });
 
   ipcMain.handle('conversations:create', (_, title: string) => {
@@ -111,11 +108,8 @@ export function registerSettingsHandlers(db: Database.Database) {
   // ── Messages ────────────────────────────────────────────────
 
   ipcMain.handle('messages:getAll', (_, conversationId: string) => {
-    return db
-      .prepare(
-        'SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC'
-      )
-      .all(conversationId);
+    try { return db.prepare('SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC').all(conversationId); }
+    catch (e) { console.error('[messages:getAll]', e); return []; }
   });
 
   ipcMain.handle(
