@@ -87,8 +87,8 @@ export default function Layout() {
           <Sidebar />
         </div>
 
-        {/* Content */}
-        <main className="flex-1 overflow-hidden min-h-0">
+        {/* Content — panel transition on view change */}
+        <main key={currentView} className="flex-1 overflow-hidden min-h-0 henry-panel-enter">
           {currentView === 'today' && <TodayPanel />}
           {currentView === 'chat' && <ChatView />}
           {currentView === 'journal' && <JournalPanel />}

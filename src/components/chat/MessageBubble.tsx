@@ -3,6 +3,39 @@ import ReactMarkdown from 'react-markdown';
 import hljs from 'highlight.js';
 import type { Message } from '../../types';
 
+// ── Henry streaming cursor — contextual variants per engine/mode ──────────
+type CursorVariant = 'blink' | 'think' | 'write' | 'stream';
+type CursorColor = 'companion' | 'worker' | 'biblical' | 'writer' | 'code' | 'error';
+
+function HenryCursor({ variant = 'stream', color = 'companion' }: {
+  variant?: CursorVariant;
+  color?: CursorColor;
+}) {
+  return (
+    <span
+      className={`henry-cursor henry-cursor-${variant} henry-cursor-${color}`}
+      aria-hidden="true"
+    />
+  );
+}
+
+// Infer cursor variant from engine + content context
+function inferCursorVariant(engine?: string, content?: string): { variant: CursorVariant; color: CursorColor } {
+  const c = (content || '').toLowerCase();
+  const isCode = c.includes('```') || c.includes('function') || c.includes('const ') || c.includes('import ');
+  const isBiblical = c.includes('scripture') || c.includes('verse') || c.includes('bible') || c.includes('psalm');
+  const isWriting = c.includes('chapter') || c.includes('paragraph') || c.includes('draft');
+
+  if (engine === 'worker')   return { variant: 'write', color: 'worker' };
+  if (isCode)                return { variant: 'write', color: 'code' };
+  if (isBiblical)            return { variant: 'blink', color: 'biblical' };
+  if (isWriting)             return { variant: 'write', color: 'writer' };
+  // Default companion — "thinking" when content is short (just started), "stream" when flowing
+  const variant: CursorVariant = !content || content.length < 40 ? 'think' : 'stream';
+  return { variant, color: 'companion' };
+}
+
+
 export interface WorkspaceSaveDraftProps {
   enabled: boolean;
   workspaceReady: boolean;
@@ -153,7 +186,7 @@ export default function MessageBubble({
 
   return (
     <div
-      className={`flex gap-3 py-4 animate-fade-in ${isUser ? 'justify-end' : 'justify-start'}`}
+      className={`flex gap-3 py-4 henry-msg-enter ${isUser ? 'justify-end' : 'justify-start'}`}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
@@ -189,9 +222,10 @@ export default function MessageBubble({
             <p className="text-henry-text-muted text-sm italic">Thinking…</p>
           ) : null}
 
-          {isStreaming && (
-            <span className="inline-block w-2 h-4 bg-henry-accent/60 animate-pulse ml-0.5 align-middle" />
-          )}
+          {isStreaming && (() => {
+            const { variant, color } = inferCursorVariant(message.engine, content);
+            return <HenryCursor variant={variant} color={color} />;
+          })()}
         </div>
 
         {!isUser && !isStreaming && message.cost != null && message.cost > 0 && (
@@ -241,7 +275,7 @@ export default function MessageBubble({
                   <button
                     key={label}
                     onClick={() => onQuickAction(prompt)}
-                    className="text-[10px] font-medium px-2 py-0.5 rounded-full border border-henry-border/40 bg-henry-surface/40 text-henry-text-muted hover:text-henry-text hover:border-henry-accent/40 hover:bg-henry-surface/70 transition-all"
+                    className="henry-pill text-[10px] font-medium px-2 py-0.5 rounded-full border border-henry-border/40 bg-henry-surface/40 text-henry-text-muted hover:text-henry-text hover:border-henry-accent/40 hover:bg-henry-surface/70 transition-all"
                   >
                     {label}
                   </button>
@@ -252,7 +286,7 @@ export default function MessageBubble({
               <button
                 onClick={copyMessage}
                 title="Copy to clipboard"
-                className="flex items-center gap-1 text-[10px] text-henry-text-muted hover:text-henry-text transition-colors"
+                className="henry-btn flex items-center gap-1 text-[10px] text-henry-text-muted hover:text-henry-text transition-colors"
               >
                 {copied ? (
                   <>

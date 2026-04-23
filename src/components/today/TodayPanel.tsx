@@ -5,6 +5,7 @@ import { getDueMacros, markMacroRun } from '../../henry/recurringMacros';
 import { loadProjects, type HenryProject } from '../../henry/richMemory';
 import type { DailyBriefing } from '../../henry/proactiveBriefing';
 import { useCapturesStore, selectUnroutedCaptures } from '../../ambient/capturesStore';
+import { HenrySkeleton } from '../HenryShared';
 
 const HENRY_OPERATING_MODE_KEY = 'henry_operating_mode';
 const HENRY_LAST_GREETING_KEY = 'henry_last_greeting_date';

@@ -123,7 +123,7 @@ function StateIndicator({ visual }: { visual: StateVisual }) {
   if (visual.indicator === 'respond') {
     return (
       <div className="relative flex items-center justify-center" style={{ width: 16, height: 16 }}>
-        <div style={{ width: 7, height: 7, borderRadius: '50%', backgroundColor: c }} />
+        <div className="henry-heartbeat" style={{ width: 7, height: 7, borderRadius: '50%', backgroundColor: c }} />
         <div
           style={{
             position: 'absolute',
@@ -269,6 +269,13 @@ export default function PresenceBar() {
             </span>
           )}
         </button>
+
+        {/* Live activity label — shows when Henry is actively working */}
+        {(ambientState === 'responding' || ambientState === 'thinking') && !isFocusMode && (
+          <span className="text-[10px] text-henry-text-muted/70 truncate max-w-[200px] henry-heartbeat italic">
+            {ambientState === 'thinking' ? 'Henry is thinking…' : 'Henry is responding…'}
+          </span>
+        )}
 
         {/* Mode pill — hidden in focus mode */}
         {!isFocusMode && (

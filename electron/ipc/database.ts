@@ -99,6 +99,22 @@ export function initDatabase(dataDir: string): Database.Database {
       FOREIGN KEY (conversation_id) REFERENCES conversations(id)
     );
 
+    -- FTS5 full-text index for memory_facts (fast semantic search)
+    CREATE VIRTUAL TABLE IF NOT EXISTS memory_facts_fts
+      USING fts5(fact, category, content="memory_facts", content_rowid="rowid");
+
+    -- Triggers to keep FTS in sync
+    CREATE TRIGGER IF NOT EXISTS memory_facts_ai AFTER INSERT ON memory_facts BEGIN
+      INSERT INTO memory_facts_fts(rowid, fact, category) VALUES (new.rowid, new.fact, new.category);
+    END;
+    CREATE TRIGGER IF NOT EXISTS memory_facts_ad AFTER DELETE ON memory_facts BEGIN
+      INSERT INTO memory_facts_fts(memory_facts_fts, rowid, fact, category) VALUES('delete', old.rowid, old.fact, old.category);
+    END;
+    CREATE TRIGGER IF NOT EXISTS memory_facts_au AFTER UPDATE ON memory_facts BEGIN
+      INSERT INTO memory_facts_fts(memory_facts_fts, rowid, fact, category) VALUES('delete', old.rowid, old.fact, old.category);
+      INSERT INTO memory_facts_fts(rowid, fact, category) VALUES (new.rowid, new.fact, new.category);
+    END;
+
     -- Conversation Summaries
     CREATE TABLE IF NOT EXISTS conversation_summaries (
       id TEXT PRIMARY KEY,

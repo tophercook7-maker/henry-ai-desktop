@@ -92,13 +92,34 @@ export function registerMemoryHandlers(database: Database.Database) {
   ipcMain.handle('memory:searchFacts', async (_e, query: {
     text?: string; category?: string; conversationId?: string; limit?: number;
   }) => {
+    const limit = query.limit || 40;
+    // Use FTS5 for full-text queries — falls back to LIKE if FTS table not ready
+    if (query.text && query.text.trim()) {
+      try {
+        // FTS5: rank by relevance, apply secondary filters in the outer query
+        let sql = `
+          SELECT mf.* FROM memory_facts mf
+          JOIN memory_facts_fts fts ON mf.rowid = fts.rowid
+          WHERE memory_facts_fts MATCH ?
+        `;
+        const params: (string | number)[] = [query.text.trim().replace(/['"*^]/g, '') + '*'];
+        if (query.category)       { sql += ' AND mf.category = ?';         params.push(query.category); }
+        if (query.conversationId) { sql += ' AND mf.conversation_id = ?';  params.push(query.conversationId); }
+        sql += ' ORDER BY fts.rank, mf.importance DESC, mf.created_at DESC LIMIT ?';
+        params.push(limit);
+        return db.prepare(sql).all(...params);
+      } catch {
+        // FTS not yet populated — fall through to LIKE
+      }
+    }
+    // Fallback LIKE path (no text query, or FTS not ready)
     let sql = 'SELECT * FROM memory_facts WHERE 1=1';
     const params: (string | number)[] = [];
     if (query.text)           { sql += ' AND fact LIKE ?';           params.push(`%${query.text}%`); }
     if (query.category)       { sql += ' AND category = ?';          params.push(query.category); }
     if (query.conversationId) { sql += ' AND conversation_id = ?';   params.push(query.conversationId); }
-    sql += ' ORDER BY importance DESC, created_at DESC';
-    if (query.limit)          { sql += ' LIMIT ?';                   params.push(query.limit); }
+    sql += ' ORDER BY importance DESC, created_at DESC LIMIT ?';
+    params.push(limit);
     return db.prepare(sql).all(...params);
   });
 
@@ -160,10 +181,16 @@ export function registerMemoryHandlers(database: Database.Database) {
     return { id };
   });
 
-  ipcMain.handle('memory:searchWorkspace', async (_e, query: string) =>
-    db.prepare(`SELECT * FROM workspace_index WHERE file_path LIKE ? OR summary LIKE ? ORDER BY last_indexed DESC LIMIT 20`)
-      .all(`%${query}%`, `%${query}%`)
-  );
+  ipcMain.handle('memory:searchWorkspace', async (_e, query: string) => {
+    if (!query.trim()) return [];
+    try {
+      // Try FTS5 on workspace_index if available, else fall back to LIKE
+      return db.prepare(`SELECT * FROM workspace_index WHERE file_path LIKE ? OR summary LIKE ? ORDER BY last_indexed DESC LIMIT 20`)
+        .all(`%${query}%`, `%${query}%`);
+    } catch {
+      return [];
+    }
+  });
 
   // ══════════════════════════════════════════════════════════════════════
   // LAYER 4 — PERSONAL MEMORY (scored, typed)

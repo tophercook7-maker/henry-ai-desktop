@@ -31,6 +31,8 @@ export default {
         'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
         'fade-in': 'fadeIn 0.3s ease-out',
         'slide-up': 'slideUp 0.3s ease-out',
+        'henry-panel-in': 'henry-panel-in 0.18s cubic-bezier(0.22,1,0.36,1) both',
+        'henry-msg-in': 'henry-msg-in 0.2s cubic-bezier(0.22,1,0.36,1) both',
       },
       keyframes: {
         fadeIn: {
@@ -41,6 +43,18 @@ export default {
           '0%': { opacity: '0', transform: 'translateY(10px)' },
           '100%': { opacity: '1', transform: 'translateY(0)' },
         },
+        'henry-panel-in': {
+          'from': { opacity: '0', transform: 'translateX(6px)' },
+          'to':   { opacity: '1', transform: 'translateX(0)' },
+        },
+        'henry-msg-in': {
+          'from': { opacity: '0', transform: 'translateY(8px) scale(0.99)' },
+          'to':   { opacity: '1', transform: 'translateY(0) scale(1)' },
+        },
+      },
+      transitionTimingFunction: {
+        'spring': 'cubic-bezier(0.34, 1.56, 0.64, 1)',
+        'henry': 'cubic-bezier(0.22, 1, 0.36, 1)',
       },
     },
   },
