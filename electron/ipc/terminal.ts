@@ -9,11 +9,12 @@
 import { ipcMain, BrowserWindow } from 'electron';
 import { spawn, ChildProcess } from 'child_process';
 import path from 'path';
+import os from 'os';
 
 type WindowGetter = () => BrowserWindow | null;
 
 /** Safely send to renderer — skips if window is destroyed (Vite HMR). */
-function safeSend(getWin: WindowGetter, channel: string, data: any) {
+function safeSend(getWin: WindowGetter, channel: string, data: unknown) {
   const win = getWin();
   if (win && !win.isDestroyed()) {
     win.webContents.send(channel, data);
@@ -35,6 +36,25 @@ const BLOCKED_COMMANDS = [
   'halt',
 ];
 
+/**
+ * Validate that the requested cwd is within the allowed root (workspace or home).
+ * Falls back to workspacePath if cwd is outside allowed bounds.
+ */
+function safeCwd(requestedCwd: string | undefined, workspacePath: string): string {
+  if (!requestedCwd) return workspacePath;
+  const resolved = path.resolve(requestedCwd);
+  const allowedRoots = [
+    path.resolve(workspacePath),
+    path.resolve(os.homedir()),
+  ];
+  const isAllowed = allowedRoots.some((root) => resolved.startsWith(root + path.sep) || resolved === root);
+  if (!isAllowed) {
+    console.warn(`[terminal] cwd "${resolved}" outside allowed roots — falling back to workspace.`);
+    return workspacePath;
+  }
+  return resolved;
+}
+
 export function registerTerminalHandlers(winGetter: WindowGetter, workspacePath: string) {
   getWindow = winGetter;
 
@@ -45,7 +65,7 @@ export function registerTerminalHandlers(winGetter: WindowGetter, workspacePath:
     timeout?: number;
     channelId?: string;
   }) => {
-    // Safety check
+    // Safety check — block known dangerous commands
     const lowerCmd = params.command.toLowerCase();
     for (const blocked of BLOCKED_COMMANDS) {
       if (lowerCmd.includes(blocked)) {
@@ -59,7 +79,8 @@ export function registerTerminalHandlers(winGetter: WindowGetter, workspacePath:
     }
 
     const execId = crypto.randomUUID();
-    const cwd = params.cwd || workspacePath;
+    // Guard against path traversal in cwd
+    const cwd = safeCwd(params.cwd, workspacePath);
     const timeout = params.timeout || 30000; // Default 30s timeout
 
     return new Promise((resolve) => {
@@ -74,7 +95,7 @@ export function registerTerminalHandlers(winGetter: WindowGetter, workspacePath:
       let stdout = '';
       let stderr = '';
 
-      child.stdout?.on('data', (data) => {
+      child.stdout?.on('data', (data: Buffer) => {
         const chunk = data.toString();
         stdout += chunk;
         // Stream output to renderer if channelId provided
@@ -88,7 +109,7 @@ export function registerTerminalHandlers(winGetter: WindowGetter, workspacePath:
         }
       });
 
-      child.stderr?.on('data', (data) => {
+      child.stderr?.on('data', (data: Buffer) => {
         const chunk = data.toString();
         stderr += chunk;
         if (params.channelId) {

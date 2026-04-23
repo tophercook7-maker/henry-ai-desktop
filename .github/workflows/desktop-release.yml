@@ -31,6 +31,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Rebuild native modules for Electron
+        run: npm run rebuild
+
       - name: Build Mac DMG (unsigned)
         run: npm run build:mac:unsigned
         env:
@@ -56,6 +59,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Rebuild native modules for Electron
+        run: npm run rebuild
 
       - name: Build Windows installer
         run: npm run build:win
@@ -88,6 +94,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Rebuild native modules for Electron
+        run: npm run rebuild
 
       - name: Build Linux AppImage + deb
         run: npm run build:linux

@@ -29,7 +29,8 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "prepare": "husky || true"
+    "prepare": "husky || true",
+    "postinstall": "npx @electron/rebuild || true"
   },
   "lint-staged": {
     "*.{ts,tsx}": [
@@ -154,5 +155,6 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
     }
-  }
+  },
+  "type": "module"
 }
