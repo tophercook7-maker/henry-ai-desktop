@@ -355,6 +355,7 @@ declare global {
     createTask?: (params: { description: string; type: string; priority?: number; payload?: unknown }) => Promise<{ id: string }>;
 
     // ── Companion Sync Bridge ─────────────────────────────────────────────
+    getLocalGatewayStatus?: () => Promise<{ active: boolean; url?: string } | null>;
     syncStart?: (port?: number) => Promise<import('./sync/types').SyncServerState>;
     syncStop?: () => Promise<{ ok: boolean }>;
     syncGetState?: () => Promise<import('./sync/types').SyncServerState>;

@@ -61,8 +61,6 @@ const NAV_GROUPS: { label: string; items: { id: ViewType; label: string; icon: s
   },
 ];
 
-const NAV_ITEMS = NAV_GROUPS.flatMap((g) => g.items);
-
 export default function Sidebar() {
   const {
     currentView,
@@ -112,10 +110,7 @@ export default function Sidebar() {
   }
 
   async function renameConversation(id: string) {
-    if (!editTitle.trim()) {
-      setEditingId(null);
-      return;
-    }
+    if (!editTitle.trim()) { setEditingId(null); return; }
     try {
       await window.henryAPI.updateConversation(id, editTitle.trim());
       const convos = await window.henryAPI.getConversations();
@@ -137,11 +132,27 @@ export default function Sidebar() {
           title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           className="henry-btn shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-henry-text-muted hover:text-henry-text hover:bg-henry-hover/50 transition-all"
         >
-          <svg className={`w-3.5 h-3.5 transition-transform duration-200 ${collapsed ? 'rotate-180' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            className={`w-3.5 h-3.5 transition-transform duration-200 ${collapsed ? 'rotate-180' : ''}`}
+            viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+            strokeLinecap="round" strokeLinejoin="round"
+          >
             <polyline points="15 18 9 12 15 6" />
           </svg>
         </button>
-        {!collapsed && (
+
+        {collapsed ? (
+          <button
+            onClick={newConversation}
+            title="New chat"
+            className="henry-btn w-7 h-7 flex items-center justify-center rounded-lg bg-henry-accent/10 text-henry-accent hover:bg-henry-accent/20 transition-colors"
+          >
+            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+          </button>
+        ) : (
           <button
             onClick={newConversation}
             className="henry-btn flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-henry-accent/10 text-henry-accent rounded-xl text-xs font-medium hover:bg-henry-accent/20 transition-colors border border-henry-accent/20"
@@ -153,35 +164,24 @@ export default function Sidebar() {
             New Chat
           </button>
         )}
-        {collapsed && (
-          <button
-            onClick={newConversation}
-            title="New chat"
-            className="henry-btn w-7 h-7 flex items-center justify-center rounded-lg bg-henry-accent/10 text-henry-accent hover:bg-henry-accent/20 transition-colors"
-          >
-            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <line x1="12" y1="5" x2="12" y2="19" />
-              <line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
-          </button>
-        )}
       </div>
 
-      {/* Scrollable body: nav groups + conversations */}
+      {/* Scrollable body */}
       <div className="flex-1 overflow-y-auto min-h-0">
         {/* Navigation — grouped */}
         <nav className="px-2">
           {NAV_GROUPS.map((group) => (
             <div key={group.label} className="mb-1">
-              {!collapsed && <p className="px-3 pt-2 pb-1 text-[9px] font-semibold text-henry-text-dim uppercase tracking-wider">{group.label}</p>}
+              {!collapsed && (
+                <p className="px-3 pt-2 pb-1 text-[9px] font-semibold text-henry-text-dim uppercase tracking-wider">
+                  {group.label}
+                </p>
+              )}
               <div className="space-y-0.5">
                 {group.items.map((item) => (
                   <button
                     key={item.id}
-                    onClick={() => {
-                      setCurrentView(item.id);
-                      setLastActive(item.id);
-                    }}
+                    onClick={() => { setCurrentView(item.id); setLastActive(item.id); }}
                     title={collapsed ? item.label : undefined}
                     className={`w-full flex items-center gap-2.5 rounded-lg text-xs transition-all henry-btn ${
                       collapsed ? 'justify-center px-1.5 py-2' : 'px-3 py-1.5'
@@ -204,97 +204,84 @@ export default function Sidebar() {
           ))}
         </nav>
 
-        {/* Divider */}
-        {!collapsed && <div className="mx-3 my-3 border-t border-henry-border/30" />}
-
-        {/* Conversations list — hidden when collapsed */}
-        {!collapsed && <div className="px-2">
-          <div className="flex items-center justify-between px-3 mb-2">
-            <span className="text-[10px] font-medium text-henry-text-muted uppercase tracking-wider">
-              Recent Chats
-            </span>
-            {conversations.length > 0 && (
-              <span className="text-[10px] text-henry-text-muted">
-                {conversations.length}
-              </span>
-            )}
-          </div>
-
-        <div className="space-y-0.5">
-          {conversations.map((convo: Conversation) => (
-            <div
-              key={convo.id}
-              className={`group relative flex items-center rounded-lg transition-all ${
-                activeConversationId === convo.id
-                  ? 'bg-henry-accent/10'
-                  : 'hover:bg-henry-hover/50'
-              }`}
-            >
-              {editingId === convo.id ? (
-                <input
-                  autoFocus
-                  value={editTitle}
-                  onChange={(e) => setEditTitle(e.target.value)}
-                  onBlur={() => renameConversation(convo.id)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') renameConversation(convo.id);
-                    if (e.key === 'Escape') setEditingId(null);
-                  }}
-                  className="flex-1 bg-henry-bg border border-henry-accent/30 rounded px-2 py-1.5 text-xs text-henry-text outline-none mx-1 my-0.5"
-                />
-              ) : (
-                <>
-                  <button
-                    onClick={() => selectConversation(convo.id)}
-                    className={`flex-1 text-left px-3 py-2 text-xs truncate ${
-                      activeConversationId === convo.id
-                        ? 'text-henry-accent'
-                        : 'text-henry-text-dim'
+        {/* Conversations — hidden when collapsed */}
+        {!collapsed && (
+          <>
+            <div className="mx-3 my-3 border-t border-henry-border/30" />
+            <div className="px-2">
+              <div className="flex items-center justify-between px-3 mb-2">
+                <span className="text-[10px] font-medium text-henry-text-muted uppercase tracking-wider">
+                  Recent Chats
+                </span>
+                {conversations.length > 0 && (
+                  <span className="text-[10px] text-henry-text-muted">{conversations.length}</span>
+                )}
+              </div>
+              <div className="space-y-0.5">
+                {conversations.map((convo: Conversation) => (
+                  <div
+                    key={convo.id}
+                    className={`group relative flex items-center rounded-lg transition-all ${
+                      activeConversationId === convo.id ? 'bg-henry-accent/10' : 'hover:bg-henry-hover/50'
                     }`}
                   >
-                    {convo.title || 'New Chat'}
-                  </button>
-
-                  <div className="hidden group-hover:flex items-center gap-0.5 pr-1">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditingId(convo.id);
-                        setEditTitle(convo.title || '');
-                      }}
-                      className="p-1 rounded text-henry-text-muted hover:text-henry-text transition-colors"
-                      title="Rename"
-                    >
-                      <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
-                        <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
-                      </svg>
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (confirm('Delete this conversation?')) {
-                          deleteConversation(convo.id);
-                        }
-                      }}
-                      className="p-1 rounded text-henry-text-muted hover:text-henry-error transition-colors"
-                      title="Delete"
-                    >
-                      <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <polyline points="3,6 5,6 21,6" />
-                        <path d="M19,6v14a2,2,0,0,1-2,2H7a2,2,0,0,1-2-2V6m3,0V4a2,2,0,0,1,2-2h4a2,2,0,0,1,2,2V6" />
-                      </svg>
-                    </button>
+                    {editingId === convo.id ? (
+                      <input
+                        autoFocus
+                        value={editTitle}
+                        onChange={(e) => setEditTitle(e.target.value)}
+                        onBlur={() => renameConversation(convo.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') renameConversation(convo.id);
+                          if (e.key === 'Escape') setEditingId(null);
+                        }}
+                        className="flex-1 bg-henry-bg border border-henry-accent/30 rounded px-2 py-1.5 text-xs text-henry-text outline-none mx-1 my-0.5"
+                      />
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => selectConversation(convo.id)}
+                          className={`flex-1 text-left px-3 py-2 text-xs truncate ${
+                            activeConversationId === convo.id ? 'text-henry-accent' : 'text-henry-text-dim'
+                          }`}
+                        >
+                          {convo.title || 'New Chat'}
+                        </button>
+                        <div className="hidden group-hover:flex items-center gap-0.5 pr-1">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setEditingId(convo.id); setEditTitle(convo.title || ''); }}
+                            className="p-1 rounded text-henry-text-muted hover:text-henry-text transition-colors"
+                            title="Rename"
+                          >
+                            <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
+                              <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (confirm('Delete this conversation?')) deleteConversation(convo.id);
+                            }}
+                            className="p-1 rounded text-henry-text-muted hover:text-henry-error transition-colors"
+                            title="Delete"
+                          >
+                            <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <polyline points="3,6 5,6 21,6" />
+                              <path d="M19,6v14a2,2,0,0,1-2,2H7a2,2,0,0,1-2-2V6m3,0V4a2,2,0,0,1,2-2h4a2,2,0,0,1,2,2V6" />
+                            </svg>
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </div>
-                </>
-              )}
+                ))}
+              </div>
             </div>
-          ))}
-        </div>
-      </div>
+          </>
+        )}
       </div>
 
-      </div>}
       {/* Engine status footer */}
       <div className="shrink-0 p-3 border-t border-henry-border/30">
         <div className="space-y-2">

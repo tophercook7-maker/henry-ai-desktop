@@ -62,7 +62,8 @@ function asLocalOpsApi(api: NonNullable<typeof window.henryAPI>): HenryLocalOpsA
   return {
     computerSystemInfo: () => api.computerSystemInfo(),
     computerOpenApp: (name) => api.computerOpenApp(name),
-    computerOpenPath: (p) => api.computerOpenPath(p),
+    // computerOpenPath maps to computerOpenApp — opens files/folders via Electron shell
+    computerOpenPath: (p) => api.computerOpenApp(p),
     saveFact: (f) => api.saveFact(f),
     writeFile: (path, content) => api.writeFile(path, content),
   };
