@@ -38,6 +38,7 @@ import { detectActiveConflicts, buildConflictSignalsBlock } from './conflictDete
 import { buildRuntimeContextBlock } from '../core/runtime/runtimeContext';
 import { buildSelfRepairBlock } from './selfRepairStore';
 import { buildPanelContextBlock } from './panelContext';
+import { buildIntentionBlock } from './dailyIntention';
 
 /**
  * localStorage is only available in browser/renderer contexts.
@@ -443,6 +444,7 @@ export function buildCompanionStreamSystemPrompt(
     hour >= 17 && hour < 21 ? 'evening' :
     'night';
   const ownerName = safeLocalGet('henry:owner_name')?.trim() || 'you';
+  const intentionBlock = buildIntentionBlock();
   const currentView = options?.currentView ?? (typeof localStorage !== 'undefined' ? localStorage.getItem('henry:current_view') ?? '' : '');
   const panelCtxBlock = buildPanelContextBlock(currentView);
   const weatherStr = formatWeatherBlock(options?.weather ?? null);
@@ -703,7 +705,7 @@ Priorities — when ${ownerName}'s profile or memory indicates they value certai
 ${buildPersonalityBlock()}
 
 ${timeBlock}
-${getModeInstruction(mode)}
+${intentionBlock ? intentionBlock + '\n' : ''}${getModeInstruction(mode)}
 ${writerBlock}${design3dBlock}${biblicalBlock}
 ${actionBehaviorBlock}
 ${liveDataHonestyBlock}

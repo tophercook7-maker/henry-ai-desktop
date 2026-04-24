@@ -6,6 +6,7 @@ import { loadProjects, type HenryProject } from '../../henry/richMemory';
 import type { DailyBriefing } from '../../henry/proactiveBriefing';
 import { useCapturesStore, selectUnroutedCaptures } from '../../ambient/capturesStore';
 import { HenrySkeleton } from '../HenryShared';
+import { getDailyIntention, setDailyIntention, clearDailyIntention } from '../../henry/dailyIntention';
 
 const HENRY_OPERATING_MODE_KEY = 'henry_operating_mode';
 const HENRY_LAST_GREETING_KEY = 'henry_last_greeting_date';
@@ -57,6 +58,8 @@ export default function TodayPanel() {
   const [dueMacros, setDueMacros] = useState<ReturnType<typeof getDueMacros>>([]);
   const [activeProjects, setActiveProjects] = useState<HenryProject[]>([]);
   const [quickAsk, setQuickAsk] = useState('');
+  const [intention, setIntentionState] = useState(() => getDailyIntention()?.text ?? '');
+  const [intentionDraft, setIntentionDraft] = useState(() => getDailyIntention()?.text ?? '');
   const quickAskRef = useRef<HTMLInputElement>(null);
   const greeting = getGreeting();
   const briefingStreamRef = useRef<any>(null);
@@ -369,6 +372,39 @@ export default function TodayPanel() {
               </button>
             </div>
           )}
+
+          {/* Daily intention */}
+          <div className="mb-6">
+            <p className="text-[11px] font-medium text-henry-text-muted uppercase tracking-wider mb-2">Today's Intention</p>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={intentionDraft}
+                onChange={(e) => setIntentionDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && intentionDraft.trim()) {
+                    setDailyIntention(intentionDraft.trim());
+                    setIntentionState(intentionDraft.trim());
+                  }
+                }}
+                placeholder="What matters most today?"
+                className="flex-1 bg-henry-surface/40 border border-henry-border/30 rounded-xl px-4 py-2.5 text-sm text-henry-text placeholder-henry-text-muted outline-none focus:border-henry-accent/40 transition-all"
+              />
+              {intentionDraft.trim() && intentionDraft !== intention && (
+                <button
+                  onClick={() => { setDailyIntention(intentionDraft.trim()); setIntentionState(intentionDraft.trim()); }}
+                  className="px-4 py-2.5 rounded-xl bg-henry-accent/15 border border-henry-accent/25 text-henry-accent text-sm font-medium hover:bg-henry-accent/25 transition-all"
+                >Set</button>
+              )}
+              {intention && (
+                <button
+                  onClick={() => { clearDailyIntention(); setIntentionState(''); setIntentionDraft(''); }}
+                  className="px-3 py-2.5 rounded-xl border border-henry-border/30 text-henry-text-muted text-sm hover:text-henry-text transition-all"
+                >✕</button>
+              )}
+            </div>
+            {intention && <p className="text-[11px] text-henry-accent/70 mt-1.5 px-1">🎯 Active — Henry anchors to this today</p>}
+          </div>
 
           {/* Mode launcher */}
           <div>

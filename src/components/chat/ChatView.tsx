@@ -384,6 +384,7 @@ export default function ChatView() {
 
   // ── Proactive initiative surfacing ────────────────────────────────────────
   const [proactiveSuggestion, setProactiveSuggestion] = useState<string | null>(null);
+  const [smartSuggestions, setSmartSuggestions] = useState<SmartSuggestion[]>([]);
   const proactiveFiredRef = useRef(false);
   const { priorityReadyAt } = useSharedBrainState();
 
@@ -903,6 +904,7 @@ export default function ChatView() {
       created_at: new Date().toISOString(),
     };
     addMessage(userMsg);
+    setSmartSuggestions([]);
     // Auto-extract memory facts from user message (non-blocking)
     runAutoMemory(content, convId ?? undefined);
     try {
@@ -1654,7 +1656,7 @@ export default function ChatView() {
         try {
           const lastUser = useStore.getState().messages.filter(m => m.role === 'user').at(-1);
           const chips = getSmartSuggestions(fullText, lastUser?.content ?? '');
-          // chips: getSmartSuggestions(fullText, lastUser?.content ?? '')
+          setSmartSuggestions(chips);
         } catch { /* non-critical */ }
       });
 
@@ -2474,7 +2476,31 @@ export default function ChatView() {
               </label>
             )}
             <div className="flex-1">
-              <ChatInput
+              
+              {/* Smart follow-up suggestion chips */}
+              {smartSuggestions.length > 0 && !isStreaming && (
+                <div className="px-4 pb-2 flex flex-wrap gap-2">
+                  {smartSuggestions.map((chip) => (
+                    <button
+                      key={chip.id}
+                      onClick={() => {
+                        setSmartSuggestions([]);
+                        window.dispatchEvent(new CustomEvent('henry_inject_draft', { detail: { text: chip.prompt } }));
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium bg-henry-surface border border-henry-border/30 text-henry-text-dim hover:text-henry-text hover:border-henry-accent/40 hover:bg-henry-accent/5 transition-all"
+                    >
+                      <span>{chip.icon}</span>
+                      <span>{chip.label}</span>
+                    </button>
+                  ))}
+                  <button
+                    onClick={() => setSmartSuggestions([])}
+                    className="px-2 py-1.5 rounded-full text-[10px] text-henry-text-muted hover:text-henry-text transition-colors"
+                  >✕</button>
+                </div>
+              )}
+
+<ChatInput
                 onSend={handleSend}
                 isStreaming={isStreaming}
                 onCancel={isStreaming ? cancelStream : undefined}
