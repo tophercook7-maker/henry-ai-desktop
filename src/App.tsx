@@ -13,6 +13,7 @@ import { startSelfHealing, type HenryRepairEvent } from './henry/selfHealing';
 import { getTodayBriefing, saveBriefing, buildBriefingPrompt, getTodayKey } from './henry/proactiveBriefing';
 import { isNative } from './capacitor';
 import { checkAndNotify } from './henry/reminders';
+import { useCapturesStore } from './ambient/capturesStore';
 import { registerShortcuts, buildShortcuts } from './henry/keyboardShortcuts';
 import CompanionApp from './components/mobile/CompanionApp';
 
@@ -75,6 +76,13 @@ export default function App() {
     // Fire once immediately on mount
     try { checkAndNotify(); } catch { /* non-critical */ }
 
+    // Handle henry_open_capture event (from Cmd+Shift+N shortcut)
+    function handleOpenCapture() {
+      useStore.getState().setCurrentView('captures' as any);
+      try { useCapturesStore.getState().openPanel(); } catch { /* ignore */ }
+    }
+    window.addEventListener('henry_open_capture', handleOpenCapture);
+
     // Register global keyboard shortcuts
     const unregisterShortcuts = registerShortcuts();
     // '?' key shows shortcut help
@@ -88,7 +96,7 @@ export default function App() {
     }
     window.addEventListener('keydown', handleHelpKey);
 
-    return () => { cleanup(); stopNudges(); stopHealing(); clearInterval(reminderInterval); unregisterShortcuts(); window.removeEventListener('keydown', handleHelpKey); };
+    return () => { cleanup(); stopNudges(); stopHealing(); clearInterval(reminderInterval); unregisterShortcuts(); window.removeEventListener('keydown', handleHelpKey); window.removeEventListener('henry_open_capture', handleOpenCapture); };
   }, []);
 
   // Register service worker in production only

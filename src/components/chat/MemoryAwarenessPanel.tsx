@@ -277,16 +277,58 @@ export default function MemoryAwarenessPanel({
                 Key facts & anchors
               </h3>
               {factsForDisplay.length > 0 ? (
-                <ul className="list-disc list-inside space-y-1 text-henry-text-dim">
-                  {factsForDisplay.map((f, i) => (
-                    <li key={`${f.fact.slice(0, 40)}-${i}`}>
-                      <span className="text-henry-text-muted">[{f.category}]</span> {f.fact}
-                    </li>
-                  ))}
+                <ul className="space-y-1.5">
+                  {factsForDisplay.map((f, i) => {
+                    const catColors: Record<string, string> = {
+                      person:     'bg-blue-500/10 text-blue-400 border-blue-500/20',
+                      project:    'bg-purple-500/10 text-purple-400 border-purple-500/20',
+                      preference: 'bg-green-500/10 text-green-400 border-green-500/20',
+                      goal:       'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
+                      fact:       'bg-henry-surface border-henry-border/30 text-henry-text-muted',
+                      conversation: 'bg-henry-surface border-henry-border/20 text-henry-text-muted',
+                    };
+                    const color = catColors[f.category] ?? catColors.fact;
+                    return (
+                      <li key={`${f.fact.slice(0, 40)}-${i}`} className="flex items-start gap-1.5">
+                        <span className={`shrink-0 text-[9px] px-1.5 py-0.5 rounded border font-medium uppercase tracking-wide mt-0.5 ${color}`}>
+                          {f.category}
+                        </span>
+                        <span className="text-[11px] text-henry-text-dim leading-snug">{f.fact}</span>
+                      </li>
+                    );
+                  })}
                 </ul>
               ) : (
                 <p className="text-henry-text-dim italic">No facts in store for this thread yet.</p>
               )}
+              {/* Auto-extracted facts from this session */}
+              {(() => {
+                try {
+                  const autoFacts = JSON.parse(localStorage.getItem('henry:facts') || '[]') as Array<{id: string; content: string; category: string; confidence: string; source: string}>;
+                  const sessionFacts = autoFacts.filter(f => f.source === 'auto').slice(-5);
+                  if (sessionFacts.length === 0) return null;
+                  const catColors: Record<string, string> = {
+                    person:     'bg-blue-500/10 text-blue-400 border-blue-500/20',
+                    project:    'bg-purple-500/10 text-purple-400 border-purple-500/20',
+                    preference: 'bg-green-500/10 text-green-400 border-green-500/20',
+                    goal:       'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
+                    fact:       'bg-henry-surface border-henry-border/30 text-henry-text-muted',
+                  };
+                  return (
+                    <div className="mt-2 pt-2 border-t border-henry-border/20">
+                      <p className="text-[9px] font-medium text-henry-accent/60 uppercase tracking-wide mb-1.5">Auto-extracted this session</p>
+                      <ul className="space-y-1">
+                        {sessionFacts.map(f => (
+                          <li key={f.id} className="flex items-start gap-1.5">
+                            <span className={`shrink-0 text-[9px] px-1.5 py-0.5 rounded border font-medium uppercase tracking-wide mt-0.5 ${catColors[f.category] ?? catColors.fact}`}>{f.category}</span>
+                            <span className="text-[11px] text-henry-text-dim leading-snug">{f.content}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  );
+                } catch { return null; }
+              })()}
             </section>
 
             {ctx?.lean.workspaceHints && ctx.lean.workspaceHints.length > 0 && (

@@ -51,6 +51,7 @@ import { speak as ttsSpeakFn, cancelTTS } from '@/henry/ttsService';
 import { recordUsage } from '@/henry/savingsEngine';
 import { runAutoMemory } from '@/henry/autoMemory';
 import { getSmartSuggestions, type SmartSuggestion } from '@/henry/smartSuggestions';
+import { trackUsage } from '@/henry/henryAnalytics';
 import { shouldSummarize, buildSummaryPrompt, saveSessionSummary, getSessionSummary } from '@/henry/contextSummary';
 import { getPresencePhrase, speakPresence, detectPresenceTier } from '@/henry/ambientBrain';
 import {
@@ -1653,6 +1654,9 @@ export default function ChatView() {
             void handleWorkerRequest(content, convId, true);
           }
         }
+
+        // Track usage analytics (local only)
+        try { trackUsage(effectiveMode, useStore.getState().currentView); } catch { /* non-critical */ }
 
         // Surface contextual follow-up suggestion chips
         try {

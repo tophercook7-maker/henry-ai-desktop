@@ -1,6 +1,7 @@
 import { getMonthlySummary, getAllTimeSavings, getCostSuggestion, getMonthlyBudget, setMonthlyBudget, getBudgetAlert } from '../../henry/savingsEngine';
 import { useState, useEffect } from 'react';
 import { PANEL_QUICK_ASK } from '../../henry/henryQuickAsk';
+import { getUsageSummary } from '../../henry/henryAnalytics';
 
 interface CostLogRow {
   id: number;
@@ -26,6 +27,7 @@ export default function CostDashboard() {
   const [period, setPeriod] = useState<'7d' | '30d' | 'all'>('7d');
   const [costData, setCostData] = useState<CostEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [usageSummary] = useState(() => getUsageSummary());
   const [savings, setSavings] = useState(() => getMonthlySummary());
   const [allTimeSavings, setAllTimeSavings] = useState(() => getAllTimeSavings());
   const [budget, setBudget] = useState(() => getMonthlyBudget());

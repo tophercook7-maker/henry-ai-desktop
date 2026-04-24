@@ -107,4 +107,25 @@ export const PANEL_QUICK_ASK = {
     henryQuickAsk({
       prompt: 'Analyze my AI usage costs. Am I using the right models for each task type? Where can I reduce spend without reducing quality?',
     }),
+
+  workspace: (filePath?: string) =>
+    henryQuickAsk({
+      mode: 'developer',
+      prompt: filePath
+        ? `Help me understand and work with this file: ${filePath}. What does it do, what's important to know, and what could be improved?`
+        : 'Review my workspace. What files or projects should I be focused on? What can I help you build or improve today?',
+    }),
+
+  bible: (reference?: string) =>
+    henryQuickAsk({
+      mode: 'biblical',
+      prompt: reference
+        ? `Study ${reference} with me. Give me the text, key themes, historical context, and a practical application for today.`
+        : 'Let\'s do some scripture study. What passage or topic should we explore today?',
+    }),
+
+  focus: () =>
+    henryQuickAsk({
+      prompt: 'Based on what you know about my projects, tasks, and goals — what should I be working on right now? Give me one clear focus for the next hour.',
+    }),
 };
