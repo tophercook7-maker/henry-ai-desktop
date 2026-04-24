@@ -298,7 +298,13 @@ export default function CapturesPanel() {
       <div className="px-4 py-4 border-b border-henry-border/40 shrink-0">
         <div className="flex items-start justify-between gap-3 mb-3">
           <div>
-            <h2 className="text-base font-semibold text-henry-text">Captures</h2>
+            <div className="flex items-center justify-between w-full">
+                <h2 className="text-base font-semibold text-henry-text">Captures</h2>
+                <button
+                onClick={() => PANEL_QUICK_ASK.captures()}
+                className="text-[11px] px-3 py-1.5 rounded-lg bg-henry-accent/10 text-henry-accent hover:bg-henry-accent/20 transition-all"
+              >🧠 Ask Henry</button>
+              </div>
             <p className="text-xs text-henry-text-muted mt-0.5">
               Everything Henry heard and classified. Nothing is hidden.
             </p>

@@ -12,6 +12,7 @@ import { indexWorkspace } from './henry/workspaceIndex';
 import { startSelfHealing, type HenryRepairEvent } from './henry/selfHealing';
 import { getTodayBriefing, saveBriefing, buildBriefingPrompt, getTodayKey } from './henry/proactiveBriefing';
 import { isNative } from './capacitor';
+import { checkAndNotify } from './henry/reminders';
 import CompanionApp from './components/mobile/CompanionApp';
 
 // Check if companion mode is active
@@ -65,7 +66,14 @@ export default function App() {
       setRepair(event);
       setTimeout(() => setRepair(null), 8000);
     });
-    return () => { cleanup(); stopNudges(); stopHealing(); };
+    // Check reminders every minute for due notifications
+    const reminderInterval = setInterval(() => {
+      try { checkAndNotify(); } catch { /* non-critical */ }
+    }, 60_000);
+    // Fire once immediately on mount
+    try { checkAndNotify(); } catch { /* non-critical */ }
+
+    return () => { cleanup(); stopNudges(); stopHealing(); clearInterval(reminderInterval); };
   }, []);
 
   // Register service worker in production only

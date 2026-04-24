@@ -81,11 +81,27 @@ export default function CostDashboard() {
   const dailyAvg = totalCost / Math.max(dayCount, 1);
   const monthlyEstimate = dailyAvg * 30;
 
+  // 7-day sparkline: cost per day for the last 7 days
+  const sparklineData = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (6 - i));
+    const dayStr = d.toISOString().slice(0, 10);
+    const dayCost = costData
+      .filter(e => (e as any).created_at?.slice(0, 10) === dayStr)
+      .reduce((s, e) => s + e.cost, 0);
+    return { day: d.toLocaleDateString('en-US', { weekday: 'short' }), cost: dayCost };
+  });
+  const sparkMax = Math.max(...sparklineData.map(d => d.cost), 0.0001);
+
   return (
     <div className="h-full overflow-y-auto p-6">
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
+              <button
+                onClick={() => PANEL_QUICK_ASK.costs()}
+                className="text-[11px] px-3 py-1.5 rounded-lg bg-henry-accent/10 text-henry-accent hover:bg-henry-accent/20 transition-all"
+              >🧠 Ask Henry</button>
           <div>
             <h1 className="text-lg font-semibold text-henry-text">Cost Dashboard</h1>
             <p className="text-xs text-henry-text-dim mt-1">

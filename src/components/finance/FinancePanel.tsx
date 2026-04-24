@@ -5,6 +5,7 @@ import {
   type FinanceEntry, type EntryType,
 } from '../../henry/financeData';
 import { useStore } from '../../store';
+import { PANEL_QUICK_ASK } from '../../henry/henryQuickAsk';
 
 export default function FinancePanel() {
   const { setCurrentView } = useStore();
@@ -68,6 +69,10 @@ export default function FinancePanel() {
         {/* Header */}
         <div className="p-6 border-b border-henry-border/30">
           <div className="flex items-center justify-between mb-4">
+              <button
+                onClick={() => PANEL_QUICK_ASK.finance()}
+                className="text-[11px] px-3 py-1.5 rounded-lg bg-henry-accent/10 text-henry-accent hover:bg-henry-accent/20 transition-all"
+              >🧠 Ask Henry</button>
             <div>
               <h1 className="text-xl font-semibold text-henry-text">Finance</h1>
               <p className="text-xs text-henry-text-muted mt-0.5">{formatMonthLabel(selectedMonth)}</p>

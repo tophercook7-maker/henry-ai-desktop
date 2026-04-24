@@ -50,6 +50,7 @@ import { resolveChat, requiresQualityModel, modelShortName } from '@/henry/model
 import { speak as ttsSpeakFn, cancelTTS } from '@/henry/ttsService';
 import { recordUsage } from '@/henry/savingsEngine';
 import { runAutoMemory } from '@/henry/autoMemory';
+import { getSmartSuggestions, type SmartSuggestion } from '@/henry/smartSuggestions';
 import { getPresencePhrase, speakPresence, detectPresenceTier } from '@/henry/ambientBrain';
 import {
   buildHenryMemoryContextBlock,
@@ -904,6 +905,7 @@ export default function ChatView() {
     addMessage(userMsg);
     // Auto-extract memory facts from user message (non-blocking)
     runAutoMemory(content, convId ?? undefined);
+    setSmartSuggestions([]);
     try {
       await window.henryAPI.saveMessage(userMsg);
     } catch (err) {
@@ -1495,6 +1497,11 @@ export default function ChatView() {
         setStreamingContent('');
         setIsStreaming(false);
         setCompanionStatus({ status: 'idle' });
+        // Surface smart follow-up chips
+        if (fullText && content) {
+          const chips = getSmartSuggestions(fullText, content);
+          setSmartSuggestions(chips);
+        }
         return;
       }
     }

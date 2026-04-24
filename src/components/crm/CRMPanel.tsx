@@ -72,6 +72,10 @@ export default function CRMPanel() {
         {/* Header */}
         <div className="p-6 border-b border-henry-border/30">
           <div className="flex items-center justify-between mb-4">
+              <button
+                onClick={() => PANEL_QUICK_ASK.crm()}
+                className="text-[11px] px-3 py-1.5 rounded-lg bg-henry-accent/10 text-henry-accent hover:bg-henry-accent/20 transition-all"
+              >🧠 Ask Henry</button>
             <div>
               <h1 className="text-xl font-semibold text-henry-text">Clients</h1>
               <p className="text-xs text-henry-text-muted mt-0.5">
