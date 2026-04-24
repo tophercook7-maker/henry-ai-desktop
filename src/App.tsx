@@ -13,7 +13,7 @@ import { startSelfHealing, type HenryRepairEvent } from './henry/selfHealing';
 import { getTodayBriefing, saveBriefing, buildBriefingPrompt, getTodayKey } from './henry/proactiveBriefing';
 import { isNative } from './capacitor';
 import { checkAndNotify } from './henry/reminders';
-import { registerShortcuts } from './henry/keyboardShortcuts';
+import { registerShortcuts, buildShortcuts } from './henry/keyboardShortcuts';
 import CompanionApp from './components/mobile/CompanionApp';
 
 // Check if companion mode is active
@@ -43,6 +43,7 @@ export default function App() {
   const [updateState, setUpdateState] = useState<'none' | 'available' | 'downloaded'>('none');
   const [nudge, setNudge] = useState<HenryNudge | null>(null);
   const [repair, setRepair] = useState<HenryRepairEvent | null>(null);
+  const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
   const firstContactDone = useRef(false);
   const briefingInjectedRef = useRef(false);
   const {
@@ -76,8 +77,18 @@ export default function App() {
 
     // Register global keyboard shortcuts
     const unregisterShortcuts = registerShortcuts();
+    // '?' key shows shortcut help
+    function handleHelpKey(e: KeyboardEvent) {
+      if (e.key === '?' && !e.metaKey && !e.ctrlKey) {
+        const t = e.target as HTMLElement;
+        if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable) return;
+        e.preventDefault();
+        setShowShortcutsHelp((prev: boolean) => !prev);
+      }
+    }
+    window.addEventListener('keydown', handleHelpKey);
 
-    return () => { cleanup(); stopNudges(); stopHealing(); clearInterval(reminderInterval); unregisterShortcuts(); };
+    return () => { cleanup(); stopNudges(); stopHealing(); clearInterval(reminderInterval); unregisterShortcuts(); window.removeEventListener('keydown', handleHelpKey); };
   }, []);
 
   // Register service worker in production only

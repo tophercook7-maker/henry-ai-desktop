@@ -14,6 +14,7 @@ import { useExecutionModeStore, EXECUTION_MODE_CONFIGS, type ExecutionMode } fro
 import { useInitiativeStore } from '../../henry/initiativeStore';
 import { useStore } from '../../store';
 import { getFocusNow } from '../../henry/getFocusNow';
+import { getQuickInsight } from '../../henry/henryInsight';
 import { computeMomentum, type MomentumSnapshot } from '../../henry/momentumEngine';
 import { computeInstinctFromState, type InstinctResult } from '../../henry/instinctEngine';
 import { wakeWordManager } from '../../henry/wakeWord';
@@ -97,6 +98,7 @@ export default function HenryHomePanel({ onClose }: Props) {
   const [momentum, setMomentum]       = useState<MomentumSnapshot | null>(null);
   const [instinct, setInstinct]       = useState<InstinctResult | null>(null);
   const [wakeActive, setWakeActive]   = useState(false);
+  const [quickInsight, setQuickInsight] = useState(() => getQuickInsight());
 
   // Load live data
   useEffect(() => {
@@ -164,6 +166,28 @@ export default function HenryHomePanel({ onClose }: Props) {
       className="fixed left-0 right-0 z-50"
       style={{ top: 84 }}
     >
+          {quickInsight && (
+            <div className={`p-3 rounded-xl border mb-3 text-left ${
+              quickInsight.type === 'warning'
+                ? 'border-red-500/25 bg-red-500/5'
+                : 'border-henry-border/30 bg-henry-surface/30'
+            }`}>
+              <div className="flex items-start gap-2">
+                <span className="text-sm mt-0.5">{quickInsight.icon}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[11px] text-henry-text leading-snug">{quickInsight.text}</p>
+                  {quickInsight.action && (
+                    <button
+                      onClick={() => useStore.getState().setCurrentView(quickInsight.action!.view as any)}
+                      className="text-[10px] text-henry-accent hover:underline mt-0.5"
+                    >{quickInsight.action.label} →</button>
+                  )}
+                </div>
+                <button onClick={() => setQuickInsight(null)} className="text-henry-text-muted hover:text-henry-text text-[10px]">✕</button>
+              </div>
+            </div>
+          )}
+
       {/* Backdrop — click outside to close */}
       <div className="fixed inset-0 z-0" style={{ top: 84 }} />
 
