@@ -112,6 +112,7 @@ import {
   readActiveWorkspaceContext,
 } from '@/henry/workspaceContext';
 import type { ExportPresetId } from '@/henry/exportBundle';
+import { exportConversation } from '@/henry/exportConversation';
 import {
   checkSessionPathsStale,
   clearRecoveryBannerDismissedThisSession,
@@ -1988,11 +1989,23 @@ export default function ChatView() {
   // Keep wake word ref always pointing to latest handleSend (safe to assign during render)
   wakeHandleSendRef.current = handleSend;
 
+  const activeConvTitle = conversations.find(c => c.id === activeConversationId)?.title ?? undefined;
+
   return (
     <div className="h-full flex min-h-0">
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
       {/* Messages area */}
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-3 sm:px-6 py-4">
+        {/* Export button — visible when conversation has messages */}
+        {messages.length > 2 && (
+          <div className="max-w-3xl mx-auto flex justify-end mb-1">
+            <button
+              onClick={() => exportConversation(messages, activeConvTitle)}
+              className="text-[10px] text-henry-text-muted hover:text-henry-text px-2 py-1 rounded-lg hover:bg-henry-surface/40 transition-all flex items-center gap-1"
+              title="Export conversation as Markdown"
+            >⬇ Export</button>
+          </div>
+        )}
         {recoveryBannerOpen && recoverySnapshot && (
           <div className="max-w-3xl mx-auto mb-4 rounded-lg border border-henry-accent/25 bg-henry-surface/30 px-3 py-2.5 text-xs text-henry-text">
             <div className="flex items-start justify-between gap-2">

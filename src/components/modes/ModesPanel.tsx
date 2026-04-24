@@ -89,6 +89,13 @@ export default function ModesPanel() {
           <div>
             <p className="text-[11px] font-medium text-henry-text-muted uppercase tracking-wider mb-3">Your Modes</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {modes.length === 0 && (
+                <div className="col-span-2 flex flex-col items-center justify-center py-12 text-center">
+                  <span className="text-4xl mb-3">🎭</span>
+                  <p className="text-sm font-medium text-henry-text mb-1">No custom modes yet</p>
+                  <p className="text-xs text-henry-text-muted max-w-xs">Create a mode to give Henry a specific persona, tone, or set of instructions for a recurring context.</p>
+                </div>
+              )}
               {modes.map((mode) => (
                 <div
                   key={mode.id}
