@@ -4,6 +4,7 @@ import {
   CATEGORY_META, type Reminder, type ReminderCategory, type ReminderRepeat,
 } from '../../henry/reminders';
 import { useStore } from '../../store';
+import { PANEL_QUICK_ASK } from '../../henry/henryQuickAsk';
 
 const REPEAT_OPTS: { value: ReminderRepeat; label: string }[] = [
   { value: 'none', label: 'Once' },
@@ -98,6 +99,10 @@ export default function RemindersPanel() {
               </p>
             </div>
             <div className="flex items-center gap-2">
+              <button
+                onClick={() => PANEL_QUICK_ASK.reminders()}
+                className="text-[11px] px-3 py-1.5 rounded-lg bg-henry-accent/10 text-henry-accent hover:bg-henry-accent/20 transition-all"
+              >🧠 Ask Henry</button>
               {notifPermission !== 'granted' && (
                 <button
                   onClick={askPermission}

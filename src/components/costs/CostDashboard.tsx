@@ -1,5 +1,6 @@
 import { getMonthlySummary, getAllTimeSavings, getCostSuggestion, getMonthlyBudget, setMonthlyBudget, getBudgetAlert } from '../../henry/savingsEngine';
 import { useState, useEffect } from 'react';
+import { PANEL_QUICK_ASK } from '../../henry/henryQuickAsk';
 
 interface CostLogRow {
   id: number;

@@ -26,6 +26,7 @@ import {
   type RouteDest,
 } from '../../ambient/noteRouter';
 import { wakeWordManager } from '../../henry/wakeWord';
+import { PANEL_QUICK_ASK } from '../../henry/henryQuickAsk';
 
 // ── Route destination options ─────────────────────────────────────────────────
 

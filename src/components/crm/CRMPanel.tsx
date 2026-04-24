@@ -6,6 +6,7 @@ import {
   type CRMClient, type CRMProject, type ClientStatus, type ProjectStatus,
 } from '../../henry/crmData';
 import { useStore } from '../../store';
+import { PANEL_QUICK_ASK } from '../../henry/henryQuickAsk';
 
 type Tab = 'clients' | 'projects';
 
