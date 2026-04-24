@@ -7,6 +7,7 @@ import type { DailyBriefing } from '../../henry/proactiveBriefing';
 import { useCapturesStore, selectUnroutedCaptures } from '../../ambient/capturesStore';
 import { HenrySkeleton } from '../HenryShared';
 import { getDailyIntention, setDailyIntention, clearDailyIntention } from '../../henry/dailyIntention';
+import { getFocusNow, type FocusSignal } from '../../henry/getFocusNow';
 
 const HENRY_OPERATING_MODE_KEY = 'henry_operating_mode';
 const HENRY_LAST_GREETING_KEY = 'henry_last_greeting_date';
@@ -58,11 +59,18 @@ export default function TodayPanel() {
   const [dueMacros, setDueMacros] = useState<ReturnType<typeof getDueMacros>>([]);
   const [activeProjects, setActiveProjects] = useState<HenryProject[]>([]);
   const [quickAsk, setQuickAsk] = useState('');
+  const [focusSignal, setFocusSignal] = useState<FocusSignal | null>(() => getFocusNow());
   const [intention, setIntentionState] = useState(() => getDailyIntention()?.text ?? '');
   const [intentionDraft, setIntentionDraft] = useState(() => getDailyIntention()?.text ?? '');
   const quickAskRef = useRef<HTMLInputElement>(null);
   const greeting = getGreeting();
   const briefingStreamRef = useRef<any>(null);
+
+  // Refresh focus signal every 2 min
+  useEffect(() => {
+    const id = setInterval(() => setFocusSignal(getFocusNow()), 120_000);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
     const last = localStorage.getItem(HENRY_LAST_GREETING_KEY);
@@ -370,6 +378,27 @@ export default function TodayPanel() {
               >
                 Review →
               </button>
+            </div>
+          )}
+
+          {/* Henry Focus Signal */}
+          {focusSignal && (
+            <div className="mb-5 p-4 rounded-xl bg-henry-surface/40 border border-henry-accent/20">
+              <div className="flex items-start gap-3">
+                <span className="text-lg mt-0.5">🎯</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[11px] font-semibold text-henry-accent uppercase tracking-wider mb-1">Henry thinks</p>
+                  <p className="text-sm text-henry-text font-medium leading-snug">{focusSignal.now}</p>
+                  <p className="text-xs text-henry-text-muted mt-1 leading-relaxed">{focusSignal.why}</p>
+                  {focusSignal.next && (
+                    <p className="text-[11px] text-henry-text-muted/70 mt-1.5 italic">Then: {focusSignal.next}</p>
+                  )}
+                </div>
+                <button
+                  onClick={() => setFocusSignal(null)}
+                  className="text-henry-text-muted hover:text-henry-text transition-colors text-xs mt-0.5"
+                >✕</button>
+              </div>
             </div>
           )}
 

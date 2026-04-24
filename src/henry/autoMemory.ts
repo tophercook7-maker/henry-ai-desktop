@@ -122,8 +122,21 @@ export function saveAutoFacts(facts: AutoFact[]): void {
 export function runAutoMemory(userMessage: string, conversationId?: string): void {
   try {
     const facts = extractAutoFacts(userMessage, conversationId);
-    if (facts.length > 0) {
-      saveAutoFacts(facts);
+    if (facts.length === 0) return;
+
+    // 1. Save to localStorage (web mode / fast path)
+    saveAutoFacts(facts);
+
+    // 2. Also persist to SQLite via IPC so buildContext can surface them
+    if (typeof window !== 'undefined' && (window as any).henryAPI?.saveFact) {
+      for (const fact of facts) {
+        (window as any).henryAPI.saveFact({
+          conversation_id: conversationId ?? null,
+          fact: fact.content,
+          category: fact.category,
+          importance: fact.confidence === 'high' ? 3 : 2,
+        }).catch(() => { /* non-critical */ });
+      }
     }
   } catch {
     // Never crash the main chat flow
