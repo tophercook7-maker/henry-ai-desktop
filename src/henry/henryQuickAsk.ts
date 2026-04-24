@@ -90,6 +90,19 @@ export const PANEL_QUICK_ASK = {
       prompt: 'Review my reminders. What is overdue? What is coming up that I should prepare for?',
     }),
 
+  contacts: (name?: string) =>
+    henryQuickAsk({
+      prompt: name
+        ? `Give me a full briefing on ${name} — relationship context, what we've discussed, any follow-ups I should make, and how I can serve them better.`
+        : 'Review my contacts. Who should I be reaching out to? Any relationships I might be neglecting?',
+    }),
+
+  secretary: () =>
+    henryQuickAsk({
+      mode: 'secretary',
+      prompt: "What needs my attention today? Check my tasks, reminders, and any open threads — give me a clear action list for today.",
+    }),
+
   costs: () =>
     henryQuickAsk({
       prompt: 'Analyze my AI usage costs. Am I using the right models for each task type? Where can I reduce spend without reducing quality?',

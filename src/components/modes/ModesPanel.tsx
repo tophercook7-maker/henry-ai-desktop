@@ -4,6 +4,7 @@ import {
   type CustomMode, CUSTOM_MODE_COLORS,
 } from '../../henry/customModes';
 import { useStore } from '../../store';
+import { PANEL_QUICK_ASK } from '../../henry/henryQuickAsk';
 
 const BUILT_IN_MODES = [
   { id: 'companion', name: 'Chat', icon: '💬', description: 'Day-to-day conversation and thinking out loud', color: 'violet' },
@@ -62,7 +63,13 @@ export default function ModesPanel() {
     <div className="h-full flex flex-col bg-henry-bg overflow-y-auto">
       <div className="shrink-0 px-6 py-4 border-b border-henry-border/50 flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-semibold text-henry-text">Modes</h1>
+          <div className="flex items-center justify-between w-full">
+                <h1 className="text-lg font-semibold text-henry-text">Modes</h1>
+                <button
+                onClick={() => PANEL_QUICK_ASK.today()}
+                className="text-[11px] px-3 py-1.5 rounded-lg bg-henry-accent/10 text-henry-accent hover:bg-henry-accent/20 transition-all"
+              >🧠 Ask Henry</button>
+              </div>
           <p className="text-xs text-henry-text-muted mt-0.5">Built-in and custom Henry operating modes</p>
         </div>
         <button

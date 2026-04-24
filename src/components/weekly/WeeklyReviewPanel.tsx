@@ -39,6 +39,7 @@ import {
   type ValueCategory,
 } from '../../henry/valuesStore';
 import { useStore } from '../../store';
+import { PANEL_QUICK_ASK } from '../../henry/henryQuickAsk';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -791,6 +792,10 @@ export default function WeeklyReviewPanel() {
             <p className="text-xs text-henry-text-dim mt-0.5">Week of {weekLabel}</p>
           </div>
           <div className="flex items-center gap-2 text-[10px] text-henry-text-dim">
+            <button
+              onClick={() => PANEL_QUICK_ASK.weekly()}
+              className="px-2.5 py-1 rounded-lg bg-henry-accent/10 text-henry-accent hover:bg-henry-accent/20 transition-all font-medium text-[11px]"
+            >🧠 Ask Henry</button>
             <span className="px-2 py-1 rounded-md bg-henry-surface border border-henry-border/40">
               {rhythm.label}
             </span>

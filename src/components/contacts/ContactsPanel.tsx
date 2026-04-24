@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useStore } from '../../store';
+import { PANEL_QUICK_ASK } from '../../henry/henryQuickAsk';
 
 const STORAGE_KEY = 'henry_contacts';
 
@@ -188,7 +189,13 @@ export default function ContactsPanel() {
           <div>
             <div className="flex items-center gap-2.5 mb-0.5">
               <span className="text-xl">👥</span>
-              <h1 className="text-lg font-semibold text-henry-text">Contacts</h1>
+              <div className="flex items-center justify-between w-full">
+                <h1 className="text-lg font-semibold text-henry-text">Contacts</h1>
+                <button
+                  onClick={() => PANEL_QUICK_ASK.contacts()}
+                  className="text-[11px] px-3 py-1.5 rounded-lg bg-henry-accent/10 text-henry-accent hover:bg-henry-accent/20 transition-all"
+                >🧠 Ask Henry</button>
+              </div>
             </div>
             <p className="text-henry-text-dim text-xs">
               {contacts.length > 0

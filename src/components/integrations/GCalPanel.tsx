@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { getGoogleToken } from '../../henry/integrations';
 import { useConnectionStore, selectStatus } from '../../henry/connectionStore';
 import ConnectScreen from './ConnectScreen';
+import { henryQuickAsk } from '../../henry/henryQuickAsk';
 
 interface CalEvent {
   id: string;
@@ -81,7 +82,13 @@ export default function GCalPanel() {
         <div className="flex items-center gap-3">
           <div className="text-2xl">📅</div>
           <div className="flex-1">
-            <h1 className="text-base font-semibold text-henry-text">Google Calendar</h1>
+            <div className="flex items-center justify-between w-full">
+                <h1 className="text-base font-semibold text-henry-text">Google Calendar</h1>
+                <button
+                  onClick={() => henryQuickAsk({ prompt: 'Review my calendar. What do I need to prepare for? Any conflicts, back-to-backs, or things I should know before tomorrow?' })}
+                  className="text-[11px] px-3 py-1.5 rounded-lg bg-henry-accent/10 text-henry-accent hover:bg-henry-accent/20 transition-all"
+                >🧠 Ask Henry</button>
+              </div>
             <p className="text-xs text-henry-text-muted">
               {loading ? 'Loading…' : `Next 7 days · ${events.length} events`}
               {profile?.email && <span className="ml-2 opacity-60">· {profile.email}</span>}

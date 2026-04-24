@@ -1,4 +1,5 @@
 import { useStore } from '../../store';
+import { PANEL_QUICK_ASK } from '../../henry/henryQuickAsk';
 
 interface QuickAction {
   icon: string;
@@ -97,7 +98,13 @@ export default function SecretaryPanel() {
         <div className="max-w-3xl">
           <div className="flex items-center gap-3 mb-1">
             <span className="text-2xl">🗓️</span>
-            <h1 className="text-lg font-semibold text-henry-text">Secretary</h1>
+            <div className="flex items-center justify-between w-full">
+                <h1 className="text-lg font-semibold text-henry-text">Secretary</h1>
+                <button
+                onClick={() => PANEL_QUICK_ASK.secretary()}
+                className="text-[11px] px-3 py-1.5 rounded-lg bg-henry-accent/10 text-henry-accent hover:bg-henry-accent/20 transition-all"
+              >🧠 Ask Henry</button>
+              </div>
           </div>
           <p className="text-henry-text-dim text-sm leading-relaxed">
             {greeting} {dayLabel}. What needs handling?

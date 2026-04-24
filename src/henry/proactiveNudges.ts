@@ -147,6 +147,45 @@ function selectNudge(): HenryNudge | null {
     }
   }
 
+  // Overdue tasks nudge
+  try {
+    const tasks = JSON.parse(localStorage.getItem('henry:tasks') || '[]') as any[];
+    const overdue = tasks.filter((t: any) => {
+      if (t.status === 'done' || t.status === 'completed') return false;
+      if (!t.due_date && !t.dueDate) return false;
+      const due = new Date(t.due_date || t.dueDate).getTime();
+      return due < Date.now();
+    });
+    if (overdue.length > 0) {
+      nudges.push({
+        id: 'overdue_tasks',
+        icon: '⏰',
+        message: `${overdue.length} task${overdue.length > 1 ? 's are' : ' is'} overdue.`,
+        action: { label: 'View tasks', view: 'tasks' },
+        type: 'reminder',
+      });
+    }
+  } catch { /* ignore */ }
+
+  // Stale project nudge — no activity in 7+ days
+  try {
+    const projects = JSON.parse(localStorage.getItem('henry:rich_memory:projects') || '[]') as any[];
+    const week = 7 * 24 * 60 * 60 * 1000;
+    const stale = projects.filter((p: any) => 
+      p.status === 'active' && p.updatedAt && Date.now() - new Date(p.updatedAt).getTime() > week
+    );
+    if (stale.length > 0) {
+      const name = stale[0].name || 'a project';
+      nudges.push({
+        id: 'stale_project',
+        icon: '📦',
+        message: `"${name}" hasn't had activity in over a week.`,
+        action: { label: 'Review project', view: 'weekly' },
+        type: 'info',
+      });
+    }
+  } catch { /* ignore */ }
+
   if (!nudges.length) return null;
   // Prefer reminders over info, weight by type
   const reminders = nudges.filter(n => n.type === 'reminder');
