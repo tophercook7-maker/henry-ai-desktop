@@ -17,6 +17,7 @@ export default function CRMPanel() {
   const [selectedClient, setSelectedClient] = useState<CRMClient | null>(null);
   const [editingClient, setEditingClient] = useState<CRMClient | null>(null);
   const [editingProject, setEditingProject] = useState<CRMProject | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [newNote, setNewNote] = useState('');
 
   const reload = useCallback(() => {
@@ -28,9 +29,8 @@ export default function CRMPanel() {
 
   function handleSaveClient() {
     if (!editingClient || !editingClient.name.trim()) return;
-    saveClient(editingClient);
-    setEditingClient(null);
-    reload();
+    try { saveClient(editingClient); setEditingClient(null); reload(); }
+    catch (e) { setError(e instanceof Error ? e.message : 'Failed to save client'); }
   }
 
   function handleSaveProject() {

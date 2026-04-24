@@ -15,6 +15,8 @@ export default function FinancePanel() {
   const [addType, setAddType] = useState<EntryType>('income');
   const [showAll, setShowAll] = useState(false);
 
+  const [error, setError] = useState<string | null>(null);
+
   const reload = useCallback(() => {
     setEntries(loadEntries());
     setSummaries(getMonthSummaries());
@@ -29,9 +31,8 @@ export default function FinancePanel() {
 
   function handleSave() {
     if (!editing || !editing.amount || !editing.description.trim()) return;
-    saveEntry(editing);
-    setEditing(null);
-    reload();
+    try { saveEntry(editing); setEditing(null); reload(); }
+    catch (e) { setError(e instanceof Error ? e.message : 'Failed to save entry'); }
   }
 
   function handleAddQuick(type: EntryType) {

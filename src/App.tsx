@@ -8,6 +8,7 @@ import { useStore } from './store';
 import type { Task } from './types';
 import { startProactiveNudges, type HenryNudge } from './henry/proactiveNudges';
 import { seedWorkspace } from './henry/workspaceSeeder';
+import { indexWorkspace } from './henry/workspaceIndex';
 import { startSelfHealing, type HenryRepairEvent } from './henry/selfHealing';
 import { getTodayBriefing, saveBriefing, buildBriefingPrompt, getTodayKey } from './henry/proactiveBriefing';
 import { isNative } from './capacitor';
@@ -331,6 +332,8 @@ export default function App() {
 
         // Seed workspace on first run (idempotent — safe to call every launch)
         try { seedWorkspace(); } catch { /* non-critical */ }
+        // Background workspace indexing (non-blocking)
+        setTimeout(() => { indexWorkspace().catch(() => {}); }, 5000);
 
         const [convos, providers] = await Promise.all([
           window.henryAPI.getConversations().catch((e: unknown) => {

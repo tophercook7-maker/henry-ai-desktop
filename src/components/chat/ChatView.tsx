@@ -48,6 +48,8 @@ import {
 } from '@/henry/errorMessages';
 import { resolveChat, requiresQualityModel, modelShortName } from '@/henry/modelRouter';
 import { speak as ttsSpeakFn, cancelTTS } from '@/henry/ttsService';
+import { recordUsage } from '@/henry/savingsEngine';
+import { runAutoMemory } from '@/henry/autoMemory';
 import { getPresencePhrase, speakPresence, detectPresenceTier } from '@/henry/ambientBrain';
 import {
   buildHenryMemoryContextBlock,
@@ -900,6 +902,8 @@ export default function ChatView() {
       created_at: new Date().toISOString(),
     };
     addMessage(userMsg);
+    // Auto-extract memory facts from user message (non-blocking)
+    runAutoMemory(content, convId ?? undefined);
     try {
       await window.henryAPI.saveMessage(userMsg);
     } catch (err) {
@@ -1369,6 +1373,7 @@ export default function ChatView() {
       systemPrompt = buildCompanionStreamSystemPrompt(effectiveMode, memoryContext, {
         weather: currentWeather,
         hasWebContext: webContextBlock.length > 0,
+        currentView: useStore.getState().currentView,
         ...(effectiveMode === 'biblical' ? { biblicalSourceProfileId } : {}),
         ...(effectiveMode === 'writer'
           ? { writerDocumentTypeId, writerActiveDraftRelativePath: writerActiveDraftPath }
@@ -1592,6 +1597,18 @@ export default function ChatView() {
 
         try {
           await window.henryAPI.saveMessage(assistantMsg);
+          // Track cost vs benchmark for savings dashboard
+          if (assistantMsg.cost != null && assistantMsg.cost >= 0) {
+            try {
+              recordUsage({
+                provider: assistantMsg.provider || 'unknown',
+                model: assistantMsg.model || 'unknown',
+                cost: assistantMsg.cost || 0,
+                tokensIn: Math.floor((assistantMsg.tokens_used || 0) * 0.4),
+                tokensOut: Math.floor((assistantMsg.tokens_used || 0) * 0.6),
+              });
+            } catch { /* non-critical */ }
+          }
         } catch (err) {
           console.error('Failed to save assistant message:', err);
         }

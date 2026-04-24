@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { useStore } from '../../store';
 import {
   loadLists, saveList, deleteList, addItemToList, toggleListItem, removeListItem, clearDoneItems, newList,
   type HenryList,
@@ -13,6 +14,16 @@ export default function ListsPanel() {
   const [editingList, setEditingList] = useState<HenryList | null>(null);
   const [showIcons, setShowIcons] = useState(false);
   const addRef = useRef<HTMLInputElement>(null);
+
+  const { setCurrentView } = useStore();
+
+  function askHenryAboutList() {
+    if (!selected) return;
+    const items = selected.items.filter(i => !i.done).map(i => i.text).join(', ');
+    const prompt = `I have a list called "${selected.name}" with these items: ${items}. Help me think through this list — what should I prioritize, what am I missing, and is there anything I should add or remove?`;
+    window.dispatchEvent(new CustomEvent('henry_mode_launch', { detail: { mode: 'companion', prompt } }));
+    setCurrentView('chat');
+  }
 
   const reload = useCallback(() => {
     const all = loadLists();

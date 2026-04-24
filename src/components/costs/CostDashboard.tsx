@@ -1,3 +1,4 @@
+import { getMonthlySummary, getAllTimeSavings, getCostSuggestion, getMonthlyBudget, setMonthlyBudget, getBudgetAlert } from '../../henry/savingsEngine';
 import { useState, useEffect } from 'react';
 
 interface CostLogRow {
@@ -24,9 +25,18 @@ export default function CostDashboard() {
   const [period, setPeriod] = useState<'7d' | '30d' | 'all'>('7d');
   const [costData, setCostData] = useState<CostEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [savings, setSavings] = useState(() => getMonthlySummary());
+  const [allTimeSavings, setAllTimeSavings] = useState(() => getAllTimeSavings());
+  const [budget, setBudget] = useState(() => getMonthlyBudget());
+  const [editingBudget, setEditingBudget] = useState(false);
+  const [budgetInput, setBudgetInput] = useState('');
+  const budgetAlert = getBudgetAlert();
+  const costSuggestion = getCostSuggestion();
 
   useEffect(() => {
     loadCosts();
+    setSavings(getMonthlySummary());
+    setAllTimeSavings(getAllTimeSavings());
   }, [period]);
 
   async function loadCosts() {
@@ -107,6 +117,52 @@ export default function CostDashboard() {
           </div>
         ) : (
           <>
+
+            {/* Savings Banner */}
+            {allTimeSavings.totalSaved > 0.001 && (
+              <div className="mb-6 p-4 rounded-xl bg-henry-success/5 border border-henry-success/20">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-henry-success">
+                      💰 You've saved ${allTimeSavings.totalSaved.toFixed(4)} vs GPT-4o pricing
+                    </p>
+                    <p className="text-xs text-henry-text-muted mt-0.5">
+                      Total AI spend: ${allTimeSavings.totalSpent.toFixed(4)} · Benchmark: ${allTimeSavings.totalBenchmark.toFixed(4)}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-lg font-bold text-henry-success">
+                      {allTimeSavings.totalBenchmark > 0 ? Math.round((allTimeSavings.totalSaved / allTimeSavings.totalBenchmark) * 100) : 0}%
+                    </p>
+                    <p className="text-[10px] text-henry-text-muted">saved</p>
+                  </div>
+                </div>
+                {savings.freeTokens > 0 && (
+                  <p className="text-[11px] text-henry-text-muted mt-2">
+                    {(savings.freeTokens / 1000).toFixed(1)}K tokens this month via Ollama (free)
+                    {savings.groqFreeTokens > 0 && ` · ${(savings.groqFreeTokens / 1000).toFixed(1)}K via Groq`}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Budget Alert */}
+            {budgetAlert && (
+              <div className={`mb-4 p-3 rounded-xl border ${budgetAlert === 'critical' ? 'bg-henry-error/5 border-henry-error/20' : 'bg-henry-warning/5 border-henry-warning/20'}`}>
+                <p className={`text-xs font-medium ${budgetAlert === 'critical' ? 'text-henry-error' : 'text-henry-warning'}`}>
+                  {budgetAlert === 'critical' ? '⚠️ Approaching monthly budget limit' : '📊 Over 75% of monthly budget used'}
+                  {' '}(${savings.totalSpent.toFixed(2)} of ${budget.toFixed(2)})
+                </p>
+              </div>
+            )}
+
+            {/* Cost suggestion */}
+            {costSuggestion && (
+              <div className="mb-4 p-3 rounded-xl bg-henry-accent/5 border border-henry-accent/20">
+                <p className="text-xs text-henry-accent">💡 {costSuggestion}</p>
+              </div>
+            )}
+
             {/* Top-level stats */}
             <div className="grid grid-cols-4 gap-4 mb-8">
               <StatCard label="Total Spent" value={`$${totalCost.toFixed(4)}`} icon="💰" />

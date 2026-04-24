@@ -37,6 +37,7 @@ import { buildConstitutionBlock } from './constitution';
 import { detectActiveConflicts, buildConflictSignalsBlock } from './conflictDetector';
 import { buildRuntimeContextBlock } from '../core/runtime/runtimeContext';
 import { buildSelfRepairBlock } from './selfRepairStore';
+import { buildPanelContextBlock } from './panelContext';
 
 /**
  * localStorage is only available in browser/renderer contexts.
@@ -424,7 +425,7 @@ export interface CompanionStreamPromptOptions {
 export function buildCompanionStreamSystemPrompt(
   mode: HenryOperatingMode,
   memoryContext: string,
-  options?: CompanionStreamPromptOptions
+  options?: CompanionStreamPromptOptions & { currentView?: string }
 ): string {
   const now = new Date();
   const dateStr = now.toLocaleDateString('en-US', {
@@ -442,6 +443,8 @@ export function buildCompanionStreamSystemPrompt(
     hour >= 17 && hour < 21 ? 'evening' :
     'night';
   const ownerName = safeLocalGet('henry:owner_name')?.trim() || 'you';
+  const currentView = options?.currentView ?? (typeof localStorage !== 'undefined' ? localStorage.getItem('henry:current_view') ?? '' : '');
+  const panelCtxBlock = buildPanelContextBlock(currentView);
   const weatherStr = formatWeatherBlock(options?.weather ?? null);
   const timeBlock = `Current date/time: ${dateStr} · ${timeStr} (${tz}) — ${partOfDay}${weatherStr ? `\n${weatherStr}` : ''}
 Let this shape how you show up. If it's early morning, ${ownerName} might be starting their day; late evening, winding down. Match the energy naturally — don't announce it, just carry it.\n`;
@@ -705,7 +708,7 @@ ${writerBlock}${design3dBlock}${biblicalBlock}
 ${actionBehaviorBlock}
 ${liveDataHonestyBlock}
 ${aiDisclaimerBlock}
-${optionalContext ? `\n${optionalContext}\n` : ''}
+${optionalContext ? `\n${optionalContext}\n` : ''}${panelCtxBlock ? `\n${panelCtxBlock}\n` : ''}
 You are the Local Brain — always present for real-time conversation. The Second Brain (Cloud) handles heavy background tasks in parallel; you stay alive and responsive regardless of what it's doing. You are never too busy for ${ownerName}.
 
 Use markdown when it improves clarity. Be concise unless depth is requested. Never cut off a thought mid-answer.`;

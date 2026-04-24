@@ -714,6 +714,20 @@ export default function WeeklyReviewPanel() {
   // Values — user's standards and priorities
   const [values, setValues] = useState<UserValue[]>(() => loadAllValues());
 
+  function debriefWithHenry() {
+    const threads = loadActiveThreads();
+    const commitments = loadOpenCommitments();
+    const weekLabel = getWeekLabel();
+    const openCount = threads.length;
+    const commitCount = commitments.filter(c => c.status === 'open').length;
+    const prompt = `Help me do my weekly review for the week of ${weekLabel}. I have ${openCount} open threads and ${commitCount} open commitments. Walk me through: What did I accomplish? What's still open? What should I carry into next week? What should I drop or delegate?`;
+    // Stamp the review date so nudges don't fire again this week
+    try { localStorage.setItem('henry:weekly_review_last', new Date().toISOString()); } catch { /* ignore */ }
+    window.dispatchEvent(new CustomEvent('henry_mode_launch', { detail: { mode: 'companion', prompt } }));
+    useStore.getState().setCurrentView('chat');
+  }
+
+
   const refreshValues = useCallback(() => {
     setValues(loadAllValues());
   }, []);
