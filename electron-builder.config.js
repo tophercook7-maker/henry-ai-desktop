@@ -29,7 +29,7 @@ module.exports = {
       { target: 'dmg', arch: ['arm64', 'x64'] },
     ],
     category: 'public.app-category.developer-tools',
-    // icon: 'build/icon.icns' — add when icon file exists
+    icon: 'build/icon.icns',
     darkModeSupport: true,
     hardenedRuntime: true,
     gatekeeperAssess: false,
