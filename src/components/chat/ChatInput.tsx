@@ -44,6 +44,15 @@ export default function ChatInput({
   const speechRecRef = useRef<any>(null);
   const settings = useStore((s) => s.settings);
 
+  // Handle global henry_focus_input event (from keyboard shortcut Cmd+K)
+  useEffect(() => {
+    function handleFocusInput() {
+      textareaRef.current?.focus();
+    }
+    window.addEventListener('henry_focus_input', handleFocusInput);
+    return () => window.removeEventListener('henry_focus_input', handleFocusInput);
+  }, []);
+
   useEffect(() => {
     const textarea = textareaRef.current;
     if (textarea) {

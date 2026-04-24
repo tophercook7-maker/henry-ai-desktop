@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useStore } from '../../store';
 import ReactMarkdown from 'react-markdown';
+import { PANEL_QUICK_ASK } from '../../henry/henryQuickAsk';
 
 const JOURNAL_PREFIX = 'henry:journal:';
 
@@ -174,7 +175,13 @@ export default function JournalPanel() {
       {/* Header */}
       <div className="shrink-0 px-6 py-4 border-b border-henry-border/50 flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-semibold text-henry-text">Journal</h1>
+          <div className="flex items-center justify-between w-full">
+              <h1 className="text-lg font-semibold text-henry-text">Journal</h1>
+              <button
+                onClick={() => PANEL_QUICK_ASK.journal()}
+                className="text-[11px] px-3 py-1.5 rounded-lg bg-henry-accent/10 text-henry-accent hover:bg-henry-accent/20 transition-all"
+              >🧠 Ask Henry</button>
+            </div>
           <p className="text-xs text-henry-text-muted mt-0.5">{formatDateLabel(todayKey())}</p>
         </div>
         <div className="flex items-center gap-2">
