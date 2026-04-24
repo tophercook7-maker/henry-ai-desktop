@@ -57,8 +57,13 @@ export const useStore = create<AppState>((set, get) => ({
 
   setConversations: (conversations: Conversation[]) => set({ conversations }),
 
-  setActiveConversation: (id: string | null) =>
-    set({ activeConversationId: id }),
+  setActiveConversation: (id: string | null) => {
+    try {
+      if (id) localStorage.setItem('henry:active_conversation', id);
+      else localStorage.removeItem('henry:active_conversation');
+    } catch { /* ignore */ }
+    set({ activeConversationId: id });
+  },
 
   setMessages: (messages: Message[]) => set({ messages }),
 

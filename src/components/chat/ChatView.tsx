@@ -51,6 +51,7 @@ import { speak as ttsSpeakFn, cancelTTS } from '@/henry/ttsService';
 import { recordUsage } from '@/henry/savingsEngine';
 import { runAutoMemory } from '@/henry/autoMemory';
 import { getSmartSuggestions, type SmartSuggestion } from '@/henry/smartSuggestions';
+import { shouldSummarize, buildSummaryPrompt, saveSessionSummary, getSessionSummary } from '@/henry/contextSummary';
 import { getPresencePhrase, speakPresence, detectPresenceTier } from '@/henry/ambientBrain';
 import {
   buildHenryMemoryContextBlock,
@@ -1658,6 +1659,32 @@ export default function ChatView() {
           const chips = getSmartSuggestions(fullText, lastUser?.content ?? '');
           setSmartSuggestions(chips);
         } catch { /* non-critical */ }
+
+        // Auto-summarize conversation every N messages for long-session memory
+        try {
+          const allMsgs = useStore.getState().messages.filter(m => m.conversation_id === convId);
+          const assistantCount = allMsgs.filter(m => m.role === 'assistant').length;
+          if (convId && shouldSummarize(convId, assistantCount)) {
+            const prompt = buildSummaryPrompt(allMsgs.slice(-16).map(m => ({ role: m.role, content: m.content })));
+            // Fire-and-forget summary generation
+            const sumProvider = useStore.getState().settings.companion_provider;
+            const sumModel = useStore.getState().settings.companion_model;
+            const sumProviders = await window.henryAPI.getProviders();
+            const sumProv = sumProviders.find((p: any) => p.id === sumProvider);
+            const sumKey = sumProv?.api_key || sumProv?.apiKey || '';
+            if (sumProvider && sumModel && sumKey) {
+              window.henryAPI.streamMessage({
+                provider: sumProvider, model: sumModel, apiKey: sumKey,
+                messages: [{ role: 'user', content: prompt }],
+                temperature: 0.3,
+              }).onDone((summary: string) => {
+                if (summary && convId) {
+                  saveSessionSummary({ conversationId: convId, summary: summary.trim(), messageCount: assistantCount, generatedAt: new Date().toISOString() });
+                }
+              });
+            }
+          }
+        } catch { /* non-critical — summary is enhancement only */ }
       });
 
       stream.onError(async (error: string) => {

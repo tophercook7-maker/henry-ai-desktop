@@ -39,6 +39,7 @@ import { buildRuntimeContextBlock } from '../core/runtime/runtimeContext';
 import { buildSelfRepairBlock } from './selfRepairStore';
 import { buildPanelContextBlock } from './panelContext';
 import { buildIntentionBlock } from './dailyIntention';
+import { getSessionSummary } from './contextSummary';
 
 /**
  * localStorage is only available in browser/renderer contexts.
@@ -445,6 +446,12 @@ export function buildCompanionStreamSystemPrompt(
     'night';
   const ownerName = safeLocalGet('henry:owner_name')?.trim() || 'you';
   const intentionBlock = buildIntentionBlock();
+  // Session summary — injected after 8+ messages to keep Henry grounded mid-conversation
+  const currentConvId = typeof localStorage !== 'undefined' ? (localStorage.getItem('henry:active_conversation') ?? '') : '';
+  const sessionSummary = currentConvId ? getSessionSummary(currentConvId) : null;
+  const sessionSummaryBlock = sessionSummary?.summary
+    ? `## Conversation context so far\n${sessionSummary.summary}\n`
+    : '';
   const currentView = options?.currentView ?? (typeof localStorage !== 'undefined' ? localStorage.getItem('henry:current_view') ?? '' : '');
   const panelCtxBlock = buildPanelContextBlock(currentView);
   const weatherStr = formatWeatherBlock(options?.weather ?? null);
@@ -705,7 +712,7 @@ Priorities — when ${ownerName}'s profile or memory indicates they value certai
 ${buildPersonalityBlock()}
 
 ${timeBlock}
-${intentionBlock ? intentionBlock + '\n' : ''}${getModeInstruction(mode)}
+${intentionBlock ? intentionBlock + '\n' : ''}${sessionSummaryBlock}${getModeInstruction(mode)}
 ${writerBlock}${design3dBlock}${biblicalBlock}
 ${actionBehaviorBlock}
 ${liveDataHonestyBlock}
