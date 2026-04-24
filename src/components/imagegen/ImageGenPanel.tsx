@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { useStore } from '../../store';
+import { henryQuickAsk } from '../../henry/henryQuickAsk';
 
 interface GeneratedImage {
   id: string;
