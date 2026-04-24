@@ -144,7 +144,16 @@ export default function ImageGenPanel() {
                   </button>
                 ))}
               </div>
-              <div className="ml-auto">
+              <div className="ml-auto flex items-center gap-2">
+                <button
+                  onClick={() => henryQuickAsk({
+                    prompt: prompt.trim()
+                      ? `Improve this image generation prompt — add style, lighting, mood, composition, and detail. Keep it under 150 words.\n\nOriginal: "${prompt}"`
+                      : 'Help me write a detailed image generation prompt. Ask what image I want, then craft a rich, specific prompt with style, lighting, mood, and composition.',
+                  })}
+                  className="text-[11px] px-3 py-2 rounded-xl bg-henry-surface border border-henry-border/30 text-henry-text-muted hover:text-henry-accent hover:border-henry-accent/30 transition-all"
+                  title="Ask Henry to improve your prompt"
+                >🧠 Improve</button>
                 <button
                   onClick={generate}
                   disabled={!prompt.trim() || generating || !openaiKey}

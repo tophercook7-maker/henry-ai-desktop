@@ -13,6 +13,7 @@ import { startSelfHealing, type HenryRepairEvent } from './henry/selfHealing';
 import { getTodayBriefing, saveBriefing, buildBriefingPrompt, getTodayKey } from './henry/proactiveBriefing';
 import { isNative } from './capacitor';
 import { checkAndNotify } from './henry/reminders';
+import { registerShortcuts } from './henry/keyboardShortcuts';
 import CompanionApp from './components/mobile/CompanionApp';
 
 // Check if companion mode is active
@@ -73,7 +74,10 @@ export default function App() {
     // Fire once immediately on mount
     try { checkAndNotify(); } catch { /* non-critical */ }
 
-    return () => { cleanup(); stopNudges(); stopHealing(); clearInterval(reminderInterval); };
+    // Register global keyboard shortcuts
+    const unregisterShortcuts = registerShortcuts();
+
+    return () => { cleanup(); stopNudges(); stopHealing(); clearInterval(reminderInterval); unregisterShortcuts(); };
   }, []);
 
   // Register service worker in production only

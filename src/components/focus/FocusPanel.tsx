@@ -85,6 +85,7 @@ export default function FocusPanel() {
     const newCount = completedToday + 1;
     setSessionCount(newCount);
     setTimerState('break');
+    playCompletionSound();
 
     const session: FocusSession = {
       id: `fs_${Date.now()}`,

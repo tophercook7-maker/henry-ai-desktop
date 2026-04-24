@@ -6,6 +6,7 @@ import {
   type PrintJob, type FilamentSpool, type BOMItem, type FilamentMaterial, type BOMStatus,
 } from '../../henry/printStudio';
 import { useStore } from '../../store';
+import { henryQuickAsk } from '../../henry/henryQuickAsk';
 
 type Tab = 'gallery' | 'filament' | 'bom';
 
@@ -72,7 +73,16 @@ export default function PrintStudioPanel() {
         <div className="p-6 border-b border-henry-border/30">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h1 className="text-xl font-semibold text-henry-text">Print Studio</h1>
+              <div className="flex items-center justify-between w-full">
+                <h1 className="text-xl font-semibold text-henry-text">Print Studio</h1>
+                <button
+                  onClick={() => henryQuickAsk({
+                    prompt: 'Help me with my 3D print. I need a good prompt or settings for printing. Ask me what I want to make and help me set it up right.',
+                    mode: 'design3d',
+                  })}
+                  className="text-[11px] px-3 py-1.5 rounded-lg bg-henry-accent/10 text-henry-accent hover:bg-henry-accent/20 transition-all"
+                >🧠 Ask Henry</button>
+              </div>
               <p className="text-xs text-henry-text-muted mt-0.5">
                 {jobs.length} prints · {spools.length} spools · {bom.length} BOM items
               </p>
