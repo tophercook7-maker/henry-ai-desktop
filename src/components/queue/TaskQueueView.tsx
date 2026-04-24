@@ -5,6 +5,7 @@ import { writerDraftDirForPath } from '@/henry/writerDraftIndex';
 import { requestFilesTabOpenRelativeDir } from '@/henry/writerDraftContext';
 import { getAmbientItems, removeAmbientItem, type AmbientItem } from '../../ambient/memoryRecall';
 import { sendToHenry } from '../../actions/store/chatBridgeStore';
+import { henryQuickAsk } from '../../henry/henryQuickAsk';
 
 const STATUS_CONFIG: Record<TaskStatus, { icon: string; label: string; color: string }> = {
   pending: { icon: '⏳', label: 'Pending', color: 'text-henry-text-muted' },
@@ -148,7 +149,13 @@ export default function TaskQueueView() {
       {/* Header */}
       <div className="shrink-0 px-6 py-4 border-b border-henry-border/50">
         <div className="flex items-center justify-between mb-3">
-          <h1 className="text-lg font-semibold text-henry-text">Task Queue</h1>
+          <div className="flex items-center justify-between w-full">
+                <h1 className="text-lg font-semibold text-henry-text">Task Queue</h1>
+                <button
+                onClick={() => henryQuickAsk({ prompt: 'Review my task queue. What should I work on next? Are there any tasks I can batch or delegate? What needs my attention most?' })}
+                className="text-[11px] px-3 py-1.5 rounded-lg bg-henry-accent/10 text-henry-accent hover:bg-henry-accent/20 transition-all"
+              >🧠 Ask Henry</button>
+              </div>
           <div className="flex items-center gap-2">
             {stats?.activeCount > 0 && (
               <span className="flex items-center gap-1.5 px-3 py-1 bg-henry-worker/10 text-henry-worker text-xs rounded-full">

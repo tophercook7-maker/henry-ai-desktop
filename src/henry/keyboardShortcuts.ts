@@ -75,9 +75,7 @@ export function buildShortcuts(): HenryShortcut[] {
       },
     },
     // Mode shortcuts
-    { key: 'b', meta: true, shift: true, description: 'Open Bible Study mode', action: navigate('chat') },
     { key: 'w', meta: true, shift: true, description: 'Go to Workspace', action: navigate('workspace') },
-    { key: 't', meta: true, shift: true, description: 'Go to Today', action: navigate('today') },
     { key: 'f', meta: true, shift: true, description: 'Go to Focus timer', action: navigate('focus') },
     {
       key: 'b', meta: true, shift: true, description: 'Biblical mode quick start',

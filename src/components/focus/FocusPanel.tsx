@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useStore } from '../../store';
 import ReactMarkdown from 'react-markdown';
+import { PANEL_QUICK_ASK } from '../../henry/henryQuickAsk';
 
 type TimerState = 'idle' | 'working' | 'break' | 'done';
 
@@ -181,7 +182,13 @@ export default function FocusPanel() {
   return (
     <div className="h-full flex flex-col bg-henry-bg overflow-y-auto">
       <div className="shrink-0 px-6 py-4 border-b border-henry-border/50">
-        <h1 className="text-lg font-semibold text-henry-text">Focus</h1>
+        <div className="flex items-center justify-between w-full">
+                <h1 className="text-lg font-semibold text-henry-text">Focus</h1>
+                <button
+                onClick={() => PANEL_QUICK_ASK.focus()}
+                className="text-[11px] px-3 py-1.5 rounded-lg bg-henry-accent/10 text-henry-accent hover:bg-henry-accent/20 transition-all"
+              >🧠 Ask Henry</button>
+              </div>
         <p className="text-xs text-henry-text-muted mt-0.5">
           {todaySessions.length > 0
             ? `${todaySessions.length} session${todaySessions.length > 1 ? 's' : ''} completed today`

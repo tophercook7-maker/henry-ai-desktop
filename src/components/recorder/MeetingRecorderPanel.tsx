@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useStore } from '../../store';
 import { saveAudio, loadAudioURL, deleteAudio } from '../../henry/audioStorage';
+import { henryQuickAsk } from '../../henry/henryQuickAsk';
 
 interface Recording {
   id: string;
@@ -280,7 +281,13 @@ export default function MeetingRecorderPanel() {
   return (
     <div className="h-full flex flex-col bg-henry-bg">
       <div className="shrink-0 px-6 py-4 border-b border-henry-border/50">
-        <h1 className="text-lg font-semibold text-henry-text">Recorder</h1>
+        <div className="flex items-center justify-between w-full">
+                <h1 className="text-lg font-semibold text-henry-text">Recorder</h1>
+                <button
+                onClick={() => henryQuickAsk({ prompt: 'Help me prepare for or debrief this meeting. What should I cover? What action items should I capture?' })}
+                className="text-[11px] px-3 py-1.5 rounded-lg bg-henry-accent/10 text-henry-accent hover:bg-henry-accent/20 transition-all"
+              >🧠 Ask Henry</button>
+              </div>
         <p className="text-xs text-henry-text-muted mt-0.5">Record meetings — get transcripts, summaries, and action items</p>
       </div>
 
