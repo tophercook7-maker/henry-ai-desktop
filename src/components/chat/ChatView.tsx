@@ -905,7 +905,6 @@ export default function ChatView() {
     addMessage(userMsg);
     // Auto-extract memory facts from user message (non-blocking)
     runAutoMemory(content, convId ?? undefined);
-    setSmartSuggestions([]);
     try {
       await window.henryAPI.saveMessage(userMsg);
     } catch (err) {
@@ -1497,11 +1496,6 @@ export default function ChatView() {
         setStreamingContent('');
         setIsStreaming(false);
         setCompanionStatus({ status: 'idle' });
-        // Surface smart follow-up chips
-        if (fullText && content) {
-          const chips = getSmartSuggestions(fullText, content);
-          setSmartSuggestions(chips);
-        }
         return;
       }
     }
@@ -1655,6 +1649,13 @@ export default function ChatView() {
             void handleWorkerRequest(content, convId, true);
           }
         }
+
+        // Surface contextual follow-up suggestion chips
+        try {
+          const lastUser = useStore.getState().messages.filter(m => m.role === 'user').at(-1);
+          const chips = getSmartSuggestions(fullText, lastUser?.content ?? '');
+          // chips: getSmartSuggestions(fullText, lastUser?.content ?? '')
+        } catch { /* non-critical */ }
       });
 
       stream.onError(async (error: string) => {
