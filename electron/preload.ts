@@ -31,6 +31,9 @@ type EngineStatusEventPayload = {
   message?: string;
 };
 
+// Signal to renderer that real IPC is available (checked by webMock)
+contextBridge.exposeInMainWorld('__ELECTRON__', true);
+
 contextBridge.exposeInMainWorld('henryAPI', {
   // ── Settings ──────────────────────────────────────────────
   getSettings: () => ipcRenderer.invoke('settings:getAll'),
