@@ -42,3 +42,11 @@ npm-debug.log*
 # TypeScript incremental / project-info caches (never commit)
 *.tsbuildinfo
 tsconfig.node.tsbuildinfo
+
+# macOS Finder duplicates (space + number copies)
+*\ 2.ts
+*\ 2.tsx
+*\ 2.css
+*\ 2.js
+.DS_Store
+
