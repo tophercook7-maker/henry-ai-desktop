@@ -43,6 +43,52 @@ interface SSEClient {
 
 // ── State ──────────────────────────────────────────────────────────────────
 
+
+// ── Cloudflare Tunnel (remote access from outside home network) ──────────
+
+async function startTunnel(port: number): Promise<string | null> {
+  try {
+    const { spawn, execSync } = await import('child_process');
+    try { execSync('which cloudflared', { stdio: 'ignore' }); }
+    catch {
+      console.log('[SyncBridge] cloudflared not installed — run: brew install cloudflared');
+      return null;
+    }
+    return new Promise((resolve) => {
+      tunnelProcess = spawn('cloudflared', [
+        'tunnel', '--url', `http://localhost:${port}`, '--no-autoupdate',
+      ], { stdio: ['ignore', 'pipe', 'pipe'] });
+
+      let resolved = false;
+      const tryResolve = (data: Buffer) => {
+        const text = data.toString();
+        const match = text.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
+        if (match && !resolved) {
+          resolved = true;
+          tunnelUrl = match[0];
+          console.log(`[SyncBridge] Tunnel active: ${tunnelUrl}`);
+          resolve(tunnelUrl);
+        }
+      };
+      tunnelProcess!.stdout?.on('data', tryResolve);
+      tunnelProcess!.stderr?.on('data', tryResolve);
+      tunnelProcess!.on('exit', () => { tunnelUrl = null; tunnelProcess = null; });
+      setTimeout(() => { if (!resolved) resolve(null); }, 15000);
+    });
+  } catch (e) {
+    console.error('[SyncBridge] Tunnel error:', e);
+    return null;
+  }
+}
+
+function stopTunnel(): void {
+  if (tunnelProcess) {
+    tunnelProcess.kill();
+    tunnelProcess = null;
+    tunnelUrl = null;
+  }
+}
+
 let server: http.Server | null = null;
 let sseClients: SSEClient[] = [];
 const linkedDevices: Map<string, DeviceInfo> = new Map();
