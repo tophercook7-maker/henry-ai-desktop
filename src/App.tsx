@@ -324,6 +324,16 @@ export default function App() {
         useStore.getState().updateSetting(key, value);
       });
 
+      // Sync SQLite settings → localStorage so webMock streamMessage uses correct provider/model
+      // This is the source-of-truth sync: SQLite wins over any stale localStorage values
+      if (Object.keys(settingsMap).length > 0) {
+        try {
+          const existing = JSON.parse(localStorage.getItem('henry:settings') || '{}');
+          const merged = { ...existing, ...settingsMap };
+          localStorage.setItem('henry:settings', JSON.stringify(merged));
+        } catch { /* ignore */ }
+      }
+
       // Check setup_complete from API result OR directly from localStorage as fallback
       const lsSettings = (() => {
         try { return JSON.parse(localStorage.getItem('henry:settings') || '{}'); } catch { return {}; }
@@ -382,6 +392,19 @@ export default function App() {
           }),
         ]);
         setConversations(convos);
+        // Sync providers from SQLite → localStorage so webMock reads correct API keys
+        try {
+          const lsProviders = providers.map((p: HenryProviderRecord) => ({
+            id: p.id,
+            name: p.name,
+            api_key: p.api_key || p.apiKey || '',
+            apiKey: p.api_key || p.apiKey || '',
+            enabled: Boolean(p.enabled),
+            models: p.models || '[]',
+          }));
+          localStorage.setItem('henry:providers', JSON.stringify(lsProviders));
+        } catch { /* ignore */ }
+
         setProviders(
           providers.map((p: HenryProviderRecord) => ({
             id: p.id,
