@@ -2,6 +2,7 @@ import { app, BrowserWindow, shell, ipcMain } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { autoUpdater } from 'electron-updater';
+import { Menu, MenuItem } from 'electron';
 import { initDatabase } from './ipc/database';
 import { registerSettingsHandlers } from './ipc/settings';
 import { registerAIHandlers } from './ipc/ai';
@@ -66,6 +67,24 @@ function createWindow() {
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: 'deny' };
+  });
+
+  // Right-click context menu with copy/paste/cut/select all
+  mainWindow.webContents.on('context-menu', (_event, params) => {
+    const menu = new Menu();
+    if (params.isEditable) {
+      if (params.selectionText) {
+        menu.append(new MenuItem({ label: 'Cut',        role: 'cut',       accelerator: 'CmdOrCtrl+X' }));
+        menu.append(new MenuItem({ label: 'Copy',       role: 'copy',      accelerator: 'CmdOrCtrl+C' }));
+      }
+      menu.append(new MenuItem({ label: 'Paste',        role: 'paste',     accelerator: 'CmdOrCtrl+V' }));
+      menu.append(new MenuItem({ label: 'Select All',   role: 'selectAll', accelerator: 'CmdOrCtrl+A' }));
+    } else if (params.selectionText) {
+      menu.append(new MenuItem({ label: 'Copy',         role: 'copy',      accelerator: 'CmdOrCtrl+C' }));
+    }
+    if (menu.items.length > 0) {
+      menu.popup({ window: mainWindow! });
+    }
   });
 
   mainWindow.on('closed', () => { mainWindow = null; });
