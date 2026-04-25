@@ -1460,7 +1460,16 @@ export default function ChatView() {
     // ── Token guard ──────────────────────────────────────────────────────────
     const systemTokens = estimateTokens(enrichedSystemPrompt);
     const historyTokensBefore = history.reduce((s, m) => s + estimateTokens(m.content) + 4, 0);
-    const guardedHistory = trimHistoryToTokenBudget(history, systemTokens, TOKEN_HARD_LIMIT);
+    // Use provider-appropriate context limit
+    const providerLimits: Record<string, number> = {
+      groq: 100_000,
+      anthropic: 180_000,
+      openai: 100_000,
+      google: 800_000,
+      ollama: 30_000,
+    };
+    const effectiveLimit = providerLimits[companionProvider ?? ''] ?? TOKEN_HARD_LIMIT;
+    const guardedHistory = trimHistoryToTokenBudget(history, systemTokens, effectiveLimit);
     const historyTokensAfter = guardedHistory.reduce((s, m) => s + estimateTokens(m.content) + 4, 0);
 
     // ── Context logging ──────────────────────────────────────────────────────

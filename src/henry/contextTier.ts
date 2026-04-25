@@ -38,7 +38,12 @@ export function estimatePayloadTokens(
  * Hard cap: never send more than this many tokens to any provider.
  * Groq free-tier TPM limits make 6k the safe ceiling.
  */
-export const TOKEN_HARD_LIMIT = 6_000;
+// Per-provider context limits (in tokens)
+// Groq 70b: 128k context. OpenAI GPT-4o: 128k. Claude: 200k.
+// We reserve ~8k for system prompt and ~4k for output.
+export const TOKEN_HARD_LIMIT = 50_000;  // safe for all major providers
+export const TOKEN_HARD_LIMIT_GROQ = 100_000;  // Groq has 128k
+export const TOKEN_HARD_LIMIT_ANTHROPIC = 180_000;  // Claude has 200k
 
 // ── Context tiers ─────────────────────────────────────────────────────────────
 
