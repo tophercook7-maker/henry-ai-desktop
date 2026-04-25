@@ -13,11 +13,13 @@ import { useEffect, useState, useCallback } from 'react';
 import type { CompanionDeviceCapability, SyncServerState } from '../../sync/types';
 import { buildPairCodePayload } from '../../sync/deviceLink';
 
-const isElectron = typeof window !== 'undefined' && !!window.henryAPI?.syncGetState;
+const isElectron = typeof window !== 'undefined' && !!(window as any).__ELECTRON__;
 
 export default function DeviceLinkPanel() {
   const [serverState, setServerState] = useState<SyncServerState | null>(null);
   const [pairCode, setPairCode] = useState<string | null>(null);
+  const [tunnelUrl, setTunnelUrl] = useState<string | null>(null);
+  const [tunnelLoading, setTunnelLoading] = useState(false);
   const [codeExpiry, setCodeExpiry] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [countdown, setCountdown] = useState(0);
@@ -27,6 +29,7 @@ export default function DeviceLinkPanel() {
     try {
       const state = await window.henryAPI.syncGetState!();
       setServerState(state);
+      if (state.tunnelUrl ?? null) setTunnelUrl(state.tunnelUrl ?? null);
       if (state.pairToken && state.pairTokenExpiry) {
         const payload = buildPairCodePayload(
           state.localIp,
@@ -78,6 +81,23 @@ export default function DeviceLinkPanel() {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function handleStartTunnel() {
+    if (!isElectron) return;
+    setTunnelLoading(true);
+    try {
+      const result = await (window.henryAPI as any).syncStartTunnel?.();
+      if (result?.url) setTunnelUrl(result.url);
+      else alert('cloudflared not installed.\nRun in Terminal: brew install cloudflared\nThen restart Henry.');
+    } catch { alert('Failed to start tunnel'); }
+    finally { setTunnelLoading(false); }
+  }
+
+  async function handleStopTunnel() {
+    if (!isElectron) return;
+    await (window.henryAPI as any).syncStopTunnel?.();
+    setTunnelUrl(null);
   }
 
   async function generateCode() {
@@ -232,6 +252,36 @@ export default function DeviceLinkPanel() {
               'Generate Pairing Code'
             )}
           </button>
+        )}
+      </div>
+
+      {/* Remote Access — works from anywhere */}
+      <div className="mt-4 pt-4 border-t border-henry-border/20">
+        <p className="text-[11px] font-semibold text-henry-text-muted uppercase tracking-wider mb-2">Remote Access</p>
+        {!tunnelUrl ? (
+          <div>
+            <p className="text-[11px] text-henry-text-muted mb-2">
+              Connect from outside your home network. Requires{' '}
+              <code className="text-henry-accent">brew install cloudflared</code>
+            </p>
+            <button
+              onClick={handleStartTunnel}
+              disabled={tunnelLoading || !serverState?.running}
+              className="text-[11px] px-3 py-1.5 rounded-lg bg-henry-surface border border-henry-border/40 text-henry-text hover:border-henry-accent/40 transition-all disabled:opacity-40"
+            >{tunnelLoading ? 'Starting tunnel…' : '🌐 Start Remote Tunnel'}</button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-[11px] text-henry-text-muted">Remote URL (works from anywhere):</p>
+            <div className="flex items-center gap-2">
+              <code className="text-[11px] text-henry-accent bg-henry-surface px-3 py-1.5 rounded-lg border border-henry-border/30 flex-1 truncate">{tunnelUrl}</code>
+              <button
+                onClick={() => navigator.clipboard.writeText(tunnelUrl!)}
+                className="text-[11px] px-2 py-1.5 rounded-lg bg-henry-surface border border-henry-border/30 text-henry-text-muted hover:text-henry-text"
+              >Copy</button>
+            </div>
+            <button onClick={handleStopTunnel} className="text-[10px] text-henry-text-muted hover:text-henry-error transition-colors">Stop tunnel</button>
+          </div>
         )}
       </div>
 

@@ -76,6 +76,11 @@ export default function App() {
     // Fire once immediately on mount
     try { checkAndNotify(); } catch { /* non-critical */ }
 
+    // Auto-start the sync server for mobile companion (LAN connection)
+    if ((window as any).__ELECTRON__ && window.henryAPI?.syncStart) {
+      window.henryAPI.syncStart().catch(() => { /* ignore if already running */ });
+    }
+
     // Handle henry_open_capture event (from Cmd+Shift+N shortcut)
     function handleOpenCapture() {
       useStore.getState().setCurrentView('captures' as any);
@@ -174,7 +179,7 @@ export default function App() {
         // Build a simple non-streaming AI call using the companion provider
         const st = useStore.getState();
         const companionProvider = st.settings.companion_provider || 'groq';
-        const companionModel = st.settings.companion_model || 'llama-3.1-8b-instant';
+        const companionModel = st.settings.companion_model || 'llama-3.3-70b-versatile';
         const providerRecord = st.providers.find((p) => p.id === companionProvider);
         const apiKey = providerRecord?.apiKey || '';
 
@@ -306,7 +311,7 @@ export default function App() {
             models: JSON.stringify([]),
           } as any);
           await window.henryAPI.saveSetting('companion_provider', 'groq');
-          await window.henryAPI.saveSetting('companion_model', 'llama-3.1-8b-instant');
+          await window.henryAPI.saveSetting('companion_model', 'llama-3.3-70b-versatile');
           await window.henryAPI.saveSetting('worker_provider', 'groq');
           await window.henryAPI.saveSetting('worker_model', 'llama-3.3-70b-versatile');
           await window.henryAPI.saveSetting('setup_complete', 'true');
@@ -347,9 +352,9 @@ export default function App() {
           const needsWorker = !settingsMap.worker_provider;
           if (needsCompanion) {
             await window.henryAPI.saveSetting('companion_provider', 'groq');
-            await window.henryAPI.saveSetting('companion_model', 'llama-3.1-8b-instant');
+            await window.henryAPI.saveSetting('companion_model', 'llama-3.3-70b-versatile');
             useStore.getState().updateSetting('companion_provider', 'groq');
-            useStore.getState().updateSetting('companion_model', 'llama-3.1-8b-instant');
+            useStore.getState().updateSetting('companion_model', 'llama-3.3-70b-versatile');
           }
           if (needsWorker) {
             await window.henryAPI.saveSetting('worker_provider', 'groq');

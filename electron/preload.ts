@@ -298,6 +298,9 @@ contextBridge.exposeInMainWorld('henryAPI', {
 
   // ── Companion Sync Bridge ─────────────────────────────────
   syncStart: (port?: number) => ipcRenderer.invoke('henry:sync:start', port),
+  syncStartTunnel: () => ipcRenderer.invoke('henry:sync:start-tunnel'),
+  syncStopTunnel: () => ipcRenderer.invoke('henry:sync:stop-tunnel'),
+  syncGetTunnelUrl: () => ipcRenderer.invoke('henry:sync:get-tunnel-url'),
   syncStop: () => ipcRenderer.invoke('henry:sync:stop'),
   syncGetState: () => ipcRenderer.invoke('henry:sync:state'),
   syncGeneratePairToken: (ttlMs?: number) => ipcRenderer.invoke('henry:sync:generate-pair-token', ttlMs),

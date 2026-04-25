@@ -52,6 +52,8 @@ let pairTokenExpiry = 0;
 const pendingActions: Map<string, PendingAction> = new Map();
 let eventLog: SyncEvent[] = [];
 let currentPort = 4242;
+let tunnelUrl: string | null = null;
+let tunnelProcess: import('child_process').ChildProcess | null = null;
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -261,6 +263,166 @@ async function handleRequest(
 
   const url = new URL(req.url ?? '/', `http://localhost:${currentPort}`);
   const path = url.pathname;
+
+
+  // ── Mobile Companion UI ──────────────────────────────────────────────
+  if ((path === '/' || path === '/companion') && req.method === 'GET') {
+    const macName = os.hostname().replace('.local', '');
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Henry">
+<title>Henry AI</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{--bg:#0a0a0f;--surface:#12121a;--border:#1e1e2e;--accent:#6366f1;--text:#e8e8f0;--muted:#6b6b80;--green:#22c55e;--red:#ef4444}
+  body{background:var(--bg);color:var(--text);font-family:-apple-system,system-ui,sans-serif;height:100dvh;display:flex;flex-direction:column;overflow:hidden}
+  #header{padding:env(safe-area-inset-top) 16px 12px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-shrink:0}
+  #dot{width:8px;height:8px;border-radius:50%;background:var(--red);flex-shrink:0}
+  #dot.connected{background:var(--green)}
+  #status-text{font-size:13px;color:var(--muted);flex:1}
+  #messages{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px}
+  .msg{max-width:85%;padding:10px 14px;border-radius:18px;font-size:15px;line-height:1.4;white-space:pre-wrap;word-break:break-word}
+  .msg.user{align-self:flex-end;background:var(--accent);color:#fff;border-bottom-right-radius:4px}
+  .msg.henry{align-self:flex-start;background:var(--surface);border:1px solid var(--border);border-bottom-left-radius:4px}
+  .msg.henry.thinking{opacity:0.6;font-style:italic}
+  #input-area{padding:12px 16px env(safe-area-inset-bottom);background:var(--surface);border-top:1px solid var(--border);display:flex;gap:8px;align-items:flex-end;flex-shrink:0}
+  #input{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:20px;padding:10px 16px;color:var(--text);font-size:16px;resize:none;max-height:120px;outline:none;line-height:1.4}
+  #input:focus{border-color:var(--accent)}
+  #send{width:40px;height:40px;border-radius:50%;background:var(--accent);border:none;color:#fff;font-size:18px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:opacity 0.15s}
+  #send:disabled{opacity:0.4}
+  #pair-screen{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;padding:32px;text-align:center}
+  #pair-screen h1{font-size:28px;font-weight:700}
+  #pair-screen p{color:var(--muted);font-size:15px;line-height:1.5}
+  #pair-input{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 18px;color:var(--text);font-size:17px;width:100%;max-width:300px;outline:none;text-align:center;letter-spacing:2px}
+  #pair-btn{background:var(--accent);color:#fff;border:none;border-radius:12px;padding:14px 28px;font-size:16px;font-weight:600;cursor:pointer;width:100%;max-width:300px}
+  #pair-btn:disabled{opacity:0.5}
+  .hidden{display:none!important}
+  #add-home{background:var(--surface);border:1px solid var(--accent)/30;border-radius:12px;padding:12px 16px;color:var(--muted);font-size:13px;text-align:center;max-width:300px}
+</style>
+</head>
+<body>
+<div id="pair-screen">
+  <div style="font-size:48px">🧠</div>
+  <h1>Henry AI</h1>
+  <p>Your AI running on <strong>${macName}</strong>.<br>Enter the 6-digit pair code from Henry on your Mac.</p>
+  <input id="pair-input" type="number" inputmode="numeric" placeholder="000000" maxlength="6" autocomplete="off">
+  <button id="pair-btn" onclick="doPair()">Connect to Henry</button>
+  <div id="add-home">💡 Tap Share → Add to Home Screen for the full app experience</div>
+</div>
+<div id="chat-screen" class="hidden" style="display:none;flex-direction:column;height:100dvh">
+  <div id="header">
+    <div id="dot"></div>
+    <div id="status-text">Connecting…</div>
+  </div>
+  <div id="messages"></div>
+  <div id="input-area">
+    <textarea id="input" placeholder="Message Henry…" rows="1" oninput="autoResize(this)" onkeydown="handleKey(event)"></textarea>
+    <button id="send" onclick="sendMsg()" disabled>↑</button>
+  </div>
+</div>
+
+<script>
+const HOST = location.host;
+let token = localStorage.getItem('henry_token') || '';
+let eventSource = null;
+
+function autoResize(el){el.style.height='auto';el.style.height=Math.min(el.scrollHeight,120)+'px'}
+function handleKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg()}}
+
+async function doPair(){
+  const code = document.getElementById('pair-input').value.trim();
+  if(code.length<6)return;
+  const btn=document.getElementById('pair-btn');
+  btn.disabled=true;btn.textContent='Connecting…';
+  try{
+    const r=await fetch('/sync/pair',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({pairToken:code,deviceName:navigator.userAgent.includes('iPad')?'iPad':'iPhone',deviceType:'mobile',capabilities:['capture','prompt','notify']})});
+    const d=await r.json();
+    if(d.companionToken){
+      token=d.companionToken;
+      localStorage.setItem('henry_token',token);
+      showChat();
+    } else {
+      btn.disabled=false;btn.textContent='Connect to Henry';
+      alert(d.error||'Invalid code. Check Henry Settings → Companion Devices.');
+    }
+  }catch(e){btn.disabled=false;btn.textContent='Connect to Henry';alert('Could not reach Henry. Check WiFi.');}
+}
+
+function showChat(){
+  document.getElementById('pair-screen').classList.add('hidden');
+  const cs=document.getElementById('chat-screen');
+  cs.classList.remove('hidden');cs.style.display='flex';
+  connectSSE();
+}
+
+function connectSSE(){
+  if(eventSource)eventSource.close();
+  eventSource=new EventSource('/sync/stream?token='+token);
+  const dot=document.getElementById('dot');
+  const st=document.getElementById('status-text');
+  eventSource.onopen=()=>{dot.className='connected';st.textContent='Henry is ready';document.getElementById('send').disabled=false;};
+  eventSource.onerror=()=>{dot.className='';st.textContent='Reconnecting…';document.getElementById('send').disabled=true;setTimeout(connectSSE,3000);};
+  eventSource.addEventListener('henry_response',e=>{
+    const d=JSON.parse(e.data||'{}');
+    addMsg('henry',d.text||d.content||'');
+  });
+  eventSource.addEventListener('henry_thinking',()=>addMsg('henry','Henry is thinking…','thinking'));
+}
+
+function addMsg(role,text,cls=''){
+  const msgs=document.getElementById('messages');
+  // Remove thinking placeholder
+  if(role==='henry'&&cls!=='thinking'){
+    const thinking=msgs.querySelector('.thinking');
+    if(thinking)thinking.remove();
+  }
+  const el=document.createElement('div');
+  el.className='msg '+role+(cls?' '+cls:'');
+  el.textContent=text;
+  msgs.appendChild(el);
+  msgs.scrollTop=msgs.scrollHeight;
+}
+
+async function sendMsg(){
+  const input=document.getElementById('input');
+  const text=input.value.trim();
+  if(!text)return;
+  input.value='';input.style.height='auto';
+  addMsg('user',text);
+  addMsg('henry','Henry is thinking…','thinking');
+  document.getElementById('send').disabled=true;
+  try{
+    const r=await fetch('/sync/prompt',{method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
+      body:JSON.stringify({text,mode:'companion'})});
+    const d=await r.json();
+    if(!d.ok){
+      document.querySelector('.thinking')?.remove();
+      addMsg('henry','Something went wrong. Try again.');
+    }
+    // Response comes via SSE stream
+  }catch(e){
+    document.querySelector('.thinking')?.remove();
+    addMsg('henry','Could not reach Henry. Check WiFi.');
+  }
+  document.getElementById('send').disabled=false;
+}
+
+// Auto-connect if we have a token
+if(token){showChat();}
+</script>
+</body>
+</html>`;
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(html);
+    return;
+  }
 
   // ── Health ────────────────────────────────────────────────────────────
   if (path === '/sync/health' && req.method === 'GET') {
@@ -668,5 +830,20 @@ export function registerSyncBridgeIpc(): void {
   ipcMain.handle('henry:sync:update-settings', (_e, settings: SyncSnapshot['settings']) => {
     updateRoamingSettings(settings);
     return { ok: true };
+  });
+
+  ipcMain.handle('henry:sync:start-tunnel', async () => {
+    if (tunnelUrl) return { ok: true, url: tunnelUrl };
+    const url = await startTunnel(currentPort);
+    return { ok: !!url, url };
+  });
+
+  ipcMain.handle('henry:sync:stop-tunnel', () => {
+    stopTunnel();
+    return { ok: true };
+  });
+
+  ipcMain.handle('henry:sync:get-tunnel-url', () => {
+    return { url: tunnelUrl };
   });
 }

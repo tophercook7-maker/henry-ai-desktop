@@ -582,10 +582,21 @@ function EnginesTab() {
   const [autoDetecting, setAutoDetecting] = useState(false);
   const [autoDetectResult, setAutoDetectResult] = useState<string | null>(null);
 
-  const enabledProviders = providers.filter((p) => p.enabled).map((p) => p.id);
-  const availableModels = AVAILABLE_MODELS.filter((m) => enabledProviders.includes(m.provider));
-  const ollamaEnabled = enabledProviders.includes('ollama');
-  const groqEnabled = enabledProviders.includes('groq');
+  // Show models for any provider that has a key OR is currently configured
+  // (enabled flag alone can be stale if DB was patched directly)
+  const enabledProviders = providers
+    .filter((p) => p.enabled || p.apiKey?.trim())
+    .map((p) => p.id);
+  // Also always include the currently configured providers so UI isn't blank
+  const configuredProviders = [
+    settings.companion_provider,
+    settings.companion_provider_2,
+    settings.worker_provider,
+  ].filter(Boolean) as string[];
+  const allVisibleProviders = [...new Set([...enabledProviders, ...configuredProviders])];
+  const availableModels = AVAILABLE_MODELS.filter((m) => allVisibleProviders.includes(m.provider));
+  const ollamaEnabled = allVisibleProviders.includes('ollama');
+  const groqEnabled = allVisibleProviders.includes('groq');
   const [groqDefaultsResult, setGroqDefaultsResult] = useState<string | null>(null);
 
   async function saveSetting(key: string, value: string) {

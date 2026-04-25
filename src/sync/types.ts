@@ -78,6 +78,7 @@ export interface CompanionConnectionConfig {
 /** Desktop sync server runtime state */
 export interface SyncServerState {
   running: boolean;
+  tunnelUrl?: string | null;
   port: number;
   localIp: string;
   pairToken: string | null;
