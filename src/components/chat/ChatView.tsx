@@ -1543,6 +1543,16 @@ export default function ChatView() {
         ? 8_192
         : presenceTier === 'quality' ? 6_000 : presenceTier === 'fast' ? 1_500 : 3_000;
 
+      // Pre-flight: estimate total tokens and warn if approaching Groq free tier limits
+      const totalInputTokens = messagesPayload.reduce((s, m) => s + Math.ceil(m.content.length / 4), 0);
+      if (totalInputTokens > 5_000 && companionProvider === 'groq') {
+        // Groq free tier: 6k tokens/minute. Trim system prompt to essentials only.
+        const trimmedSystem = messagesPayload[0]?.content?.slice(0, 8000) ?? '';
+        if (messagesPayload[0]?.role === 'system') {
+          messagesPayload[0].content = trimmedSystem + (messagesPayload[0].content.length > 8000 ? '\n[Context trimmed — ask shorter questions or start a new chat for fresh context]' : '');
+        }
+      }
+
       const stream = window.henryAPI.streamMessage({
         provider: companionProvider,
         model: companionModel,
@@ -1567,6 +1577,25 @@ export default function ChatView() {
       stream.onDone(async (fullText: string, usage?: any) => {
         if (import.meta.env.DEV) {
           console.debug('[Henry] stream done', { fullLen: fullText?.length ?? 0, usage });
+        }
+
+        // Empty response guard — Groq/API returned nothing (context too large, rate limit, or network drop)
+        if (!fullText || !fullText.trim()) {
+          const retryMsg = companionProvider === 'groq'
+            ? "Henry didn't get a response from Groq. This usually means the conversation is too long for one request, or Groq hit a rate limit.\n\n**Try:** Start a new chat and ask the same question. Or ask a shorter, more specific question in this chat."
+            : `Henry got an empty response from ${companionProvider}. The request may have been too long or hit a rate limit. Try starting a new chat.`;
+          addMessage({
+            id: crypto.randomUUID(),
+            conversation_id: convId,
+            role: 'assistant',
+            content: retryMsg,
+            engine: 'companion',
+            created_at: new Date().toISOString(),
+          });
+          setStreamingContent('');
+          setIsStreaming(false);
+          setCompanionStatus({ status: 'idle' });
+          return;
         }
 
         // Binary content guard — bail with explanation rather than rendering garbage
