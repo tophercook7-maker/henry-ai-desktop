@@ -50,3 +50,9 @@ tsconfig.node.tsbuildinfo
 *\ 2.js
 .DS_Store
 
+
+# Build outputs — generated on every build, do not track
+renderer/assets/
+dist/
+dist-electron/
+
