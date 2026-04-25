@@ -7,9 +7,7 @@ import type { DailyBriefing } from '../../henry/proactiveBriefing';
 import { useCapturesStore, selectUnroutedCaptures } from '../../ambient/capturesStore';
 import { HenrySkeleton } from '../HenryShared';
 import { getDailyIntention, setDailyIntention, clearDailyIntention } from '../../henry/dailyIntention';
-import { PANEL_QUICK_ASK } from '../../henry/henryQuickAsk';
 import { getFocusNow, type FocusSignal } from '../../henry/getFocusNow';
-import { buildDailySummaryData, buildDailySummaryPrompt } from '../../henry/dailySummary';
 
 const HENRY_OPERATING_MODE_KEY = 'henry_operating_mode';
 const HENRY_LAST_GREETING_KEY = 'henry_last_greeting_date';
@@ -167,20 +165,8 @@ export default function TodayPanel() {
 
   function launchMode(mode: string, prompt?: string) {
     try { localStorage.setItem(HENRY_OPERATING_MODE_KEY, mode); } catch { /* ignore */ }
-    // Write to localStorage BEFORE navigating — ChatView reads it on mount (timing safety net)
-    if (prompt && prompt.trim()) {
-      try { localStorage.setItem('henry:pending_inject', prompt.trim()); } catch { /* ignore */ }
-    }
+    window.dispatchEvent(new CustomEvent('henry_mode_launch', { detail: { mode, prompt: prompt || '' } }));
     setCurrentView('chat');
-    // Also fire events after a short delay for the event-listener path
-    if (prompt && prompt.trim()) {
-      setTimeout(() => {
-        window.dispatchEvent(new CustomEvent('henry_mode_launch', { detail: { mode, prompt: prompt.trim() } }));
-        window.dispatchEvent(new CustomEvent('henry_inject_draft', { detail: { text: prompt.trim() } }));
-      }, 150);
-    } else {
-      window.dispatchEvent(new CustomEvent('henry_mode_launch', { detail: { mode, prompt: '' } }));
-    }
   }
 
   function runMacro(macro: { id: string; prompt: string; mode: string; name: string }) {
@@ -201,22 +187,6 @@ export default function TodayPanel() {
           </p>
           <h1 className="text-2xl font-semibold text-henry-text mb-1">{greeting.line1}</h1>
           <p className="text-henry-text-dim text-base mb-5">{greeting.line2}</p>
-
-          {/* Quick-ask chips */}
-          <div className="flex flex-wrap gap-2 mb-3">
-            {[
-              { label: '🎯 What to focus on?', fn: () => PANEL_QUICK_ASK.focus() },
-              { label: '📋 Catch me up', fn: () => PANEL_QUICK_ASK.today() },
-              { label: '📖 Scripture study', fn: () => PANEL_QUICK_ASK.bible() },
-              { label: '📊 Finance check', fn: () => PANEL_QUICK_ASK.finance() },
-            ].map(chip => (
-              <button
-                key={chip.label}
-                onClick={chip.fn}
-                className="text-[11px] px-3 py-1.5 rounded-full border border-henry-border/30 bg-henry-surface/30 text-henry-text-dim hover:text-henry-text hover:border-henry-accent/30 hover:bg-henry-accent/5 transition-all"
-              >{chip.label}</button>
-            ))}
-          </div>
 
           {/* Quick-ask input */}
           <div className="relative">
@@ -464,24 +434,6 @@ export default function TodayPanel() {
             </div>
             {intention && <p className="text-[11px] text-henry-accent/70 mt-1.5 px-1">🎯 Active — Henry anchors to this today</p>}
           </div>
-
-          {/* End-of-day summary — shows after 4pm */}
-          {new Date().getHours() >= 16 && (
-            <div className="mb-5">
-              <button
-                onClick={() => {
-                  const data = buildDailySummaryData();
-                  const prompt = buildDailySummaryPrompt(data);
-                  window.dispatchEvent(new CustomEvent('henry_inject_draft', { detail: { text: prompt } }));
-                  useStore.getState().setCurrentView('chat');
-                }}
-                className="w-full py-3 rounded-xl border border-henry-accent/25 bg-henry-accent/5 text-henry-accent text-sm font-medium hover:bg-henry-accent/10 transition-all flex items-center justify-center gap-2"
-              >
-                <span>🌆</span>
-                <span>End-of-day summary</span>
-              </button>
-            </div>
-          )}
 
           {/* Mode launcher */}
           <div>

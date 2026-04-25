@@ -28,14 +28,23 @@ export function henryQuickAsk(opts: QuickAskOptions): void {
     }
   } catch { /* ignore */ }
 
-  window.dispatchEvent(
-    new CustomEvent('henry_inject_draft', {
-      detail: { text: fullPrompt },
-    })
-  );
-
   if (navigate) {
+    // Navigate first so ChatView mounts and registers event listeners
     useStore.getState().setCurrentView('chat');
+    // Then inject prompt after a short delay
+    setTimeout(() => {
+      window.dispatchEvent(
+        new CustomEvent('henry_inject_draft', {
+          detail: { text: fullPrompt },
+        })
+      );
+    }, 120);
+  } else {
+    window.dispatchEvent(
+      new CustomEvent('henry_inject_draft', {
+        detail: { text: fullPrompt },
+      })
+    );
   }
 }
 

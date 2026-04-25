@@ -51,7 +51,6 @@ import { speak as ttsSpeakFn, cancelTTS } from '@/henry/ttsService';
 import { recordUsage } from '@/henry/savingsEngine';
 import { runAutoMemory } from '@/henry/autoMemory';
 import { getSmartSuggestions, type SmartSuggestion } from '@/henry/smartSuggestions';
-import { trackUsage } from '@/henry/henryAnalytics';
 import { shouldSummarize, buildSummaryPrompt, saveSessionSummary, getSessionSummary } from '@/henry/contextSummary';
 import { getPresencePhrase, speakPresence, detectPresenceTier } from '@/henry/ambientBrain';
 import {
@@ -345,17 +344,7 @@ export default function ChatView() {
     readStoredDesign3dWorkflow
   );
   const [saveWorkspaceDraftBusy, setSaveWorkspaceDraftBusy] = useState(false);
-  const [chatInject, setChatInject] = useState<{ id: number; text: string } | null>(() => {
-    // Check for a pending inject stored before navigation (timing safety net)
-    try {
-      const pending = localStorage.getItem('henry:pending_inject');
-      if (pending) {
-        localStorage.removeItem('henry:pending_inject');
-        return { id: Date.now(), text: pending };
-      }
-    } catch { /* ignore */ }
-    return null;
-  });
+  const [chatInject, setChatInject] = useState<{ id: number; text: string } | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [lastWebSources, setLastWebSources] = useState<WebSource[]>([]);
   const [bibleStatus, setBibleStatus] = useState<BibleCorpusStatus>({ loaded: false, bookCount: 0, verseCount: 0, sizeBytes: 0 });
@@ -474,22 +463,12 @@ export default function ChatView() {
 
     window.addEventListener('henry_secretary_prompt', handleSecretaryPrompt);
     window.addEventListener('henry_mode_launch', handleModeLaunch);
-
-    // henry_inject_draft — fired from any panel to pre-fill the chat input
-    function handleInjectDraft(e: Event) {
-      const { text } = (e as CustomEvent<{ text: string }>).detail;
-      if (text?.trim()) {
-        setChatInject({ id: Date.now(), text: text.trim() });
-      }
-    }
-    window.addEventListener('henry_inject_draft', handleInjectDraft);
     window.addEventListener('henry_new_chat', handleNewChat);
     window.addEventListener('henry_wake_word', handleWakeWord);
     window.addEventListener('henry_action_prompt', handleActionPrompt);
     return () => {
       window.removeEventListener('henry_secretary_prompt', handleSecretaryPrompt);
       window.removeEventListener('henry_mode_launch', handleModeLaunch);
-      window.removeEventListener('henry_inject_draft', handleInjectDraft);
       window.removeEventListener('henry_new_chat', handleNewChat);
       window.removeEventListener('henry_wake_word', handleWakeWord);
       window.removeEventListener('henry_action_prompt', handleActionPrompt);
@@ -1674,9 +1653,6 @@ export default function ChatView() {
             void handleWorkerRequest(content, convId, true);
           }
         }
-
-        // Track usage analytics (local only)
-        try { trackUsage(effectiveMode, useStore.getState().currentView); } catch { /* non-critical */ }
 
         // Surface contextual follow-up suggestion chips
         try {
