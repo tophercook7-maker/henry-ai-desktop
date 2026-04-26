@@ -31,10 +31,10 @@ type EngineStatusEventPayload = {
   message?: string;
 };
 
-// Signal to renderer that real IPC is available (checked by webMock)
-contextBridge.exposeInMainWorld('__ELECTRON__', true);
-
 contextBridge.exposeInMainWorld('henryAPI', {
+  // Signal flag — tells webMock that real Electron IPC is available
+  // Must be a function — contextBridge strips non-function properties in sandbox mode
+  __isElectron: () => true,
   // ── Settings ──────────────────────────────────────────────
   getSettings: () => ipcRenderer.invoke('settings:getAll'),
   saveSetting: (key: string, value: string) => ipcRenderer.invoke('settings:save', { key, value }),

@@ -1452,13 +1452,14 @@ const henryAPI: Window['henryAPI'] = {
 // In Electron, preload already exposes henryAPI via contextBridge as a
 // non-writable property — reassigning it throws a TypeError that prevents React from mounting.
 // Only install the webMock if we're NOT in the real Electron app.
-// The preload sets window.__ELECTRON__ = true before this module runs,
-// so we can reliably detect the real app vs web/dev mode.
-if (!(window as any).__ELECTRON__ && !window.henryAPI) {
+// The preload exposes henryAPI.__isElectron = true via contextBridge.
+// We check this AFTER henryAPI is defined by the preload.
+// The preload sets window.henryAPI synchronously via contextBridge before
+// any renderer JS runs. If it exists here, it IS the real Electron IPC.
+// No flag detection needed — presence of henryAPI = real Electron.
+if (!window.henryAPI) {
   window.henryAPI = henryAPI;
-} else if (!(window as any).__ELECTRON__) {
-  // Web/dev mode: already had a henryAPI (shouldn't happen) — leave it alone
-  console.log('[webMock] henryAPI already set, skipping mock installation');
+  console.log('[webMock] Installed — no preload detected (web/dev mode)');
 } else {
-  console.log('[webMock] Running in Electron — real IPC via preload, mock skipped');
+  console.log('[webMock] Skipped — real Electron IPC active (preload set henryAPI)');
 }

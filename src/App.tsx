@@ -77,8 +77,8 @@ export default function App() {
     try { checkAndNotify(); } catch { /* non-critical */ }
 
     // Auto-start the sync server for mobile companion (LAN connection)
-    if ((window as any).__ELECTRON__ && window.henryAPI?.syncStart) {
-      window.henryAPI.syncStart().catch(() => { /* ignore if already running */ });
+    if (!!!!(window.henryAPI as any)?.__isElectron?.()) {
+      window.henryAPI.syncStart?.().catch?.(() => { /* ignore if already running */ });
     }
 
     // Handle henry_open_capture event (from Cmd+Shift+N shortcut)

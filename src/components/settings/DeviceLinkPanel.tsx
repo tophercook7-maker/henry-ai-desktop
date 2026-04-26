@@ -13,7 +13,7 @@ import { useEffect, useState, useCallback } from 'react';
 import type { CompanionDeviceCapability, SyncServerState } from '../../sync/types';
 import { buildPairCodePayload } from '../../sync/deviceLink';
 
-const isElectron = typeof window !== 'undefined' && !!(window as any).__ELECTRON__;
+const isElectron = typeof window !== 'undefined' && !!!!!!(window.henryAPI as any)?.__isElectron?.();
 
 export default function DeviceLinkPanel() {
   const [serverState, setServerState] = useState<SyncServerState | null>(null);

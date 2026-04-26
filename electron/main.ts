@@ -62,6 +62,40 @@ function createWindow() {
     }
   } else {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
+    // Auto-open DevTools for debugging — remove before shipping
+    mainWindow.webContents.openDevTools({ mode: 'detach' });
+
+    // After renderer loads: sync SQLite settings → localStorage
+    // This runs BEFORE webMock reads from localStorage, ensuring correct provider/model
+    mainWindow.webContents.on('did-finish-load', async () => {
+      try {
+        const db = (await import('./ipc/database')).getDb();
+        const settings = db.prepare('SELECT key, value FROM settings').all() as {key:string, value:string}[];
+        const providers = db.prepare('SELECT id, name, api_key, enabled, models FROM providers').all() as any[];
+
+        const settingsMap: Record<string, string> = {};
+        for (const { key, value } of settings) settingsMap[key] = value;
+
+        const providersArr = providers.map(p => ({
+          id: p.id, name: p.name,
+          api_key: p.api_key || '', apiKey: p.api_key || '',
+          enabled: Boolean(p.enabled), models: p.models || '[]',
+        }));
+
+        const script = `
+          try {
+            const s = ${JSON.stringify(settingsMap)};
+            const existing = JSON.parse(localStorage.getItem('henry:settings') || '{}');
+            localStorage.setItem('henry:settings', JSON.stringify({...existing, ...s}));
+            localStorage.setItem('henry:providers', JSON.stringify(${JSON.stringify(providersArr)}));
+            console.log('[Henry] SQLite→localStorage sync complete. provider:', s.companion_provider, 'model:', s.companion_model);
+          } catch(e) { console.error('[Henry] localStorage sync failed:', e); }
+        `;
+        mainWindow!.webContents.executeJavaScript(script);
+      } catch (e) {
+        console.error('[Henry] SQLite→localStorage sync error:', e);
+      }
+    });
   }
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
