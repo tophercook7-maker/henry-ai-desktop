@@ -2220,14 +2220,7 @@ export default function ChatView() {
                           }
                         : undefined
                     }
-                    createTask={
-                      showCreateTask
-                        ? {
-                            onClick: () => setCreateTaskFromMessage(msg),
-                            disabled: isStreaming,
-                          }
-                        : undefined
-                    }
+                    createTask={undefined}
                     onQuickAction={
                       msg.role === 'assistant' && !isStreaming
                         ? (prompt) => void handleSend(prompt)
@@ -2297,11 +2290,6 @@ export default function ChatView() {
         <div className="max-w-3xl mx-auto">
           {operatingMode === 'biblical' && (
             <>
-              <ScriptureToolsPanel
-                disabled={isStreaming}
-                onInjectChat={(text) => setChatInject({ id: Date.now(), text })}
-                onRequestExportPack={() => openExportPack('biblical_study_pack')}
-              />
               {/* Bible corpus absorption panel */}
               <div className="flex items-center gap-2 mb-2 flex-wrap">
                 {!bibleStatus.loaded && bibleLoadProgress?.phase !== 'done' ? (
@@ -2371,18 +2359,7 @@ export default function ChatView() {
               disabled={isStreaming}
             />
           )}
-          {exportPackChatActionVisible && (
-            <div className="flex justify-end mb-2">
-              <button
-                type="button"
-                disabled={isStreaming}
-                onClick={() => openExportPack(exportPresetForOperatingMode(operatingMode))}
-                className="text-[10px] uppercase tracking-wide text-henry-accent/90 hover:text-henry-accent disabled:opacity-40"
-              >
-                Create export pack
-              </button>
-            </div>
-          )}
+
           {/* Henry state indicator */}
           {companionStatus.status !== 'idle' && !isSearching && (
             <div className={`flex items-center gap-2 mb-2 px-3 py-1.5 rounded-lg text-xs animate-fade-in border ${
@@ -2485,68 +2462,8 @@ export default function ChatView() {
             </div>
           )}
           <div className="flex items-end gap-2 md:gap-3 overflow-x-auto scrollbar-none pb-0.5">
-            <EngineSelector
-              selectedEngine={selectedEngine}
-              onSelect={setSelectedEngine}
-            />
-            <label className="flex flex-col gap-1 shrink-0 text-[10px] text-henry-text-muted uppercase tracking-wide">
-              Mode
-              <select
-                className="text-xs font-medium normal-case tracking-normal rounded-lg border border-henry-border/40 bg-henry-surface/40 text-henry-text px-2 py-1.5 min-w-[8.5rem] focus:outline-none focus:ring-1 focus:ring-henry-accent/50"
-                value={operatingMode}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  if (isHenryOperatingMode(v)) setOperatingMode(v);
-                }}
-                aria-label="Henry operating mode"
-              >
-                {HENRY_OPERATING_MODES.map((m) => (
-                  <option key={m} value={m}>
-                    {MODE_HUMAN_LABELS[m] ?? m}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {operatingMode === 'design3d' && (
-              <label className="flex flex-col gap-1 shrink-0 text-[10px] text-henry-text-muted uppercase tracking-wide">
-                Workflow
-                <select
-                  className="text-xs font-medium normal-case tracking-normal rounded-lg border border-henry-border/40 bg-henry-surface/40 text-henry-text px-2 py-1.5 max-w-[10.5rem] focus:outline-none focus:ring-1 focus:ring-henry-accent/50"
-                  value={design3dWorkflowTypeId}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    if (isDesign3DWorkflowTypeId(v)) setDesign3dWorkflowTypeId(v);
-                  }}
-                  aria-label="Design3D workflow type"
-                >
-                  {DESIGN3D_WORKFLOW_TYPES.map((w) => (
-                    <option key={w.id} value={w.id}>
-                      {w.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-            {operatingMode === 'writer' && (
-              <label className="flex flex-col gap-1 shrink-0 text-[10px] text-henry-text-muted uppercase tracking-wide">
-                Doc type
-                <select
-                  className="text-xs font-medium normal-case tracking-normal rounded-lg border border-henry-border/40 bg-henry-surface/40 text-henry-text px-2 py-1.5 max-w-[10rem] focus:outline-none focus:ring-1 focus:ring-henry-accent/50"
-                  value={writerDocumentTypeId}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    if (isWriterDocumentTypeId(v)) setWriterDocumentTypeId(v);
-                  }}
-                  aria-label="Writer document type"
-                >
-                  {WRITER_DOCUMENT_TYPES.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
+
+
             {operatingMode === 'biblical' && (
               <label className="flex flex-col gap-1 shrink-0 text-[10px] text-henry-text-muted uppercase tracking-wide">
                 Bible version
@@ -2632,12 +2549,7 @@ export default function ChatView() {
               <span className="text-henry-text-dim">Explain Psalm 23</span>.
             </p>
           )}
-          {operatingMode === 'writer' && (
-            <p className="text-[10px] text-henry-text-muted mt-2 leading-relaxed">
-              Writer mode: structured markdown you can save. Use &quot;Save draft&quot; on assistant replies
-              (metadata is added on save). Pick a prior draft with <span className="text-henry-text-dim">Use as context</span> for lean continuity — Henry does not auto-load file contents.
-            </p>
-          )}
+
           {operatingMode === 'builder' && (
             <p className="text-[10px] text-henry-text-muted mt-2 leading-relaxed">
               App Builder: describe anything — landing page, dashboard, tool, game. Henry generates a complete,
@@ -2653,15 +2565,7 @@ export default function ChatView() {
               )}
             </p>
           )}
-          {operatingMode === 'design3d' && (
-            <p className="text-[10px] text-henry-text-muted mt-2 leading-relaxed">
-              Design3D mode: label measured vs estimated dimensions clearly. In Files, use{' '}
-              <span className="text-henry-text-dim">Ref</span> on a file to set the active reference (path only
-              — not file contents). Reference files guide the plan; exact dimensions still require direct
-              measurement. Use &quot;Save design plan&quot; for markdown under{' '}
-              <code className="text-henry-text-dim">Henry-Design3D/</code> (metadata is added automatically).
-            </p>
-          )}
+
         </div>
       </div>
       </div>
@@ -2674,17 +2578,7 @@ export default function ChatView() {
         />
       )}
 
-      <MemoryAwarenessPanel
-        operatingMode={operatingMode}
-        biblicalSourceProfileId={biblicalSourceProfileId}
-        writerDocumentTypeId={writerDocumentTypeId}
-        design3dWorkflowTypeId={design3dWorkflowTypeId}
-        design3dReferencePath={design3dRefPath}
-        writerActiveDraftPath={writerActiveDraftPath}
-        activeWorkspaceContext={activeWorkspaceContext}
-        sessionContextRestored={memoryPanelSessionHint}
-        disabled={isStreaming}
-      />
+
 
       <ExportPackBuilder
         key={exportPackSession}
