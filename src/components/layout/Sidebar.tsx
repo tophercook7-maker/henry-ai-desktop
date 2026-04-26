@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useStore } from '../../store';
 
-type ViewType = 'today' | 'chat' | 'secretary' | 'contacts' | 'tasks' | 'files' | 'workspace' | 'terminal' | 'computer' | 'printer' | 'costs' | 'settings' | 'journal' | 'focus' | 'recorder' | 'modes' | 'reminders' | 'crm' | 'finance' | 'lists' | 'printstudio' | 'imagegen' | 'integrations' | 'github' | 'linear' | 'notion' | 'slack' | 'captures' | 'weekly';
+type ViewType = 'today' | 'chat' | 'secretary' | 'contacts' | 'tasks' | 'files' | 'workspace' | 'terminal' | 'computer' | 'printer' | 'costs' | 'settings' | 'journal' | 'focus' | 'recorder' | 'modes' | 'reminders' | 'crm' | 'finance' | 'lists' | 'printstudio' | 'imagegen' | 'videogen' | 'integrations' | 'github' | 'linear' | 'notion' | 'slack' | 'captures' | 'weekly';
 
 // Core nav — the things you actually use daily
 // Everything else is accessible but not cluttering the rail
@@ -26,6 +26,7 @@ const MORE_NAV: { id: ViewType; icon: string; label: string }[] = [
   { id: 'lists',      icon: '≡',  label: 'Lists' },
   { id: 'printstudio',icon: '▣',  label: 'Print Studio' },
   { id: 'imagegen',   icon: '◐',  label: 'Image Gen' },
+  { id: 'videogen',   icon: '▶',  label: 'Video Gen' },
   { id: 'files',      icon: '◳',  label: 'Files' },
   { id: 'workspace',  icon: '◰',  label: 'Workspace' },
   { id: 'costs',      icon: '◌',  label: 'Costs' },

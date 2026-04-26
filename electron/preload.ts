@@ -224,6 +224,8 @@ contextBridge.exposeInMainWorld('henryAPI', {
   computerOpenUrl: (url: string) => ipcRenderer.invoke('computer:openUrl', url),
   computerOsascript: (script: string) => ipcRenderer.invoke('computer:osascript', script),
   computerRunShell: (params: Record<string, unknown>) => ipcRenderer.invoke('computer:runShell', params),
+  computerNewFolder: (params: { path: string }) => ipcRenderer.invoke('computer:newFolder', params),
+  computerCheckPermissions: () => ipcRenderer.invoke('computer:checkPermissions'),
   computerListApps: () => ipcRenderer.invoke('computer:listApps'),
   computerListProcesses: () => ipcRenderer.invoke('computer:listProcesses'),
   computerCheckPermissions: () => ipcRenderer.invoke('computer:checkPermissions'),

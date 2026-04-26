@@ -226,6 +226,19 @@ export function registerComputerHandlers(winGetter: WindowGetter) {
 
   });
 
+  // ── Create folder ─────────────────────────────────────────────────────
+  ipcMain.handle('computer:newFolder', async (_event, params: { path: string }) => {
+    try {
+      const target = params.path.replace(/^~/, os.homedir());
+      fs.mkdirSync(target, { recursive: true });
+      return { ok: true, path: target };
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('[computer:newFolder]', msg);
+      return { ok: false, error: msg };
+    }
+  });
+
   // ── Type text (requires Accessibility) ───────────────────────────────
   ipcMain.handle('computer:typeText', async (_event, text: string) => {
     try {  

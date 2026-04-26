@@ -26,6 +26,7 @@ import FinancePanel from '../finance/FinancePanel';
 import ListsPanel from '../lists/ListsPanel';
 import PrintStudioPanel from '../printstudio/PrintStudioPanel';
 import ImageGenPanel from '../imagegen/ImageGenPanel';
+import VideoGenPanel from '../videogen/VideoGenPanel';
 import IntegrationsPanel from '../integrations/IntegrationsPanel';
 import GitHubPanel from '../integrations/GitHubPanel';
 import LinearPanel from '../integrations/LinearPanel';
@@ -111,6 +112,7 @@ export default function Layout() {
           {currentView === 'lists' && <ListsPanel />}
           {currentView === 'printstudio' && <PrintStudioPanel />}
           {currentView === 'imagegen' && <ImageGenPanel />}
+      {currentView === 'videogen' && <VideoGenPanel />}
           {currentView === 'integrations' && <IntegrationsPanel />}
           {currentView === 'github' && <GitHubPanel />}
           {currentView === 'linear' && <LinearPanel />}

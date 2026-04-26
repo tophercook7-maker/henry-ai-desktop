@@ -427,6 +427,17 @@ export const PROVIDERS = {
     keyUrl: 'https://console.groq.com/keys',
     keyPrefix: 'gsk_',
   },
+  runway: {
+    id: 'runway',
+    name: 'Runway',
+    icon: '🎬',
+    keyUrl: 'https://app.runwayml.com/settings',
+    requiresKey: true,
+    keyPrefix: 'rwa_',
+    keyPlaceholder: 'rwa_...',
+    description: 'State-of-the-art video generation (Gen-3, Gen-4)',
+    models: [] as const,
+  },
   ollama: {
     id: 'ollama',
     name: 'Ollama (Local)',
