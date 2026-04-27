@@ -25,8 +25,12 @@ export default function TodayPanel() {
   const [briefing, setBriefing] = useState<DailyBriefing | null>(() => getTodayBriefing());
   const [generatingBriefing, setGeneratingBriefing] = useState(false);
   const [briefingExpanded, setBriefingExpanded] = useState(true);
+  const [henryReply, setHenryReply] = useState('');
+  const [henryStreaming, setHenryStreaming] = useState(false);
+  const [lastQuestion, setLastQuestion] = useState('');
   const quickAskRef = useRef<HTMLInputElement>(null);
   const briefingStreamRef = useRef<any>(null);
+  const replyStreamRef = useRef<any>(null);
   const greeting = getGreeting();
 
   useEffect(() => {
@@ -73,6 +77,61 @@ export default function TodayPanel() {
     } catch { setGeneratingBriefing(false); setGenerating(false); }
   }
 
+  async function askHenryInline(text: string) {
+    if (!text.trim() || henryStreaming) return;
+    setLastQuestion(text);
+    setHenryReply('');
+    setHenryStreaming(true);
+
+    try {
+      const s = useStore.getState().settings;
+      const providers = useStore.getState().providers;
+      const provider = s.companion_provider || 'groq';
+      const model = s.companion_model || 'llama-3.3-70b-versatile';
+      const prov = providers.find((p) => p.id === provider);
+      const apiKey = prov?.apiKey || '';
+      if (!apiKey) {
+        setHenryReply('No API key found. Add one in Settings.');
+        setHenryStreaming(false);
+        return;
+      }
+
+      const stream = window.henryAPI.streamMessage({
+        provider, model, apiKey,
+        messages: [{ role: 'user', content: text }],
+        temperature: 0.7,
+        maxTokens: 1500,
+      });
+      replyStreamRef.current = stream;
+
+      let full = '';
+      stream.onChunk((c: string) => {
+        full += c;
+        setHenryReply(full);
+      });
+      stream.onDone(() => { setHenryStreaming(false); });
+      stream.onError((e: string) => {
+        setHenryReply('Something went wrong: ' + e);
+        setHenryStreaming(false);
+      });
+    } catch (e) {
+      setHenryReply('Error: ' + String(e));
+      setHenryStreaming(false);
+    }
+  }
+
+  function goToChat(text?: string) {
+    if (text) {
+      try { localStorage.setItem('henry:pending_inject', text); } catch { /* ignore */ }
+    }
+    setCurrentView('chat');
+    if (text) {
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('henry_inject_draft', { detail: { text } }));
+      }, 150);
+    }
+  }
+
   function launchMode(mode: string, prompt?: string) {
     try { localStorage.setItem(HENRY_OPERATING_MODE_KEY, mode); } catch { /* ignore */ }
     if (prompt && prompt.trim()) {
@@ -109,8 +168,9 @@ export default function TodayPanel() {
               onChange={(e) => setQuickAsk(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && quickAsk.trim()) {
-                  launchMode('companion', quickAsk.trim());
+                  const q = quickAsk.trim();
                   setQuickAsk('');
+                  askHenryInline(q);
                 }
               }}
               placeholder="Ask Henry anything…"
@@ -119,12 +179,43 @@ export default function TodayPanel() {
             />
             {quickAsk.trim() && (
               <button
-                onClick={() => { launchMode('companion', quickAsk.trim()); setQuickAsk(''); }}
+                onClick={() => { const q = quickAsk.trim(); setQuickAsk(''); askHenryInline(q); }}
                 className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center rounded-xl bg-henry-accent text-henry-bg hover:bg-henry-accent/90 transition-colors"
               >↑</button>
             )}
           </div>
         </div>
+
+        {/* Henry's inline reply — no navigation needed */}
+        {(henryReply || henryStreaming) && (
+          <div className="w-full mb-6">
+            {lastQuestion && (
+              <p className="text-[11px] text-henry-text-muted mb-2 italic">"{lastQuestion}"</p>
+            )}
+            <div className="rounded-2xl bg-henry-surface/40 border border-henry-border/25 px-5 py-4">
+              {henryReply ? (
+                <p className="text-sm text-henry-text leading-relaxed whitespace-pre-wrap">{henryReply}</p>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <span className="w-3 h-3 border-2 border-henry-accent/30 border-t-henry-accent rounded-full animate-spin" />
+                  <p className="text-sm text-henry-text-muted">Henry is thinking…</p>
+                </div>
+              )}
+              {henryReply && !henryStreaming && (
+                <div className="flex gap-3 mt-3 pt-3 border-t border-henry-border/15">
+                  <button
+                    onClick={() => goToChat(henryReply ? `${lastQuestion}\n\n${henryReply}` : lastQuestion)}
+                    className="text-[11px] text-henry-accent hover:underline"
+                  >Continue in chat →</button>
+                  <button
+                    onClick={() => { setHenryReply(''); setLastQuestion(''); quickAskRef.current?.focus(); }}
+                    className="text-[11px] text-henry-text-muted hover:text-henry-text"
+                  >Clear</button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Quick chips — minimal, subtle */}
         <div className="w-full flex flex-wrap gap-2 mb-8 justify-center">
