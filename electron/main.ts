@@ -62,9 +62,6 @@ function createWindow() {
     }
   } else {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
-    // Auto-open DevTools for debugging — remove before shipping
-    mainWindow.webContents.openDevTools({ mode: 'detach' });
-
     // After renderer loads: sync SQLite settings → localStorage
     // This runs BEFORE webMock reads from localStorage, ensuring correct provider/model
     mainWindow.webContents.on('did-finish-load', async () => {
@@ -92,6 +89,34 @@ function createWindow() {
           } catch(e) { console.error('[Henry] localStorage sync failed:', e); }
         `;
         mainWindow!.webContents.executeJavaScript(script);
+
+        // Check permissions and notify renderer so it can show the permission prompt
+        if (process.platform === 'darwin') {
+          const { execSync } = await import('child_process');
+          let accessibility = false;
+          let screenRecording = false;
+
+          try {
+            execSync(`osascript -e 'tell application "System Events" to return name of first process whose frontmost is true'`, { stdio: 'ignore', timeout: 3000 });
+            accessibility = true;
+          } catch { /* not granted */ }
+
+          try {
+            const tmpPng = require('path').join(require('os').tmpdir(), 'henry_perm.png');
+            execSync(`screencapture -x "${tmpPng}" && rm -f "${tmpPng}"`, { stdio: 'ignore', timeout: 3000 });
+            screenRecording = true;
+          } catch { /* not granted */ }
+
+          if (!accessibility || !screenRecording) {
+            const permScript = `
+              window.__henry_permissions = ${JSON.stringify({ accessibility, screenRecording })};
+              window.dispatchEvent(new CustomEvent('henry_permissions_ready', {
+                detail: ${JSON.stringify({ accessibility, screenRecording })}
+              }));
+            `;
+            mainWindow!.webContents.executeJavaScript(permScript);
+          }
+        }
       } catch (e) {
         console.error('[Henry] SQLite→localStorage sync error:', e);
       }

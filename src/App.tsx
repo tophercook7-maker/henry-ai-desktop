@@ -45,6 +45,7 @@ export default function App() {
   const [nudge, setNudge] = useState<HenryNudge | null>(null);
   const [repair, setRepair] = useState<HenryRepairEvent | null>(null);
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
+  const [missingPerms, setMissingPerms] = useState<{ accessibility: boolean; screenRecording: boolean } | null>(null);
   const firstContactDone = useRef(false);
   const briefingInjectedRef = useRef(false);
   const {
@@ -80,6 +81,15 @@ export default function App() {
     if (!!!!(window.henryAPI as any)?.__isElectron?.()) {
       window.henryAPI.syncStart?.().catch?.(() => { /* ignore if already running */ });
     }
+
+    // Listen for permission check results from main process
+    function handlePermsReady(e: Event) {
+      const { accessibility, screenRecording } = (e as CustomEvent).detail as { accessibility: boolean; screenRecording: boolean };
+      if (!accessibility || !screenRecording) {
+        setMissingPerms({ accessibility, screenRecording });
+      }
+    }
+    window.addEventListener('henry_permissions_ready', handlePermsReady);
 
     // Handle henry_open_capture event (from Cmd+Shift+N shortcut)
     function handleOpenCapture() {
