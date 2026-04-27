@@ -85,6 +85,22 @@ const ACTION_PATTERNS: Array<{
     type: 'applescript',
     extract: (m) => ({ script: m[1].trim() }),
   },
+  // Bare shell patterns: mkdir ~/Desktop/foo or open -a Safari
+  {
+    regex: /`(mkdir\s+[^`\n]+)`/,
+    type: 'shell',
+    extract: (m) => ({ command: m[1].trim() }),
+  },
+  {
+    regex: /`(open\s+[^`\n]+)`/,
+    type: 'shell',
+    extract: (m) => ({ command: m[1].trim() }),
+  },
+  {
+    regex: /```(?:bash|shell|zsh)?\n((?:mkdir|open|cp|mv|rm|touch|echo|defaults|osascript)[^\n]+)\n```/,
+    type: 'shell',
+    extract: (m) => ({ command: m[1].trim() }),
+  },
 ];
 
 export function detectActions(text: string): InterceptedAction[] {
