@@ -45,6 +45,7 @@ export default function App() {
   const [nudge, setNudge] = useState<HenryNudge | null>(null);
   const [repair, setRepair] = useState<HenryRepairEvent | null>(null);
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
+  const [showSplash, setShowSplash] = useState(true);
   const [missingPerms, setMissingPerms] = useState<{ accessibility: boolean; screenRecording: boolean } | null>(null);
   const firstContactDone = useRef(false);
   const briefingInjectedRef = useRef(false);
@@ -102,6 +103,11 @@ export default function App() {
     const unregisterShortcuts = registerShortcuts();
     // '?' key shows shortcut help
     function handleHelpKey(e: KeyboardEvent) {
+      // Escape closes splash first, then shortcuts help
+      if (e.key === 'Escape') {
+        setShowSplash(false);
+        return;
+      }
       if (e.key === '?' && !e.metaKey && !e.ctrlKey) {
         const t = e.target as HTMLElement;
         if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable) return;
@@ -508,17 +514,7 @@ export default function App() {
     };
   }
 
-  if (loading) {
-    return (
-      <div className="h-screen w-screen bg-henry-bg flex items-center justify-center">
-        <div className="text-center animate-fade-in">
-          <div className="text-5xl mb-4">🧠</div>
-          <h1 className="text-xl font-bold text-henry-text mb-2">Henry AI</h1>
-          <p className="text-sm text-henry-text-dim">Loading...</p>
-        </div>
-      </div>
-    );
-  }
+  // Splash is overlaid — no early return, layout always renders behind
 
   if (!setupComplete) {
     // In Electron: skip the wizard entirely — run auto-setup immediately
@@ -543,6 +539,70 @@ export default function App() {
   return (
     <ErrorBoundary>
     <div className="h-screen w-screen flex flex-col overflow-hidden">
+
+      {/* Splash screen — overlaid on top, closeable */}
+      {showSplash && setupComplete && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center"
+          style={{ background: 'rgba(8,8,14,0.92)', backdropFilter: 'blur(12px)' }}
+        >
+          <div className="relative w-full max-w-md mx-4">
+            {/* Close button */}
+            <button
+              onClick={() => { setShowSplash(false); if (useStore.getState().currentView === 'today') useStore.getState().setCurrentView('chat'); }}
+              className="absolute -top-3 -right-3 w-8 h-8 rounded-full bg-henry-surface border border-henry-border/40 text-henry-text-muted hover:text-henry-text flex items-center justify-center text-sm transition-all z-10"
+              title="Close"
+            >✕</button>
+
+            {/* Card */}
+            <div className="rounded-2xl border border-henry-border/30 bg-henry-surface overflow-hidden">
+              {/* Top bar */}
+              <div className="px-6 pt-6 pb-5 border-b border-henry-border/20">
+                <div className="flex items-center gap-3 mb-3">
+                  <span className="text-3xl">🧠</span>
+                  <div>
+                    <h1 className="text-lg font-bold text-henry-text tracking-tight">Henry AI</h1>
+                    <p className="text-[11px] text-henry-text-muted">Your personal AI on your own machine</p>
+                  </div>
+                </div>
+                <p className="text-sm text-henry-text-muted leading-relaxed">
+                  Henry runs locally. Your data never leaves this Mac. He can talk, think, write, automate your computer, generate images and video, study scripture, run your business — all from one place.
+                </p>
+              </div>
+
+              {/* Quick start items */}
+              <div className="px-6 py-4 space-y-2.5">
+                {[
+                  { icon: '💬', label: 'Just start typing', desc: 'Henry is in Chat mode — ready now' },
+                  { icon: '🖥️', label: 'Computer control', desc: 'Tell Henry to do things on your Mac' },
+                  { icon: '📖', label: 'Bible study', desc: 'Deep scripture study with full canon awareness' },
+                  { icon: '⚙️', label: 'Add your API keys', desc: 'Settings → AI Providers for image & video gen' },
+                ].map(item => (
+                  <div key={item.label} className="flex items-start gap-3">
+                    <span className="text-base shrink-0 mt-0.5">{item.icon}</span>
+                    <div>
+                      <p className="text-[12px] font-medium text-henry-text">{item.label}</p>
+                      <p className="text-[11px] text-henry-text-muted">{item.desc}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* CTA */}
+              <div className="px-6 pb-6">
+                <button
+                  onClick={() => { setShowSplash(false); if (useStore.getState().currentView === 'today') useStore.getState().setCurrentView('chat'); }}
+                  className="w-full py-3 rounded-xl bg-henry-accent text-henry-bg font-semibold text-sm hover:bg-henry-accent/90 transition-all"
+                >
+                  Start talking to Henry →
+                </button>
+                <p className="text-center text-[10px] text-henry-text-muted mt-2">Press Esc or click anywhere outside to dismiss</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {updateState !== 'none' && (
         <div className="shrink-0 flex items-center justify-between px-4 py-2 bg-henry-accent/15 border-b border-henry-accent/25 text-sm text-henry-text">
           <span>
