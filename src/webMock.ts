@@ -1301,6 +1301,10 @@ const henryAPI: Window['henryAPI'] = {
     success: false,
     output: 'AppleScript execution requires the Henry desktop app.',
   }),
+  computerNewFolder: async (params: { path: string }) => ({
+    ok: false,
+    error: 'computerNewFolder requires the Henry desktop app',
+  }),
   computerRunShell: async (params: { command: string }) => ({
     success: false,
     output: `Shell commands require the Henry desktop app. Would have run: ${params.command}`,

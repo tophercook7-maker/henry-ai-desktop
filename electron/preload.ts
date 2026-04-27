@@ -228,7 +228,6 @@ contextBridge.exposeInMainWorld('henryAPI', {
   computerCheckPermissions: () => ipcRenderer.invoke('computer:checkPermissions'),
   computerListApps: () => ipcRenderer.invoke('computer:listApps'),
   computerListProcesses: () => ipcRenderer.invoke('computer:listProcesses'),
-  computerCheckPermissions: () => ipcRenderer.invoke('computer:checkPermissions'),
   computerTypeText: (text: string) => ipcRenderer.invoke('computer:typeText', text),
   computerClick: (params: Record<string, unknown>) => ipcRenderer.invoke('computer:click', params),
   computerSystemInfo: () => ipcRenderer.invoke('computer:systemInfo'),

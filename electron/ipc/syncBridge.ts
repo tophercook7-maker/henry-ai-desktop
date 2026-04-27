@@ -18,6 +18,7 @@
 import http from 'http';
 import crypto from 'crypto';
 import os from 'os';
+import fs from 'fs';
 import { ipcMain, BrowserWindow, webContents } from 'electron';
 import {
   COMPANION_DEFAULT_DEVICE_CAPABILITIES,
@@ -468,6 +469,91 @@ if(token){showChat();}
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     res.end(html);
     return;
+  }
+
+  // ── Internal Computer Control (called from renderer to bypass webMock) ──
+  const isInternal = req.headers['x-henry-internal'] === 'true';
+  if (isInternal && req.method === 'POST') {
+    if (path === '/computer/shell') {
+      const body = await readBody<{command: string}>(req);
+      if (!body) { jsonResponse(res, 400, {success: false, error: 'Bad request'}); return; }
+      try {
+        const { exec } = await import('child_process');
+        const home = os.homedir();
+        const cmd = (body.command || '')
+          .replace(/\/Users\/yourusername\//g, home + '/')
+          .replace(/\/Users\/your_username\//g, home + '/')
+          .replace(/^~\//g, home + '/');
+        const result = await new Promise<{stdout:string;stderr:string;exitCode:number}>((resolve) => {
+          exec(cmd, {timeout: 30000, env: {...process.env, HOME: home}}, (err, stdout, stderr) => {
+            resolve({stdout: stdout || '', stderr: stderr || '', exitCode: err?.code ?? 0});
+          });
+        });
+        jsonResponse(res, 200, {success: result.exitCode === 0, output: result.stdout, error: result.stderr, exitCode: result.exitCode});
+      } catch(e) {
+        jsonResponse(res, 200, {success: false, error: e instanceof Error ? e.message : String(e)});
+      }
+      return;
+    }
+    if (path === '/computer/newfolder') {
+      const body = await readBody<{path: string}>(req);
+      if (!body) { jsonResponse(res, 400, {ok: false, error: 'Bad request'}); return; }
+      try {
+        const home = os.homedir();
+        const target = (body.path || '')
+          .replace(/^~/, home)
+          .replace(/\/Users\/yourusername\//g, home + '/')
+          .replace(/\/Users\/your_username\//g, home + '/');
+        fs.mkdirSync(target, {recursive: true});
+        jsonResponse(res, 200, {ok: true, path: target});
+      } catch(e) {
+        jsonResponse(res, 200, {ok: false, error: e instanceof Error ? e.message : String(e)});
+      }
+      return;
+    }
+    if (path === '/computer/openapp') {
+      const body = await readBody<{name: string}>(req);
+      if (!body) { jsonResponse(res, 400, {ok: false, error: 'Bad request'}); return; }
+      try {
+        const { exec } = await import('child_process');
+        exec(`open -a "${body.name}"`, (err) => {});
+        jsonResponse(res, 200, {ok: true});
+      } catch(e) {
+        jsonResponse(res, 200, {ok: false, error: e instanceof Error ? e.message : String(e)});
+      }
+      return;
+    }
+    if (path === '/computer/screenshot') {
+      try {
+        const tmpFile = os.tmpdir() + '/henry_sc_' + Date.now() + '.png';
+        const { exec } = await import('child_process');
+        await new Promise<void>((resolve, reject) => {
+          exec(`screencapture -x "${tmpFile}"`, (err) => err ? reject(err) : resolve());
+        });
+        const buf = fs.readFileSync(tmpFile);
+        fs.unlinkSync(tmpFile);
+        jsonResponse(res, 200, {success: true, base64: buf.toString('base64')});
+      } catch(e) {
+        jsonResponse(res, 200, {success: false, error: e instanceof Error ? e.message : String(e)});
+      }
+      return;
+    }
+    if (path === '/computer/osascript') {
+      const body = await readBody<{script: string}>(req);
+      if (!body) { jsonResponse(res, 400, {ok: false, error: 'Bad request'}); return; }
+      try {
+        const { exec } = await import('child_process');
+        const result = await new Promise<string>((resolve, reject) => {
+          exec(`osascript -e '${body.script.replace(/'/g, "'\''")}'`, (err, stdout) => {
+            err ? reject(err) : resolve(stdout.trim());
+          });
+        });
+        jsonResponse(res, 200, {ok: true, output: result});
+      } catch(e) {
+        jsonResponse(res, 200, {ok: false, error: e instanceof Error ? e.message : String(e)});
+      }
+      return;
+    }
   }
 
   // ── Health ────────────────────────────────────────────────────────────

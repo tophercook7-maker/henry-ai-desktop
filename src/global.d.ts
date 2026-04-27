@@ -322,6 +322,7 @@ declare global {
     computerOpenUrl: (url: string) => Promise<HenryComputerShellResult>;
     computerOsascript: (script: string) => Promise<HenryComputerShellResult>;
     computerRunShell: (params: { command: string; timeout?: number }) => Promise<HenryComputerShellResult>;
+    computerNewFolder: (params: { path: string }) => Promise<{ ok: boolean; path?: string; error?: string }>;
     computerListApps: () => Promise<{ apps: string[]; platform: string }>;
     computerListProcesses: () => Promise<{ processes: string[] }>;
     computerCheckPermissions: () => Promise<HenryPermissionsResult>;
