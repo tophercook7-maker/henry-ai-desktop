@@ -104,82 +104,32 @@ function createWindow() {
         `;
         mainWindow!.webContents.executeJavaScript(pathScript);
 
-        // Inject real computer control functions via executeJavaScript
-        // These bypass the webMock stubs by directly calling the main process
-        // via a different IPC channel that webMock doesn't intercept
+        // ALWAYS inject real computer control via sync server
+        // Don't test for mock first — just override unconditionally
+        // The sync server is already running and works regardless of webMock state
         const computerOverrideScript = `
-          (async function() {
-            // Test if real IPC is working by checking if computerRunShell is the mock
-            try {
-              const test = await window.henryAPI.computerRunShell({command: 'echo REAL'});
-              if (!test || test.output?.includes('Would have run') || test.output?.includes('requires')) {
-                // Mock detected — inject real fetch-based wrappers via sync server HTTP API
-                const BASE = 'http://127.0.0.1:4242';
-                
-                async function realRunShell(params) {
-                  const r = await fetch(BASE + '/computer/shell', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json', 'X-Henry-Internal': 'true'},
-                    body: JSON.stringify({command: params.command})
-                  }).then(r => r.json()).catch(e => ({success: false, error: String(e)}));
-                  return r;
-                }
-                
-                async function realNewFolder(params) {
-                  const r = await fetch(BASE + '/computer/newfolder', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json', 'X-Henry-Internal': 'true'},
-                    body: JSON.stringify({path: params.path})
-                  }).then(r => r.json()).catch(e => ({ok: false, error: String(e)}));
-                  return r;
-                }
-                
-                async function realOpenApp(name) {
-                  const r = await fetch(BASE + '/computer/openapp', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json', 'X-Henry-Internal': 'true'},
-                    body: JSON.stringify({name})
-                  }).then(r => r.json()).catch(e => ({ok: false, error: String(e)}));
-                  return r;
-                }
-                
-                async function realScreenshot() {
-                  const r = await fetch(BASE + '/computer/screenshot', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json', 'X-Henry-Internal': 'true'},
-                    body: JSON.stringify({})
-                  }).then(r => r.json()).catch(e => ({success: false, error: String(e)}));
-                  return r;
-                }
-                
-                async function realOsascript(script) {
-                  const r = await fetch(BASE + '/computer/osascript', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json', 'X-Henry-Internal': 'true'},
-                    body: JSON.stringify({script})
-                  }).then(r => r.json()).catch(e => ({ok: false, error: String(e)}));
-                  return r;
-                }
-                
-                // Override the mock methods
-                window.henryAPI.computerRunShell = realRunShell;
-                window.henryAPI.computerNewFolder = realNewFolder;
-                window.henryAPI.computerOpenApp = realOpenApp;
-                window.henryAPI.computerScreenshot = realScreenshot;
-                window.henryAPI.computerOsascript = realOsascript;
-                
-                console.log('[Henry] Real computer IPC injected via sync server');
-              } else {
-                console.log('[Henry] Real computer IPC already active');
-              }
-            } catch(e) {
-              console.error('[Henry] Computer IPC override failed:', e);
-            }
+          (function installRealComputer() {
+            const BASE = 'http://127.0.0.1:4242';
+            const H = {'Content-Type':'application/json','X-Henry-Internal':'true'};
+
+            const post = (path, body) =>
+              fetch(BASE + path, {method:'POST', headers:H, body:JSON.stringify(body)})
+                .then(r => r.json())
+                .catch(e => ({ok:false, success:false, error:String(e)}));
+
+            window.henryAPI.computerRunShell   = p => post('/computer/shell',     {command: p.command});
+            window.henryAPI.computerNewFolder  = p => post('/computer/newfolder', {path: p.path});
+            window.henryAPI.computerOpenApp    = n => post('/computer/openapp',   {name: typeof n==='string'?n:n.name||n});
+            window.henryAPI.computerScreenshot = () => post('/computer/screenshot', {});
+            window.henryAPI.computerOsascript  = s => post('/computer/osascript', {script: typeof s==='string'?s:s.script||s});
+
+            console.log('[Henry] Real computer IPC installed via sync server');
           })();
         `;
-        mainWindow!.webContents.executeJavaScript(computerOverrideScript);
+        mainWindow!.webContents.executeJavaScript(computerOverrideScript).catch(() => {});
 
         // Check permissions and notify renderer so it can show the permission prompt
+                // Check permissions and notify renderer so it can show the permission prompt
         if (process.platform === 'darwin') {
           const { execSync } = await import('child_process');
           let accessibility = false;
