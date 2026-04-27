@@ -20,22 +20,40 @@ export interface ActionResult {
 }
 
 // Patterns Henry commonly writes when attempting computer actions
+const HOME = typeof window !== 'undefined'
+  ? (localStorage.getItem('henry:mac_home') || '~')
+  : '~';
+
+function resolvePath(p: string): string {
+  return p
+    .replace(/^~/, HOME)
+    .replace(/\/Users\/yourusername\//g, HOME + '/')
+    .replace(/\/Users\/your_username\//g, HOME + '/')
+    .replace(/\/Users\/USERNAME\//g, HOME + '/');
+}
+
 const ACTION_PATTERNS: Array<{
   regex: RegExp;
   type: InterceptedAction['type'];
   extract: (m: RegExpMatchArray) => Record<string, string>;
 }> = [
-  // computer:newFolder(path="~/Desktop/test")
+  // computer:newFolder(path="...", name="...") — combined form
+  {
+    regex: /computer:newFolder\s*\([^)]*path=["']?([^"',)]+)["']?[^)]*name=["']?([^"',)]+)["']?/i,
+    type: 'folder',
+    extract: (m) => ({ path: resolvePath(m[1].trim().replace(/\/$/, '') + '/' + m[2].trim()) }),
+  },
+  // computer:newFolder(path="~/Desktop/test") — path only
   {
     regex: /computer:newFolder\s*\([^)]*path=["']?([^"',)]+)["']?/i,
     type: 'folder',
-    extract: (m) => ({ path: m[1].trim() }),
+    extract: (m) => ({ path: resolvePath(m[1].trim()) }),
   },
-  // computer:newFolder path="/Users/x/Desktop" name="test"
+  // computer:newFolder path="/..." name="..." — space separated
   {
     regex: /computer:newFolder\s+path=["']?([^"'\s]+)["']?\s+name=["']?([^"'\s]+)["']?/i,
     type: 'folder',
-    extract: (m) => ({ path: m[1].trim() + '/' + m[2].trim() }),
+    extract: (m) => ({ path: resolvePath(m[1].trim().replace(/\/$/, '') + '/' + m[2].trim()) }),
   },
   // computer:runShell(command="mkdir ...")
   {
@@ -93,8 +111,14 @@ export async function executeAction(action: InterceptedAction): Promise<ActionRe
   try {
     switch (action.type) {
       case 'folder': {
-        const path = action.args.path || '';
-        const r = await (api as any).computerNewFolder({ path }) as any;
+        const rawPath = action.args.path || '';
+        // Final safety: resolve any remaining placeholders before calling IPC
+        const home = localStorage.getItem('henry:mac_home') || '~';
+        const resolvedFolderPath = rawPath
+          .replace(/^~/, home)
+          .replace(/\/Users\/yourusername\//g, home + '/')
+          .replace(/\/Users\/your_username\//g, home + '/');
+        const r = await (api as any).computerNewFolder({ path: resolvedFolderPath }) as any;
         return {
           action, ok: r.ok,
           output: r.ok

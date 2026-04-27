@@ -229,7 +229,14 @@ export function registerComputerHandlers(winGetter: WindowGetter) {
   // ── Create folder ─────────────────────────────────────────────────────
   ipcMain.handle('computer:newFolder', async (_event, params: { path: string }) => {
     try {
-      const target = params.path.replace(/^~/, os.homedir());
+      const home = os.homedir();
+      const username = home.split('/').pop() || '';
+      const target = params.path
+        .replace(/^~/, home)
+        .replace(/\/Users\/yourusername\//g, home + '/')
+        .replace(/\/Users\/your_username\//g, home + '/')
+        .replace(/\/Users\/USERNAME\//g, home + '/')
+        .replace(/\/Users\/${username.toLowerCase()}_user\//g, home + '/');
       fs.mkdirSync(target, { recursive: true });
       return { ok: true, path: target };
     } catch (e: unknown) {

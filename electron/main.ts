@@ -90,6 +90,20 @@ function createWindow() {
         `;
         mainWindow!.webContents.executeJavaScript(script);
 
+        // Inject real system paths so Henry never uses placeholder usernames
+        const sysPath = await import('path');
+        const sysOs = await import('os');
+        const homeDir = sysOs.default.homedir();
+        const macUser = homeDir.split(sysPath.default.sep).pop() || '';
+        const pathScript = `
+          try {
+            localStorage.setItem('henry:mac_username', ${JSON.stringify(macUser)});
+            localStorage.setItem('henry:mac_home', ${JSON.stringify(homeDir)});
+            console.log('[Henry] System paths set — user: ${macUser}');
+          } catch(e) {}
+        `;
+        mainWindow!.webContents.executeJavaScript(pathScript);
+
         // Check permissions and notify renderer so it can show the permission prompt
         if (process.platform === 'darwin') {
           const { execSync } = await import('child_process');
