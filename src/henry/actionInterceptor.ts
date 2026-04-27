@@ -1,0 +1,161 @@
+/**
+ * Action Interceptor — detects computer action requests in Henry's
+ * text responses and executes them via real Electron IPC.
+ * 
+ * Works by parsing common patterns Henry uses when describing actions,
+ * executing the real IPC, and returning structured results.
+ */
+
+export interface InterceptedAction {
+  type: 'shell' | 'folder' | 'app' | 'applescript' | 'screenshot';
+  raw: string;     // the original text that triggered this
+  args: Record<string, string>;
+}
+
+export interface ActionResult {
+  action: InterceptedAction;
+  ok: boolean;
+  output: string;
+  screenshotUrl?: string;
+}
+
+// Patterns Henry commonly writes when attempting computer actions
+const ACTION_PATTERNS: Array<{
+  regex: RegExp;
+  type: InterceptedAction['type'];
+  extract: (m: RegExpMatchArray) => Record<string, string>;
+}> = [
+  // computer:newFolder(path="~/Desktop/test")
+  {
+    regex: /computer:newFolder\s*\([^)]*path=["']?([^"',)]+)["']?/i,
+    type: 'folder',
+    extract: (m) => ({ path: m[1].trim() }),
+  },
+  // computer:newFolder path="/Users/x/Desktop" name="test"
+  {
+    regex: /computer:newFolder\s+path=["']?([^"'\s]+)["']?\s+name=["']?([^"'\s]+)["']?/i,
+    type: 'folder',
+    extract: (m) => ({ path: m[1].trim() + '/' + m[2].trim() }),
+  },
+  // computer:runShell(command="mkdir ...")
+  {
+    regex: /computer:runShell\s*\([^)]*command=["']([^"']+)["']/i,
+    type: 'shell',
+    extract: (m) => ({ command: m[1].trim() }),
+  },
+  // `computer:runShell(mkdir ~/Desktop/test)`
+  {
+    regex: /computer:runShell\s*\(([^)]+)\)/i,
+    type: 'shell',
+    extract: (m) => ({ command: m[1].replace(/command=["']?/i, '').replace(/["']$/, '').trim() }),
+  },
+  // computer:openApp(name="Safari")
+  {
+    regex: /computer:openApp\s*\([^)]*["']?([^"',)]+)["']?\)/i,
+    type: 'app',
+    extract: (m) => ({ name: m[1].trim() }),
+  },
+  // computer:screenshot()
+  {
+    regex: /computer:screenshot\s*\(\s*\)/i,
+    type: 'screenshot',
+    extract: () => ({}),
+  },
+  // computer:osascript(script="...")
+  {
+    regex: /computer:osascript\s*\([^)]*["']([^"']+)["']/i,
+    type: 'applescript',
+    extract: (m) => ({ script: m[1].trim() }),
+  },
+];
+
+export function detectActions(text: string): InterceptedAction[] {
+  const actions: InterceptedAction[] = [];
+  for (const pattern of ACTION_PATTERNS) {
+    const match = text.match(pattern.regex);
+    if (match) {
+      actions.push({
+        type: pattern.type,
+        raw: match[0],
+        args: pattern.extract(match),
+      });
+    }
+  }
+  return actions;
+}
+
+export async function executeAction(action: InterceptedAction): Promise<ActionResult> {
+  const api = window.henryAPI;
+  if (!api) {
+    return { action, ok: false, output: 'Henry IPC not available — restart the app.' };
+  }
+
+  try {
+    switch (action.type) {
+      case 'folder': {
+        const path = action.args.path || '';
+        const r = await (api as any).computerNewFolder({ path }) as any;
+        return {
+          action, ok: r.ok,
+          output: r.ok
+            ? `✓ Folder created: ${r.path}`
+            : `✗ Could not create folder: ${r.error || 'Unknown error'}`,
+        };
+      }
+      case 'shell': {
+        const r = await api.computerRunShell({ command: action.args.command }) as any;
+        const ok = r.success !== false && r.exitCode === 0;
+        const out = r.output || r.stdout || '';
+        const err = r.error || r.stderr || '';
+        return {
+          action, ok,
+          output: ok
+            ? (out ? `✓ ${out.trim()}` : '✓ Command completed')
+            : `✗ Error: ${err || 'Exit code ' + r.exitCode}`,
+        };
+      }
+      case 'app': {
+        const r = await api.computerOpenApp(action.args.name) as any;
+        return {
+          action, ok: r.ok !== false,
+          output: r.ok !== false ? `✓ Opened ${action.args.name}` : `✗ Could not open ${action.args.name}`,
+        };
+      }
+      case 'screenshot': {
+        const r = await api.computerScreenshot({}) as any;
+        if (r.base64) {
+          return {
+            action, ok: true,
+            output: '✓ Screenshot taken',
+            screenshotUrl: `data:image/png;base64,${r.base64}`,
+          };
+        }
+        return { action, ok: false, output: '✗ Screenshot failed — check Screen Recording permission in System Settings' };
+      }
+      case 'applescript': {
+        const r = await api.computerOsascript(action.args.script) as any;
+        return {
+          action, ok: r.ok !== false,
+          output: r.ok !== false
+            ? `✓ ${r.output || 'AppleScript completed'}`
+            : `✗ AppleScript error: ${r.error || 'Unknown'}`,
+        };
+      }
+      default:
+        return { action, ok: false, output: 'Unknown action type' };
+    }
+  } catch (e) {
+    return { action, ok: false, output: `✗ ${e instanceof Error ? e.message : String(e)}` };
+  }
+}
+
+export async function interceptAndExecute(text: string): Promise<ActionResult[]> {
+  const actions = detectActions(text);
+  if (actions.length === 0) return [];
+  const results: ActionResult[] = [];
+  for (const action of actions) {
+    const result = await executeAction(action);
+    results.push(result);
+  }
+  return results;
+}

@@ -114,6 +114,7 @@ import {
 } from '@/henry/workspaceContext';
 import type { ExportPresetId } from '@/henry/exportBundle';
 import { exportConversation } from '@/henry/exportConversation';
+import { interceptAndExecute } from '@/henry/actionInterceptor';
 import {
   checkSessionPathsStale,
   clearRecoveryBannerDismissedThisSession,
@@ -1577,6 +1578,25 @@ export default function ChatView() {
       stream.onDone(async (fullText: string, usage?: any) => {
         if (import.meta.env.DEV) {
           console.debug('[Henry] stream done', { fullLen: fullText?.length ?? 0, usage });
+        }
+
+        // Action interceptor — detect and execute real computer actions from Henry's text
+        // This runs BEFORE saving the message so results can be appended
+        if (fullText && fullText.trim() && (window.henryAPI as any)?.__isElectron?.()) {
+          try {
+            const actionResults = await interceptAndExecute(fullText);
+            if (actionResults.length > 0) {
+              // Append real execution results to Henry's response
+              const resultLines = actionResults.map(r => {
+                let line = '\n\n**Execution result:** ' + r.output;
+                if (r.screenshotUrl) {
+                  line += '\n\n![Screenshot](' + r.screenshotUrl + ')';
+                }
+                return line;
+              });
+              fullText = fullText + resultLines.join('');
+            }
+          } catch { /* non-critical — continue without results */ }
         }
 
         // Empty response guard — Groq/API returned nothing (context too large, rate limit, or network drop)
