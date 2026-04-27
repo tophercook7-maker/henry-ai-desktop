@@ -11,6 +11,7 @@ import WorkspaceView from '../workspace/WorkspaceView';
 import TerminalView from '../terminal/TerminalView';
 import CostDashboard from '../costs/CostDashboard';
 import ComputerPanel from '../computer/ComputerPanel';
+import DeviceLinkPanel from '../settings/DeviceLinkPanel';
 import PrinterPanel from '../computer/PrinterPanel';
 import SecretaryPanel from '../secretary/SecretaryPanel';
 import TodayPanel from '../today/TodayPanel';
@@ -106,6 +107,13 @@ export default function Layout() {
           {currentView === 'printer' && <PrinterPanel />}
           {currentView === 'costs' && <CostDashboard />}
           {currentView === 'settings' && <SettingsView />}
+          {currentView === 'companion' && (
+            <div className="h-full overflow-y-auto px-5 py-5">
+              <h2 className="text-base font-semibold text-henry-text mb-1">Companion Devices</h2>
+              <p className="text-xs text-henry-text-muted mb-4">Connect your iPhone or iPad to Henry over WiFi or from anywhere.</p>
+              <DeviceLinkPanel />
+            </div>
+          )}
           {currentView === 'reminders' && <RemindersPanel />}
           {currentView === 'crm' && <CRMPanel />}
           {currentView === 'finance' && <FinancePanel />}
