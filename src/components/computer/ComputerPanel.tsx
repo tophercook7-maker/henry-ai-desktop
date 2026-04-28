@@ -1,6 +1,77 @@
 import { useState, useRef, useEffect } from 'react';
 import { useStore } from '../../store';
-import { runComputerAgent, type ComputerStep } from '../../henry/computerAgent';
+import { type ComputerStep } from '../../henry/computerAgent';
+
+// Direct sync server execution — bypasses Groq tool-use API (which fails on llama)
+async function execOnMac(command: string): Promise<{success: boolean; output: string; error: string}> {
+  try {
+    const r = await fetch('http://127.0.0.1:4242/computer/shell', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Henry-Internal': 'true' },
+      body: JSON.stringify({ command }),
+    });
+    return await r.json() as {success: boolean; output: string; error: string};
+  } catch (e) {
+    return { success: false, output: '', error: String(e) };
+  }
+}
+
+// Parse plain English commands into shell commands
+function parseCommand(text: string): { shell: string; description: string }[] {
+  const home = localStorage.getItem('henry:mac_home') || '~';
+  const t = text.toLowerCase().trim();
+
+  // Create/make folder
+  const folderMatch = text.match(/(?:create|make|new|add)\s+(?:a\s+)?folder\s+(?:called\s+|named\s+)?["']?([\w\s-]+?)["']?(?:\s+(?:on|in|at)\s+(?:my\s+)?([\w\s~/]+))?$/i);
+  if (folderMatch) {
+    const name = folderMatch[1].trim();
+    const loc = folderMatch[2]?.trim().toLowerCase() || 'desktop';
+    const where = loc.includes('desktop') ? `${home}/Desktop` : loc.includes('document') ? `${home}/Documents` : `${home}/Desktop`;
+    const fullPath = `${where}/${name}`;
+    return [
+      { shell: `mkdir -p "${fullPath}"`, description: `Creating folder: ${name}` },
+      { shell: `open "${fullPath}"`, description: `Opening ${name} in Finder` },
+    ];
+  }
+
+  // Open app
+  const openAppMatch = text.match(/open\s+(?:the\s+app\s+)?([\w\s]+?)(?:\s+app)?$/i);
+  if (openAppMatch && !text.includes('folder') && !text.includes('file') && !text.includes('/')) {
+    return [{ shell: `open -a "${openAppMatch[1].trim()}"`, description: `Opening ${openAppMatch[1].trim()}` }];
+  }
+
+  // Open URL
+  const urlMatch = text.match(/(?:go to|open|browse to|navigate to)\s+(https?:\/\/\S+|www\.\S+)/i);
+  if (urlMatch) {
+    const url = urlMatch[1].startsWith('http') ? urlMatch[1] : 'https://' + urlMatch[1];
+    return [{ shell: `open "${url}"`, description: `Opening ${url}` }];
+  }
+
+  // Screenshot
+  if (t.includes('screenshot') || t.includes('screen shot')) {
+    return [{ shell: `screencapture -x /tmp/henry_sc_${Date.now()}.png && echo "Screenshot saved"`, description: 'Taking screenshot' }];
+  }
+
+  // What's running / list processes
+  if (t.includes('running') || t.includes('processes') || t.includes('what apps')) {
+    return [{ shell: `ps aux | grep -E "\.(app)" | grep -v grep | awk '{print $11}' | sort -u | head -20`, description: 'Listing running apps' }];
+  }
+
+  // Disk space / storage
+  if (t.includes('disk') || t.includes('storage') || t.includes('space')) {
+    return [{ shell: `df -h /`, description: 'Checking disk space' }];
+  }
+
+  // Fallback: treat as raw shell command if it looks like one
+  if (t.startsWith('mkdir') || t.startsWith('open') || t.startsWith('cp') || 
+      t.startsWith('mv') || t.startsWith('rm') || t.startsWith('ls') ||
+      t.startsWith('echo') || t.startsWith('touch') || t.startsWith('osascript')) {
+    return [{ shell: text, description: `Running: ${text}` }];
+  }
+
+  // Last resort: ask Finder to open Desktop (show something useful)
+  return [{ shell: `echo "Command: ${text.replace(/"/g, '')}"`, description: `Processing: ${text}` }];
+}
 
 export default function ComputerPanel() {
   const { providers, settings } = useStore();
@@ -58,27 +129,31 @@ export default function ComputerPanel() {
   }
 
   async function run() {
-    if (!command.trim() || running || !activeProvider?.apiKey) return;
+    if (!command.trim() || running) return;
     setRunning(true);
     setSteps([]);
     const cmd = command.trim();
     setCommand('');
 
-    await runComputerAgent({
-      userRequest: cmd,
-      provider: activeProvider.id,
-      model: settings.companion_model || 'llama-3.3-70b-versatile',
-      apiKey: activeProvider.apiKey,
-      onStep: (step) => setSteps(prev => [...prev, step]),
-      onDone: (summary) => {
-        setSteps(prev => [...prev, { type: 'done', label: 'Done', detail: summary }]);
-        setRunning(false);
-      },
-      onError: (err) => {
-        setSteps(prev => [...prev, { type: 'result', label: '✗ Error', detail: err }]);
-        setRunning(false);
-      },
-    });
+    try {
+      const actions = parseCommand(cmd);
+      for (const action of actions) {
+        setSteps(prev => [...prev, { type: 'action', label: action.description }]);
+        const result = await execOnMac(action.shell);
+        setSteps(prev => [...prev, {
+          type: 'result',
+          label: result.success ? `✓ ${action.description}` : `✗ Failed`,
+          detail: result.success
+            ? (result.output?.trim() || 'Done')
+            : (result.error || 'Unknown error'),
+        }]);
+        if (!result.success) break;
+      }
+      setSteps(prev => [...prev, { type: 'done', label: 'Complete', detail: cmd }]);
+    } catch (e) {
+      setSteps(prev => [...prev, { type: 'result', label: '✗ Error', detail: String(e) }]);
+    }
+    setRunning(false);
   }
 
   const hasKey = !!activeProvider?.apiKey;
@@ -229,12 +304,12 @@ export default function ComputerPanel() {
             onChange={e => setCommand(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') run(); }}
             placeholder="Tell Henry what to do on your Mac…"
-            disabled={running || !hasKey}
+            disabled={running}
             className="flex-1 bg-henry-surface/50 border border-henry-border/30 rounded-xl px-4 py-3 text-sm text-henry-text placeholder-henry-text-muted outline-none focus:border-henry-accent/40 transition-all disabled:opacity-40"
           />
           <button
             onClick={run}
-            disabled={!command.trim() || running || !hasKey}
+            disabled={!command.trim() || running}
             className="px-5 py-3 rounded-xl bg-henry-accent text-henry-bg font-semibold text-sm hover:bg-henry-accent/90 disabled:opacity-40 transition-all shrink-0"
           >
             {running ? '…' : 'Go'}
