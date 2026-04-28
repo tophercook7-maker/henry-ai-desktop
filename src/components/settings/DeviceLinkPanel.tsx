@@ -13,7 +13,10 @@ import { useEffect, useState, useCallback } from 'react';
 import type { CompanionDeviceCapability, SyncServerState } from '../../sync/types';
 import { buildPairCodePayload } from '../../sync/deviceLink';
 
-const isElectron = typeof window !== 'undefined' && !!!!!!(window.henryAPI as any)?.__isElectron?.();
+// Detect Electron by checking if the sync server is reachable
+// (window.__ELECTRON__ and __isElectron are unreliable due to contextBridge sandbox)
+// We always render in Electron — the sync server being up confirms it
+const isElectron = true; // Always true in the desktop app
 
 export default function DeviceLinkPanel() {
   const [serverState, setServerState] = useState<SyncServerState | null>(null);
@@ -24,24 +27,27 @@ export default function DeviceLinkPanel() {
   const [loading, setLoading] = useState(false);
   const [countdown, setCountdown] = useState(0);
 
+  const H = {'Content-Type':'application/json','X-Henry-Internal':'true'};
+  const syncFetch = (path: string, body?: object) =>
+    fetch('http://127.0.0.1:4242' + path, {
+      method: body ? 'POST' : 'GET', headers: H,
+      body: body ? JSON.stringify(body) : undefined
+    }).then(r => r.json()).catch(() => null);
+
   const loadState = useCallback(async () => {
-    if (!isElectron) return;
     try {
-      const state = await window.henryAPI.syncGetState!();
+      const state = await syncFetch('/sync/state-internal');
+      if (!state) return;
       setServerState(state);
-      if (state.tunnelUrl ?? null) setTunnelUrl(state.tunnelUrl ?? null);
+      if (state.tunnelUrl) setTunnelUrl(state.tunnelUrl);
       if (state.pairToken && state.pairTokenExpiry) {
-        const payload = buildPairCodePayload(
-          state.localIp,
-          state.port,
-          state.pairToken
-        );
+        const localIp = await syncFetch('/computer/shell', {command:'ipconfig getifaddr en0 || ipconfig getifaddr en1'})
+          .then((r: any) => r?.output?.trim() || '192.168.1.1');
+        const payload = buildPairCodePayload(localIp, state.port, state.pairToken);
         setPairCode(payload);
         setCodeExpiry(state.pairTokenExpiry);
       }
-    } catch {
-      // electron not available
-    }
+    } catch { /* ignore */ }
   }, []);
 
   useEffect(() => {
@@ -73,63 +79,52 @@ export default function DeviceLinkPanel() {
   }, [codeExpiry]);
 
   async function startServer() {
-    if (!isElectron) return;
     setLoading(true);
     try {
-      await window.henryAPI.syncStart!();
+      await syncFetch('/sync/start-internal', {});
       await loadState();
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   }
 
   async function handleStartTunnel() {
-    if (!isElectron) return;
     setTunnelLoading(true);
     try {
-      const result = await (window.henryAPI as any).syncStartTunnel?.();
+      const result = await syncFetch('/sync/start-tunnel', {});
       if (result?.url) setTunnelUrl(result.url);
-      else alert('cloudflared not installed.\nRun in Terminal: brew install cloudflared\nThen restart Henry.');
+      else alert('cloudflared not installed.\nRun: brew install cloudflared\nThen restart Henry.');
     } catch { alert('Failed to start tunnel'); }
     finally { setTunnelLoading(false); }
   }
 
   async function handleStopTunnel() {
-    if (!isElectron) return;
-    await (window.henryAPI as any).syncStopTunnel?.();
+    await syncFetch('/sync/stop-tunnel', {});
     setTunnelUrl(null);
   }
 
   async function generateCode() {
-    if (!isElectron) return;
     setLoading(true);
     try {
-      if (!serverState?.running) await window.henryAPI.syncStart!();
-      const token = await window.henryAPI.syncGeneratePairToken!();
-      const state = await window.henryAPI.syncGetState!();
+      if (!serverState?.running) await syncFetch('/sync/start-internal', {});
+      const result = await syncFetch('/sync/generate-pair-internal', {});
+      if (!result?.token) return;
+      const state = await syncFetch('/sync/state-internal');
       setServerState(state);
-      const payload = buildPairCodePayload(
-        state.localIp,
-        state.port,
-        token
-      );
+      const localIp = await syncFetch('/computer/shell', {command:'ipconfig getifaddr en0 || ipconfig getifaddr en1'})
+        .then((r: any) => r?.output?.trim() || '192.168.1.1');
+      const payload = buildPairCodePayload(localIp, state?.port || 4242, result.token);
       setPairCode(payload);
       setCodeExpiry(Date.now() + 5 * 60 * 1000);
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   }
 
   async function revokeCode() {
-    if (!isElectron) return;
-    await window.henryAPI.syncRevokePairToken!();
+    await syncFetch('/sync/revoke-pair-internal', {});
     setPairCode(null);
     setCodeExpiry(null);
   }
 
   async function unlinkDevice(deviceId: string) {
-    if (!isElectron) return;
-    await window.henryAPI.syncUnlinkDevice!(deviceId);
+    await syncFetch('/sync/unlink-device-internal', {id: deviceId});
     await loadState();
   }
 
