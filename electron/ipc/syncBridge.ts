@@ -311,7 +311,7 @@ async function handleRequest(
 
   const url = new URL(req.url ?? '/', `http://localhost:${currentPort}`);
   const path = url.pathname;
-
+  const urlToken = url.searchParams.get('token') || '';
 
   // ── Mobile Companion UI ──────────────────────────────────────────────
   if ((path === '/' || path === '/companion') && req.method === 'GET') {

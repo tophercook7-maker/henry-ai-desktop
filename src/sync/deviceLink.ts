@@ -71,9 +71,9 @@ export function buildPairCodePayload(
   pairToken: string,
   relayUrl?: string
 ): string {
-  const obj: Record<string, unknown> = { h: host, p: port, t: pairToken };
-  if (relayUrl) obj.r = relayUrl;
-  return JSON.stringify(obj);
+  // QR code must be a real URL so iPhone Safari opens it directly
+  const base = relayUrl || `http://${host}:${port}`;
+  return `${base}/?token=${pairToken}`;
 }
 
 // ── Pairing handshake ──────────────────────────────────────────────────────
