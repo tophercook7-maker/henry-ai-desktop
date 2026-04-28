@@ -124,6 +124,24 @@ function createWindow() {
             window.henryAPI.computerOsascript  = s => post('/computer/osascript', {script: typeof s==='string'?s:s.script||s});
 
             console.log('[Henry] Real computer IPC installed via sync server');
+
+            // Override sync/companion methods via sync server HTTP API
+            // The preload exposes these but webMock overwrites them with no-ops
+            const syncPost2 = (path, body={}) =>
+              fetch(BASE + path, {method:'POST', headers:H, body:JSON.stringify(body)})
+                .then(r=>r.json()).catch(()=>({ok:false}));
+            const syncGet2 = (path) =>
+              fetch(BASE + path, {headers:H})
+                .then(r=>r.json()).catch(()=>({ok:false}));
+
+            window.henryAPI.syncStart = () => syncPost2('/sync/start-internal');
+            window.henryAPI.syncGetState = () => syncGet2('/sync/state-internal');
+            window.henryAPI.syncGeneratePairToken = () => syncPost2('/sync/generate-pair-internal');
+            window.henryAPI.syncRevokePairToken = () => syncPost2('/sync/revoke-pair-internal');
+            window.henryAPI.syncUnlinkDevice = (id) => syncPost2('/sync/unlink-device-internal', {id});
+            window.henryAPI.syncStartTunnel = () => syncPost2('/sync/start-tunnel');
+            window.henryAPI.syncStopTunnel = () => syncPost2('/sync/stop-tunnel');
+            window.henryAPI.syncGetTunnelUrl = () => syncGet2('/sync/get-tunnel-url');
           })();
         `;
         mainWindow!.webContents.executeJavaScript(computerOverrideScript).catch(() => {});

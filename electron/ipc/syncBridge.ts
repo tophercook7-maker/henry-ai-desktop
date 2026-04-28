@@ -99,6 +99,7 @@ let pairTokenExpiry = 0;
 const pendingActions: Map<string, PendingAction> = new Map();
 let eventLog: SyncEvent[] = [];
 let currentPort = 4242;
+let serverRunning = false;
 let tunnelUrl: string | null = null;
 let tunnelProcess: import('child_process').ChildProcess | null = null;
 
@@ -556,6 +557,47 @@ if(token){showChat();}
     }
   }
 
+  // ── Internal sync state endpoints (called from renderer to bypass webMock) ──
+  if (isInternal) {
+    if (path === '/sync/start-internal') {
+      jsonResponse(res, 200, { ok: serverRunning, port: currentPort });
+      return;
+    }
+    if (path === '/sync/state-internal') {
+      jsonResponse(res, 200, {
+        running: serverRunning,
+        port: currentPort,
+        tunnelUrl,
+        pairToken: pairToken && Date.now() < pairTokenExpiry ? pairToken : null,
+        pairTokenExpiry,
+        linkedDevices: [...linkedDevices.values()],
+      });
+      return;
+    }
+    if (path === '/sync/generate-pair-internal' && req.method === 'POST') {
+      const token = Math.floor(100000 + Math.random() * 900000).toString();
+      pairToken = token;
+      pairTokenExpiry = Date.now() + 10 * 60 * 1000; // 10 min
+      jsonResponse(res, 200, { token, expiry: pairTokenExpiry });
+      return;
+    }
+    if (path === '/sync/revoke-pair-internal' && req.method === 'POST') {
+      revokePairToken();
+      jsonResponse(res, 200, { ok: true });
+      return;
+    }
+    if (path === '/sync/unlink-device-internal' && req.method === 'POST') {
+      const body = await readBody<{id: string}>(req);
+      if (body?.id) unlinkDevice(body.id);
+      jsonResponse(res, 200, { ok: true });
+      return;
+    }
+    if (path === '/sync/get-tunnel-url') {
+      jsonResponse(res, 200, { url: tunnelUrl });
+      return;
+    }
+  }
+
   // ── Health ────────────────────────────────────────────────────────────
   if (path === '/sync/health' && req.method === 'GET') {
     const deviceId = validateToken(req);
@@ -842,6 +884,7 @@ export function startSyncServer(port = 4242): SyncServerState {
 
   server.listen(port, '0.0.0.0', () => {
     console.log(`[SyncBridge] Sync server listening on port ${port}`);
+    serverRunning = true;
   });
 
   server.on('error', (err) => {

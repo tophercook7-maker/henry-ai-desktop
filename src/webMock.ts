@@ -1455,6 +1455,34 @@ const henryAPI: Window['henryAPI'] = {
 // Only install the mock in non-Electron contexts (plain browser / Capacitor).
 // In Electron, preload already exposes henryAPI via contextBridge as a
 // non-writable property — reassigning it throws a TypeError that prevents React from mounting.
+// Sync/companion stubs — real versions come from preload IPC
+const syncMock = {
+  syncStart: async () => ({ ok: false }),
+  syncStop: async () => ({ ok: false }),
+  syncGetState: async () => ({
+    running: false,
+    port: 4242,
+    tunnelUrl: null,
+    pairToken: null,
+    pairTokenExpiry: 0,
+    linkedDevices: [],
+  }),
+  syncGeneratePairToken: async () => null,
+  syncRevokePairToken: async () => ({ ok: false }),
+  syncUnlinkDevice: async (_id: string) => ({ ok: false }),
+  syncPushEvent: async () => ({ ok: false }),
+  syncAddPendingAction: async () => ({ ok: false }),
+  syncUpdateNotes: async () => ({ ok: false }),
+  syncUpdateSettings: async () => ({ ok: false }),
+  syncStartTunnel: async () => ({ ok: false, url: null }),
+  syncStopTunnel: async () => ({ ok: false }),
+  syncGetTunnelUrl: async () => ({ url: null }),
+  onCompanionCapture: () => () => {},
+  onCompanionPrompt: () => () => {},
+  onCompanionActionDecision: () => () => {},
+  onCompanionDeviceLinked: () => () => {},
+};
+
 // Only install the webMock if we're NOT in the real Electron app.
 // The preload exposes henryAPI.__isElectron = true via contextBridge.
 // We check this AFTER henryAPI is defined by the preload.
