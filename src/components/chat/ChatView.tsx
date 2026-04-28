@@ -1582,7 +1582,7 @@ export default function ChatView() {
 
         // Action interceptor — detect and execute real computer actions from Henry's text
         // This runs BEFORE saving the message so results can be appended
-        if (fullText && fullText.trim() && (window.henryAPI as any)?.__isElectron?.()) {
+        if (fullText && fullText.trim()) {
           try {
             const actionResults = await interceptAndExecute(fullText);
             if (actionResults.length > 0) {
