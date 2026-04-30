@@ -94,6 +94,28 @@ let server: http.Server | null = null;
 let sseClients: SSEClient[] = [];
 const linkedDevices: Map<string, DeviceInfo> = new Map();
 const companionTokens: Map<string, string> = new Map(); // token → deviceId
+
+// Persist companion tokens to SQLite so they survive server restarts
+function saveCompanionTokens(): void {
+  try {
+    const tokenData = JSON.stringify({
+      tokens: Array.from(companionTokens.entries()),
+      devices: Array.from(linkedDevices.entries()),
+    });
+    dbRun("INSERT OR REPLACE INTO settings(key,value) VALUES('companion_session_tokens',?)", tokenData);
+  } catch { /* ignore */ }
+}
+
+function loadCompanionTokens(): void {
+  try {
+    const row = dbGetOne<{value:string}>('SELECT value FROM settings WHERE key=?', 'companion_session_tokens');
+    if (row?.value) {
+      const data = JSON.parse(row.value) as {tokens:[string,string][];devices:[string,DeviceInfo][]};
+      if (data.tokens) for (const [k,v] of data.tokens) companionTokens.set(k, v);
+      if (data.devices) for (const [k,v] of data.devices) linkedDevices.set(k, v);
+    }
+  } catch { /* ignore */ }
+}
 let pairToken: string | null = null;
 let pairTokenExpiry = 0;
 const pendingActions: Map<string, PendingAction> = new Map();
@@ -143,7 +165,11 @@ function corsHeaders(res: http.ServerResponse): void {
 }
 
 function validateToken(req: http.IncomingMessage): string | null {
+  // Accept token from: Authorization: Bearer TOKEN, x-henry-token header, or ?token= param
+  const authHeader = req.headers['authorization'] as string | undefined;
+  const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
   const token =
+    bearerToken ??
     (req.headers['x-henry-token'] as string | undefined) ??
     new URL(req.url ?? '', 'http://localhost').searchParams.get('token') ??
     '';
@@ -199,6 +225,13 @@ function dbGet<T>(sql: string, ...params: unknown[]): T[] {
   } catch {
     return [];
   }
+}
+
+function dbRun(sql: string, ...params: unknown[]): void {
+  try {
+    const db = getDb();
+    db.prepare(sql).run(...params);
+  } catch { /* ignore */ }
 }
 
 function dbGetOne<T>(sql: string, ...params: unknown[]): T | null {
@@ -595,11 +628,35 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
     addBubble('user', text);
     showTyping();
     try {
-      await fetch('/sync/prompt', {
+      const r = await fetch('/sync/prompt', {
         method: 'POST',
         headers: {'Content-Type':'application/json','Authorization':'Bearer '+window.henryToken},
         body: JSON.stringify({text, history: window.henryHistory.slice(-10)})
       });
+      if (r.status === 401) {
+        // Token expired (server restarted) — re-pair and resend
+        removeTyping();
+        localStorage.removeItem('henry_token');
+        localStorage.removeItem('henry_device_id');
+        window.henryToken = '';
+        const repaired = await autoPair();
+        if (repaired) {
+          // Retry the message
+          const r2 = await fetch('/sync/prompt', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json','Authorization':'Bearer '+window.henryToken},
+            body: JSON.stringify({text, history: window.henryHistory.slice(-10)})
+          });
+          if (!r2.ok) { addBubble('ai', 'Could not reconnect. Try refreshing.'); sendBtn.disabled = false; }
+          else showTyping();
+        }
+        return;
+      }
+      if (!r.ok) {
+        removeTyping();
+        addBubble('ai', 'Error sending message. Try again.');
+        sendBtn.disabled = false;
+      }
     } catch(e) {
       removeTyping();
       addBubble('ai', 'Connection error. Check WiFi.');
@@ -630,15 +687,18 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
         localStorage.setItem('henry_token', window.henryToken);
         localStorage.setItem('henry_device_id', window.henryDeviceId);
         goToChat();
+        return true;
       } else {
         showPairError('Could not connect. Make sure your Mac and phone are on the same WiFi.');
         pairBtn.disabled = false;
         pairBtn.textContent = 'Connect to Henry';
+        return false;
       }
     } catch(e) {
       showPairError('Connection failed: ' + e.message);
       pairBtn.disabled = false;
       pairBtn.textContent = 'Try Again';
+      return false;
     }
   }
 
@@ -847,6 +907,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
     pairToken = null; // consumed
 
     notifyRenderer('henry:companion:device-linked', { device: device2 });
+    saveCompanionTokens(); // Persist for server restarts
 
     jsonResponse(res, 200, {
       companionToken: companionToken2,
@@ -895,6 +956,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 
     // Notify renderer
     notifyRenderer('henry:companion:device-linked', { device });
+    saveCompanionTokens(); // Persist for server restarts
 
     const resp: PairResponse = {
       companionToken,
@@ -1203,6 +1265,7 @@ export function startSyncServer(port = 4242): SyncServerState {
   server.listen(port, '0.0.0.0', () => {
     console.log(`[SyncBridge] Sync server listening on port ${port}`);
     serverRunning = true;
+    loadCompanionTokens(); // Restore tokens from previous session
   });
 
   server.on('error', (err) => {
