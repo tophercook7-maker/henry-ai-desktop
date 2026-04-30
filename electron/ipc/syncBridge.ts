@@ -477,6 +477,9 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 }
 #pair-btn:disabled{opacity:0.5}
 .hidden{display:none!important}
+.qbtn{background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:6px 14px;color:var(--text);font-size:13px;white-space:nowrap;cursor:pointer;flex-shrink:0}
+.qbtn:active{background:var(--accent);color:#fff}
+#quickbar::-webkit-scrollbar{display:none}
 </style>
 </head>
 <body>
@@ -489,8 +492,16 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
       <span id="topbar-status">Connecting…</span>
     </div>
     <div id="msgs"></div>
+    <div id="quickbar" style="display:flex;gap:6px;overflow-x:auto;padding:8px 12px 0;scrollbar-width:none;flex-shrink:0">
+      <button class="qbtn" onclick="qsend('screenshot')">📸 Screenshot</button>
+      <button class="qbtn" onclick="qsend('what apps are running')">📱 Apps</button>
+      <button class="qbtn" onclick="qsend('open Finder')">📁 Finder</button>
+      <button class="qbtn" onclick="qsend('disk space')">💾 Disk</button>
+      <button class="qbtn" onclick="qsend('open Safari')">🌐 Safari</button>
+      <button class="qbtn" onclick="qsend('open Terminal')">⌨️ Terminal</button>
+    </div>
     <div id="inputbar">
-      <textarea id="inp" placeholder="Message Henry…" rows="1"></textarea>
+      <textarea id="inp" placeholder="Ask Henry or tell him to do something…" rows="1"></textarea>
       <button id="send" disabled>
         <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
       </button>
@@ -605,6 +616,20 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
     msgs.scrollTop = msgs.scrollHeight;
   }
 
+  function showScreenshot(base64) {
+    removeTyping();
+    const row = document.createElement('div');
+    row.className = 'msg-row ai';
+    const img = document.createElement('img');
+    img.src = 'data:image/png;base64,' + base64;
+    img.style.cssText = 'max-width:100%;border-radius:12px;border:1px solid var(--border);margin-top:4px';
+    img.onclick = () => window.open(img.src);
+    row.appendChild(img);
+    msgs.appendChild(row);
+    msgs.scrollTop = msgs.scrollHeight;
+    sendBtn.disabled = false;
+  }
+
   function finalizeStream(fullText) {
     removeTyping();
     if (window.henryStreamBubble) {
@@ -617,6 +642,13 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
     }
     sendBtn.disabled = false;
     msgs.scrollTop = msgs.scrollHeight;
+  }
+
+  function qsend(text) {
+    const inp = document.getElementById('inp');
+    inp.value = text;
+    inp.dispatchEvent(new Event('input', {bubbles:true}));
+    sendMsg();
   }
 
   async function sendMsg() {
@@ -1097,7 +1129,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 
       const history = body.history || [];
       const messages = [
-        { role: 'system', content: 'You are Henry, a personal AI assistant running on this Mac. Be concise and helpful. You can control this computer when asked.' },
+        { role: 'system', content: `You are Henry, a personal AI assistant. The user is messaging from their phone. Be concise — short replies work best on mobile. You can control the Mac you are running on. For computer actions use: computer:runShell(command), computer:newFolder(path=...,name=...), computer:openApp(AppName), computer:screenshot(). When asked to take a screenshot, use computer:screenshot() and the image will be shown. The Mac home directory is ${localStorage ? '' : ''}/Users/christophercook.` },
         ...history.slice(-10),
         { role: 'user', content: body.text }
       ];
@@ -1133,8 +1165,64 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
             } catch { /* ignore parse errors */ }
           }
         });
-        r2.on('end', () => {
-          if (fullText) pushToDevice(deviceId, { type: 'companion_response', payload: { text: fullText, done: true } });
+        r2.on('end', async () => {
+          if (!fullText) return;
+
+          // Execute any computer actions Henry mentioned
+          let finalText = fullText;
+          const { execSync } = await import('child_process');
+          const sysOs = await import('os');
+          const sysHome = sysOs.default.homedir();
+
+          // Check for screenshot request
+          if (/computer:screenshot\s*\(\s*\)|take.*screenshot|screenshot/i.test(fullText)) {
+            try {
+              const tmpFile = sysOs.default.tmpdir() + '/henry_mobile_sc_' + Date.now() + '.png';
+              execSync('screencapture -x "' + tmpFile + '"', {timeout: 5000});
+              const sysFs = await import('fs');
+              const buf = sysFs.default.readFileSync(tmpFile);
+              sysFs.default.unlinkSync(tmpFile);
+              const b64 = buf.toString('base64');
+              pushToDevice(deviceId, { type: 'companion_screenshot', payload: { base64: b64 } });
+            } catch(e) { /* screenshot failed */ }
+          }
+
+          // Check for folder creation
+          const folderMatch = fullText.match(/computer:newFolder\s*\([^)]*path=["']?([^"',)]+)["']?[^)]*name=["']?([^"',)]+)["']?/i);
+          if (folderMatch) {
+            try {
+              const folderPath = (folderMatch[1].trim().replace(/\/$/, '') + '/' + folderMatch[2].trim()).replace(/^~/, sysHome);
+              const sysFs2 = await import('fs');
+              sysFs2.default.mkdirSync(folderPath, {recursive: true});
+              const { exec } = await import('child_process');
+              exec('open "' + folderPath + '"');
+              finalText = fullText + '\n\n✓ Folder created: ' + folderPath;
+            } catch(e) { finalText = fullText + '\n\n✗ Folder error: ' + (e instanceof Error ? e.message : String(e)); }
+          }
+
+          // Check for shell command
+          const shellMatch = fullText.match(/computer:runShell\s*\([^)]*command=["']([^"']+)["']/i)
+            || fullText.match(/computer:runShell\s*\(([^)]+)\)/i);
+          if (shellMatch && !folderMatch) {
+            try {
+              const cmd = shellMatch[1].replace(/command=["']?/i,'').replace(/["']$/,'').trim()
+                .replace(/\/Users\/yourusername\//g, sysHome + '/').replace(/^~\//, sysHome + '/');
+              const out = execSync(cmd, {timeout: 10000, encoding: 'utf8'});
+              finalText = fullText + '\n\n✓ Output:\n' + (out?.trim() || 'Done');
+            } catch(e) { finalText = fullText + '\n\n✗ Error: ' + (e instanceof Error ? e.message : String(e)); }
+          }
+
+          // Check for open app
+          const appMatch = fullText.match(/computer:openApp\s*\(["']?([^"',)]+)["']?\)/i);
+          if (appMatch) {
+            try {
+              const { exec } = await import('child_process');
+              exec('open -a "' + appMatch[1].trim() + '"');
+              finalText = fullText + '\n\n✓ Opened ' + appMatch[1].trim();
+            } catch(e) { /* ignore */ }
+          }
+
+          pushToDevice(deviceId, { type: 'companion_response', payload: { text: finalText, done: true } });
         });
       });
       req2.on('error', (e: Error) => {
