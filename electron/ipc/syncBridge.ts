@@ -343,21 +343,26 @@ async function handleRequest(
   --muted:#5a5a72;--green:#22c55e;--red:#ef4444;
   --user-bg:#6366f1;--ai-bg:#13131e;
 }
-html,body{height:100%;height:100dvh;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text',sans-serif;overflow:hidden}
-#app{display:flex;flex-direction:column;height:100%;height:100dvh}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text',sans-serif;overflow:hidden;position:fixed;width:100%}
+#app{display:flex;flex-direction:column;position:fixed;top:0;left:0;right:0;bottom:0;height:100%}
 
 /* Top bar */
 #topbar{
-  padding:max(env(safe-area-inset-top),12px) 16px 10px;
+  padding:env(safe-area-inset-top,12px) 16px 10px;
+  padding-top:max(env(safe-area-inset-top),12px);
   background:var(--surface);
   border-bottom:1px solid var(--border);
   display:flex;align-items:center;gap:10px;
   flex-shrink:0;
+  z-index:10;
 }
 #dot{width:7px;height:7px;border-radius:50%;background:var(--muted);flex-shrink:0;transition:background 0.3s}
 #dot.on{background:var(--green)}
 #topbar-name{font-size:15px;font-weight:600;color:var(--text);flex:1}
 #topbar-status{font-size:12px;color:var(--muted)}
+
+/* Chat view container */
+#chat-view{position:fixed;top:0;left:0;right:0;bottom:0;display:flex;flex-direction:column}
 
 /* Messages */
 #msgs{
@@ -366,6 +371,7 @@ html,body{height:100%;height:100dvh;background:var(--bg);color:var(--text);font-
   display:flex;flex-direction:column;
   gap:2px;
   -webkit-overflow-scrolling:touch;
+  min-height:0;
 }
 .msg-row{display:flex;padding:2px 16px}
 .msg-row.user{justify-content:flex-end}
@@ -392,6 +398,7 @@ html,body{height:100%;height:100dvh;background:var(--bg);color:var(--text);font-
   border-top:1px solid var(--border);
   display:flex;align-items:flex-end;gap:8px;
   flex-shrink:0;
+  z-index:10;
 }
 #inp{
   flex:1;background:var(--surface2);
@@ -414,9 +421,10 @@ html,body{height:100%;height:100dvh;background:var(--bg);color:var(--text);font-
 
 /* Pair screen */
 #pair-screen{
+  position:fixed;top:0;left:0;right:0;bottom:0;
   display:flex;flex-direction:column;align-items:center;
   justify-content:center;gap:20px;padding:40px 24px;
-  text-align:center;flex:1;
+  text-align:center;background:var(--bg);
 }
 #pair-screen h1{font-size:26px;font-weight:700;letter-spacing:-0.5px}
 #pair-screen p{color:var(--muted);font-size:15px;line-height:1.5;max-width:280px}
@@ -441,7 +449,7 @@ html,body{height:100%;height:100dvh;background:var(--bg);color:var(--text);font-
 <body>
 <div id="app">
   <!-- Connected chat view -->
-  <div id="chat-view" class="hidden" style="display:none;flex-direction:column;height:100%;height:100dvh">
+  <div id="chat-view" style="display:none">
     <div id="topbar">
       <div id="dot"></div>
       <span id="topbar-name">Henry</span>
@@ -491,7 +499,7 @@ html,body{height:100%;height:100dvh;background:var(--bg);color:var(--text);font-
 
   function goToChat() {
     pairScreen.style.display = 'none';
-    chatView.style.display = 'flex';
+    chatView.style.cssText = 'display:flex;'; // clear all inline styles, just show it
     addBubble('ai', 'Hi! I am Henry. Ask me anything or tell me to do something on your Mac.');
     startSSE();
   }
