@@ -461,17 +461,18 @@ html,body{height:100%;height:100dvh;background:var(--bg);color:var(--text);font-
     <h1>Henry</h1>
     <p>Your AI on <strong>${macName}</strong>.<br>Enter the 6-digit code from Henry on your Mac.</p>
     <input id="pair-input" type="number" inputmode="numeric" placeholder="000000" maxlength="6" autocomplete="off">
-    <button id="pair-btn" onclick="submitPair()">Connect to Henry</button>
+    <button id="pair-btn">Connect to Henry</button>
     <p id="pair-error" style="color:var(--red);font-size:13px" class="hidden"></p>
   </div>
 </div>
 <script>
-  let token = localStorage.getItem('henry_token') || '';
-  let deviceId = localStorage.getItem('henry_device_id') || '';
-  let es = null;
-  let history = [];
-  let streamingBubble = null;
-  let streamingText = '';
+  // State
+  window.henryToken = localStorage.getItem('henry_token') || '';
+  window.henryDeviceId = localStorage.getItem('henry_device_id') || '';
+  window.henryEs = null;
+  window.henryHistory = [];
+  window.henryStreamBubble = null;
+  window.henryStreamText = '';
 
   const chatView = document.getElementById('chat-view');
   const pairScreen = document.getElementById('pair-screen');
@@ -480,68 +481,42 @@ html,body{height:100%;height:100dvh;background:var(--bg);color:var(--text);font-
   const sendBtn = document.getElementById('send');
   const dot = document.getElementById('dot');
   const statusEl = document.getElementById('topbar-status');
+  const pairBtn = document.getElementById('pair-btn');
+  const pairErr = document.getElementById('pair-error');
 
-  function showError(msg) {
-    const el = document.getElementById('pair-error');
-    el.textContent = msg;
-    el.classList.remove('hidden');
-  }
-
-  async function submitPair() {
-    const code = document.getElementById('pair-input').value.trim();
-    if (code.length !== 6) { showError('Enter the 6-digit code from Henry'); return; }
-    const btn = document.getElementById('pair-btn');
-    btn.disabled = true;
-    btn.textContent = 'Connecting…';
-    try {
-      const r = await fetch('/sync/pair', {
-        method: 'POST',
-        headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({
-          pairToken: code,
-          deviceName: navigator.userAgent.includes('iPad') ? 'iPad' : 'iPhone',
-          platform: 'ios',
-          appleProduct: navigator.userAgent.includes('iPad') ? 'ipad' : 'iphone',
-          capabilities: ['chat', 'capture', 'prompt', 'notify']
-        })
-      });
-      const d = await r.json();
-      if (!r.ok || d.error) { showError(d.error || 'Invalid code. Try again.'); btn.disabled=false; btn.textContent='Connect to Henry'; return; }
-      token = d.companionToken;
-      deviceId = d.deviceId;
-      localStorage.setItem('henry_token', token);
-      localStorage.setItem('henry_device_id', deviceId);
-      goToChat();
-    } catch(e) {
-      showError('Connection failed. Make sure you are on the same WiFi as your Mac.');
-      btn.disabled = false;
-      btn.textContent = 'Connect to Henry';
-    }
+  function showPairError(msg) {
+    pairErr.textContent = msg;
+    pairErr.style.display = 'block';
   }
 
   function goToChat() {
     pairScreen.style.display = 'none';
     chatView.style.display = 'flex';
-    chatView.classList.remove('hidden');
-    addBubble('ai', 'Hi! I\'m Henry. Ask me anything or tell me to do something on your Mac.');
-    connectSSE();
+    addBubble('ai', 'Hi! I am Henry. Ask me anything or tell me to do something on your Mac.');
+    startSSE();
   }
 
-  function connectSSE() {
-    if (es) es.close();
+  function startSSE() {
+    if (window.henryEs) window.henryEs.close();
     statusEl.textContent = 'Connecting…';
-    es = new EventSource('/sync/stream?token=' + token);
-    es.onopen = () => { dot.className = 'on'; statusEl.textContent = 'Henry is ready'; sendBtn.disabled = false; };
-    es.onerror = () => { dot.className = ''; statusEl.textContent = 'Reconnecting…'; sendBtn.disabled = true; setTimeout(connectSSE, 3000); };
-    es.onmessage = (e) => {
+    window.henryEs = new EventSource('/sync/stream?token=' + window.henryToken);
+    window.henryEs.onopen = () => {
+      dot.className = 'on';
+      statusEl.textContent = 'Ready';
+      sendBtn.disabled = false;
+    };
+    window.henryEs.onerror = () => {
+      dot.className = '';
+      statusEl.textContent = 'Reconnecting…';
+      sendBtn.disabled = true;
+      setTimeout(startSSE, 3000);
+    };
+    window.henryEs.onmessage = (e) => {
       try {
-        const data = JSON.parse(e.data);
-        if (data.type === 'companion_chunk') {
-          appendChunk(data.payload.chunk);
-        } else if (data.type === 'companion_response') {
-          finalizeStream(data.payload.text);
-        }
-      } catch {}
+        const d = JSON.parse(e.data);
+        if (d.type === 'companion_chunk') appendChunk(d.payload.chunk);
+        else if (d.type === 'companion_response') finalizeStream(d.payload.text);
+      } catch(err) {}
     };
   }
 
@@ -554,11 +529,12 @@ html,body{height:100%;height:100dvh;background:var(--bg);color:var(--text);font-
     row.appendChild(b);
     msgs.appendChild(row);
     msgs.scrollTop = msgs.scrollHeight;
-    if (role !== 'typing') history.push({role: role === 'user' ? 'user' : 'assistant', content: text});
-    return b;
+    if (role === 'user') window.henryHistory.push({role:'user', content:text});
+    else if (role === 'ai') window.henryHistory.push({role:'assistant', content:text});
   }
 
   function showTyping() {
+    removeTyping();
     const row = document.createElement('div');
     row.className = 'msg-row ai';
     row.id = 'typing-row';
@@ -574,27 +550,27 @@ html,body{height:100%;height:100dvh;background:var(--bg);color:var(--text);font-
 
   function appendChunk(chunk) {
     removeTyping();
-    if (!streamingBubble) {
+    if (!window.henryStreamBubble) {
       const row = document.createElement('div');
       row.className = 'msg-row ai';
-      streamingBubble = document.createElement('div');
-      streamingBubble.className = 'bubble ai';
-      row.appendChild(streamingBubble);
+      window.henryStreamBubble = document.createElement('div');
+      window.henryStreamBubble.className = 'bubble ai';
+      row.appendChild(window.henryStreamBubble);
       msgs.appendChild(row);
-      streamingText = '';
+      window.henryStreamText = '';
     }
-    streamingText += chunk;
-    streamingBubble.textContent = streamingText;
+    window.henryStreamText += chunk;
+    window.henryStreamBubble.textContent = window.henryStreamText;
     msgs.scrollTop = msgs.scrollHeight;
   }
 
   function finalizeStream(fullText) {
     removeTyping();
-    if (streamingBubble) {
-      streamingBubble.textContent = fullText;
-      history.push({role:'assistant', content: fullText});
-      streamingBubble = null;
-      streamingText = '';
+    if (window.henryStreamBubble) {
+      window.henryStreamBubble.textContent = fullText;
+      window.henryHistory.push({role:'assistant', content:fullText});
+      window.henryStreamBubble = null;
+      window.henryStreamText = '';
     } else if (fullText) {
       addBubble('ai', fullText);
     }
@@ -613,39 +589,19 @@ html,body{height:100%;height:100dvh;background:var(--bg);color:var(--text);font-
     try {
       await fetch('/sync/prompt', {
         method: 'POST',
-        headers: {'Content-Type':'application/json','Authorization':'Bearer '+token},
-        body: JSON.stringify({text, history: history.slice(-10)})
+        headers: {'Content-Type':'application/json','Authorization':'Bearer '+window.henryToken},
+        body: JSON.stringify({text, history: window.henryHistory.slice(-10)})
       });
     } catch(e) {
       removeTyping();
-      addBubble('ai', 'Connection error. Check your WiFi.');
+      addBubble('ai', 'Connection error. Check WiFi.');
       sendBtn.disabled = false;
     }
   }
 
-  sendBtn.addEventListener('click', sendMsg);
-  inp.addEventListener('keydown', (e) => { if(e.key==='Enter' && !e.shiftKey){e.preventDefault();sendMsg();} });
-  inp.addEventListener('input', () => { inp.style.height='auto'; inp.style.height=Math.min(inp.scrollHeight,120)+'px'; });
-
-  // Auto-connect flow
-  const urlToken = '${initToken}';
-
-  async function autoConnect() {
-    // Try stored token first
-    if (token) {
-      const r = await fetch('/sync/snapshot', {headers:{'Authorization':'Bearer '+token}}).catch(()=>null);
-      if (r && r.ok) { goToChat(); return; }
-      localStorage.removeItem('henry_token');
-      localStorage.removeItem('henry_device_id');
-      token = '';
-    }
-    // Use URL token if from QR code
-    if (urlToken && urlToken.length === 6) {
-      document.getElementById('pair-input').value = urlToken;
-      setTimeout(submitPair, 400);
-      return;
-    }
-    // Auto-pair without a code — works when on same network
+  async function autoPair() {
+    pairBtn.disabled = true;
+    pairBtn.textContent = 'Connecting…';
     try {
       const ua = navigator.userAgent;
       const isIpad = ua.includes('iPad') || (ua.includes('Mac') && navigator.maxTouchPoints > 1);
@@ -653,26 +609,60 @@ html,body{height:100%;height:100dvh;background:var(--bg);color:var(--text);font-
         method: 'POST',
         headers: {'Content-Type':'application/json'},
         body: JSON.stringify({
-          deviceName: isIpad ? 'iPad' : ua.includes('iPhone') ? 'iPhone' : 'Chrome on Mobile',
-          platform: ua.includes('iPhone') || isIpad ? 'ios' : 'android',
+          deviceName: isIpad ? 'iPad' : ua.includes('iPhone') ? 'iPhone' : 'Mobile Browser',
+          platform: (ua.includes('iPhone') || isIpad) ? 'ios' : 'android',
           appleProduct: isIpad ? 'ipad' : ua.includes('iPhone') ? 'iphone' : 'unknown',
           capabilities: ['chat','prompt','notify']
         })
       });
       const d = await r.json();
       if (d.companionToken) {
-        token = d.companionToken;
-        deviceId = d.deviceId;
-        localStorage.setItem('henry_token', token);
-        localStorage.setItem('henry_device_id', deviceId);
+        window.henryToken = d.companionToken;
+        window.henryDeviceId = d.deviceId;
+        localStorage.setItem('henry_token', window.henryToken);
+        localStorage.setItem('henry_device_id', window.henryDeviceId);
         goToChat();
-        return;
+      } else {
+        showPairError('Could not connect. Make sure your Mac and phone are on the same WiFi.');
+        pairBtn.disabled = false;
+        pairBtn.textContent = 'Connect to Henry';
       }
-    } catch(e) { /* fall through to manual pair */ }
-    // Show pair screen as last resort
+    } catch(e) {
+      showPairError('Connection failed: ' + e.message);
+      pairBtn.disabled = false;
+      pairBtn.textContent = 'Try Again';
+    }
   }
 
-  autoConnect();
+  // Wire up events
+  pairBtn.addEventListener('click', autoPair);
+  sendBtn.addEventListener('click', sendMsg);
+  inp.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMsg(); }
+  });
+  inp.addEventListener('input', () => {
+    inp.style.height = 'auto';
+    inp.style.height = Math.min(inp.scrollHeight, 120) + 'px';
+  });
+
+  // Auto-connect on load
+  const urlParams = new URLSearchParams(window.location.search);
+  const urlToken = urlParams.get('token') || '${initToken}';
+
+  if (window.henryToken) {
+    // Try stored token
+    fetch('/sync/snapshot', {headers:{'Authorization':'Bearer '+window.henryToken}})
+      .then(r => { if (r.ok) goToChat(); else { localStorage.clear(); autoPair(); } })
+      .catch(() => autoPair());
+  } else if (urlToken && urlToken.length === 6) {
+    // QR code token
+    document.getElementById('pair-input').value = urlToken;
+    autoPair();
+  } else {
+    // Just auto-pair immediately — no code needed on local network
+    autoPair();
+  }
+
 </script>
 </body>
 </html>`;
