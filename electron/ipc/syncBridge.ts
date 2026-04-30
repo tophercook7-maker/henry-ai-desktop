@@ -627,17 +627,52 @@ html,body{height:100%;height:100dvh;background:var(--bg);color:var(--text);font-
   inp.addEventListener('keydown', (e) => { if(e.key==='Enter' && !e.shiftKey){e.preventDefault();sendMsg();} });
   inp.addEventListener('input', () => { inp.style.height='auto'; inp.style.height=Math.min(inp.scrollHeight,120)+'px'; });
 
-  // Check for stored token or URL token
+  // Auto-connect flow
   const urlToken = '${initToken}';
-  if (urlToken && urlToken.length === 6) {
-    document.getElementById('pair-input').value = urlToken;
-    setTimeout(submitPair, 600);
-  } else if (token) {
-    // Try to reconnect with stored token
-    fetch('/sync/snapshot', {headers:{'Authorization':'Bearer '+token}})
-      .then(r => { if (r.ok) goToChat(); else { localStorage.removeItem('henry_token'); } })
-      .catch(() => {});
+
+  async function autoConnect() {
+    // Try stored token first
+    if (token) {
+      const r = await fetch('/sync/snapshot', {headers:{'Authorization':'Bearer '+token}}).catch(()=>null);
+      if (r && r.ok) { goToChat(); return; }
+      localStorage.removeItem('henry_token');
+      localStorage.removeItem('henry_device_id');
+      token = '';
+    }
+    // Use URL token if from QR code
+    if (urlToken && urlToken.length === 6) {
+      document.getElementById('pair-input').value = urlToken;
+      setTimeout(submitPair, 400);
+      return;
+    }
+    // Auto-pair without a code — works when on same network
+    try {
+      const ua = navigator.userAgent;
+      const isIpad = ua.includes('iPad') || (ua.includes('Mac') && navigator.maxTouchPoints > 1);
+      const r = await fetch('/sync/auto-pair', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+          deviceName: isIpad ? 'iPad' : ua.includes('iPhone') ? 'iPhone' : 'Chrome on Mobile',
+          platform: ua.includes('iPhone') || isIpad ? 'ios' : 'android',
+          appleProduct: isIpad ? 'ipad' : ua.includes('iPhone') ? 'iphone' : 'unknown',
+          capabilities: ['chat','prompt','notify']
+        })
+      });
+      const d = await r.json();
+      if (d.companionToken) {
+        token = d.companionToken;
+        deviceId = d.deviceId;
+        localStorage.setItem('henry_token', token);
+        localStorage.setItem('henry_device_id', deviceId);
+        goToChat();
+        return;
+      }
+    } catch(e) { /* fall through to manual pair */ }
+    // Show pair screen as last resort
   }
+
+  autoConnect();
 </script>
 </body>
 </html>`;
@@ -779,6 +814,50 @@ html,body{height:100%;height:100dvh;background:var(--bg);color:var(--text);font-
   }
 
   // ── Pairing ───────────────────────────────────────────────────────────
+  // Auto-pair: generates token + pairs in one request, no code needed
+  // Only works on local network (no external auth needed)
+  if (path === '/sync/auto-pair' && req.method === 'POST') {
+    const body = await readBody<PairRequest>(req);
+    if (!body) { jsonResponse(res, 400, { error: 'Bad request' }); return; }
+
+    // Generate a fresh token and immediately pair
+    const autoToken = Math.floor(100000 + Math.random() * 900000).toString();
+    pairToken = autoToken;
+    pairTokenExpiry = Date.now() + 30_000; // 30 seconds
+
+    const deviceId2 = generateToken(12);
+    const companionToken2 = generateToken(32);
+    companionTokens.set(companionToken2, deviceId2);
+
+    const ap2 = body.appleProduct;
+    const appleProduct2: DeviceInfo['appleProduct'] =
+      ap2 === 'ipad' ? 'ipad' : ap2 === 'iphone' ? 'iphone' : 'unknown';
+
+    const device2: DeviceInfo = {
+      id: deviceId2,
+      name: body.deviceName ?? 'Device',
+      platform: (body.platform as DeviceInfo['platform']) ?? 'web',
+      linkedAt: new Date().toISOString(),
+      lastSeen: new Date().toISOString(),
+      lastSyncAt: new Date().toISOString(),
+      pushToken: body.pushToken,
+      linkStatus: 'linked',
+      capabilities: [...COMPANION_DEFAULT_DEVICE_CAPABILITIES],
+      appleProduct: appleProduct2,
+    };
+    linkedDevices.set(deviceId2, device2);
+    pairToken = null; // consumed
+
+    notifyRenderer('henry:companion:device-linked', { device: device2 });
+
+    jsonResponse(res, 200, {
+      companionToken: companionToken2,
+      deviceId: deviceId2,
+      desktopName: os.hostname(),
+    });
+    return;
+  }
+
   if (path === '/sync/pair' && req.method === 'POST') {
     const body = await readBody<PairRequest>(req);
     if (!body) { jsonResponse(res, 400, { error: 'Bad request' }); return; }
