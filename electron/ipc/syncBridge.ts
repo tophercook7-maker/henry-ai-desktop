@@ -1071,12 +1071,14 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
     const heartbeat = setInterval(() => {
       try {
         res.write(': ping\n\n');
+        // Update lastSeen so the desktop shows "Online now"
+        const d = linkedDevices.get(deviceId);
+        if (d) linkedDevices.set(deviceId, {...d, lastSeen: new Date().toISOString(), lastSyncAt: new Date().toISOString()});
       } catch {
-        // Client disconnected before the 'close' event fired
         clearInterval(heartbeat);
         sseClients = sseClients.filter((c) => c !== client);
       }
-    }, 25_000);
+    }, 15_000);
 
     req.on('close', () => {
       clearInterval(heartbeat);
@@ -1129,7 +1131,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 
       const history = body.history || [];
       const messages = [
-        { role: 'system', content: `You are Henry, a personal AI assistant. The user is messaging from their phone. Be concise — short replies work best on mobile. You can control the Mac you are running on. For computer actions use: computer:runShell(command), computer:newFolder(path=...,name=...), computer:openApp(AppName), computer:screenshot(). When asked to take a screenshot, use computer:screenshot() and the image will be shown. The Mac home directory is ${localStorage ? '' : ''}/Users/christophercook.` },
+        { role: 'system', content: 'You are Henry, a personal AI installed on a Mac. The user is messaging from their phone. You can and DO control the physical Mac — this is real computer control, not a simulation. Be direct and concise (mobile screen). When the user asks you to do something on the computer, use these exact patterns and they will execute: computer:runShell(command=\"..\") for shell commands, computer:newFolder(path=\"/Users/christophercook/Desktop/FolderName\") to create and open folders, computer:openApp(\"AppName\") to open apps, computer:screenshot() to take and show a screenshot. Mac home: /Users/christophercook, Desktop: /Users/christophercook/Desktop. After using a tool pattern, report the result in one sentence.' },
         ...history.slice(-10),
         { role: 'user', content: body.text }
       ];
@@ -1145,6 +1147,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
       };
 
       let fullText = '';
+      let doneSent = false;
       const req2 = https.request(opts, (r2) => {
         r2.on('data', (chunk: Buffer) => {
           const lines = chunk.toString().split('\n');
@@ -1152,7 +1155,10 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
             if (!line.startsWith('data: ')) continue;
             const data = line.slice(6);
             if (data === '[DONE]') {
-              pushToDevice(deviceId, { type: 'companion_response', payload: { text: fullText, done: true } });
+              if (!doneSent) {
+                doneSent = true;
+                pushToDevice(deviceId, { type: 'companion_response', payload: { text: fullText, done: true } });
+              }
               return;
             }
             try {
@@ -1166,7 +1172,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
           }
         });
         r2.on('end', async () => {
-          if (!fullText) return;
+          if (!fullText || doneSent) return; // doneSent means [DONE] already pushed the response
 
           // Execute any computer actions Henry mentioned
           let finalText = fullText;

@@ -314,12 +314,16 @@ export default function DeviceLinkPanel() {
                       ? ` · ${device.appleProduct}`
                       : ''}{' '}
                     · Linked {new Date(device.linkedAt).toLocaleDateString()}
-                    {device.lastSeen && ` · Seen ${formatAge(Date.now() - new Date(device.lastSeen).getTime())} ago`}
+                    {device.lastSeen && (
+                      Date.now() - new Date(device.lastSeen).getTime() < 60_000
+                        ? <span className="text-green-400 font-medium"> · Online now</span>
+                        : ` · Seen ${formatAge(Date.now() - new Date(device.lastSeen).getTime())} ago`
+                    )}
                     {device.lastSyncAt &&
                       ` · Sync ${formatAge(Date.now() - new Date(device.lastSyncAt).getTime())} ago`}
                   </p>
                   {device.linkStatus && (
-                    <p className="text-[10px] text-henry-success mt-0.5 capitalize">
+                    <p className="text-[10px] text-green-400 mt-0.5 capitalize">
                       {device.linkStatus}
                     </p>
                   )}
