@@ -442,15 +442,19 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
   font-family:inherit;line-height:1.4;
 }
 #inp::placeholder{color:var(--muted)}
-#send{
-  width:38px;height:38px;border-radius:50%;
-  background:var(--accent);border:none;
-  display:flex;align-items:center;justify-content:center;
-  flex-shrink:0;cursor:pointer;
-  transition:opacity 0.15s;
+#send,#mic{
+  width:40px;height:40px;border-radius:50%;
+  border:none;display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;cursor:pointer;transition:all 0.15s;
 }
+#send{background:var(--accent);}
 #send:disabled{opacity:0.35}
 #send svg{width:18px;height:18px;fill:#fff}
+#mic{background:var(--surface2);border:1px solid var(--border);}
+#mic svg{width:18px;height:18px;fill:var(--muted);}
+#mic.listening{background:var(--red);border-color:var(--red);animation:pulse 1s infinite;}
+#mic.listening svg{fill:#fff;}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.6}}
 
 /* Pair screen */
 #pair-screen{
@@ -501,9 +505,12 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
       <button class="qbtn" onclick="qsend('open Terminal')">⌨️ Terminal</button>
     </div>
     <div id="inputbar">
-      <textarea id="inp" placeholder="Ask Henry or tell him to do something…" rows="1"></textarea>
+      <button id="mic" title="Speak">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1 1.93c-3.94-.49-7-3.86-7-7.93H2c0 4.97 3.66 9.09 8.5 9.82V22h3v-3.07c4.84-.73 8.5-4.85 8.5-9.82h-2c0 4.07-3.06 7.44-7 7.93V16c0-.55-.45-1-1-1s-1 .45-1 1v-.07z"/></svg>
+      </button>
+      <textarea id="inp" placeholder="Speak or type…" rows="1"></textarea>
       <button id="send" disabled>
-        <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
       </button>
     </div>
   </div>
@@ -733,6 +740,66 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
       return false;
     }
   }
+
+  // Voice recognition
+  const micBtn = document.getElementById('mic');
+  let recognition = null;
+  let listening = false;
+
+  function setupMic() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) {
+      micBtn.style.display = 'none';
+      return;
+    }
+    recognition = new SR();
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+
+    recognition.onstart = () => {
+      listening = true;
+      micBtn.classList.add('listening');
+      inp.placeholder = 'Listening…';
+    };
+
+    recognition.onresult = (e) => {
+      const transcript = Array.from(e.results)
+        .map(r => r[0].transcript).join('');
+      inp.value = transcript;
+      inp.dispatchEvent(new Event('input', {bubbles:true}));
+      // If final result, send automatically
+      if (e.results[e.results.length-1].isFinal) {
+        setTimeout(sendMsg, 300);
+      }
+    };
+
+    recognition.onend = () => {
+      listening = false;
+      micBtn.classList.remove('listening');
+      inp.placeholder = 'Speak or type…';
+    };
+
+    recognition.onerror = (e) => {
+      listening = false;
+      micBtn.classList.remove('listening');
+      inp.placeholder = 'Speak or type…';
+      if (e.error !== 'no-speech') addBubble('ai', 'Mic error: ' + e.error + '. Make sure mic permission is granted.');
+    };
+  }
+
+  micBtn.addEventListener('click', () => {
+    if (!recognition) { setupMic(); }
+    if (!recognition) return;
+    if (listening) {
+      recognition.stop();
+    } else {
+      inp.value = '';
+      recognition.start();
+    }
+  });
+
+  setupMic();
 
   // Wire up events
   pairBtn.addEventListener('click', autoPair);
@@ -1114,7 +1181,88 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
     // Acknowledge immediately
     jsonResponse(res, 200, { ok: true });
 
-    // Call Groq directly in main process — stream response back via SSE
+    const userText = (body.text || '').trim();
+    const macHome = os.homedir();
+
+    // Direct computer command detection — no AI, just execute
+    async function tryComputerCommand(text: string): Promise<string | null> {
+      const t = text.toLowerCase().trim();
+      const { execSync, exec } = await import('child_process') as typeof import('child_process');
+
+      // Screenshot
+      if (/screenshot|screen shot/.test(t)) {
+        try {
+          const tmp = os.tmpdir() + '/henry_sc_' + Date.now() + '.png';
+          execSync('screencapture -x "' + tmp + '"', { timeout: 5000 });
+          const buf = fs.readFileSync(tmp);
+          try { fs.unlinkSync(tmp); } catch { }
+          pushToDevice(deviceId, { type: 'companion_screenshot', payload: { base64: buf.toString('base64') } });
+          return 'Screenshot taken.';
+        } catch (e) { return 'Screenshot failed: ' + (e instanceof Error ? e.message : String(e)); }
+      }
+
+      // Create folder
+      const folderM = text.match(/(?:create|make|new)\s+(?:a\s+)?folder\s+(?:called\s+|named\s+)?["\'\u201c\u2018]?([\w\s._-]+?)["\'\u201d\u2019]?(?:\s+(?:on|in|at)\s+(?:my\s+)?(desktop|documents|downloads))?/i);
+      if (folderM) {
+        const name = folderM[1].trim().replace(/\s+/g, ' ');
+        const locStr = (folderM[2] || 'desktop').toLowerCase();
+        const where = locStr === 'documents' ? macHome + '/Documents' : locStr === 'downloads' ? macHome + '/Downloads' : macHome + '/Desktop';
+        const fullPath = where + '/' + name;
+        try {
+          fs.mkdirSync(fullPath, { recursive: true });
+          exec('open "' + fullPath + '"');
+          return 'Created "' + name + '" on your ' + locStr + ' and opened it in Finder.';
+        } catch (e) { return 'Failed: ' + (e instanceof Error ? e.message : String(e)); }
+      }
+
+      // Open app
+      const openAppM = text.match(/^open\s+(?:the\s+)?(?:app\s+)?(.+?)(?:\s+app)?$/i);
+      if (openAppM && !t.includes('file') && !t.includes('/') && !t.includes('folder')) {
+        const appName = openAppM[1].trim();
+        try { execSync('open -a "' + appName + '"', { timeout: 5000 }); return 'Opened ' + appName + '.'; }
+        catch { return 'Could not find "' + appName + '". Check the name.'; }
+      }
+
+      // Open URL
+      const urlM = text.match(/(?:go to|open|navigate to)\s+(https?:\/\/\S+|www\.\S+)/i);
+      if (urlM) {
+        const url = urlM[1].startsWith('http') ? urlM[1] : 'https://' + urlM[1];
+        execSync('open "' + url + '"', { timeout: 5000 });
+        return 'Opening ' + url;
+      }
+
+      // Disk space
+      if (/disk|storage|free space|how much/.test(t)) {
+        const out = execSync('df -h / | tail -1', { encoding: 'utf8', timeout: 5000 }) as string;
+        const p = out.trim().split(/\s+/);
+        return 'Disk: ' + p[1] + ' total, ' + p[3] + ' free (' + p[4] + ' used)';
+      }
+
+      // Running apps
+      if (/what.*(running|apps|open)|list.*apps/.test(t)) {
+        const out = execSync("ps aux | awk '{print $11}' | grep -E '\\.app/' | sed 's/.*\\/\\([^\\/]*\\)\\.app.*/\\1/' | sort -u | grep -v '^$' | head -12", { encoding: 'utf8', shell: '/bin/bash', timeout: 5000 }) as string;
+        return 'Running apps:\n' + out.trim();
+      }
+
+      // List files
+      if (/list|show.*(?:desktop|files)|desktop.*files/.test(t)) {
+        const target = t.includes('document') ? macHome + '/Documents' : t.includes('download') ? macHome + '/Downloads' : macHome + '/Desktop';
+        const out = execSync('ls "' + target + '"', { encoding: 'utf8', timeout: 5000 }) as string;
+        return (target.split('/').pop() || 'Desktop') + ':\n' + out.trim();
+      }
+
+      return null;
+    }
+
+    try {
+      const cmdResult = await tryComputerCommand(userText);
+      if (cmdResult !== null) {
+        pushToDevice(deviceId, { type: 'companion_response', payload: { text: cmdResult, done: true } });
+        return;
+      }
+    } catch { /* fall through to AI */ }
+
+    // Send to Groq for real questions
     try {
       const dbSettings = dbGet<{key:string;value:string}>('SELECT key, value FROM settings');
       const settingsMap: Record<string,string> = {};
@@ -1125,15 +1273,15 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
       const model = settingsMap['companion_model'] || 'llama-3.3-70b-versatile';
 
       if (!apiKey) {
-        pushToDevice(deviceId, { type: 'companion_response', payload: { text: 'No Groq API key set. Add one in Henry Settings → AI Providers.', done: true } });
+        pushToDevice(deviceId, { type: 'companion_response', payload: { text: 'No Groq API key set.', done: true } });
         return;
       }
 
       const history = body.history || [];
       const messages = [
-        { role: 'system', content: 'You are Henry, a personal AI installed on a Mac. The user is messaging from their phone. You can and DO control the physical Mac — this is real computer control, not a simulation. Be direct and concise (mobile screen). When the user asks you to do something on the computer, use these exact patterns and they will execute: computer:runShell(command=\"..\") for shell commands, computer:newFolder(path=\"/Users/christophercook/Desktop/FolderName\") to create and open folders, computer:openApp(\"AppName\") to open apps, computer:screenshot() to take and show a screenshot. Mac home: /Users/christophercook, Desktop: /Users/christophercook/Desktop. After using a tool pattern, report the result in one sentence.' },
+        { role: 'system', content: 'You are Henry, a helpful AI assistant. The user is on their phone. Be concise.' },
         ...history.slice(-10),
-        { role: 'user', content: body.text }
+        { role: 'user', content: userText }
       ];
 
       // Stream from Groq
@@ -1157,7 +1305,24 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
             if (data === '[DONE]') {
               if (!doneSent) {
                 doneSent = true;
-                pushToDevice(deviceId, { type: 'companion_response', payload: { text: fullText, done: true } });
+                // Strip "I can't access your computer" type responses — these shouldn't reach the user
+                let cleanText = fullText;
+                const cantPhrases = [
+                  "I don't have direct access",
+                  "I don't have access to your computer",
+                  "I'm currently interacting with you on your phone",
+                  "I cannot access your",
+                  "I can't directly access",
+                  "don't have the ability to",
+                  "I'm a text-based AI",
+                  "As an AI, I don't",
+                  "I'm not able to access",
+                ];
+                const hasCannotPhrase = cantPhrases.some(p => cleanText.includes(p));
+                if (hasCannotPhrase) {
+                  cleanText = 'I had trouble with that. Try asking differently, or use the quick buttons at the bottom.';
+                }
+                pushToDevice(deviceId, { type: 'companion_response', payload: { text: cleanText, done: true } });
               }
               return;
             }
