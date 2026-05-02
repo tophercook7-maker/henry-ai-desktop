@@ -481,6 +481,12 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 }
 #pair-btn:disabled{opacity:0.5}
 .hidden{display:none!important}
+#topbar{flex-wrap:wrap}
+.tab-btn{background:none;border:none;color:var(--muted);font-size:13px;font-weight:600;padding:4px 10px;border-radius:8px;cursor:pointer;flex-shrink:0}
+.tab-btn.active{background:var(--accent);color:#fff}
+#pane-chat{display:flex;flex-direction:column;flex:1;min-height:0}
+#quickbar{display:flex;gap:6px;overflow-x:auto;padding:8px 12px 0;scrollbar-width:none;flex-shrink:0}
+#quickbar::-webkit-scrollbar{display:none}
 .qbtn{background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:6px 14px;color:var(--text);font-size:13px;white-space:nowrap;cursor:pointer;flex-shrink:0}
 .qbtn:active{background:var(--accent);color:#fff}
 #quickbar::-webkit-scrollbar{display:none}
@@ -494,24 +500,46 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
       <div id="dot"></div>
       <span id="topbar-name">Henry</span>
       <span id="topbar-status">Connecting…</span>
+      <div style="flex:1"></div>
+      <button class="tab-btn active" id="tab-chat" onclick="switchTab('chat')">Chat</button>
+      <button class="tab-btn" id="tab-screen" onclick="switchTab('screen')">Screen</button>
     </div>
-    <div id="msgs"></div>
-    <div id="quickbar" style="display:flex;gap:6px;overflow-x:auto;padding:8px 12px 0;scrollbar-width:none;flex-shrink:0">
-      <button class="qbtn" onclick="qsend('screenshot')">📸 Screenshot</button>
-      <button class="qbtn" onclick="qsend('what apps are running')">📱 Apps</button>
-      <button class="qbtn" onclick="qsend('open Finder')">📁 Finder</button>
-      <button class="qbtn" onclick="qsend('disk space')">💾 Disk</button>
-      <button class="qbtn" onclick="qsend('open Safari')">🌐 Safari</button>
-      <button class="qbtn" onclick="qsend('open Terminal')">⌨️ Terminal</button>
+
+    <!-- Chat tab -->
+    <div id="pane-chat" style="display:flex;flex-direction:column;flex:1;min-height:0">
+      <div id="msgs"></div>
+      <div id="quickbar">
+        <button class="qbtn" onclick="qsend('open Finder')">📁 Finder</button>
+        <button class="qbtn" onclick="qsend('open Safari')">🌐 Safari</button>
+        <button class="qbtn" onclick="qsend('open Chrome')">🔵 Chrome</button>
+        <button class="qbtn" onclick="qsend('what apps are running')">📱 Apps</button>
+        <button class="qbtn" onclick="qsend('disk space')">💾 Disk</button>
+        <button class="qbtn" onclick="qsend('open Terminal')">⌨️ Terminal</button>
+      </div>
+      <div id="inputbar">
+        <button id="mic" title="Speak to Henry">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1 1.93c-3.94-.49-7-3.86-7-7.93H2c0 4.97 3.66 9.09 8.5 9.82V22h3v-3.07c4.84-.73 8.5-4.85 8.5-9.82h-2c0 4.07-3.06 7.44-7 7.93z"/></svg>
+        </button>
+        <textarea id="inp" placeholder="Type or tap mic to speak…" rows="1"></textarea>
+        <button id="send" disabled>
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+        </button>
+      </div>
     </div>
-    <div id="inputbar">
-      <button id="mic" title="Speak">
-        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1 1.93c-3.94-.49-7-3.86-7-7.93H2c0 4.97 3.66 9.09 8.5 9.82V22h3v-3.07c4.84-.73 8.5-4.85 8.5-9.82h-2c0 4.07-3.06 7.44-7 7.93V16c0-.55-.45-1-1-1s-1 .45-1 1v-.07z"/></svg>
-      </button>
-      <textarea id="inp" placeholder="Speak or type…" rows="1"></textarea>
-      <button id="send" disabled>
-        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
-      </button>
+
+    <!-- Screen tab -->
+    <div id="pane-screen" style="display:none;flex-direction:column;flex:1;min-height:0;overflow:auto;background:#000">
+      <div style="padding:10px 14px;display:flex;align-items:center;gap:10px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0">
+        <span style="font-size:13px;color:var(--muted)">Live view of your Mac</span>
+        <div style="flex:1"></div>
+        <button id="screen-refresh" style="background:var(--accent);color:#fff;border:none;border-radius:8px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer">Refresh</button>
+        <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer">
+          <input type="checkbox" id="auto-refresh" style="cursor:pointer"> Auto
+        </label>
+      </div>
+      <div style="flex:1;overflow:auto;display:flex;align-items:flex-start;justify-content:center;padding:8px">
+        <img id="screen-img" src="" alt="Mac screen" style="max-width:100%;border-radius:8px;box-shadow:0 4px 24px rgba(0,0,0,0.5)" onerror="this.alt='Screen Recording permission needed. Go to System Settings → Privacy → Screen Recording → Henry AI → On'">
+      </div>
     </div>
   </div>
 
@@ -651,13 +679,6 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
     msgs.scrollTop = msgs.scrollHeight;
   }
 
-  function qsend(text) {
-    const inp = document.getElementById('inp');
-    inp.value = text;
-    inp.dispatchEvent(new Event('input', {bubbles:true}));
-    sendMsg();
-  }
-
   async function sendMsg() {
     const text = inp.value.trim();
     if (!text || sendBtn.disabled) return;
@@ -740,6 +761,37 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
       return false;
     }
   }
+
+  // Tab switching
+  let screenRefreshTimer = null;
+
+  function switchTab(tab) {
+    document.getElementById('pane-chat').style.display = tab === 'chat' ? 'flex' : 'none';
+    document.getElementById('pane-screen').style.display = tab === 'screen' ? 'flex' : 'none';
+    document.getElementById('tab-chat').classList.toggle('active', tab === 'chat');
+    document.getElementById('tab-screen').classList.toggle('active', tab === 'screen');
+    if (tab === 'screen') refreshScreen();
+  }
+
+  function refreshScreen() {
+    const img = document.getElementById('screen-img');
+    img.src = '/screen?' + Date.now();
+  }
+
+  document.getElementById('screen-refresh').addEventListener('click', refreshScreen);
+  document.getElementById('auto-refresh').addEventListener('change', (e) => {
+    clearInterval(screenRefreshTimer);
+    if (e.target.checked) screenRefreshTimer = setInterval(refreshScreen, 3000);
+  });
+
+  // Make switchTab and qsend global (called from onclick)
+  window.switchTab = switchTab;
+  window.qsend = function(text) {
+    const inp = document.getElementById('inp');
+    inp.value = text;
+    inp.dispatchEvent(new Event('input', {bubbles:true}));
+    sendMsg();
+  };
 
   // Voice recognition
   const micBtn = document.getElementById('mic');
@@ -964,6 +1016,27 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
   }
 
   // ── Health ────────────────────────────────────────────────────────────
+  // Live screen endpoint — no auth, returns fresh screenshot as JPEG
+  if (path === '/screen' && req.method === 'GET') {
+    try {
+      const { execSync } = await import('child_process') as typeof import('child_process');
+      const tmp = os.tmpdir() + '/henry_live_' + Date.now() + '.jpg';
+      execSync('screencapture -x -t jpg "' + tmp + '"', { timeout: 5000 });
+      const buf = fs.readFileSync(tmp);
+      try { fs.unlinkSync(tmp); } catch { }
+      res.writeHead(200, {
+        'Content-Type': 'image/jpeg',
+        'Cache-Control': 'no-store',
+        'Access-Control-Allow-Origin': '*',
+      });
+      res.end(buf);
+    } catch (e) {
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Screenshot unavailable. Grant Screen Recording permission in System Settings.' }));
+    }
+    return;
+  }
+
   if (path === '/sync/health' && req.method === 'GET') {
     const deviceId = validateToken(req);
     jsonResponse(res, deviceId ? 200 : 401, { ok: !!deviceId });
