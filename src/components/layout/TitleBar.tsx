@@ -5,7 +5,7 @@ import { useCapturesStore, selectUnroutedCaptures } from '../../ambient/captures
 import { useAmbientStore } from '../../henry/ambientStateStore';
 
 export default function TitleBar() {
-  const { companionStatus, workerStatus, setCurrentView, viewHistory, goBack } = useStore();
+  const { companionStatus, workerStatus, setCurrentView, viewHistory, goBack, settings } = useStore();
   const captures = useCapturesStore((s) => s.captures);
   const unroutedCount = selectUnroutedCaptures(captures).length;
   const [installPrompt, setInstallPrompt] = useState<any>(null);
@@ -142,29 +142,26 @@ export default function TitleBar() {
         </div>
       </div>
 
-      {/* Center: engine status */}
-      <div className="titlebar-no-drag flex-1 flex items-center justify-center gap-3 md:gap-6 text-xs min-w-0">
-        <div className="flex items-center gap-1.5 md:gap-2">
-          <div className={`w-1.5 h-1.5 md:w-2 md:h-2 rounded-full ${statusColor(companionStatus.status)}`} />
-          <span className="text-henry-text-dim">
-            Advisor
-            <span className="hidden sm:inline text-henry-text-muted">
-              {' '}{companionStatus.status === 'idle' ? 'standby' : companionStatus.status}
+      {/* Center: model + status */}
+      <div className="titlebar-no-drag flex-1 flex items-center justify-center gap-2 text-xs min-w-0">
+        <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${statusColor(companionStatus.status)}`} />
+        <span className="text-henry-text-dim truncate max-w-[220px]">
+          {settings.companion_provider ? (
+            <>
+              <span className="capitalize">{settings.companion_provider}</span>
+              {settings.companion_model && (
+                <span className="text-henry-text-muted hidden sm:inline">
+                  {' · '}{settings.companion_model.replace('llama-','').replace('-versatile','').replace('-instant','')}
+                </span>
+              )}
+            </>
+          ) : 'Henry'}
+          {companionStatus.status !== 'idle' && (
+            <span className="text-henry-accent ml-1 hidden sm:inline">
+              · {companionStatus.status}
             </span>
-          </span>
-        </div>
-        <div className="w-px h-3 bg-henry-border" />
-        <div className="flex items-center gap-1.5 md:gap-2">
-          <div className={`w-1.5 h-1.5 md:w-2 md:h-2 rounded-full ${statusColor(workerStatus.status)}`} />
-          <span className="text-henry-text-dim">
-            Worker
-            <span className="hidden sm:inline text-henry-text-muted">
-              {' '}{workerStatus.status === 'idle' ? 'standby' : workerStatus.status}
-              {(workerStatus as any).queueLength > 0 &&
-                ` (${(workerStatus as any).queueLength} queued)`}
-            </span>
-          </span>
-        </div>
+          )}
+        </span>
       </div>
 
       {/* Right: update badge + wake word toggle */}

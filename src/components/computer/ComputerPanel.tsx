@@ -18,50 +18,94 @@ async function execOnMac(command: string): Promise<{success: boolean; output: st
 
 // Parse plain English commands into shell commands
 function parseCommand(text: string): { shell: string; description: string }[] {
-  const home = localStorage.getItem('henry:mac_home') || '~';
+  const home = localStorage.getItem('henry:mac_home') || '/Users/' + (localStorage.getItem('henry:mac_username') || 'user');
   const t = text.toLowerCase().trim();
 
-  // Create/make folder
-  const folderMatch = text.match(/(?:create|make|new|add)\s+(?:a\s+)?folder\s+(?:called\s+|named\s+)?["']?([\w\s-]+?)["']?(?:\s+(?:on|in|at)\s+(?:my\s+)?([\w\s~/]+))?$/i);
+  // Create folder — many phrasings
+  const folderMatch = text.match(/(?:create|make|new|add)\s+(?:a\s+)?(?:new\s+)?folder\s+(?:called\s+|named\s+)?["'\u201c\u2018]?([\w][\w\s._-]*?)["\'\u201d\u2019]?(?:\s+(?:on|in|at|inside)\s+(?:my\s+)?(desktop|documents|downloads|home))?/i)
+    || text.match(/folder\s+(?:called\s+|named\s+)?["'\u201c\u2018]?([\w][\w\s._-]+)["\'\u201d\u2019]?/i);
   if (folderMatch) {
-    const name = folderMatch[1].trim();
-    const loc = folderMatch[2]?.trim().toLowerCase() || 'desktop';
-    const where = loc.includes('desktop') ? `${home}/Desktop` : loc.includes('document') ? `${home}/Documents` : `${home}/Desktop`;
+    const name = (folderMatch[1] || folderMatch[2] || 'NewFolder').trim().replace(/\s+on\s+.*/i,'').trim();
+    const locStr = (folderMatch[2] || (t.match(/documents?/) ? 'documents' : t.match(/downloads?/) ? 'downloads' : t.match(/home/) ? 'home' : 'desktop')).toLowerCase();
+    const where = locStr === 'documents' ? home+'/Documents' : locStr === 'downloads' ? home+'/Downloads' : locStr === 'home' ? home : home+'/Desktop';
     const fullPath = `${where}/${name}`;
     return [
       { shell: `mkdir -p "${fullPath}"`, description: `Creating folder: ${name}` },
-      { shell: `open "${fullPath}"`, description: `Opening ${name} in Finder` },
+      { shell: `open "${fullPath}"`, description: `Opening in Finder` },
     ];
   }
 
-  // Open app
-  const openAppMatch = text.match(/open\s+(?:the\s+app\s+)?([\w\s]+?)(?:\s+app)?$/i);
-  if (openAppMatch && !text.includes('folder') && !text.includes('file') && !text.includes('/')) {
-    return [{ shell: `open -a "${openAppMatch[1].trim()}"`, description: `Opening ${openAppMatch[1].trim()}` }];
+  // Open app — smart matching
+  const openMatch = text.match(/^(?:open|launch|start|run)\s+(?:the\s+)?(?:app\s+)?(.+?)(?:\s+app)?$/i);
+  if (openMatch && !t.includes('/') && !t.includes('file') && !t.includes('folder') && !t.includes('url') && !t.includes('http')) {
+    const app = openMatch[1].trim();
+    // Common aliases
+    const aliases: Record<string,string> = { 'vs code':'Visual Studio Code', 'vscode':'Visual Studio Code', 'mail':'Mail', 'notes':'Notes', 'messages':'Messages', 'finder':'Finder', 'calendar':'Calendar', 'photos':'Photos', 'music':'Music', 'system settings':'System Settings', 'system prefs':'System Preferences', 'terminal':'Terminal' };
+    const appName = aliases[app.toLowerCase()] || app;
+    return [{ shell: `open -a "${appName}"`, description: `Opening ${appName}` }];
   }
 
   // Open URL
-  const urlMatch = text.match(/(?:go to|open|browse to|navigate to)\s+(https?:\/\/\S+|www\.\S+)/i);
+  const urlMatch = text.match(/(?:go to|open|browse to|navigate to|visit)\s+(https?:\/\/\S+|www\.\S+)/i)
+    || text.match(/^(https?:\/\/\S+)$/i);
   if (urlMatch) {
     const url = urlMatch[1].startsWith('http') ? urlMatch[1] : 'https://' + urlMatch[1];
     return [{ shell: `open "${url}"`, description: `Opening ${url}` }];
   }
 
   // Screenshot
-  if (t.includes('screenshot') || t.includes('screen shot')) {
-    return [{ shell: `screencapture -x /tmp/henry_sc_${Date.now()}.png && echo "Screenshot saved"`, description: 'Taking screenshot' }];
+  if (t.match(/screenshot|screen shot|capture.*screen|take.*picture.*screen/)) {
+    const ts = Date.now();
+    return [{ shell: `screencapture -x ~/Desktop/screenshot_${ts}.png && echo "Saved to Desktop/screenshot_${ts}.png"`, description: 'Taking screenshot' }];
   }
 
-  // What's running / list processes
-  if (t.includes('running') || t.includes('processes') || t.includes('what apps')) {
-    return [{ shell: `ps aux | grep -E "\.(app)" | grep -v grep | awk '{print $11}' | sort -u | head -20`, description: 'Listing running apps' }];
+  // What's running
+  if (t.match(/(?:what|which|list|show).*(?:running|apps|applications|open|processes)/)) {
+    return [{ shell: "osascript -e 'tell application \"System Events\" to get name of every application process whose background only is false'", description: 'Listing running apps' }];
   }
 
-  // Disk space / storage
-  if (t.includes('disk') || t.includes('storage') || t.includes('space')) {
-    return [{ shell: `df -h /`, description: 'Checking disk space' }];
+  // Disk space
+  if (t.match(/disk|storage|space|free.*space|how much.*space/)) {
+    return [{ shell: `df -h / | tail -1 | awk '{print "Total: "$2" | Used: "$3" | Free: "$4" | "$5" used"}'`, description: 'Checking disk space' }];
   }
 
+  // List files
+  if (t.match(/(?:list|show|what.*in|files.*on).*(?:desktop|documents|downloads|folder)/)) {
+    const target = t.includes('documents') ? home+'/Documents' : t.includes('downloads') ? home+'/Downloads' : home+'/Desktop';
+    return [{ shell: `ls "${target}"`, description: `Listing ${target.split('/').pop()}` }];
+  }
+
+  // Sleep / lock
+  if (t.match(/sleep|lock.*screen|screen.*lock/)) {
+    return [{ shell: `pmset sleepnow`, description: 'Sleeping Mac' }];
+  }
+
+  // Volume
+  const volMatch = t.match(/(?:set|turn|change).*volume.*?([0-9]+)|volume.*?([0-9]+)/);
+  if (volMatch) {
+    const vol = parseInt(volMatch[1] || volMatch[2]);
+    return [{ shell: `osascript -e "set volume output volume ${Math.min(100,Math.max(0,vol))}"`, description: `Setting volume to ${vol}%` }];
+  }
+
+  // Mute / unmute
+  if (t.match(/mute|silence|quiet/)) {
+    return [{ shell: `osascript -e "set volume output muted true"`, description: 'Muting audio' }];
+  }
+  if (t.match(/unmute|sound on|enable.*sound/)) {
+    return [{ shell: `osascript -e "set volume output muted false"`, description: 'Unmuting audio' }];
+  }
+
+  // Empty trash
+  if (t.match(/empty.*trash|clear.*trash/)) {
+    return [{ shell: `osascript -e 'tell app "Finder" to empty trash'`, description: 'Emptying Trash' }];
+  }
+
+  // Restart / shutdown — be safe, confirm first
+  if (t.match(/restart|reboot/)) {
+    return [{ shell: `osascript -e 'tell app "System Events" to restart'`, description: 'Restarting Mac' }];
+  }
+
+  // Fallback: treat as raw shell command if it looks like one
   // Fallback: treat as raw shell command if it looks like one
   if (t.startsWith('mkdir') || t.startsWith('open') || t.startsWith('cp') || 
       t.startsWith('mv') || t.startsWith('rm') || t.startsWith('ls') ||

@@ -45,7 +45,11 @@ export default function App() {
   const [nudge, setNudge] = useState<HenryNudge | null>(null);
   const [repair, setRepair] = useState<HenryRepairEvent | null>(null);
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
-  const [showSplash, setShowSplash] = useState(true);
+  const [showSplash, setShowSplash] = useState(() => {
+    // Only show splash on first launch of a session (not every time)
+    const seen = sessionStorage.getItem('henry_splash_seen');
+    return !seen;
+  });
   const [missingPerms, setMissingPerms] = useState<{ accessibility: boolean; screenRecording: boolean } | null>(null);
   const firstContactDone = useRef(false);
   const briefingInjectedRef = useRef(false);
@@ -549,7 +553,7 @@ export default function App() {
           <div className="relative w-full max-w-md mx-4">
             {/* Close button */}
             <button
-              onClick={() => { setShowSplash(false); if (useStore.getState().currentView === 'today') useStore.getState().setCurrentView('chat'); }}
+              onClick={() => { setShowSplash(false); sessionStorage.setItem('henry_splash_seen','1'); if (useStore.getState().currentView === 'today') useStore.getState().setCurrentView('chat'); }}
               className="absolute -top-3 -right-3 w-8 h-8 rounded-full bg-henry-surface border border-henry-border/40 text-henry-text-muted hover:text-henry-text flex items-center justify-center text-sm transition-all z-10"
               title="Close"
             >✕</button>
@@ -591,7 +595,7 @@ export default function App() {
               {/* CTA */}
               <div className="px-6 pb-6">
                 <button
-                  onClick={() => { setShowSplash(false); if (useStore.getState().currentView === 'today') useStore.getState().setCurrentView('chat'); }}
+                  onClick={() => { setShowSplash(false); sessionStorage.setItem('henry_splash_seen','1'); if (useStore.getState().currentView === 'today') useStore.getState().setCurrentView('chat'); }}
                   className="w-full py-3 rounded-xl bg-henry-accent text-henry-bg font-semibold text-sm hover:bg-henry-accent/90 transition-all"
                 >
                   Start talking to Henry →
