@@ -115,6 +115,7 @@ import {
 import type { ExportPresetId } from '@/henry/exportBundle';
 import { exportConversation } from '@/henry/exportConversation';
 import { interceptAndExecute } from '@/henry/actionInterceptor';
+import { route as gatewayRoute, trackCost } from '@/henry/gateway';
 import {
   checkSessionPathsStale,
   clearRecoveryBannerDismissedThisSession,
@@ -1544,6 +1545,37 @@ export default function ChatView() {
         ? 8_192
         : presenceTier === 'quality' ? 6_000 : presenceTier === 'fast' ? 1_500 : 3_000;
 
+      // Iron Gateway — route to cheapest capable path
+      const gatewayResult = gatewayRoute(content, {
+        settings: s,
+        history: messagesPayload.slice(1).map(m => ({ role: m.role, content: m.content })).slice(-10),
+      });
+
+      // Tier 0: handled locally — zero tokens, zero cost
+      if (gatewayResult.handled) {
+        const localMsg: Message = {
+          id: crypto.randomUUID(),
+          conversation_id: convId,
+          role: 'assistant',
+          content: gatewayResult.response,
+          engine: 'companion',
+          created_at: new Date().toISOString(),
+        };
+        addMessage(localMsg);
+        try { await window.henryAPI.saveMessage(localMsg); } catch { /* ignore */ }
+        setStreamingContent('');
+        setIsStreaming(false);
+        setCompanionStatus({ status: 'idle' });
+        return;
+      }
+
+      // Use gateway model selection if it overrides (tier 1 = fast 8b, tier 2 = 70b)
+      if (gatewayResult.tier === 1 && s.chat_fast_model) {
+        companionModel = s.chat_fast_model;
+        companionProvider = s.chat_fast_provider || companionProvider;
+      }
+      // tier 2 uses the already-set companion_model (70b)
+
       // Pre-flight: estimate total tokens and warn if approaching Groq free tier limits
       const totalInputTokens = messagesPayload.reduce((s, m) => s + Math.ceil(m.content.length / 4), 0);
       if (totalInputTokens > 5_000 && companionProvider === 'groq') {
@@ -1578,6 +1610,11 @@ export default function ChatView() {
       stream.onDone(async (fullText: string, usage?: any) => {
         if (import.meta.env.DEV) {
           console.debug('[Henry] stream done', { fullLen: fullText?.length ?? 0, usage });
+        // Track cost for the iron gateway cost dashboard
+        if (usage && (usage.total_tokens || usage.input_tokens)) {
+          const totalTok = usage.total_tokens || (usage.input_tokens + (usage.output_tokens || 0));
+          try { trackCost(companionModel, totalTok); } catch { /* ignore */ }
+        }
         }
 
         // Action interceptor — detect and execute real computer actions from Henry's text

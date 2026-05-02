@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { useStore } from '../../store';
+import { getDailyCost } from '../../henry/gateway';
 import { getTodayBriefing, getTodayKey, saveBriefing, setGenerating, isGenerating, buildBriefingPrompt } from '../../henry/proactiveBriefing';
 import type { DailyBriefing } from '../../henry/proactiveBriefing';
 import { getDailyIntention, setDailyIntention, clearDailyIntention } from '../../henry/dailyIntention';
@@ -25,6 +26,7 @@ export default function TodayPanel() {
   const [briefing, setBriefing] = useState<DailyBriefing | null>(() => getTodayBriefing());
   const [generatingBriefing, setGeneratingBriefing] = useState(false);
   const [briefingExpanded, setBriefingExpanded] = useState(true);
+  const [dailyCost] = useState(() => getDailyCost());
   const [henryReply, setHenryReply] = useState('');
   const [henryStreaming, setHenryStreaming] = useState(false);
   const [lastQuestion, setLastQuestion] = useState('');
@@ -213,6 +215,24 @@ export default function TodayPanel() {
                   >Clear</button>
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Cost dashboard — shows today's AI spending vs GPT-4 */}
+        {dailyCost.tokens > 0 && (
+          <div className="w-full mb-4 px-4 py-3 rounded-xl bg-henry-surface/30 border border-henry-border/20">
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-[11px] font-medium text-henry-text-muted uppercase tracking-wide">Today's AI Cost</p>
+              <p className="text-[11px] text-green-400 font-medium">
+                Saved ${dailyCost.savedVsGpt4.toFixed(4)} vs GPT-4
+              </p>
+            </div>
+            <div className="flex items-baseline gap-2">
+              <p className="text-lg font-bold text-henry-text">
+                ${dailyCost.costUsd < 0.0001 ? '< $0.0001' : `$${dailyCost.costUsd.toFixed(4)}`}
+              </p>
+              <p className="text-[11px] text-henry-text-muted">{dailyCost.tokens.toLocaleString()} tokens · {dailyCost.topModel.replace('llama-','').replace('-versatile','').replace('-instant','')}</p>
             </div>
           </div>
         )}
