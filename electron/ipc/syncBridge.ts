@@ -359,529 +359,486 @@ async function handleRequest(
   if ((path === '/' || path === '/companion') && req.method === 'GET') {
     const macName = os.hostname().replace('.local', '');
     const initToken = urlToken || '';
+
     const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Henry">
 <title>Henry</title>
 <style>
-*{box-sizing:border-box;margin:0;padding:0}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 :root{
   --bg:#08080e;--surface:#0f0f18;--surface2:#13131e;
   --border:#1a1a28;--accent:#6366f1;--text:#e8e8f0;
   --muted:#5a5a72;--green:#22c55e;--red:#ef4444;
-  --user-bg:#6366f1;--ai-bg:#13131e;
 }
-html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text',sans-serif;overflow:hidden;position:fixed;width:100%}
-#app{display:flex;flex-direction:column;position:fixed;top:0;left:0;right:0;bottom:0;height:100%}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,sans-serif;overflow:hidden;position:fixed;width:100%}
+#app{position:fixed;inset:0;display:flex;flex-direction:column}
 
-/* Top bar */
-#topbar{
-  padding:env(safe-area-inset-top,12px) 16px 10px;
+/* Status bar */
+#bar{
+  padding:env(safe-area-inset-top,12px) 16px 8px;
   padding-top:max(env(safe-area-inset-top),12px);
-  background:var(--surface);
-  border-bottom:1px solid var(--border);
-  display:flex;align-items:center;gap:10px;
-  flex-shrink:0;
-  z-index:10;
+  background:var(--surface);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:8px;flex-shrink:0;
 }
-#dot{width:7px;height:7px;border-radius:50%;background:var(--muted);flex-shrink:0;transition:background 0.3s}
-#dot.on{background:var(--green)}
-#topbar-name{font-size:15px;font-weight:600;color:var(--text);flex:1}
-#topbar-status{font-size:12px;color:var(--muted)}
-
-/* Chat view container */
-#chat-view{position:fixed;top:0;left:0;right:0;bottom:0;display:flex;flex-direction:column}
+#dot{width:6px;height:6px;border-radius:50%;background:var(--muted);transition:background .3s;flex-shrink:0}
+#dot.on{background:var(--green)}#dot.thinking{background:var(--accent);animation:pulse .8s infinite}
+#bar-name{font-size:15px;font-weight:700;letter-spacing:-.3px;flex:1}
+#bar-status{font-size:11px;color:var(--muted)}
+#screen-btn{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:4px 10px;font-size:11px;color:var(--text);cursor:pointer}
 
 /* Messages */
-#msgs{
-  flex:1;overflow-y:auto;
-  padding:12px 0 0;
-  display:flex;flex-direction:column;
-  gap:2px;
-  -webkit-overflow-scrolling:touch;
-  min-height:0;
-}
-.msg-row{display:flex;padding:2px 16px}
-.msg-row.user{justify-content:flex-end}
-.msg-row.ai{justify-content:flex-start}
-.bubble{
-  max-width:82%;padding:10px 14px;
-  font-size:15px;line-height:1.45;
-  white-space:pre-wrap;word-break:break-word;
-  border-radius:18px;
-}
-.bubble.user{background:var(--user-bg);color:#fff;border-bottom-right-radius:4px}
-.bubble.ai{background:var(--ai-bg);color:var(--text);border-bottom-left-radius:4px;border:1px solid var(--border)}
-.typing{display:inline-flex;gap:4px;padding:12px 14px;background:var(--ai-bg);border:1px solid var(--border);border-radius:18px;border-bottom-left-radius:4px}
+#msgs{flex:1;overflow-y:auto;padding:10px 0 4px;display:flex;flex-direction:column;gap:1px;-webkit-overflow-scrolling:touch;min-height:0}
+.row{display:flex;padding:3px 14px}
+.row.user{justify-content:flex-end}
+.row.ai{justify-content:flex-start}
+.bubble{max-width:84%;padding:9px 13px;font-size:15px;line-height:1.45;white-space:pre-wrap;word-break:break-word;border-radius:18px}
+.bubble.user{background:var(--accent);color:#fff;border-bottom-right-radius:5px}
+.bubble.ai{background:var(--surface2);color:var(--text);border-bottom-left-radius:5px;border:1px solid var(--border)}
+.bubble img{max-width:100%;border-radius:10px;margin-top:6px;display:block;cursor:pointer}
+.typing{display:inline-flex;gap:4px;padding:12px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:18px;border-bottom-left-radius:5px}
 .typing span{width:6px;height:6px;background:var(--muted);border-radius:50%;animation:blink 1.2s infinite}
-.typing span:nth-child(2){animation-delay:.2s}
-.typing span:nth-child(3){animation-delay:.4s}
+.typing span:nth-child(2){animation-delay:.2s}.typing span:nth-child(3){animation-delay:.4s}
 @keyframes blink{0%,80%,100%{opacity:.2}40%{opacity:1}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 
-/* Input bar */
-#inputbar{
-  padding:10px 12px;
-  padding-bottom:max(env(safe-area-inset-bottom),10px);
-  background:var(--surface);
-  border-top:1px solid var(--border);
-  display:flex;align-items:flex-end;gap:8px;
-  flex-shrink:0;
-  z-index:10;
-}
-#inp{
-  flex:1;background:var(--surface2);
-  border:1px solid var(--border);border-radius:22px;
-  padding:10px 16px;font-size:16px;color:var(--text);
-  outline:none;resize:none;max-height:120px;
-  -webkit-text-fill-color:var(--text);
-  font-family:inherit;line-height:1.4;
-}
+/* Quick actions */
+#quick{display:flex;gap:6px;overflow-x:auto;padding:6px 14px;flex-shrink:0;scrollbar-width:none}
+#quick::-webkit-scrollbar{display:none}
+.q{background:var(--surface2);border:1px solid var(--border);border-radius:16px;padding:5px 12px;font-size:12px;color:var(--text);cursor:pointer;white-space:nowrap;flex-shrink:0}
+.q:active{background:var(--accent);border-color:var(--accent);color:#fff}
+
+/* Input */
+#inputbar{padding:8px 12px;padding-bottom:max(env(safe-area-inset-bottom),8px);background:var(--surface);border-top:1px solid var(--border);display:flex;align-items:flex-end;gap:8px;flex-shrink:0}
+#mic{width:40px;height:40px;border-radius:50%;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;transition:all .2s}
+#mic.listening{background:var(--red);border-color:var(--red);animation:pulse .8s infinite}
+#mic svg{width:18px;height:18px;fill:var(--muted);transition:fill .2s}
+#mic.listening svg{fill:#fff}
+#inp{flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:9px 14px;font-size:16px;color:var(--text);outline:none;resize:none;max-height:100px;font-family:inherit;line-height:1.4;-webkit-text-fill-color:var(--text)}
 #inp::placeholder{color:var(--muted)}
-#send,#mic{
-  width:40px;height:40px;border-radius:50%;
-  border:none;display:flex;align-items:center;justify-content:center;
-  flex-shrink:0;cursor:pointer;transition:all 0.15s;
-}
-#send{background:var(--accent);}
-#send:disabled{opacity:0.35}
+#send{width:40px;height:40px;border-radius:50%;background:var(--accent);border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;opacity:.4;transition:opacity .2s}
+#send.ready{opacity:1}
 #send svg{width:18px;height:18px;fill:#fff}
-#mic{background:var(--surface2);border:1px solid var(--border);}
-#mic svg{width:18px;height:18px;fill:var(--muted);}
-#mic.listening{background:var(--red);border-color:var(--red);animation:pulse 1s infinite;}
-#mic.listening svg{fill:#fff;}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.6}}
+
+/* Screen overlay */
+#screen-overlay{position:fixed;inset:0;background:#000;z-index:100;display:none;flex-direction:column}
+#screen-overlay.show{display:flex}
+#screen-top{padding:env(safe-area-inset-top,12px) 14px 10px;padding-top:max(env(safe-area-inset-top),12px);background:rgba(0,0,0,.8);display:flex;align-items:center;gap:10px;flex-shrink:0}
+#screen-close{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:5px 12px;font-size:12px;color:var(--text);cursor:pointer}
+#screen-img-wrap{flex:1;overflow:auto;display:flex;align-items:flex-start;justify-content:center;padding:8px}
+#screen-img{max-width:100%;border-radius:8px}
+#auto-label{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer;margin-left:auto}
 
 /* Pair screen */
-#pair-screen{
-  position:fixed;top:0;left:0;right:0;bottom:0;
-  display:flex;flex-direction:column;align-items:center;
-  justify-content:center;gap:20px;padding:40px 24px;
-  text-align:center;background:var(--bg);
-}
-#pair-screen h1{font-size:26px;font-weight:700;letter-spacing:-0.5px}
-#pair-screen p{color:var(--muted);font-size:15px;line-height:1.5;max-width:280px}
-#pair-input{
-  background:var(--surface);border:1px solid var(--border);
-  border-radius:14px;padding:16px 20px;
-  color:var(--text);font-size:24px;font-weight:700;
-  width:100%;max-width:280px;outline:none;
-  text-align:center;letter-spacing:6px;
-  -webkit-text-fill-color:var(--text);
-}
-#pair-btn{
-  background:var(--accent);color:#fff;border:none;
-  border-radius:14px;padding:16px 28px;
-  font-size:16px;font-weight:600;cursor:pointer;
-  width:100%;max-width:280px;
-}
-#pair-btn:disabled{opacity:0.5}
-.hidden{display:none!important}
-#topbar{flex-wrap:wrap}
-.tab-btn{background:none;border:none;color:var(--muted);font-size:13px;font-weight:600;padding:4px 10px;border-radius:8px;cursor:pointer;flex-shrink:0}
-.tab-btn.active{background:var(--accent);color:#fff}
-#pane-chat{display:flex;flex-direction:column;flex:1;min-height:0}
-#quickbar{display:flex;gap:6px;overflow-x:auto;padding:8px 12px 0;scrollbar-width:none;flex-shrink:0}
-#quickbar::-webkit-scrollbar{display:none}
-.qbtn{background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:6px 14px;color:var(--text);font-size:13px;white-space:nowrap;cursor:pointer;flex-shrink:0}
-.qbtn:active{background:var(--accent);color:#fff}
-#quickbar::-webkit-scrollbar{display:none}
+#pair-screen{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:40px 24px;text-align:center;z-index:50}
+#pair-screen h1{font-size:28px;font-weight:800;letter-spacing:-.5px}
+#pair-screen p{color:var(--muted);font-size:15px;line-height:1.5;max-width:260px}
+#pair-input{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px 20px;color:var(--text);font-size:24px;font-weight:700;width:100%;max-width:280px;outline:none;text-align:center;letter-spacing:6px;-webkit-text-fill-color:var(--text)}
+#pair-btn{background:var(--accent);color:#fff;border:none;border-radius:14px;padding:15px 24px;font-size:16px;font-weight:700;cursor:pointer;width:100%;max-width:280px}
+#pair-err{color:var(--red);font-size:13px;display:none;max-width:280px}
 </style>
 </head>
 <body>
 <div id="app">
-  <!-- Connected chat view -->
-  <div id="chat-view" style="display:none">
-    <div id="topbar">
-      <div id="dot"></div>
-      <span id="topbar-name">Henry</span>
-      <span id="topbar-status">Connecting…</span>
-      <div style="flex:1"></div>
-      <button class="tab-btn active" id="tab-chat" onclick="switchTab('chat')">Chat</button>
-      <button class="tab-btn" id="tab-screen" onclick="switchTab('screen')">Screen</button>
-    </div>
+  <!-- Main chat (hidden until connected) -->
+  <div id="bar" style="display:none">
+    <div id="dot"></div>
+    <span id="bar-name">Henry</span>
+    <span id="bar-status">Connecting…</span>
+    <button id="screen-btn" onclick="toggleScreen()">📺 Screen</button>
+  </div>
+  <div id="msgs" style="display:none"></div>
+  <div id="quick" style="display:none">
+    <button class="q" onclick="q('open Finder')">📁 Finder</button>
+    <button class="q" onclick="q('open Safari')">🌐 Safari</button>
+    <button class="q" onclick="q('take a screenshot')">📸 Screen</button>
+    <button class="q" onclick="q('what apps are running')">📱 Apps</button>
+    <button class="q" onclick="q('disk space')">💾 Disk</button>
+    <button class="q" onclick="q('open Chrome')">🔵 Chrome</button>
+    <button class="q" onclick="q('open VS Code')">💻 VS Code</button>
+    <button class="q" onclick="q('open Terminal')">⌨️ Terminal</button>
+  </div>
+  <div id="inputbar" style="display:none">
+    <button id="mic"><svg viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1 1.93c-3.94-.49-7-3.86-7-7.93H2c0 4.97 3.66 9.09 8.5 9.82V22h3v-3.07c4.84-.73 8.5-4.85 8.5-9.82h-2c0 4.07-3.06 7.44-7 7.93z"/></svg></button>
+    <textarea id="inp" placeholder="Ask Henry or tell him to do something…" rows="1"></textarea>
+    <button id="send"><svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg></button>
+  </div>
 
-    <!-- Chat tab -->
-    <div id="pane-chat" style="display:flex;flex-direction:column;flex:1;min-height:0">
-      <div id="msgs"></div>
-      <div id="quickbar">
-        <button class="qbtn" onclick="qsend('open Finder')">📁 Finder</button>
-        <button class="qbtn" onclick="qsend('open Safari')">🌐 Safari</button>
-        <button class="qbtn" onclick="qsend('open Chrome')">🔵 Chrome</button>
-        <button class="qbtn" onclick="qsend('what apps are running')">📱 Apps</button>
-        <button class="qbtn" onclick="qsend('disk space')">💾 Disk</button>
-        <button class="qbtn" onclick="qsend('open Terminal')">⌨️ Terminal</button>
-      </div>
-      <div id="inputbar">
-        <button id="mic" title="Speak to Henry">
-          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1 1.93c-3.94-.49-7-3.86-7-7.93H2c0 4.97 3.66 9.09 8.5 9.82V22h3v-3.07c4.84-.73 8.5-4.85 8.5-9.82h-2c0 4.07-3.06 7.44-7 7.93z"/></svg>
-        </button>
-        <textarea id="inp" placeholder="Type or tap mic to speak…" rows="1"></textarea>
-        <button id="send" disabled>
-          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
-        </button>
-      </div>
+  <!-- Live screen overlay -->
+  <div id="screen-overlay">
+    <div id="screen-top">
+      <span style="font-size:13px;color:var(--muted)">Mac Screen · Live</span>
+      <label id="auto-label"><input type="checkbox" id="auto-cb" onchange="toggleAuto(this.checked)"> Auto-refresh</label>
+      <button id="screen-close" onclick="toggleScreen()">✕ Close</button>
     </div>
-
-    <!-- Screen tab -->
-    <div id="pane-screen" style="display:none;flex-direction:column;flex:1;min-height:0;overflow:auto;background:#000">
-      <div style="padding:10px 14px;display:flex;align-items:center;gap:10px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0">
-        <span style="font-size:13px;color:var(--muted)">Live view of your Mac</span>
-        <div style="flex:1"></div>
-        <button id="screen-refresh" style="background:var(--accent);color:#fff;border:none;border-radius:8px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer">Refresh</button>
-        <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer">
-          <input type="checkbox" id="auto-refresh" style="cursor:pointer"> Auto
-        </label>
-      </div>
-      <div style="flex:1;overflow:auto;display:flex;align-items:flex-start;justify-content:center;padding:8px">
-        <img id="screen-img" src="" alt="Mac screen" style="max-width:100%;border-radius:8px;box-shadow:0 4px 24px rgba(0,0,0,0.5)" onerror="this.alt='Screen Recording permission needed. Go to System Settings → Privacy → Screen Recording → Henry AI → On'">
-      </div>
+    <div id="screen-img-wrap">
+      <img id="screen-img" alt="Tap 'Screen' to capture" onclick="refreshScreen()">
     </div>
   </div>
 
   <!-- Pair screen -->
   <div id="pair-screen">
     <h1>Henry</h1>
-    <p>Your AI on <strong>${macName}</strong>.<br>Enter the 6-digit code from Henry on your Mac.</p>
-    <input id="pair-input" type="number" inputmode="numeric" placeholder="000000" maxlength="6" autocomplete="off">
-    <button id="pair-btn">Connect to Henry</button>
-    <p id="pair-error" style="color:var(--red);font-size:13px" class="hidden"></p>
+    <p>Your personal AI on <strong>${macName}</strong>.<br>Connecting automatically…</p>
+    <input id="pair-input" type="number" inputmode="numeric" placeholder="______" maxlength="6" style="display:none">
+    <button id="pair-btn" style="display:none">Connect</button>
+    <p id="pair-err"></p>
+    <p id="pair-hint" style="font-size:11px;color:var(--muted);margin-top:4px"></p>
   </div>
 </div>
 <script>
-  // State
-  window.henryToken = localStorage.getItem('henry_token') || '';
-  window.henryDeviceId = localStorage.getItem('henry_device_id') || '';
-  window.henryEs = null;
-  window.henryHistory = [];
-  window.henryStreamBubble = null;
-  window.henryStreamText = '';
+// ── State ──────────────────────────────────────────────────────────────────
+const STORAGE_KEY_TOKEN = 'henry_token';
+const STORAGE_KEY_UUID  = 'henry_device_uuid';
+const STORAGE_KEY_HMAC  = 'henry_device_hmac';
+const STORAGE_KEY_SECRET= 'henry_hmac_secret';
 
-  const chatView = document.getElementById('chat-view');
-  const pairScreen = document.getElementById('pair-screen');
-  const msgs = document.getElementById('msgs');
-  const inp = document.getElementById('inp');
-  const sendBtn = document.getElementById('send');
-  const dot = document.getElementById('dot');
-  const statusEl = document.getElementById('topbar-status');
-  const pairBtn = document.getElementById('pair-btn');
-  const pairErr = document.getElementById('pair-error');
+window.H = {
+  token: localStorage.getItem(STORAGE_KEY_TOKEN) || '',
+  uuid:  localStorage.getItem(STORAGE_KEY_UUID)  || '',
+  hmac:  localStorage.getItem(STORAGE_KEY_HMAC)  || '',
+  secret:localStorage.getItem(STORAGE_KEY_SECRET)|| '',
+  history: [],
+  streaming: null,  // current streaming bubble
+  streamText: '',
+  es: null,
+  autoRefreshTimer: null,
+  screenOpen: false,
+};
 
-  function showPairError(msg) {
-    pairErr.textContent = msg;
-    pairErr.style.display = 'block';
-  }
+// ── DOM refs ───────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const bar=$('bar'), msgs=$('msgs'), quick=$('quick'), inputbar=$('inputbar');
+const dot=$('dot'), barStatus=$('bar-status');
+const inp=$('inp'), sendBtn=$('send'), micBtn=$('mic');
+const pairScreen=$('pair-screen'), pairErr=$('pair-err'), pairHint=$('pair-hint');
+const pairInput=$('pair-input'), pairBtn=$('pair-btn');
+const screenOverlay=$('screen-overlay'), screenImg=$('screen-img');
 
-  function goToChat() {
-    pairScreen.style.display = 'none';
-    chatView.style.cssText = 'display:flex;'; // clear all inline styles, just show it
-    addBubble('ai', 'Hi! I am Henry. Ask me anything or tell me to do something on your Mac.');
-    startSSE();
-  }
+// ── Show/hide chat UI ──────────────────────────────────────────────────────
+function showChat() {
+  pairScreen.style.display = 'none';
+  [bar, msgs, quick, inputbar].forEach(el => el.style.display = '');
+  msgs.style.display = 'flex';
+  msgs.style.flexDirection = 'column';
+  inp.focus();
+}
 
-  function startSSE() {
-    if (window.henryEs) window.henryEs.close();
-    statusEl.textContent = 'Connecting…';
-    window.henryEs = new EventSource('/sync/stream?token=' + window.henryToken);
-    window.henryEs.onopen = () => {
-      dot.className = 'on';
-      statusEl.textContent = 'Ready';
-      sendBtn.disabled = false;
-    };
-    window.henryEs.onerror = () => {
-      dot.className = '';
-      statusEl.textContent = 'Reconnecting…';
-      sendBtn.disabled = true;
-      setTimeout(startSSE, 3000);
-    };
-    window.henryEs.onmessage = (e) => {
-      try {
-        const d = JSON.parse(e.data);
-        if (d.type === 'companion_chunk') appendChunk(d.payload.chunk);
-        else if (d.type === 'companion_response') finalizeStream(d.payload.text);
-      } catch(err) {}
-    };
-  }
+// ── Messages ───────────────────────────────────────────────────────────────
+function addMsg(role, content) {
+  const row = document.createElement('div');
+  row.className = 'row ' + (role === 'user' ? 'user' : 'ai');
+  const b = document.createElement('div');
+  b.className = 'bubble ' + (role === 'user' ? 'user' : 'ai');
+  if (typeof content === 'string') b.textContent = content;
+  else b.appendChild(content);
+  row.appendChild(b);
+  msgs.appendChild(row);
+  msgs.scrollTop = msgs.scrollHeight;
+  if (role !== 'typing') H.history.push({role: role==='user'?'user':'assistant', content: typeof content==='string'?content:'[screenshot]'});
+  return b;
+}
 
-  function addBubble(role, text) {
+function showTyping() {
+  removeTyping();
+  const row = document.createElement('div');
+  row.id = 'typing-row'; row.className = 'row ai';
+  row.innerHTML = '<div class="typing"><span></span><span></span><span></span></div>';
+  msgs.appendChild(row); msgs.scrollTop = msgs.scrollHeight;
+}
+function removeTyping() { const t = $('typing-row'); if (t) t.remove(); }
+
+function appendChunk(chunk) {
+  removeTyping();
+  if (!H.streaming) {
     const row = document.createElement('div');
-    row.className = 'msg-row ' + role;
-    const b = document.createElement('div');
-    b.className = 'bubble ' + role;
-    b.textContent = text;
-    row.appendChild(b);
+    row.className = 'row ai';
+    H.streaming = document.createElement('div');
+    H.streaming.className = 'bubble ai';
+    row.appendChild(H.streaming);
     msgs.appendChild(row);
-    msgs.scrollTop = msgs.scrollHeight;
-    if (role === 'user') window.henryHistory.push({role:'user', content:text});
-    else if (role === 'ai') window.henryHistory.push({role:'assistant', content:text});
+    H.streamText = '';
   }
+  H.streamText += chunk;
+  H.streaming.textContent = H.streamText;
+  msgs.scrollTop = msgs.scrollHeight;
+}
 
-  function showTyping() {
-    removeTyping();
-    const row = document.createElement('div');
-    row.className = 'msg-row ai';
-    row.id = 'typing-row';
-    row.innerHTML = '<div class="typing"><span></span><span></span><span></span></div>';
-    msgs.appendChild(row);
-    msgs.scrollTop = msgs.scrollHeight;
+function finalizeStream(text) {
+  removeTyping();
+  if (H.streaming) {
+    H.streaming.textContent = text;
+    H.history.push({role:'assistant', content: text});
+    H.streaming = null; H.streamText = '';
+  } else if (text) {
+    addMsg('ai', text);
   }
+  dot.className = 'on';
+  barStatus.textContent = 'Ready';
+  sendBtn.classList.add('ready');
+  msgs.scrollTop = msgs.scrollHeight;
+}
 
-  function removeTyping() {
-    const t = document.getElementById('typing-row');
-    if (t) t.remove();
-  }
-
-  function appendChunk(chunk) {
-    removeTyping();
-    if (!window.henryStreamBubble) {
-      const row = document.createElement('div');
-      row.className = 'msg-row ai';
-      window.henryStreamBubble = document.createElement('div');
-      window.henryStreamBubble.className = 'bubble ai';
-      row.appendChild(window.henryStreamBubble);
-      msgs.appendChild(row);
-      window.henryStreamText = '';
-    }
-    window.henryStreamText += chunk;
-    window.henryStreamBubble.textContent = window.henryStreamText;
-    msgs.scrollTop = msgs.scrollHeight;
-  }
-
-  function showScreenshot(base64) {
-    removeTyping();
-    const row = document.createElement('div');
-    row.className = 'msg-row ai';
-    const img = document.createElement('img');
-    img.src = 'data:image/png;base64,' + base64;
-    img.style.cssText = 'max-width:100%;border-radius:12px;border:1px solid var(--border);margin-top:4px';
-    img.onclick = () => window.open(img.src);
-    row.appendChild(img);
-    msgs.appendChild(row);
-    msgs.scrollTop = msgs.scrollHeight;
-    sendBtn.disabled = false;
-  }
-
-  function finalizeStream(fullText) {
-    removeTyping();
-    if (window.henryStreamBubble) {
-      window.henryStreamBubble.textContent = fullText;
-      window.henryHistory.push({role:'assistant', content:fullText});
-      window.henryStreamBubble = null;
-      window.henryStreamText = '';
-    } else if (fullText) {
-      addBubble('ai', fullText);
-    }
-    sendBtn.disabled = false;
-    msgs.scrollTop = msgs.scrollHeight;
-  }
-
-  async function sendMsg() {
-    const text = inp.value.trim();
-    if (!text || sendBtn.disabled) return;
-    inp.value = '';
-    inp.style.height = 'auto';
-    sendBtn.disabled = true;
-    addBubble('user', text);
-    showTyping();
-    try {
-      const r = await fetch('/sync/prompt', {
-        method: 'POST',
-        headers: {'Content-Type':'application/json','Authorization':'Bearer '+window.henryToken},
-        body: JSON.stringify({text, history: window.henryHistory.slice(-10)})
-      });
-      if (r.status === 401) {
-        // Token expired (server restarted) — re-pair and resend
-        removeTyping();
-        localStorage.removeItem('henry_token');
-        localStorage.removeItem('henry_device_id');
-        window.henryToken = '';
-        const repaired = await autoPair();
-        if (repaired) {
-          // Retry the message
-          const r2 = await fetch('/sync/prompt', {
-            method: 'POST',
-            headers: {'Content-Type':'application/json','Authorization':'Bearer '+window.henryToken},
-            body: JSON.stringify({text, history: window.henryHistory.slice(-10)})
-          });
-          if (!r2.ok) { addBubble('ai', 'Could not reconnect. Try refreshing.'); sendBtn.disabled = false; }
-          else showTyping();
-        }
-        return;
-      }
-      if (!r.ok) {
-        removeTyping();
-        addBubble('ai', 'Error sending message. Try again.');
-        sendBtn.disabled = false;
-      }
-    } catch(e) {
-      removeTyping();
-      addBubble('ai', 'Connection error. Check WiFi.');
-      sendBtn.disabled = false;
-    }
-  }
-
-  async function autoPair() {
-    pairBtn.disabled = true;
-    pairBtn.textContent = 'Connecting…';
-    try {
-      const ua = navigator.userAgent;
-      const isIpad = ua.includes('iPad') || (ua.includes('Mac') && navigator.maxTouchPoints > 1);
-      const r = await fetch('/sync/auto-pair', {
-        method: 'POST',
-        headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({
-          deviceName: isIpad ? 'iPad' : ua.includes('iPhone') ? 'iPhone' : 'Mobile Browser',
-          platform: (ua.includes('iPhone') || isIpad) ? 'ios' : 'android',
-          appleProduct: isIpad ? 'ipad' : ua.includes('iPhone') ? 'iphone' : 'unknown',
-          capabilities: ['chat','prompt','notify']
-        })
-      });
-      const d = await r.json();
-      if (d.companionToken) {
-        window.henryToken = d.companionToken;
-        window.henryDeviceId = d.deviceId;
-        localStorage.setItem('henry_token', window.henryToken);
-        localStorage.setItem('henry_device_id', window.henryDeviceId);
-        goToChat();
-        return true;
-      } else {
-        showPairError('Could not connect. Make sure your Mac and phone are on the same WiFi.');
-        pairBtn.disabled = false;
-        pairBtn.textContent = 'Connect to Henry';
-        return false;
-      }
-    } catch(e) {
-      showPairError('Connection failed: ' + e.message);
-      pairBtn.disabled = false;
-      pairBtn.textContent = 'Try Again';
-      return false;
-    }
-  }
-
-  // Tab switching
-  let screenRefreshTimer = null;
-
-  function switchTab(tab) {
-    document.getElementById('pane-chat').style.display = tab === 'chat' ? 'flex' : 'none';
-    document.getElementById('pane-screen').style.display = tab === 'screen' ? 'flex' : 'none';
-    document.getElementById('tab-chat').classList.toggle('active', tab === 'chat');
-    document.getElementById('tab-screen').classList.toggle('active', tab === 'screen');
-    if (tab === 'screen') refreshScreen();
-  }
-
-  function refreshScreen() {
-    const img = document.getElementById('screen-img');
-    img.src = '/screen?' + Date.now();
-  }
-
-  document.getElementById('screen-refresh').addEventListener('click', refreshScreen);
-  document.getElementById('auto-refresh').addEventListener('change', (e) => {
-    clearInterval(screenRefreshTimer);
-    if (e.target.checked) screenRefreshTimer = setInterval(refreshScreen, 3000);
-  });
-
-  // Make switchTab and qsend global (called from onclick)
-  window.switchTab = switchTab;
-  window.qsend = function(text) {
-    const inp = document.getElementById('inp');
-    inp.value = text;
-    inp.dispatchEvent(new Event('input', {bubbles:true}));
-    sendMsg();
+function showScreenshotInChat(base64) {
+  removeTyping();
+  const img = document.createElement('img');
+  img.src = 'data:image/png;base64,' + base64;
+  img.onclick = () => {
+    screenImg.src = img.src;
+    screenOverlay.classList.add('show');
+    H.screenOpen = true;
   };
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble ai';
+  bubble.appendChild(img);
+  const row = document.createElement('div');
+  row.className = 'row ai';
+  row.appendChild(bubble);
+  msgs.appendChild(row);
+  msgs.scrollTop = msgs.scrollHeight;
+  sendBtn.classList.add('ready');
+  dot.className = 'on';
+}
 
-  // Voice recognition
-  const micBtn = document.getElementById('mic');
-  let recognition = null;
-  let listening = false;
+// ── Send message ───────────────────────────────────────────────────────────
+async function send() {
+  const text = inp.value.trim();
+  if (!text) return;
+  inp.value = ''; inp.style.height = 'auto';
+  sendBtn.classList.remove('ready');
+  dot.className = 'thinking';
+  barStatus.textContent = 'Thinking…';
+  addMsg('user', text);
+  showTyping();
 
-  function setupMic() {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) {
-      micBtn.style.display = 'none';
-      return;
+  try {
+    const r = await fetch('/sync/prompt', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json','Authorization':'Bearer '+H.token},
+      body: JSON.stringify({text, history: H.history.slice(-8)})
+    });
+    if (r.status === 401) {
+      removeTyping();
+      addMsg('ai', 'Reconnecting…');
+      const ok = await reconnect();
+      if (ok) { inp.value = text; send(); }
+      else { addMsg('ai', 'Could not reconnect. Refresh the page.'); }
     }
-    recognition = new SR();
-    recognition.continuous = false;
-    recognition.interimResults = true;
-    recognition.lang = 'en-US';
+  } catch(e) {
+    removeTyping();
+    addMsg('ai', 'Connection lost. Check WiFi.');
+    sendBtn.classList.add('ready');
+    dot.className = '';
+  }
+}
 
-    recognition.onstart = () => {
-      listening = true;
-      micBtn.classList.add('listening');
-      inp.placeholder = 'Listening…';
-    };
+window.q = function(text) { inp.value = text; send(); };
 
-    recognition.onresult = (e) => {
-      const transcript = Array.from(e.results)
-        .map(r => r[0].transcript).join('');
-      inp.value = transcript;
-      inp.dispatchEvent(new Event('input', {bubbles:true}));
-      // If final result, send automatically
-      if (e.results[e.results.length-1].isFinal) {
-        setTimeout(sendMsg, 300);
+// ── Screen ─────────────────────────────────────────────────────────────────
+function toggleScreen() {
+  H.screenOpen = !H.screenOpen;
+  screenOverlay.classList.toggle('show', H.screenOpen);
+  if (H.screenOpen) refreshScreen();
+}
+function refreshScreen() {
+  screenImg.src = '/screen?' + Date.now();
+}
+function toggleAuto(on) {
+  clearInterval(H.autoRefreshTimer);
+  if (on) H.autoRefreshTimer = setInterval(refreshScreen, 2500);
+}
+window.toggleScreen = toggleScreen;
+window.toggleAuto = toggleAuto;
+
+// ── SSE ────────────────────────────────────────────────────────────────────
+function connectSSE() {
+  if (H.es) { try { H.es.close(); } catch {} }
+  H.es = new EventSource('/sync/stream?token=' + H.token);
+  H.es.onopen = () => { dot.className = 'on'; barStatus.textContent = 'Ready'; sendBtn.classList.add('ready'); };
+  H.es.onerror = () => { dot.className = ''; barStatus.textContent = 'Reconnecting…'; setTimeout(connectSSE, 3000); };
+  H.es.onmessage = (e) => {
+    try {
+      const d = JSON.parse(e.data);
+      if (d.type === 'companion_chunk') appendChunk(d.payload.chunk);
+      else if (d.type === 'companion_response') finalizeStream(d.payload.text);
+      else if (d.type === 'companion_screenshot') showScreenshotInChat(d.payload.base64);
+    } catch {}
+  };
+}
+
+// ── Auth ───────────────────────────────────────────────────────────────────
+function getDeviceInfo() {
+  const ua = navigator.userAgent;
+  const isIpad = ua.includes('iPad') || (ua.includes('Mac') && navigator.maxTouchPoints > 1);
+  return {
+    deviceName: isIpad ? 'iPad' : ua.includes('iPhone') ? 'iPhone' : 'Browser',
+    platform: (ua.includes('iPhone') || isIpad) ? 'ios' : 'android',
+    appleProduct: isIpad ? 'ipad' : ua.includes('iPhone') ? 'iphone' : 'unknown',
+    capabilities: ['chat','prompt','notify','screen'],
+  };
+}
+
+async function tryRejoin() {
+  if (!H.uuid || !H.hmac) return false;
+  try {
+    const r = await fetch('/sync/rejoin', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({deviceUuid: H.uuid, hmac: H.hmac, ...getDeviceInfo()})
+    });
+    const d = await r.json();
+    if (d.companionToken) {
+      H.token = d.companionToken;
+      localStorage.setItem(STORAGE_KEY_TOKEN, H.token);
+      return true;
+    }
+  } catch {}
+  return false;
+}
+
+async function tryTokenAuth() {
+  if (!H.token) return false;
+  try {
+    const r = await fetch('/sync/snapshot', {headers:{'Authorization':'Bearer '+H.token}});
+    return r.ok;
+  } catch { return false; }
+}
+
+async function autoPair() {
+  pairHint.textContent = 'Connecting…';
+  try {
+    const r = await fetch('/sync/auto-pair', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(getDeviceInfo())
+    });
+    const d = await r.json();
+    if (d.companionToken) {
+      H.token = d.companionToken;
+      H.uuid  = d.deviceId;
+      // Store HMAC for future rejoin
+      if (d.hmacSecret) {
+        H.secret = d.hmacSecret;
+        // Compute HMAC client-side using SubtleCrypto for future rejoin
+        const enc = new TextEncoder();
+        const key = await crypto.subtle.importKey('raw', enc.encode(d.hmacSecret), {name:'HMAC',hash:'SHA-256'}, false, ['sign']);
+        const sig = await crypto.subtle.sign('HMAC', key, enc.encode(d.deviceId));
+        H.hmac = Array.from(new Uint8Array(sig)).map(b=>b.toString(16).padStart(2,'0')).join('');
+        localStorage.setItem(STORAGE_KEY_HMAC, H.hmac);
+        localStorage.setItem(STORAGE_KEY_SECRET, H.secret);
       }
-    };
-
-    recognition.onend = () => {
-      listening = false;
-      micBtn.classList.remove('listening');
-      inp.placeholder = 'Speak or type…';
-    };
-
-    recognition.onerror = (e) => {
-      listening = false;
-      micBtn.classList.remove('listening');
-      inp.placeholder = 'Speak or type…';
-      if (e.error !== 'no-speech') addBubble('ai', 'Mic error: ' + e.error + '. Make sure mic permission is granted.');
-    };
-  }
-
-  micBtn.addEventListener('click', () => {
-    if (!recognition) { setupMic(); }
-    if (!recognition) return;
-    if (listening) {
-      recognition.stop();
-    } else {
-      inp.value = '';
-      recognition.start();
+      localStorage.setItem(STORAGE_KEY_TOKEN, H.token);
+      localStorage.setItem(STORAGE_KEY_UUID, H.uuid);
+      return true;
     }
-  });
+  } catch(e) { pairHint.textContent = 'Auto-connect failed: ' + e.message; }
+  return false;
+}
 
-  setupMic();
+async function submitManualPair() {
+  const code = pairInput.value.trim();
+  if (code.length !== 6) { pairErr.textContent = 'Enter the 6-digit code from Henry on your Mac.'; pairErr.style.display='block'; return; }
+  pairBtn.disabled = true; pairBtn.textContent = 'Connecting…';
+  try {
+    const r = await fetch('/sync/pair', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({pairToken: code, ...getDeviceInfo()})
+    });
+    const d = await r.json();
+    if (d.companionToken) {
+      H.token = d.companionToken; H.uuid = d.deviceId;
+      localStorage.setItem(STORAGE_KEY_TOKEN, H.token);
+      localStorage.setItem(STORAGE_KEY_UUID, H.uuid);
+      goConnected();
+    } else {
+      pairErr.textContent = d.error || 'Invalid code.';
+      pairErr.style.display = 'block';
+      pairBtn.disabled = false; pairBtn.textContent = 'Connect';
+    }
+  } catch { pairErr.textContent = 'Connection failed.'; pairErr.style.display='block'; pairBtn.disabled=false; pairBtn.textContent='Try Again'; }
+}
 
-  // Wire up events
-  pairBtn.addEventListener('click', autoPair);
-  sendBtn.addEventListener('click', sendMsg);
-  inp.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMsg(); }
-  });
-  inp.addEventListener('input', () => {
-    inp.style.height = 'auto';
-    inp.style.height = Math.min(inp.scrollHeight, 120) + 'px';
-  });
+async function reconnect() {
+  if (await tryRejoin()) return true;
+  if (await autoPair()) return true;
+  return false;
+}
 
-  // Auto-connect on load
-  const urlParams = new URLSearchParams(window.location.search);
-  const urlToken = urlParams.get('token') || '${initToken}';
+function goConnected() {
+  showChat();
+  addMsg('ai', "Hi! I'm Henry. Tell me what you want or tap a quick action below.");
+  connectSSE();
+}
 
-  if (window.henryToken) {
-    // Try stored token
-    fetch('/sync/snapshot', {headers:{'Authorization':'Bearer '+window.henryToken}})
-      .then(r => { if (r.ok) goToChat(); else { localStorage.clear(); autoPair(); } })
-      .catch(() => autoPair());
-  } else if (urlToken && urlToken.length === 6) {
-    // QR code token
-    document.getElementById('pair-input').value = urlToken;
-    autoPair();
-  } else {
-    // Just auto-pair immediately — no code needed on local network
-    autoPair();
+// ── Mic ────────────────────────────────────────────────────────────────────
+let recognition = null;
+function setupMic() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { micBtn.style.display = 'none'; return; }
+  recognition = new SR();
+  recognition.continuous = false; recognition.interimResults = true; recognition.lang = 'en-US';
+  recognition.onstart = () => { micBtn.classList.add('listening'); inp.placeholder = 'Listening…'; };
+  recognition.onresult = (e) => {
+    const t = Array.from(e.results).map(r=>r[0].transcript).join('');
+    inp.value = t;
+    if (e.results[e.results.length-1].isFinal) { inp.value = t; setTimeout(send, 250); }
+  };
+  recognition.onend = () => { micBtn.classList.remove('listening'); inp.placeholder = 'Ask Henry or tell him to do something…'; };
+  recognition.onerror = (e) => { micBtn.classList.remove('listening'); if (e.error!=='no-speech') addMsg('ai','Mic error: '+e.error); };
+}
+micBtn.addEventListener('click', () => {
+  if (!recognition) setupMic();
+  if (!recognition) return;
+  if (micBtn.classList.contains('listening')) recognition.stop();
+  else { inp.value = ''; recognition.start(); }
+});
+setupMic();
+
+// ── Input ──────────────────────────────────────────────────────────────────
+inp.addEventListener('input', () => {
+  inp.style.height = 'auto';
+  inp.style.height = Math.min(inp.scrollHeight, 100) + 'px';
+  sendBtn.classList.toggle('ready', inp.value.trim().length > 0);
+});
+inp.addEventListener('keydown', e => { if (e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();} });
+sendBtn.addEventListener('click', send);
+pairBtn.addEventListener('click', submitManualPair);
+
+// ── Boot ───────────────────────────────────────────────────────────────────
+(async function boot() {
+  const urlToken = '${initToken}';
+
+  // Try fastest path first
+  if (urlToken && urlToken.length === 6) {
+    // QR code with pairing token
+    pairInput.value = urlToken;
+    pairInput.style.display = '';
+    pairBtn.style.display = '';
+    submitManualPair();
+    return;
   }
 
+  // Try existing session token
+  if (H.token && await tryTokenAuth()) { goConnected(); return; }
+
+  // Try persistent device rejoin (no-code reconnect)
+  pairHint.textContent = 'Reconnecting…';
+  if (await tryRejoin()) { goConnected(); return; }
+
+  // Auto-pair on same network
+  if (await autoPair()) { goConnected(); return; }
+
+  // Fall back to manual pair input
+  pairHint.textContent = 'Enter the 6-digit code shown in Henry on your Mac.';
+  pairInput.style.display = '';
+  pairBtn.style.display = '';
+  pairErr.style.display = 'none';
+})();
 </script>
 </body>
 </html>`;
@@ -889,7 +846,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
     res.end(html);
     return;
   }
-    // ── Internal Computer Control (called from renderer to bypass webMock) ──
+     // ── Internal Computer Control (called from renderer to bypass webMock) ──
   const isInternal = req.headers['x-henry-internal'] === 'true';
   if (isInternal && req.method === 'POST') {
     if (path === '/computer/shell') {
@@ -1044,6 +1001,66 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
   }
 
   // ── Pairing ───────────────────────────────────────────────────────────
+  // ── Rejoin: persistent device re-auth — no pairing needed after first pair ──
+  // Device stores its UUID and a shared secret. On reconnect it sends both.
+  // Server validates against companion_linked_devices table and issues new token.
+  if (path === '/sync/rejoin' && req.method === 'POST') {
+    const body = await readBody<{deviceUuid: string; hmac: string; deviceName?: string}>(req);
+    if (!body?.deviceUuid) { jsonResponse(res, 400, { error: 'Bad request' }); return; }
+
+    try {
+      // Look up device by UUID in SQLite
+      const stored = dbGetOne<{
+        device_id: string; device_name: string; platform: string;
+        token_hmac: string; capabilities_json: string; apple_product: string;
+      }>('SELECT * FROM companion_linked_devices WHERE device_id = ?', body.deviceUuid);
+
+      if (!stored) {
+        jsonResponse(res, 401, { error: 'Device not registered. Pair first.' });
+        return;
+      }
+
+      // Validate HMAC — device signs its UUID with the shared secret
+      const { createHmac } = await import('crypto') as typeof import('crypto');
+      const secret = dbGetOne<{value: string}>('SELECT value FROM settings WHERE key = ?', 'companion_hmac_secret_v1');
+      const expectedHmac = createHmac('sha256', secret?.value || 'henry-default-secret')
+        .update(body.deviceUuid)
+        .digest('hex');
+
+      if (body.hmac !== expectedHmac) {
+        jsonResponse(res, 401, { error: 'Invalid device signature.' });
+        return;
+      }
+
+      // Issue new session token
+      const newToken = generateToken(32);
+      companionTokens.set(newToken, stored.device_id);
+
+      // Update last_seen
+      dbRun('UPDATE companion_linked_devices SET last_seen = ?, last_sync_at = ? WHERE device_id = ?',
+        new Date().toISOString(), new Date().toISOString(), stored.device_id);
+
+      // Restore device to in-memory map
+      linkedDevices.set(stored.device_id, {
+        id: stored.device_id,
+        name: body.deviceName || stored.device_name,
+        platform: stored.platform as DeviceInfo['platform'],
+        linkedAt: '',
+        lastSeen: new Date().toISOString(),
+        lastSyncAt: new Date().toISOString(),
+        linkStatus: 'linked',
+        capabilities: [...COMPANION_DEFAULT_DEVICE_CAPABILITIES],
+        appleProduct: (stored.apple_product || 'unknown') as DeviceInfo['appleProduct'],
+      });
+
+      saveCompanionTokens();
+      jsonResponse(res, 200, { companionToken: newToken, deviceId: stored.device_id, desktopName: os.hostname() });
+    } catch (e) {
+      jsonResponse(res, 500, { error: 'Rejoin failed: ' + (e instanceof Error ? e.message : String(e)) });
+    }
+    return;
+  }
+
   // Auto-pair: generates token + pairs in one request, no code needed
   // Only works on local network (no external auth needed)
   if (path === '/sync/auto-pair' && req.method === 'POST') {
@@ -1079,13 +1096,37 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
     pairToken = null; // consumed
 
     notifyRenderer('henry:companion:device-linked', { device: device2 });
-    saveCompanionTokens(); // Persist for server restarts
+    saveCompanionTokens();
 
-    jsonResponse(res, 200, {
-      companionToken: companionToken2,
-      deviceId: deviceId2,
-      desktopName: os.hostname(),
-    });
+    // Persist to SQLite for permanent re-auth
+    try {
+      const { createHmac } = await import('crypto') as typeof import('crypto');
+      let secret = dbGetOne<{value:string}>('SELECT value FROM settings WHERE key = ?', 'companion_hmac_secret_v1');
+      if (!secret) {
+        const newSecret = generateToken(32);
+        dbRun("INSERT OR IGNORE INTO settings(key,value) VALUES('companion_hmac_secret_v1',?)", newSecret);
+        secret = { value: newSecret };
+      }
+      const hmac = createHmac('sha256', secret.value).update(deviceId2).digest('hex');
+      dbRun(`INSERT OR REPLACE INTO companion_linked_devices
+        (device_id,device_name,platform,apple_product,capabilities_json,link_status,linked_at,last_seen,last_sync_at,token_hmac)
+        VALUES(?,?,?,?,?,?,?,?,?,?)`,
+        deviceId2, body?.deviceName ?? 'Device',
+        body?.platform ?? 'web', body?.appleProduct ?? 'unknown',
+        JSON.stringify(COMPANION_DEFAULT_DEVICE_CAPABILITIES),
+        'linked', new Date().toISOString(), new Date().toISOString(), new Date().toISOString(), hmac
+      );
+      // Return the HMAC secret so device can rejoin later without pairing
+      jsonResponse(res, 200, {
+        companionToken: companionToken2,
+        deviceId: deviceId2,
+        deviceHmac: hmac,
+        hmacSecret: secret.value,
+        desktopName: os.hostname(),
+      });
+    } catch {
+      jsonResponse(res, 200, { companionToken: companionToken2, deviceId: deviceId2, desktopName: os.hostname() });
+    }
     return;
   }
 
