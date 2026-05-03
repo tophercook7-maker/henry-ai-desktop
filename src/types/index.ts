@@ -167,7 +167,7 @@ export interface DirectoryResult {
 
 // ── Store Types ───────────────────────────────────────────────
 
-export type ViewType = 'today' | 'chat' | 'companion' | 'secretary' | 'contacts' | 'tasks' | 'files' | 'workspace' | 'terminal' | 'computer' | 'printer' | 'costs' | 'settings' | 'journal' | 'focus' | 'recorder' | 'modes' | 'reminders' | 'crm' | 'finance' | 'lists' | 'printstudio' | 'imagegen' | 'videogen' | 'integrations' | 'github' | 'linear' | 'notion' | 'slack' | 'stripe' | 'gcal' | 'gmail' | 'gdrive' | 'captures' | 'weekly' | 'health'
+export type ViewType = 'today' | 'chat' | 'companion' | 'secretary' | 'contacts' | 'tasks' | 'files' | 'workspace' | 'terminal' | 'computer' | 'printer' | 'costs' | 'settings' | 'journal' | 'focus' | 'recorder' | 'modes' | 'reminders' | 'crm' | 'finance' | 'lists' | 'printstudio' | 'imagegen' | 'videogen' | 'integrations' | 'github' | 'linear' | 'notion' | 'slack' | 'stripe' | 'gcal' | 'gmail' | 'gdrive' | 'captures' | 'weekly' | 'health' | 'goals'
   | 'scripture';
 
 export interface AppSettings {

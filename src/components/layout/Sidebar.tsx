@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useStore } from '../../store';
 
-type ViewType = 'today' | 'chat' | 'companion' | 'secretary' | 'contacts' | 'tasks' | 'files' | 'workspace' | 'terminal' | 'computer' | 'printer' | 'costs' | 'settings' | 'journal' | 'focus' | 'recorder' | 'modes' | 'reminders' | 'crm' | 'finance' | 'lists' | 'printstudio' | 'imagegen' | 'videogen' | 'integrations' | 'github' | 'linear' | 'notion' | 'slack' | 'captures' | 'weekly' | 'health'
+type ViewType = 'today' | 'chat' | 'companion' | 'secretary' | 'contacts' | 'tasks' | 'files' | 'workspace' | 'terminal' | 'computer' | 'printer' | 'costs' | 'settings' | 'journal' | 'focus' | 'recorder' | 'modes' | 'reminders' | 'crm' | 'finance' | 'lists' | 'printstudio' | 'imagegen' | 'videogen' | 'integrations' | 'github' | 'linear' | 'notion' | 'slack' | 'captures' | 'weekly' | 'health' | 'goals'
   | 'scripture';
 
 // Core nav — the things you actually use daily
@@ -25,6 +25,7 @@ const BUSINESS_NAV: { id: ViewType; icon: string; label: string }[] = [
 ];
 
 const MORE_NAV: { id: ViewType; icon: string; label: string }[] = [
+  { id: 'goals',      icon: '◎',  label: 'Goals' },
   { id: 'weekly',     icon: '▦',  label: 'Weekly' },
   { id: 'lists',      icon: '≡',  label: 'Lists' },
   { id: 'printstudio',icon: '▣',  label: 'Print Studio' },

@@ -211,14 +211,14 @@ contextBridge.exposeInMainWorld('henryAPI', {
 
   // ── Memory — Goals ────────────────────────────────────────
   saveGoal: (goal: Record<string, unknown>) => ipcRenderer.invoke('memory:saveGoal', goal),
-  getGoals: (opts?: Record<string, unknown>) => ipcRenderer.invoke('memory:getGoals', opts),
+  getGoals: (opts?: Record<string, unknown>) => ipcRenderer.invoke('memory:getGoals', opts || {}),
   updateGoal: (id: string, updates: Record<string, unknown>) => ipcRenderer.invoke('memory:updateGoal', id, updates),
-
-  // ── Memory — Commitments ──────────────────────────────────
+  getCommitments: (opts?: Record<string, unknown>) => ipcRenderer.invoke('memory:getCommitments', opts || {}),
   saveCommitment: (c: Record<string, unknown>) => ipcRenderer.invoke('memory:saveCommitment', c),
-  getCommitments: (opts?: Record<string, unknown>) => ipcRenderer.invoke('memory:getCommitments', opts),
   resolveCommitment: (id: string) => ipcRenderer.invoke('memory:resolveCommitment', id),
   updateCommitment: (id: string, updates: Record<string, unknown>) => ipcRenderer.invoke('memory:updateCommitment', id, updates),
+
+  // ── Memory — Commitments ──────────────────────────────────
 
   // ── Memory — Milestones ───────────────────────────────────
   saveMilestone: (m: Record<string, unknown>) => ipcRenderer.invoke('memory:saveMilestone', m),
