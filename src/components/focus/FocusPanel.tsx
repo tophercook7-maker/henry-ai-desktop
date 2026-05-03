@@ -25,6 +25,16 @@ function saveSession(s: FocusSession) {
   const all = loadSessions();
   all.unshift(s);
   localStorage.setItem(SESSIONS_KEY, JSON.stringify(all.slice(0, 50)));
+  // Also persist to SQLite
+  try {
+    (window as any).henryAPI?.focusSave?.({
+      id: s.id,
+      task: s.task,
+      duration: s.duration,
+      completedAt: s.completedAt,
+      henryCheckIn: s.henryCheckIn,
+    });
+  } catch { /* non-critical */ }
 }
 
 function formatTime(secs: number): string {

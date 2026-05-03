@@ -137,6 +137,12 @@ contextBridge.exposeInMainWorld('henryAPI', {
   // Self-repair / health
   runDiagnostic: () => ipcRenderer.invoke('henry:diagnostic:run'),
   getLastDiagnostic: () => ipcRenderer.invoke('henry:diagnostic:last'),
+  // Focus sessions
+  focusSave: (s: Record<string,unknown>) => ipcRenderer.invoke('focus:save', s),
+  focusList: (limit?: number) => ipcRenderer.invoke('focus:list', limit),
+  focusStats: () => ipcRenderer.invoke('focus:stats'),
+  // Weekly review
+  weeklyData: () => ipcRenderer.invoke('weekly:data'),
   // Lists
   listsAll: () => ipcRenderer.invoke('lists:all'),
   listsSave: (list: Record<string,unknown>) => ipcRenderer.invoke('lists:save', list),

@@ -668,6 +668,22 @@ function AddValueForm({ onAdd }: { onAdd: () => void }) {
 export default function WeeklyReviewPanel() {
   const { setCurrentView } = useStore();
 
+  // Live data from SQLite — tasks, finance, focus, journal
+  const [weekData, setWeekData] = useState<{
+    tasks: { title:string; status:string }[];
+    journal: { date:string; title?:string; mood?:string }[];
+    finance: { type:string; total:number }[];
+    focusStats: { mins:number; sessions:number } | null;
+    reminders: { title:string; due_at:string }[];
+    memories: { fact:string; category:string }[];
+  }>({ tasks:[], journal:[], finance:[], focusStats:null, reminders:[], memories:[] });
+
+  useState(() => {
+    const api = (window as any).henryAPI;
+    if (!api?.weeklyData) return;
+    api.weeklyData().then((d:any) => { if(d) setWeekData(d); }).catch(() => {});
+  });
+
   // Commitments — local state drives re-render on change
   const [commitments, setCommitments] = useState<Commitment[]>(() => loadOpenCommitments());
 
@@ -714,6 +730,11 @@ export default function WeeklyReviewPanel() {
 
   // Values — user's standards and priorities
   const [values, setValues] = useState<UserValue[]>(() => loadAllValues());
+
+  const weekIncome = weekData.finance.find((f:any)=>f.type==='income')?.total || 0;
+  const weekExpenses = weekData.finance.find((f:any)=>f.type==='expense')?.total || 0;
+  const doneTasks = weekData.tasks.filter((t:any)=>t.status==='done').length;
+  const pendingTasks = weekData.tasks.filter((t:any)=>t.status!=='done').length;
 
   function debriefWithHenry() {
     const threads = loadActiveThreads();

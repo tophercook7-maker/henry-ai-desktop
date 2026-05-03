@@ -1257,6 +1257,49 @@ export function registerMemoryHandlers(database: Database.Database) {
     try { db.prepare("DELETE FROM list_items WHERE list_id=? AND done=1").run(listId); return { ok: true }; }
     catch (e) { return { ok: false, error: String(e) }; }
   });
+
+  // ── Focus Sessions ────────────────────────────────────────────────────────
+  db.prepare(`CREATE TABLE IF NOT EXISTS focus_sessions (
+    id TEXT PRIMARY KEY, task TEXT NOT NULL, duration_mins INTEGER NOT NULL,
+    completed_at TEXT NOT NULL, henry_checkin TEXT
+  )`).run();
+
+  ipcMain.handle('focus:save', (_e, s: Record<string,unknown>) => {
+    try {
+      db.prepare("INSERT OR REPLACE INTO focus_sessions (id,task,duration_mins,completed_at,henry_checkin) VALUES (?,?,?,?,?)")
+        .run(s.id, s.task, s.duration, s.completedAt, s.henryCheckIn||null);
+      return { ok: true };
+    } catch (e) { return { ok: false, error: String(e) }; }
+  });
+  ipcMain.handle('focus:list', (_e, limit=50) => {
+    try { return db.prepare("SELECT * FROM focus_sessions ORDER BY completed_at DESC LIMIT ?").all(limit); }
+    catch { return []; }
+  });
+  ipcMain.handle('focus:stats', () => {
+    try {
+      const today = new Date().toISOString().slice(0,10);
+      const week = new Date(Date.now()-7*86400000).toISOString().slice(0,10);
+      const todayMins = (db.prepare("SELECT SUM(duration_mins) as t FROM focus_sessions WHERE completed_at >= ?").get(today+'T00:00:00') as {t:number|null}).t || 0;
+      const weekMins = (db.prepare("SELECT SUM(duration_mins) as t FROM focus_sessions WHERE completed_at >= ?").get(week+'T00:00:00') as {t:number|null}).t || 0;
+      const totalSessions = (db.prepare("SELECT COUNT(*) as c FROM focus_sessions").get() as {c:number}).c;
+      return { todayMins, weekMins, totalSessions };
+    } catch { return { todayMins:0, weekMins:0, totalSessions:0 }; }
+  });
+
+  // ── Weekly Review data pull ───────────────────────────────────────────────
+  ipcMain.handle('weekly:data', () => {
+    try {
+      const week = new Date(Date.now()-7*86400000).toISOString();
+      return {
+        tasks: db.prepare("SELECT * FROM personal_tasks WHERE created_at >= ? OR updated_at >= ? ORDER BY status ASC LIMIT 20").all(week, week),
+        journal: db.prepare("SELECT date,title,mood FROM journal_entries WHERE date >= ? ORDER BY date DESC LIMIT 7").all(week.slice(0,10)),
+        finance: db.prepare("SELECT type,SUM(amount) as total FROM transactions WHERE date >= ? GROUP BY type").all(week.slice(0,10)),
+        focusStats: db.prepare("SELECT SUM(duration_mins) as mins, COUNT(*) as sessions FROM focus_sessions WHERE completed_at >= ?").get(week),
+        reminders: db.prepare("SELECT * FROM reminders WHERE done=0 ORDER BY due_at ASC LIMIT 10").all(),
+        memories: db.prepare("SELECT fact,category FROM memory_facts ORDER BY importance DESC LIMIT 8").all(),
+      };
+    } catch (e) { return { tasks:[], journal:[], finance:[], focusStats:{mins:0,sessions:0}, reminders:[], memories:[] }; }
+  });
 }
 
 // ── Bandwidth-aware context builder ───────────────────────────────────────────
