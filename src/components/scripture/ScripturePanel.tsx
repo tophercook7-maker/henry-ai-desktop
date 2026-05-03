@@ -9,7 +9,7 @@ import { useStore } from '../../store';
 
 const api = (window as any).henryAPI;
 
-type Tab = 'lookup' | 'saved' | 'study';
+type Tab = 'lookup' | 'saved' | 'study' | 'import';
 
 interface VerseResult {
   found: boolean;
@@ -81,6 +81,9 @@ export default function ScripturePanel() {
   const [studyLoading, setStudyLoading] = useState(false);
   const [customPrompt, setCustomPrompt] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{imported:number;skipped:number;errors:string[]} | null>(null);
+  const [importSource, setImportSource] = useState('KJV');
 
   useEffect(() => {
     api?.scriptureCount?.().then((n: number) => setCount(n)).catch(() => {});
@@ -158,6 +161,15 @@ export default function ScripturePanel() {
   }
 
   const inp = "bg-henry-surface border border-henry-border/30 rounded-xl px-3 py-2.5 text-sm text-henry-text placeholder:text-henry-text-muted outline-none focus:border-henry-accent/50 transition-all";
+  async function handlePickImport() {
+    setImporting(true); setImportResult(null);
+    try {
+      const result = await api.pickScriptureImportJson?.();
+      if (result) { setImportResult(result); await api?.scriptureCount?.().then((n:number) => setCount(n)).catch(() => {}); }
+    } catch(e) { setImportResult({ imported:0, skipped:0, errors: [String(e)] }); }
+    setImporting(false);
+  }
+
   const savedCount = saved.length;
 
   return (
@@ -174,11 +186,11 @@ export default function ScripturePanel() {
         </div>
         {/* Tabs */}
         <div className="flex gap-1 mt-3">
-          {(['lookup','saved','study'] as Tab[]).map(t => (
+          {(['lookup','saved','study','import'] as Tab[]).map(t => (
             <button key={t} onClick={() => setTab(t)}
               className={'text-[12px] px-3 py-1.5 rounded-lg font-medium transition-all capitalize ' +
                 (tab===t ? 'bg-henry-accent text-white' : 'bg-henry-surface border border-henry-border/30 text-henry-text-muted hover:text-henry-text')}>
-              {t}{t==='saved' && savedCount > 0 ? ` (${savedCount})` : ''}
+              {t==='lookup'?'Lookup':t==='saved'?`Saved${savedCount>0?' ('+savedCount+')':''}`:t==='study'?'Study':'📥 Import'}
             </button>
           ))}
         </div>
@@ -384,6 +396,82 @@ export default function ScripturePanel() {
               </div>
             </div>
           )}
+        </div>
+      )}
+      {/* ── IMPORT TAB ── */}
+      {tab === 'import' && (
+        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4 max-w-2xl">
+          <div className="bg-henry-surface rounded-xl border border-henry-border/20 p-5 space-y-3">
+            <p className="text-sm font-semibold text-henry-text">Import a Bible Translation</p>
+            <p className="text-[12px] text-henry-text-muted leading-relaxed">
+              Henry stores Bible text locally — no internet required for lookups.
+              Import any translation as a JSON file. Once imported, all lookup, study, and
+              auto-detection in chat works offline.
+            </p>
+            <div className="bg-henry-bg rounded-lg border border-henry-border/20 p-3 space-y-1">
+              <p className="text-[10px] uppercase tracking-wider text-henry-text-muted mb-2">Expected JSON format</p>
+              <pre className="text-[11px] text-henry-accent font-mono leading-relaxed whitespace-pre-wrap">{`[
+  {
+    "reference": "Genesis 1:1",
+    "text": "In the beginning God created...",
+    "sourceLabel": "KJV"
+  },
+  {
+    "reference": "John 3:16",
+    "text": "For God so loved the world...",
+    "sourceLabel": "KJV"
+  }
+]`}</pre>
+            </div>
+
+            <div className="bg-blue-400/5 border border-blue-400/20 rounded-xl p-4 space-y-2">
+              <p className="text-[11px] font-semibold text-blue-400">Free public domain translations</p>
+              <p className="text-[11px] text-henry-text-muted">These translations are in the public domain and can be freely imported:</p>
+              {[
+                ['King James Version (KJV)', 'Published 1611, public domain worldwide'],
+                ['American Standard Version (ASV)', 'Published 1901, public domain worldwide'],
+                ['World English Bible (WEB)', 'Modern public domain translation'],
+                ['Douay-Rheims Bible (DRA)', 'Catholic public domain translation'],
+              ].map(([name, note]) => (
+                <div key={name} className="flex items-center gap-2">
+                  <span className="text-henry-accent text-xs">✓</span>
+                  <div>
+                    <span className="text-[11px] text-henry-text font-medium">{name}</span>
+                    <span className="text-[10px] text-henry-text-muted ml-2">{note}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="bg-henry-bg rounded-lg border border-henry-border/20 p-3 text-[11px] text-henry-text-muted">
+              <p className="font-semibold text-henry-text mb-1">Quick conversion tip</p>
+              <p>Many Bible APIs and tools export in the format above. You can also convert from OSIS or USX XML using free tools, or ask Henry to help you write a conversion script.</p>
+            </div>
+
+            <button onClick={handlePickImport} disabled={importing}
+              className="w-full py-3 rounded-xl bg-henry-accent text-white font-bold text-sm hover:bg-henry-accent/80 disabled:opacity-40 transition-all">
+              {importing ? 'Importing…' : '📂 Choose JSON File to Import'}
+            </button>
+
+            {count > 0 && (
+              <div className="text-center py-2">
+                <p className="text-henry-accent text-sm font-semibold">✓ {count.toLocaleString()} verses loaded</p>
+                <p className="text-[11px] text-henry-text-muted mt-1">Henry can look up any reference in your translation.</p>
+              </div>
+            )}
+
+            {importResult && (
+              <div className={`rounded-xl border p-4 space-y-1 ${importResult.errors.length ? 'bg-yellow-400/5 border-yellow-400/20' : 'bg-green-400/5 border-green-400/20'}`}>
+                <p className={`text-sm font-semibold ${importResult.errors.length ? 'text-yellow-400' : 'text-green-400'}`}>
+                  {importResult.imported > 0 ? `✓ ${importResult.imported.toLocaleString()} verses imported` : 'Import complete'}
+                </p>
+                {importResult.skipped > 0 && <p className="text-[11px] text-henry-text-muted">{importResult.skipped} skipped (already exist or invalid)</p>}
+                {importResult.errors.slice(0, 3).map((e, i) => (
+                  <p key={i} className="text-[10px] text-red-400 font-mono">{e}</p>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

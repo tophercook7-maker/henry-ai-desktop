@@ -6,6 +6,7 @@
  */
 import { useState, useEffect } from 'react';
 import { sendToHenry } from '../../actions/store/chatBridgeStore';
+import { addCommitment as addToStore } from '../../henry/commitmentStore';
 import { useStore } from '../../store';
 
 interface Goal {
@@ -94,11 +95,16 @@ export default function GoalsPanel() {
     e.preventDefault();
     if (!newCommit.description.trim()) return;
     setSaving(true);
+    const desc = newCommit.description.trim();
     await api.saveCommitment({
-      description: newCommit.description.trim(),
+      description: desc,
       dueDate: newCommit.dueDate || undefined,
       importanceScore: 0.7,
     });
+    // Also sync to localStorage so it appears in Henry's system prompt
+    try {
+      addToStore(desc, 'personal', { dueAt: newCommit.dueDate || undefined });
+    } catch { /* non-critical */ }
     setNewCommit({ description: '', dueDate: '' });
     setAddingCommit(false);
     setSaving(false);
