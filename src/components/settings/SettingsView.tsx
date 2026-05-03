@@ -203,6 +203,8 @@ function ProviderWizard({
   const [ollamaUrl, setOllamaUrl] = useState(settings.ollama_base_url || 'http://localhost:11434');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<'ok'|'fail'|null>(null);
   const [ollamaModels, setOllamaModels] = useState<string[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelsError, setModelsError] = useState('');
@@ -226,6 +228,19 @@ function ProviderWizard({
     if (isOllama) loadOllamaModels();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOllama]);
+
+  async function testKey() {
+    const key = apiKey.trim();
+    if (!key) return;
+    setTesting(true); setTestResult(null);
+    try {
+      const res = await fetch('https://api.groq.com/openai/v1/models', {
+        headers: { Authorization: `Bearer ${key}` }
+      });
+      setTestResult(res.ok ? 'ok' : 'fail');
+    } catch { setTestResult('fail'); }
+    setTesting(false);
+  }
 
   async function loadOllamaModels(url?: string) {
     setModelsLoading(true);
@@ -470,6 +485,16 @@ function ProviderWizard({
         >
           ← Back
         </button>
+        {!isLastStep && false && null}
+        {!isOllama && apiKey.trim() && isLastStep && (
+          <button
+            onClick={() => void testKey()}
+            disabled={testing}
+            className="px-4 py-2 bg-henry-surface border border-henry-border/40 text-henry-text-muted rounded-lg text-xs font-medium hover:border-henry-accent/50 disabled:opacity-40 transition-colors"
+          >
+            {testing ? 'Testing…' : testResult === 'ok' ? '✓ Works' : testResult === 'fail' ? '✗ Failed' : 'Test'}
+          </button>
+        )}
         {isLastStep ? (
           <button
             onClick={saveKey}
