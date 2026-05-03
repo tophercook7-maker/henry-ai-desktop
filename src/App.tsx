@@ -48,6 +48,7 @@ export default function App() {
   const [repair, setRepair] = useState<HenryRepairEvent | null>(null);
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(() => shouldShowOnboarding());
+  const [greetingDismissed, setGroqDismissed] = useState(() => !!sessionStorage.getItem('henry:groq_warn_dismissed'));
   const [showSplash, setShowSplash] = useState(() => {
     // Only show splash on first launch of a session (not every time)
     const seen = sessionStorage.getItem('henry_splash_seen');
@@ -542,6 +543,16 @@ export default function App() {
   return (
     <ErrorBoundary>
     <div className="h-screen w-screen flex flex-col overflow-hidden">
+      {/* Groq key warning — shown until key is added or dismissed */}
+      {!greetingDismissed && !(useStore.getState().providers || []).find((p: any) => p.id === 'groq' && p.apiKey?.startsWith('gsk_')) && (
+        <div className="flex items-center justify-between px-4 py-1.5 bg-yellow-500/10 border-b border-yellow-500/20 flex-shrink-0">
+          <p className="text-[11px] text-yellow-400">
+            ⚠ No Groq API key — Henry AI won't respond without one.{' '}
+            <button onClick={() => useStore.getState().setCurrentView('settings' as any)} className="underline hover:text-yellow-300">Add free key in Settings →</button>
+          </p>
+          <button onClick={() => { setGroqDismissed(true); sessionStorage.setItem('henry:groq_warn_dismissed','1'); }} className="text-yellow-400/50 hover:text-yellow-400 text-xs ml-3">✕</button>
+        </div>
+      )}
 
       {/* Splash screen — overlaid on top, closeable */}
       {showSplash && setupComplete && (

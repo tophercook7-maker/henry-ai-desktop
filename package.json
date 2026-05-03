@@ -1,6 +1,6 @@
 {
   "name": "henry-ai-desktop",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "Henry AI \u2014 Local-first desktop AI operating system with dual-engine architecture",
   "main": "dist-electron/main.js",
   "author": "Henry AI",
@@ -59,7 +59,6 @@
     "@google/generative-ai": "^0.17.0",
     "@monaco-editor/react": "^4.7.0",
     "@replit/connectors-sdk": "^0.4.0",
-    "@types/three": "^0.184.0",
     "better-sqlite3": "^11.1.2",
     "electron-updater": "^6.3.9",
     "highlight.js": "^11.10.0",

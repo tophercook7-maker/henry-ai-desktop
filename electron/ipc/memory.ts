@@ -1300,6 +1300,44 @@ export function registerMemoryHandlers(database: Database.Database) {
       };
     } catch (e) { return { tasks:[], journal:[], finance:[], focusStats:{mins:0,sessions:0}, reminders:[], memories:[] }; }
   });
+
+  // ── Scripture Saved Verses ────────────────────────────────────────────────
+  db.prepare(`CREATE TABLE IF NOT EXISTS saved_verses (
+    ref TEXT PRIMARY KEY, text TEXT NOT NULL, source TEXT,
+    note TEXT, tags TEXT DEFAULT '[]',
+    saved_at TEXT NOT NULL, updated_at TEXT NOT NULL
+  )`).run();
+
+  ipcMain.handle('scripture:saved-list', () => {
+    try { return db.prepare("SELECT * FROM saved_verses ORDER BY saved_at DESC").all(); }
+    catch { return []; }
+  });
+  ipcMain.handle('scripture:save-verse', (_e, v: Record<string,unknown>) => {
+    try {
+      const now = new Date().toISOString();
+      db.prepare(`INSERT INTO saved_verses (ref,text,source,note,tags,saved_at,updated_at) VALUES (?,?,?,?,?,?,?)
+        ON CONFLICT(ref) DO UPDATE SET text=excluded.text,source=excluded.source,note=excluded.note,tags=excluded.tags,updated_at=excluded.updated_at`)
+        .run(v.ref, v.text, v.source||null, v.note||null, JSON.stringify(v.tags||[]), now, now);
+      return { ok: true };
+    } catch (e) { return { ok: false, error: String(e) }; }
+  });
+  ipcMain.handle('scripture:update-note', (_e, ref: string, note: string) => {
+    try {
+      const now = new Date().toISOString();
+      db.prepare("UPDATE saved_verses SET note=?, updated_at=? WHERE ref=?").run(note, now, ref);
+      return { ok: true };
+    } catch (e) { return { ok: false, error: String(e) }; }
+  });
+  ipcMain.handle('scripture:delete-verse', (_e, ref: string) => {
+    try { db.prepare("DELETE FROM saved_verses WHERE ref=?").run(ref); return { ok: true }; }
+    catch (e) { return { ok: false, error: String(e) }; }
+  });
+  ipcMain.handle('scripture:search-saved', (_e, query: string) => {
+    try {
+      return db.prepare("SELECT * FROM saved_verses WHERE ref LIKE ? OR text LIKE ? OR note LIKE ? ORDER BY saved_at DESC")
+        .all('%'+query+'%', '%'+query+'%', '%'+query+'%');
+    } catch { return []; }
+  });
 }
 
 // ── Bandwidth-aware context builder ───────────────────────────────────────────

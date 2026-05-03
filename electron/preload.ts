@@ -137,6 +137,12 @@ contextBridge.exposeInMainWorld('henryAPI', {
   // Self-repair / health
   runDiagnostic: () => ipcRenderer.invoke('henry:diagnostic:run'),
   getLastDiagnostic: () => ipcRenderer.invoke('henry:diagnostic:last'),
+  // Scripture / DeepWellAudio
+  scriptureSavedList: () => ipcRenderer.invoke('scripture:saved-list'),
+  scriptureSaveVerse: (v: Record<string,unknown>) => ipcRenderer.invoke('scripture:save-verse', v),
+  scriptureUpdateNote: (ref: string, note: string) => ipcRenderer.invoke('scripture:update-note', ref, note),
+  scriptureDeleteVerse: (ref: string) => ipcRenderer.invoke('scripture:delete-verse', ref),
+  scriptureSearchSaved: (q: string) => ipcRenderer.invoke('scripture:search-saved', q),
   // Focus sessions
   focusSave: (s: Record<string,unknown>) => ipcRenderer.invoke('focus:save', s),
   focusList: (limit?: number) => ipcRenderer.invoke('focus:list', limit),

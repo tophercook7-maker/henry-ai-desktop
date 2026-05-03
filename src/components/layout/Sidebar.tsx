@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useStore } from '../../store';
 
-type ViewType = 'today' | 'chat' | 'companion' | 'secretary' | 'contacts' | 'tasks' | 'files' | 'workspace' | 'terminal' | 'computer' | 'printer' | 'costs' | 'settings' | 'journal' | 'focus' | 'recorder' | 'modes' | 'reminders' | 'crm' | 'finance' | 'lists' | 'printstudio' | 'imagegen' | 'videogen' | 'integrations' | 'github' | 'linear' | 'notion' | 'slack' | 'captures' | 'weekly' | 'health';
+type ViewType = 'today' | 'chat' | 'companion' | 'secretary' | 'contacts' | 'tasks' | 'files' | 'workspace' | 'terminal' | 'computer' | 'printer' | 'costs' | 'settings' | 'journal' | 'focus' | 'recorder' | 'modes' | 'reminders' | 'crm' | 'finance' | 'lists' | 'printstudio' | 'imagegen' | 'videogen' | 'integrations' | 'github' | 'linear' | 'notion' | 'slack' | 'captures' | 'weekly' | 'health'
+  | 'scripture';
 
 // Core nav — the things you actually use daily
 // Everything else is accessible but not cluttering the rail
@@ -10,6 +11,7 @@ const CORE_NAV: { id: ViewType; icon: string; label: string }[] = [
   { id: 'chat',       icon: '◉',  label: 'Chat' },
   { id: 'computer',   icon: '⌘',  label: 'Computer' },
   { id: 'journal',    icon: '✦',  label: 'Journal' },
+  { id: 'scripture',  icon: '✝',  label: 'Scripture' },
   { id: 'reminders',  icon: '◎',  label: 'Reminders' },
   { id: 'captures',   icon: '⊕',  label: 'Captures' },
   { id: 'focus',      icon: '◈',  label: 'Focus' },

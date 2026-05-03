@@ -28,6 +28,7 @@ import CRMPanel from '../crm/CRMPanel';
 import FinancePanel from '../finance/FinancePanel';
 import ListsPanel from '../lists/ListsPanel';
 import PrintStudioPanel from '../printstudio/PrintStudioPanel';
+import ScripturePanel from '../scripture/ScripturePanel';
 import ImageGenPanel from '../imagegen/ImageGenPanel';
 import VideoGenPanel from '../videogen/VideoGenPanel';
 import IntegrationsPanel from '../integrations/IntegrationsPanel';
@@ -122,6 +123,7 @@ export default function Layout() {
           {currentView === 'finance' && <FinancePanel />}
           {currentView === 'lists' && <ListsPanel />}
           {currentView === 'printstudio' && <PrintStudioPanel />}
+          {currentView === 'scripture' && <ScripturePanel />}
           {currentView === 'imagegen' && <ImageGenPanel />}
       {currentView === 'videogen' && <VideoGenPanel />}
           {currentView === 'integrations' && <IntegrationsPanel />}

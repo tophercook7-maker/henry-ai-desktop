@@ -21,17 +21,8 @@ interface Props {
 
 export default function ModelPreview3D({ triangles, name, className = '' }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
-  const sceneRef = useRef<{
-    renderer: THREE.WebGLRenderer;
-    scene: THREE.Scene;
-    camera: THREE.PerspectiveCamera;
-    mesh: THREE.Mesh | null;
-    animId: number;
-    isDragging: boolean;
-    lastMouse: { x: number; y: number };
-    spherical: { theta: number; phi: number; radius: number };
-    touchDist: number;
-  } | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sceneRef = useRef<any>(null);
 
   useEffect(() => {
     const el = mountRef.current;
@@ -207,10 +198,8 @@ export default function ModelPreview3D({ triangles, name, className = '' }: Prop
   );
 }
 
-function updateCamera(
-  camera: THREE.PerspectiveCamera,
-  s: { theta: number; phi: number; radius: number }
-) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function updateCamera(camera: any, s: { theta: number; phi: number; radius: number }) {
   camera.position.set(
     s.radius * Math.sin(s.phi) * Math.sin(s.theta),
     s.radius * Math.cos(s.phi),

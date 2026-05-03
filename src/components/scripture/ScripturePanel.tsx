@@ -1,0 +1,391 @@
+/**
+ * Scripture Study Panel — DeepWellAudio
+ * Look up passages, save verses, add study notes, study with Henry
+ * Saved verses persist to SQLite (scripture_entries + saved_verses tables)
+ */
+import { useState, useEffect, useRef } from 'react';
+import { sendToHenry } from '../../actions/store/chatBridgeStore';
+import { useStore } from '../../store';
+
+const api = (window as any).henryAPI;
+
+type Tab = 'lookup' | 'saved' | 'study';
+
+interface VerseResult {
+  found: boolean;
+  normalizedReference?: string;
+  text?: string;
+  sourceLabel?: string;
+  notes?: string;
+  guidance?: string;
+}
+
+interface SavedVerse {
+  ref: string;
+  text: string;
+  source?: string;
+  note?: string;
+  tags?: string[];
+  saved_at: string;
+}
+
+const QUICK_REFS = [
+  'John 3:16','Psalm 23','Romans 8:28','Proverbs 3:5-6',
+  'Isaiah 40:31','Philippians 4:13','Matthew 5:3-12','Psalm 91',
+  'Genesis 1:1','Jeremiah 29:11','Romans 12:2','James 1:2-4',
+];
+
+const STUDY_PROMPTS = [
+  'What is the historical context of this passage?',
+  'What is the main theological theme here?',
+  'How does this connect to Jesus and the Gospel?',
+  'What is a personal application from this text?',
+  'What cross-references come to mind with this passage?',
+  'Walk me through this verse word by word',
+];
+
+async function groqStudy(passage: string, text: string, prompt: string, providers: any[]): Promise<string> {
+  const groq = providers?.find((p: any) => p.id === 'groq');
+  if (!groq?.apiKey) return '⚠️ Add a Groq API key in Settings to study with Henry.';
+  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${groq.apiKey}` },
+    body: JSON.stringify({
+      model: 'llama-3.3-70b-versatile',
+      messages: [
+        { role: 'system', content: 'You are a thoughtful Bible study companion. Provide clear, reverent, biblically grounded responses. When discussing theology, respect orthodox Christian tradition. Be concise but deep.' },
+        { role: 'user', content: `Passage: ${passage}\n\nText: "${text}"\n\nQuestion: ${prompt}` },
+      ],
+      max_tokens: 800, temperature: 0.5,
+    }),
+  });
+  if (!res.ok) throw new Error('Study request failed');
+  const d = await res.json() as { choices: { message: { content: string } }[] };
+  return d.choices?.[0]?.message?.content || '(no response)';
+}
+
+export default function ScripturePanel() {
+  const { setCurrentView, providers } = useStore();
+  const [tab, setTab]         = useState<Tab>('lookup');
+  const [query, setQuery]     = useState('');
+  const [result, setResult]   = useState<VerseResult | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [count, setCount]     = useState(0);
+  const [saved, setSaved]     = useState<SavedVerse[]>([]);
+  const [search, setSearch]   = useState('');
+  const [note, setNote]       = useState('');
+  const [editNoteRef, setEditNoteRef] = useState<string | null>(null);
+  const [studyText, setStudyText] = useState('');
+  const [studyRef, setStudyRef]   = useState('');
+  const [studyOutput, setStudyOutput] = useState('');
+  const [studyLoading, setStudyLoading] = useState(false);
+  const [customPrompt, setCustomPrompt] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    api?.scriptureCount?.().then((n: number) => setCount(n)).catch(() => {});
+    loadSaved();
+  }, []);
+
+  async function loadSaved(q?: string) {
+    try {
+      const data = q
+        ? await api.scriptureSearchSaved(q)
+        : await api.scriptureSavedList();
+      setSaved((data || []).map((v: any) => ({ ...v, tags: JSON.parse(v.tags || '[]') })));
+    } catch { setSaved([]); }
+  }
+
+  useEffect(() => {
+    const t = setTimeout(() => void loadSaved(search || undefined), 250);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  async function lookup(ref?: string) {
+    const q = (ref || query).trim();
+    if (!q) return;
+    setLoading(true); setResult(null);
+    try {
+      const r = await api.scriptureLookup(q) as VerseResult;
+      setResult(r);
+      if (r.found) setQuery(r.normalizedReference || q);
+    } catch { setResult({ found: false, guidance: 'Lookup failed.' }); }
+    setLoading(false);
+  }
+
+  async function saveCurrentVerse() {
+    if (!result?.found || !result.text) return;
+    const v = {
+      ref: result.normalizedReference || query,
+      text: result.text,
+      source: result.sourceLabel || undefined,
+      note: note || undefined,
+      tags: [],
+    };
+    await api.scriptureSaveVerse(v);
+    setNote('');
+    await loadSaved();
+  }
+
+  async function deleteVerse(ref: string) {
+    await api.scriptureDeleteVerse(ref);
+    await loadSaved();
+  }
+
+  async function saveNote(ref: string, n: string) {
+    await api.scriptureUpdateNote(ref, n);
+    setEditNoteRef(null);
+    await loadSaved();
+  }
+
+  async function studyPassage(prompt: string) {
+    const text = studyText || result?.text || '';
+    const ref = studyRef || result?.normalizedReference || query;
+    if (!text) return;
+    setStudyLoading(true); setStudyOutput('');
+    try {
+      const out = await groqStudy(ref, text, prompt, providers || []);
+      setStudyOutput(out);
+    } catch (e) { setStudyOutput('Error: ' + String(e)); }
+    setStudyLoading(false);
+  }
+
+  function studyInChat() {
+    const text = studyText || result?.text || '';
+    const ref = studyRef || result?.normalizedReference || query;
+    sendToHenry(`Let's study ${ref}:\n\n"${text}"\n\nHelp me understand this passage deeply — context, meaning, and application.`);
+    setCurrentView('chat');
+  }
+
+  const inp = "bg-henry-surface border border-henry-border/30 rounded-xl px-3 py-2.5 text-sm text-henry-text placeholder:text-henry-text-muted outline-none focus:border-henry-accent/50 transition-all";
+  const savedCount = saved.length;
+
+  return (
+    <div className="flex flex-col h-full bg-henry-bg overflow-hidden">
+      {/* Header */}
+      <div className="px-6 pt-5 pb-3 border-b border-henry-border/20 flex-shrink-0">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-lg font-bold text-henry-text">✝ Scripture</h1>
+            <p className="text-[11px] text-henry-text-muted mt-0.5">
+              DeepWell · {count > 0 ? `${count.toLocaleString()} verses indexed` : 'No translation loaded — use Import tab'}
+            </p>
+          </div>
+        </div>
+        {/* Tabs */}
+        <div className="flex gap-1 mt-3">
+          {(['lookup','saved','study'] as Tab[]).map(t => (
+            <button key={t} onClick={() => setTab(t)}
+              className={'text-[12px] px-3 py-1.5 rounded-lg font-medium transition-all capitalize ' +
+                (tab===t ? 'bg-henry-accent text-white' : 'bg-henry-surface border border-henry-border/30 text-henry-text-muted hover:text-henry-text')}>
+              {t}{t==='saved' && savedCount > 0 ? ` (${savedCount})` : ''}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── LOOKUP TAB ── */}
+      {tab === 'lookup' && (
+        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+          <form onSubmit={e => { e.preventDefault(); void lookup(); }} className="flex gap-2">
+            <input ref={inputRef} value={query} onChange={e => setQuery(e.target.value)}
+              placeholder="John 3:16, Psalm 23, Romans 8:28-39…"
+              className={inp + ' flex-1'} />
+            <button type="submit" disabled={loading || !query.trim()}
+              className="px-4 py-2.5 rounded-xl bg-henry-accent text-white text-sm font-bold disabled:opacity-40 hover:bg-henry-accent/80 transition-all">
+              {loading ? '…' : 'Look up'}
+            </button>
+          </form>
+
+          {/* Quick refs */}
+          <div className="flex flex-wrap gap-1.5">
+            {QUICK_REFS.map(r => (
+              <button key={r} onClick={() => { setQuery(r); void lookup(r); }}
+                className="text-[11px] px-2.5 py-1 rounded-full bg-henry-surface border border-henry-border/30 text-henry-text-muted hover:text-henry-accent hover:border-henry-accent/40 transition-all">
+                {r}
+              </button>
+            ))}
+          </div>
+
+          {/* Result */}
+          {result && (
+            <div className="space-y-3">
+              {result.found ? (
+                <div className="bg-henry-surface rounded-2xl border border-henry-border/20 p-5 space-y-4">
+                  <div>
+                    <p className="text-[11px] uppercase tracking-wider text-henry-accent mb-2 font-semibold">
+                      {result.normalizedReference}
+                      {result.sourceLabel && <span className="text-henry-text-muted ml-2 normal-case">· {result.sourceLabel}</span>}
+                    </p>
+                    <p className="text-henry-text leading-relaxed text-base italic">"{result.text}"</p>
+                  </div>
+                  {result.notes && (
+                    <p className="text-henry-text-muted text-xs border-t border-henry-border/20 pt-3">{result.notes}</p>
+                  )}
+                  {/* Actions */}
+                  <div className="space-y-2 pt-1">
+                    <textarea value={note} onChange={e => setNote(e.target.value)} rows={2}
+                      placeholder="Add a personal note or reflection before saving…"
+                      className={inp + ' w-full resize-none text-xs'} />
+                    <div className="flex gap-2">
+                      <button onClick={() => void saveCurrentVerse()}
+                        className="flex-1 py-2 rounded-xl bg-henry-accent/10 border border-henry-accent/30 text-henry-accent text-sm font-semibold hover:bg-henry-accent/20 transition-all">
+                        ✦ Save Verse
+                      </button>
+                      <button onClick={() => {
+                        setStudyText(result.text || '');
+                        setStudyRef(result.normalizedReference || '');
+                        setTab('study');
+                      }} className="flex-1 py-2 rounded-xl bg-henry-surface border border-henry-border/30 text-henry-text-muted text-sm hover:text-henry-text transition-all">
+                        Study →
+                      </button>
+                      <button onClick={studyInChat}
+                        className="px-4 py-2 rounded-xl bg-henry-surface border border-henry-border/30 text-henry-text-muted text-sm hover:text-henry-text transition-all">
+                        Chat
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-henry-surface rounded-xl border border-henry-border/20 p-4">
+                  <p className="text-henry-text-muted text-sm">
+                    {result.guidance || 'Not found. Try importing a Bible translation in the Import tab.'}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── SAVED TAB ── */}
+      {tab === 'saved' && (
+        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
+          <input value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Search saved verses…"
+            className={inp + ' w-full'} />
+          {saved.length === 0 && (
+            <div className="text-center py-12">
+              <p className="text-3xl mb-3">✦</p>
+              <p className="text-henry-text-muted text-sm">No saved verses yet.</p>
+              <p className="text-henry-text-muted text-xs mt-1">Look up a passage and tap Save Verse.</p>
+            </div>
+          )}
+          {saved.map(v => (
+            <div key={v.ref} className="group bg-henry-surface rounded-xl border border-henry-border/20 p-4 space-y-2">
+              <div className="flex items-start justify-between">
+                <div className="flex-1 min-w-0">
+                  <p className="text-[11px] uppercase tracking-wider text-henry-accent font-semibold">{v.ref}</p>
+                  {v.source && <p className="text-[10px] text-henry-text-muted">{v.source}</p>}
+                </div>
+                <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-all flex-shrink-0 ml-2">
+                  <button onClick={() => {
+                    setStudyText(v.text); setStudyRef(v.ref); setTab('study');
+                  }} className="text-[10px] px-2 py-1 rounded bg-henry-surface2 text-henry-text-muted hover:text-henry-accent">Study</button>
+                  <button onClick={() => deleteVerse(v.ref)} className="text-[10px] px-2 py-1 rounded text-henry-text-muted hover:text-red-400">✕</button>
+                </div>
+              </div>
+              <p className="text-henry-text text-sm italic leading-relaxed">"{v.text}"</p>
+              {/* Note */}
+              {editNoteRef === v.ref ? (
+                <div className="space-y-1.5">
+                  <textarea defaultValue={v.note || ''} id={`note-${v.ref}`} rows={2} autoFocus
+                    className={inp + ' w-full resize-none text-xs'} />
+                  <div className="flex gap-2">
+                    <button onClick={() => {
+                      const el = document.getElementById(`note-${v.ref}`) as HTMLTextAreaElement;
+                      void saveNote(v.ref, el?.value || '');
+                    }} className="text-[11px] px-3 py-1 rounded-lg bg-henry-accent/10 border border-henry-accent/30 text-henry-accent hover:bg-henry-accent/20">Save</button>
+                    <button onClick={() => setEditNoteRef(null)} className="text-[11px] px-2 py-1 text-henry-text-muted hover:text-henry-text">Cancel</button>
+                  </div>
+                </div>
+              ) : v.note ? (
+                <p className="text-henry-text-muted text-xs border-t border-henry-border/20 pt-2 cursor-pointer hover:text-henry-text transition-all"
+                  onClick={() => setEditNoteRef(v.ref)}>
+                  📝 {v.note}
+                </p>
+              ) : (
+                <button onClick={() => setEditNoteRef(v.ref)}
+                  className="text-[10px] text-henry-text-muted/60 hover:text-henry-text-muted transition-all">
+                  + Add note
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── STUDY TAB ── */}
+      {tab === 'study' && (
+        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4 max-w-2xl">
+          <div className="space-y-2">
+            <label className="text-[10px] uppercase tracking-wider text-henry-text-muted block">Passage reference</label>
+            <input value={studyRef} onChange={e => setStudyRef(e.target.value)} placeholder="e.g. Romans 8:28"
+              className={inp + ' w-full'} />
+          </div>
+          <div className="space-y-2">
+            <label className="text-[10px] uppercase tracking-wider text-henry-text-muted block">Passage text</label>
+            <textarea value={studyText} onChange={e => setStudyText(e.target.value)} rows={4}
+              placeholder="Paste or type the passage text here…"
+              className={inp + ' w-full resize-none'} />
+          </div>
+
+          {/* Study prompts */}
+          <div>
+            <p className="text-[10px] uppercase tracking-wider text-henry-text-muted mb-2">Study questions</p>
+            <div className="grid grid-cols-2 gap-2">
+              {STUDY_PROMPTS.map(p => (
+                <button key={p} onClick={() => void studyPassage(p)} disabled={!studyText.trim() || studyLoading}
+                  className="text-left text-[11px] px-3 py-2 rounded-xl bg-henry-surface border border-henry-border/30 text-henry-text-muted hover:text-henry-text hover:border-henry-accent/30 disabled:opacity-40 transition-all leading-snug">
+                  {p}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Custom prompt */}
+          <div className="flex gap-2">
+            <input value={customPrompt} onChange={e => setCustomPrompt(e.target.value)}
+              placeholder="Ask your own question about this passage…"
+              className={inp + ' flex-1'}
+              onKeyDown={e => { if (e.key === 'Enter' && customPrompt.trim()) void studyPassage(customPrompt); }} />
+            <button onClick={() => void studyPassage(customPrompt)} disabled={!studyText.trim() || !customPrompt.trim() || studyLoading}
+              className="px-4 py-2.5 rounded-xl bg-henry-accent text-white text-sm font-bold disabled:opacity-40 hover:bg-henry-accent/80 transition-all">
+              Ask
+            </button>
+          </div>
+
+          <button onClick={studyInChat} disabled={!studyText.trim()}
+            className="w-full py-2.5 rounded-xl bg-henry-surface border border-henry-border/30 text-henry-text-muted text-sm hover:text-henry-text transition-all disabled:opacity-40">
+            Deep dive in Chat →
+          </button>
+
+          {/* Output */}
+          {studyLoading && (
+            <div className="bg-henry-surface rounded-xl border border-henry-border/20 p-4">
+              <p className="text-henry-text-muted text-sm animate-pulse">Henry is studying…</p>
+            </div>
+          )}
+          {studyOutput && !studyLoading && (
+            <div className="bg-henry-surface rounded-xl border border-henry-accent/20 p-5 space-y-3">
+              <p className="text-henry-text text-sm leading-relaxed whitespace-pre-wrap">{studyOutput}</p>
+              <div className="flex gap-2 pt-2 border-t border-henry-border/20">
+                <button onClick={() => navigator.clipboard?.writeText(studyOutput)}
+                  className="text-[11px] px-3 py-1 rounded-lg border border-henry-border/30 text-henry-text-muted hover:text-henry-text transition-all">
+                  Copy
+                </button>
+                <button onClick={() => {
+                  if (studyRef) void api.scriptureUpdateNote(studyRef, studyOutput.slice(0, 500));
+                }} className="text-[11px] px-3 py-1 rounded-lg border border-henry-border/30 text-henry-text-muted hover:text-henry-text transition-all">
+                  Save as note
+                </button>
+                <button onClick={() => setStudyOutput('')}
+                  className="text-[11px] px-2 py-1 text-henry-text-muted hover:text-red-400 transition-all ml-auto">✕</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
