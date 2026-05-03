@@ -274,7 +274,7 @@ export async function runDiagnostic(autoFix = true): Promise<DiagnosticReport> {
       category: check.category,
       status: result.ok ? 'ok' : (check.category === 'required' ? 'error' : 'warning'),
       detail: result.detail,
-      version: result.version,
+      version: (result as CheckResult).version,
     };
 
     if (!result.ok && autoFix && check.fix) {

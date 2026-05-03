@@ -16,6 +16,7 @@ import { registerTerminalHandlers } from './ipc/terminal';
 import { registerComputerHandlers } from './ipc/computer';
 import { registerPrinterHandlers } from './ipc/printer';
 import { registerSyncBridgeIpc, setSyncDb, startSyncServer } from './ipc/syncBridge';
+import { runDiagnostic, saveReport } from './ipc/selfRepair';
 
 
 // Global IPC error handler — prevents any single handler crash from killing the process

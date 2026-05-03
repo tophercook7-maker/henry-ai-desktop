@@ -236,8 +236,8 @@ function recordEvent(event: Omit<SyncEvent, 'id' | 'timestamp'>): SyncEvent {
   return full;
 }
 
-function pushToDevice(targetDeviceId: string, event: Omit<SyncEvent,'id'|'timestamp'>): void {
-  const full: SyncEvent = { ...event as SyncEvent, id: generateToken(8), timestamp: Date.now() };
+function pushToDevice(targetDeviceId: string, event: Omit<SyncEvent,'id'|'timestamp'|'fromDevice'>): void {
+  const full: SyncEvent = { ...event as SyncEvent, fromDevice: 'desktop', id: generateToken(8), timestamp: Date.now() };
   for (const client of sseClients) {
     if (client.deviceId === targetDeviceId) {
       try { client.res.write(`data: ${JSON.stringify(full)}\n\n`); } catch { /* disconnected */ }
@@ -277,8 +277,8 @@ function dbGet<T>(sql: string, ...params: unknown[]): T[] {
 
 function dbRun(sql: string, ...params: unknown[]): void {
   try {
-    const db = getDb();
-    db.prepare(sql).run(...params);
+    if (!_db) return;
+    _db.prepare(sql).run(...params);
   } catch { /* ignore */ }
 }
 
@@ -1386,10 +1386,10 @@ pairBtn.addEventListener('click', submitManualPair);
 
     // ── Intent resolution — "do it again", "open that", context-aware ──────────
     const ctx = deviceContext.get(deviceId) || {};
-    const resolvedText = resolveIntent(text, ctx);
+    const resolvedText = resolveIntent(userText, ctx);
 
     // Save last user text regardless
-    deviceContext.set(deviceId, { ...ctx, lastUserText: text });
+    deviceContext.set(deviceId, { ...ctx, lastUserText: userText });
 
     // Direct computer command detection — no AI, just execute
     async function tryComputerCommand(text: string): Promise<string | null> {
@@ -1403,7 +1403,7 @@ pairBtn.addEventListener('click', submitManualPair);
           execSync('screencapture -x "' + tmp + '"', { timeout: 5000 });
           const buf = fs.readFileSync(tmp);
           try { fs.unlinkSync(tmp); } catch { }
-          pushToDevice(deviceId, { type: 'companion_screenshot', payload: { base64: buf.toString('base64') } });
+          pushToDevice(deviceId as string, { type: 'companion_screenshot', payload: { base64: buf.toString('base64') } });
           return 'Screenshot taken.';
         } catch (e) { return 'Screenshot failed: ' + (e instanceof Error ? e.message : String(e)); }
       }
@@ -1418,7 +1418,7 @@ pairBtn.addEventListener('click', submitManualPair);
         try {
           fs.mkdirSync(fullPath, { recursive: true });
           exec('open "' + fullPath + '"');
-          deviceContext.set(deviceId, { ...deviceContext.get(deviceId), lastFolder: fullPath });
+          deviceContext.set(deviceId!, { ...(deviceContext.get(deviceId!) || {}), lastFolder: fullPath });
           return 'Created "' + name + '" on your ' + locStr + ' and opened it in Finder.';
         } catch (e) { return 'Failed: ' + (e instanceof Error ? e.message : String(e)); }
       }

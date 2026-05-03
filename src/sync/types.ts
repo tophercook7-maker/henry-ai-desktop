@@ -103,7 +103,11 @@ export type SyncEventType =
   | 'action_resolved'
   | 'capture_received'
   | 'capture_processed'
-  | 'notification';
+  | 'notification'
+  | 'companion_response'
+  | 'companion_chunk'
+  | 'companion_screenshot'
+  | 'tunnel_active';
 
 export interface SyncEvent {
   id: string;
