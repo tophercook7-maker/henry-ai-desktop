@@ -11,7 +11,7 @@
 import { ipcMain } from 'electron';
 import type Database from 'better-sqlite3';
 
-export function registerSettingsHandlers(db: Database.Database) {
+export function registerSettingsHandlers(db: Database.Database, getMainWindow?: () => import('electron').BrowserWindow | null) {
   // ── Settings ────────────────────────────────────────────────
 
   // Returns a Record<string, string>
@@ -67,6 +67,17 @@ export function registerSettingsHandlers(db: Database.Database) {
            updated_at = datetime('now')`
         ).run(provider.id, provider.name, apiKey, enabled, provider.models || '[]');
         console.log('[providers:save] saved', provider.id, 'key length:', apiKey.length);
+        // Immediately inject into renderer localStorage so chat picks it up without restart
+        try {
+          const allProviders = db.prepare('SELECT id, name, api_key, enabled, models FROM providers').all() as any[];
+          const lsData = allProviders.map((p: any) => ({
+            id: p.id, name: p.name,
+            api_key: p.api_key || '', apiKey: p.api_key || '',
+            enabled: Boolean(p.enabled), models: p.models || '[]',
+          }));
+          const script = `try { localStorage.setItem('henry:providers', '${JSON.stringify(lsData).replace(/'/g, "\'")}'); console.log('[Henry] providers synced to localStorage'); } catch(e) { console.warn('[Henry] localStorage sync failed', e); }`;
+          getMainWindow?.()?.webContents.executeJavaScript(script).catch(() => {});
+        } catch { /* non-critical */ }
         return { ok: true };
       } catch (e: unknown) {
         console.error('[providers:save] FAILED:', e instanceof Error ? e.message : String(e));

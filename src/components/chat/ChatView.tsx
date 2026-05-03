@@ -1577,14 +1577,27 @@ export default function ChatView() {
       }
       // tier 2 uses the already-set companion_model (70b)
 
-      // Pre-flight: estimate total tokens and warn if approaching Groq free tier limits
-      const totalInputTokens = messagesPayload.reduce((s, m) => s + Math.ceil(m.content.length / 4), 0);
-      if (totalInputTokens > 5_000 && companionProvider === 'groq') {
-        // Groq free tier: 6k tokens/minute. Trim system prompt to essentials only.
-        const trimmedSystem = messagesPayload[0]?.content?.slice(0, 8000) ?? '';
-        if (messagesPayload[0]?.role === 'system') {
-          messagesPayload[0].content = trimmedSystem + (messagesPayload[0].content.length > 8000 ? '\n[Context trimmed — ask shorter questions or start a new chat for fresh context]' : '');
+      // Aggressively trim system prompt for Groq — their free tier models have context limits
+      // and Henry's charter can be 20k+ chars. Cap at ~24k chars (~6k tokens) for system.
+      if (companionProvider === 'groq' && messagesPayload[0]?.role === 'system') {
+        const sys = messagesPayload[0].content;
+        const SYS_CAP = 24_000; // ~6k tokens — leaves room for conversation + response
+        if (sys.length > SYS_CAP) {
+          messagesPayload[0].content = sys.slice(0, SYS_CAP) + '\n\n[System context trimmed for token limit]';
         }
+      }
+      // Also cap total payload — Groq llama-3.3-70b has 32k context on free tier
+      const totalChars = messagesPayload.reduce((s, m) => s + m.content.length, 0);
+      if (totalChars > 120_000 && companionProvider === 'groq') {
+        // Keep system + last N messages that fit
+        const sys = messagesPayload[0];
+        const rest = messagesPayload.slice(1);
+        let budget = 120_000 - sys.content.length;
+        const kept = [];
+        for (let i = rest.length - 1; i >= 0; i--) {
+          if (rest[i].content.length <= budget) { kept.unshift(rest[i]); budget -= rest[i].content.length; }
+        }
+        messagesPayload.splice(0, messagesPayload.length, sys, ...kept);
       }
 
       const stream = window.henryAPI.streamMessage({

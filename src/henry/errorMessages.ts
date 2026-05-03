@@ -113,6 +113,17 @@ export function buildStreamError(
 ): string {
   const label = providerLabel(provider);
 
+  // Context too long
+  if (/context.{0,20}length|too many tokens|maximum context|request too large|content too large|tokens.*exceed/i.test(error)) {
+    return [
+      `**${label}: message too long.**`,
+      ``,
+      `Henry's system prompt + your conversation exceeded the model's context window.`,
+      `→ Start a **New Chat** (top of the chat panel) to clear the context, or keep messages shorter.`,
+      `→ You can also switch to a model with a larger context in **Settings → AI Providers**.`,
+    ].join('\n');
+  }
+
   if (isAuthError(error)) {
     return [
       `**${label} rejected the API key.**`,
