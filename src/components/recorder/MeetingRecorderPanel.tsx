@@ -217,9 +217,21 @@ export default function MeetingRecorderPanel() {
       setMeetingTitle('');
       setStatus('');
 
-      if (actionItems.length > 0 && settings.companion_provider) {
+      // Persist full record (with transcript + summary) to SQLite
+      void persistRecording(rec);
+
+      // Create tasks for each action item
+      if (actionItems.length > 0) {
+        const api = (window as any).henryAPI;
         for (const item of actionItems.slice(0, 5)) {
-          try { await window.henryAPI.submitTask({ description: item, type: 'custom', priority: 5 }); } catch { /* ignore */ }
+          try {
+            await api.tasksCreate?.({
+              id: crypto.randomUUID(),
+              title: item,
+              status: 'todo',
+              priority: 2,
+            });
+          } catch { /* non-critical */ }
         }
       }
     } catch (err) {

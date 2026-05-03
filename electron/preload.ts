@@ -166,6 +166,8 @@ contextBridge.exposeInMainWorld('henryAPI', {
   listsDeleteItem: (itemId: string) => ipcRenderer.invoke('lists:delete-item', itemId),
   listsClearDone: (listId: string) => ipcRenderer.invoke('lists:clear-done', listId),
   // Contacts / CRM
+  contactsSetStage: (id: string, stage: string) => ipcRenderer.invoke('contacts:set-stage', id, stage),
+  contactsByStage: (stage: string) => ipcRenderer.invoke('contacts:by-stage', stage),
   contactsList: (query?: string) => ipcRenderer.invoke('contacts:list', query),
   contactsGet: (id: string) => ipcRenderer.invoke('contacts:get', id),
   contactsCreate: (c: Record<string,unknown>) => ipcRenderer.invoke('contacts:create', c),

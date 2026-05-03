@@ -1,9 +1,12 @@
 {
   "name": "henry-ai-desktop",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "description": "Henry AI \u2014 Local-first desktop AI operating system with dual-engine architecture",
   "main": "dist-electron/main.js",
-  "author": "Henry AI",
+  "author": {
+    "name": "Topher Cook",
+    "email": "hello@henryai.app"
+  },
   "license": "MIT",
   "scripts": {
     "dev": "vite --config vite.web.config.ts",

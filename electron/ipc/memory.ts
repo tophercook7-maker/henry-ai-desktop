@@ -1098,6 +1098,14 @@ export function registerMemoryHandlers(database: Database.Database) {
     try { db.prepare('DELETE FROM contacts WHERE id=?').run(id); return { ok: true }; }
     catch (e) { return { ok: false, error: String(e) }; }
   });
+  ipcMain.handle('contacts:set-stage', (_e, id: string, stage: string) => {
+    try { db.prepare("UPDATE contacts SET stage=? WHERE id=?").run(stage, id); return { ok: true }; }
+    catch (e) { return { ok: false, error: String(e) }; }
+  });
+  ipcMain.handle('contacts:by-stage', (_e, stage: string) => {
+    try { return db.prepare("SELECT * FROM contacts WHERE stage=? ORDER BY last_contacted_at DESC, created_at DESC").all(stage); }
+    catch { return []; }
+  });
 
   // ── Finance ───────────────────────────────────────────────────────────────
   db.prepare(`CREATE TABLE IF NOT EXISTS transactions (
