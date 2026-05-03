@@ -42,6 +42,7 @@ contextBridge.exposeInMainWorld('henryAPI', {
   // ── Providers ─────────────────────────────────────────────
   getProviders: () => ipcRenderer.invoke('providers:getAll'),
   saveProvider: (provider: ProviderSavePayload) => ipcRenderer.invoke('providers:save', provider),
+  resyncProvidersToLocalStorage: () => ipcRenderer.invoke('providers:resync-localStorage'),
 
   // ── Conversations ─────────────────────────────────────────
   getConversations: () => ipcRenderer.invoke('conversations:getAll'),

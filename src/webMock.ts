@@ -249,6 +249,7 @@ const henryAPI: Window['henryAPI'] = {
   getProviders: async () => {
     return getStore('henry:providers', []);
   },
+  resyncProvidersToLocalStorage: async () => ({ ok: true, count: 0 }),
   saveProvider: async (provider) => {
     const providers = getStore<HenryProviderRecord[]>('henry:providers', []);
     const idx = providers.findIndex((p) => p.id === provider.id);

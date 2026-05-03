@@ -47,28 +47,31 @@ export function registerSettingsHandlers(db: Database.Database) {
       provider: {
         id: string;
         name: string;
-        apiKey: string;
-        enabled: boolean;
+        apiKey?: string;
+        api_key?: string;
+        enabled: boolean | number;
         models: string;
       }
     ) => {
-      db.prepare(
-        `INSERT INTO providers (id, name, api_key, enabled, models, updated_at)
-       VALUES (?, ?, ?, ?, ?, datetime('now'))
-       ON CONFLICT(id) DO UPDATE SET
-         name = excluded.name,
-         api_key = excluded.api_key,
-         enabled = excluded.enabled,
-         models = excluded.models,
-         updated_at = datetime('now')`
-      ).run(
-        provider.id,
-        provider.name,
-        provider.apiKey,
-        provider.enabled ? 1 : 0,
-        provider.models
-      );
-      return true;
+      try {
+        const apiKey = provider.apiKey || provider.api_key || '';
+        const enabled = provider.enabled ? 1 : 0;
+        db.prepare(
+          `INSERT INTO providers (id, name, api_key, enabled, models, updated_at)
+         VALUES (?, ?, ?, ?, ?, datetime('now'))
+         ON CONFLICT(id) DO UPDATE SET
+           name = excluded.name,
+           api_key = excluded.api_key,
+           enabled = excluded.enabled,
+           models = excluded.models,
+           updated_at = datetime('now')`
+        ).run(provider.id, provider.name, apiKey, enabled, provider.models || '[]');
+        console.log('[providers:save] saved', provider.id, 'key length:', apiKey.length);
+        return { ok: true };
+      } catch (e: unknown) {
+        console.error('[providers:save] FAILED:', e instanceof Error ? e.message : String(e));
+        return { ok: false, error: e instanceof Error ? e.message : String(e) };
+      }
     }
   );
 

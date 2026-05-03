@@ -200,6 +200,7 @@ declare global {
 
     getProviders: () => Promise<HenryProviderRecord[]>;
     saveProvider: (provider: Omit<AIProvider, 'models'> & { models: string }) => Promise<boolean>;
+    resyncProvidersToLocalStorage: () => Promise<{ ok: boolean; count?: number }>;
 
     getConversations: () => Promise<Conversation[]>;
     createConversation: (title: string) => Promise<Conversation>;

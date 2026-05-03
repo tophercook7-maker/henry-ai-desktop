@@ -219,6 +219,23 @@ app.whenReady().then(() => {
   createWindow();
 
   registerSettingsHandlers(db);
+
+  // After any provider save, re-sync SQLite providers → localStorage so the renderer picks it up
+  const origProvidersSave = ipcMain.listeners('providers:save');
+  ipcMain.handle('providers:resync-localStorage', () => {
+    try {
+      const providers = db.prepare('SELECT id, name, api_key, enabled, models FROM providers').all() as {id:string;name:string;api_key:string;enabled:number;models:string}[];
+      const providersArr = providers.map(p => ({
+        id: p.id, name: p.name,
+        api_key: p.api_key || '', apiKey: p.api_key || '',
+        enabled: Boolean(p.enabled), models: p.models || '[]',
+      }));
+      const script = `try { localStorage.setItem('henry:providers', JSON.stringify(${JSON.stringify(providersArr)})); } catch(e) {}`;
+      getMainWindow()?.webContents.executeJavaScript(script).catch(() => {});
+      return { ok: true, count: providers.length };
+    } catch(e) { return { ok: false, error: String(e) }; }
+  });
+
   registerAIHandlers(db, getMainWindow);
   registerFilesystemHandlers(henryDir);
   registerTaskBrokerHandlers(db, getMainWindow, henryDir);

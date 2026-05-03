@@ -302,11 +302,25 @@ function ProviderWizard({
         enabled: true,
         models: JSON.stringify(models),
       });
+      // Immediately sync SQLite providers → localStorage so chat picks up the key
+      await window.henryAPI.resyncProvidersToLocalStorage().catch(() => {});
       const rawProviders = await window.henryAPI.getProviders();
-      setProviders(rawProviders.map((p: any) => ({
+      const mapped = rawProviders.map((p: any) => ({
         id: p.id, name: p.name, apiKey: p.api_key ?? p.apiKey ?? '',
         enabled: Boolean(p.enabled), models: JSON.parse(p.models || '[]'),
-      })));
+      }));
+      setProviders(mapped);
+      // CRITICAL: write to localStorage immediately so webMock.streamMessage picks it up
+      try {
+        const lsFormat = rawProviders.map((p: any) => ({
+          id: p.id, name: p.name,
+          api_key: p.api_key ?? p.apiKey ?? '',
+          apiKey: p.api_key ?? p.apiKey ?? '',
+          enabled: Boolean(p.enabled),
+          models: p.models || '[]',
+        }));
+        localStorage.setItem('henry:providers', JSON.stringify(lsFormat));
+      } catch { /* non-critical */ }
       setSaved(true);
       onSaved();
     } catch { /* ignore */ }

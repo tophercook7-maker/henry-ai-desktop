@@ -370,7 +370,21 @@ export default function App() {
         settingsMap.setup_complete === 'true' ||
         lsSettings.setup_complete === 'true';
 
-      // Also auto-enter if providers are already saved (returning user whose flag got cleared)
+      // Always load providers from SQLite and sync to localStorage at startup
+      // This fixes: key saved in Settings, but chat still fails until restart
+      try {
+        const sqliteProviders = await window.henryAPI.getProviders().catch(() => []);
+        if (sqliteProviders.length > 0) {
+          const syncData = sqliteProviders.map((p: HenryProviderRecord) => ({
+            id: p.id, name: p.name,
+            api_key: p.api_key || p.apiKey || '',
+            apiKey: p.api_key || p.apiKey || '',
+            enabled: Boolean(p.enabled), models: p.models || '[]',
+          }));
+          localStorage.setItem('henry:providers', JSON.stringify(syncData));
+        }
+      } catch { /* non-critical */ }
+
       const lsProviders: HenryProviderRecord[] = (() => {
         try { return JSON.parse(localStorage.getItem('henry:providers') || '[]'); } catch { return []; }
       })();
