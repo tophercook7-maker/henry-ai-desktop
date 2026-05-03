@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
-  loadReminders, saveReminder, deleteReminder, toggleDone, newReminder, checkAndNotify, requestNotificationPermission,
+  loadReminders, saveReminder, deleteReminder, toggleDone, newReminder, checkAndNotify, requestNotificationPermission, saveReminderToDb, deleteReminderFromDb,
   CATEGORY_META, type Reminder, type ReminderCategory, type ReminderRepeat,
 } from '../../henry/reminders';
 import { useStore } from '../../store';
@@ -49,11 +49,15 @@ export default function RemindersPanel() {
 
   function handleToggle(id: string) {
     toggleDone(id);
+    const updatedAll = loadReminders();
+    const updated = updatedAll.find(r => r.id === id);
+    if (updated) void saveReminderToDb(updated).catch(() => {});
     reload();
   }
 
   function handleDelete(id: string) {
     deleteReminder(id);
+    void deleteReminderFromDb(id).catch(() => {});
     if (editing?.id === id) setEditing(null);
     reload();
   }
@@ -61,6 +65,7 @@ export default function RemindersPanel() {
   function handleSave() {
     if (!editing || !editing.title.trim()) return;
     saveReminder(editing);
+    void saveReminderToDb(editing).catch(() => {});
     setEditing(null);
     reload();
   }

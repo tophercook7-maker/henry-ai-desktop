@@ -1159,6 +1159,39 @@ export function registerMemoryHandlers(database: Database.Database) {
     try { db.prepare("DELETE FROM journal_entries WHERE id=?").run(id); return { ok: true }; }
     catch (e) { return { ok: false, error: String(e) }; }
   });
+
+  // ── Reminders (persistent across restarts) ────────────────────────────────
+  db.prepare(`CREATE TABLE IF NOT EXISTS reminders (
+    id TEXT PRIMARY KEY, title TEXT NOT NULL, notes TEXT,
+    due_at TEXT NOT NULL, repeat TEXT DEFAULT 'none',
+    done INTEGER DEFAULT 0, notified_at TEXT,
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+  )`).run();
+
+  ipcMain.handle('reminders:list', () => {
+    try { return db.prepare("SELECT * FROM reminders ORDER BY due_at ASC").all(); }
+    catch { return []; }
+  });
+  ipcMain.handle('reminders:save', (_e, r: Record<string,unknown>) => {
+    try {
+      const now = new Date().toISOString();
+      db.prepare(`INSERT INTO reminders (id,title,notes,due_at,repeat,done,notified_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)
+        ON CONFLICT(id) DO UPDATE SET title=excluded.title,notes=excluded.notes,due_at=excluded.due_at,
+        repeat=excluded.repeat,done=excluded.done,notified_at=excluded.notified_at,updated_at=excluded.updated_at`)
+        .run(r.id,r.title,r.notes||null,r.dueAt||r.due_at,r.repeat||'none',r.done?1:0,r.notifiedAt||r.notified_at||null,now,now);
+      return { ok: true };
+    } catch (e) { return { ok: false, error: String(e) }; }
+  });
+  ipcMain.handle('reminders:delete', (_e, id: string) => {
+    try { db.prepare("DELETE FROM reminders WHERE id=?").run(id); return { ok: true }; }
+    catch (e) { return { ok: false, error: String(e) }; }
+  });
+  ipcMain.handle('reminders:due', () => {
+    try {
+      const now = new Date().toISOString();
+      return db.prepare("SELECT * FROM reminders WHERE due_at <= ? AND done=0 AND notified_at IS NULL").all(now);
+    } catch { return []; }
+  });
 }
 
 // ── Bandwidth-aware context builder ───────────────────────────────────────────

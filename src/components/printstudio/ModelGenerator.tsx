@@ -6,6 +6,7 @@
 
 import { useState, useRef, useCallback } from 'react';
 import { useStore } from '../../store';
+import ModelPreview3D from './ModelPreview3D';
 
 interface ModelSpec {
   name: string;
@@ -15,7 +16,7 @@ interface ModelSpec {
 }
 
 interface ShapeSpec {
-  type: 'box'|'cylinder'|'sphere'|'cone'|'tube'|'rounded_box';
+  type: 'box'|'cylinder'|'sphere'|'cone'|'tube'|'rounded_box'|'torus';
   x?: number; y?: number; z?: number;
   width?: number; height?: number; depth?: number;
   radius?: number; radius2?: number;
@@ -82,6 +83,24 @@ function genCylinder(r:number,h:number,segs=32,ox=0,oy=0,oz=0,r2?:number):Triang
   return tris;
 }
 
+function genTorus(r:number,tube:number,segs=32,tubeSegs=16,ox=0,oy=0,oz=0):Triangle[] {
+  const tris:Triangle[]=[];
+  for(let i=0;i<segs;i++){
+    for(let j=0;j<tubeSegs;j++){
+      const a0=2*Math.PI*i/segs,a1=2*Math.PI*(i+1)/segs;
+      const b0=2*Math.PI*j/tubeSegs,b1=2*Math.PI*(j+1)/tubeSegs;
+      const v=(pts:[number,number][])=>pts.map(([a,b])=>({
+        x:ox+(r+tube*Math.cos(b))*Math.cos(a),
+        y:oy+(r+tube*Math.cos(b))*Math.sin(a),
+        z:oz+tube*Math.sin(b)
+      }));
+      const [p0,p1,p2,p3]=v([[a0,b0],[a1,b0],[a1,b1],[a0,b1]]);
+      tris.push(makeTri(p0,p1,p2)); tris.push(makeTri(p0,p2,p3));
+    }
+  }
+  return tris;
+}
+
 function genSphere(r:number,segs=24,ox=0,oy=0,oz=0):Triangle[] {
   const tris:Triangle[]=[];
   for(let i=0;i<segs;i++){
@@ -101,11 +120,27 @@ function genSphere(r:number,segs=24,ox=0,oy=0,oz=0):Triangle[] {
 function specToTriangles(spec:ModelSpec):Triangle[] {
   const all:Triangle[]=[];
   for(const s of spec.shapes){
+    if(s.operation==='subtract') continue; // skip subtracts — visual only for now
     const ox=s.x||0, oy=s.y||0, oz=s.z||0;
-    if(s.type==='box'||s.type==='rounded_box') all.push(...genBox(s.width||10,s.depth||10,s.height||10,ox,oy,oz));
-    else if(s.type==='cylinder'||s.type==='tube') all.push(...genCylinder(s.radius||5,s.height||10,s.segments||48,ox,oy,oz));
-    else if(s.type==='sphere') all.push(...genSphere(s.radius||5,s.segments||32,ox,oy,oz));
-    else if(s.type==='cone') all.push(...genCylinder(s.radius||5,s.height||10,s.segments||48,ox,oy,oz,s.radius2||0));
+    const segs=s.segments||48;
+    if(s.type==='box'||s.type==='rounded_box') {
+      all.push(...genBox(s.width||10,s.depth||10,s.height||10,ox,oy,oz));
+    } else if(s.type==='cylinder') {
+      all.push(...genCylinder(s.radius||5,s.height||10,segs,ox,oy,oz));
+    } else if(s.type==='tube') {
+      // Hollow cylinder: outer - inner (approximate with two cylinders, just show outer for preview)
+      const outer=s.radius||10;
+      const inner=outer-(s.wall||2);
+      all.push(...genCylinder(outer,s.height||10,segs,ox,oy,oz));
+      // For STL we also need the inner surface and caps — simplified here
+      if(inner>0) all.push(...genCylinder(inner,s.height||10,segs,ox,oy,oz));
+    } else if(s.type==='sphere') {
+      all.push(...genSphere(s.radius||5,s.segments||32,ox,oy,oz));
+    } else if(s.type==='cone') {
+      all.push(...genCylinder(s.radius||5,s.height||10,segs,ox,oy,oz,s.radius2||0));
+    } else if(s.type==='torus') {
+      all.push(...genTorus(s.radius||15,s.wall||4,segs,16,ox,oy,oz));
+    }
   }
   return all;
 }
@@ -187,7 +222,7 @@ interface ModelSpec {
   name: string;           // short name for the file
   description: string;    // what it is
   shapes: Array<{
-    type: 'box'|'cylinder'|'sphere'|'cone'|'rounded_box'|'tube';
+    type: 'box'|'cylinder'|'sphere'|'cone'|'rounded_box'|'tube'|'torus';
     label?: string;
     x?: number; y?: number; z?: number;  // offset position in mm
     width?: number; height?: number; depth?: number;  // for box types
@@ -380,7 +415,10 @@ export default function ModelGenerator(){
         {/* Preview + Download */}
         {step==='preview' && spec && (
           <div className="space-y-4">
-            <div className="bg-henry-surface rounded-xl border border-henry-border/20 p-4">
+            {/* 3D Preview */}
+        <ModelPreview3D triangles={tris} name={spec.name} className="h-72" />
+
+        <div className="bg-henry-surface rounded-xl border border-henry-border/20 p-4">
               <div className="flex items-start justify-between mb-3">
                 <div>
                   <p className="font-bold text-henry-text">{spec.name}</p>

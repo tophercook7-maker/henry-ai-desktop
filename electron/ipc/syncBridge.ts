@@ -68,6 +68,10 @@ export async function startSyncTunnel(port: number): Promise<string | null> {
           resolved = true;
           tunnelUrl = match[0];
           console.log(`[SyncBridge] Tunnel active: ${tunnelUrl}`);
+          // Push tunnel URL to all connected devices so they can switch to it
+          setTimeout(() => {
+            pushToAll({ type: 'tunnel_active', payload: { url: tunnelUrl }, id: '', timestamp: 0 } as any);
+          }, 1000);
           resolve(tunnelUrl);
         }
       };
@@ -493,6 +497,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
   <div id="bar" style="display:none">
     <div id="dot"></div>
     <span id="bar-name">Henry</span>
+  <span id="tunnel-dot" title="Tunnel active — works anywhere" style="display:none;font-size:10px;color:#22c55e;background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.3);border-radius:6px;padding:2px 6px;cursor:pointer" onclick="copyTunnelUrl()">🌐 Remote</span>
     <span id="bar-status">Connecting…</span>
     <button id="screen-btn" onclick="toggleScreen()">📺 Screen</button>
   <button id="voice-btn" onclick="toggleVoice()" title="Toggle voice" style="background:none;border:none;font-size:16px;cursor:pointer;padding:2px 4px;opacity:0.5">🔇</button>

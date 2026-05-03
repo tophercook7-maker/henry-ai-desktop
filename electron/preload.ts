@@ -119,6 +119,11 @@ contextBridge.exposeInMainWorld('henryAPI', {
   saveFact: (fact: Record<string, unknown>) => ipcRenderer.invoke('memory:saveFact', fact),
   // Generic invoke — for panels that need direct IPC access
   invoke: (channel: string, ...args: unknown[]) => ipcRenderer.invoke(channel, ...args),
+  // Reminders (SQLite persistent)
+  remindersList: () => ipcRenderer.invoke('reminders:list'),
+  remindersSave: (r: Record<string,unknown>) => ipcRenderer.invoke('reminders:save', r),
+  remindersDelete: (id: string) => ipcRenderer.invoke('reminders:delete', id),
+  remindersDue: () => ipcRenderer.invoke('reminders:due'),
   // Finance
   financeList: (month?: string) => ipcRenderer.invoke('finance:list', month),
   financeAdd: (t: Record<string,unknown>) => ipcRenderer.invoke('finance:add', t),

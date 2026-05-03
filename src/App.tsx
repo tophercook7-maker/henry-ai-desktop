@@ -12,7 +12,7 @@ import { indexWorkspace } from './henry/workspaceIndex';
 import { startSelfHealing, type HenryRepairEvent } from './henry/selfHealing';
 import { getTodayBriefing, saveBriefing, buildBriefingPrompt, getTodayKey } from './henry/proactiveBriefing';
 import { isNative } from './capacitor';
-import { checkAndNotify } from './henry/reminders';
+import { checkAndNotify, syncFromDb as syncRemindersFromDb } from './henry/reminders';
 import { buildMemoryContext } from './henry/memoryPipeline';
 import { useCapturesStore } from './ambient/capturesStore';
 import { registerShortcuts, buildShortcuts } from './henry/keyboardShortcuts';
@@ -76,6 +76,9 @@ export default function App() {
       setRepair(event);
       setTimeout(() => setRepair(null), 8000);
     });
+    // Sync reminders from SQLite to localStorage on startup
+    void syncRemindersFromDb().catch(() => {});
+
     // Check reminders every minute for due notifications
     const reminderInterval = setInterval(() => {
       try { checkAndNotify(); } catch { /* non-critical */ }
