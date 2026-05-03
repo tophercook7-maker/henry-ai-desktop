@@ -1,203 +1,202 @@
+/**
+ * Henry Secretary Panel
+ * AI-powered executive assistant — drafts emails, prepares meeting briefs,
+ * manages follow-ups, summarizes conversations for action items
+ */
+import { useState, useRef } from 'react';
 import { useStore } from '../../store';
-import { PANEL_QUICK_ASK } from '../../henry/henryQuickAsk';
 
-interface QuickAction {
-  icon: string;
-  title: string;
-  description: string;
-  prompt: string;
-  color: string;
-}
+const api = (window as any).henryAPI;
 
-function buildQuickActions(dayLabel: string): QuickAction[] {
-  return [
-    {
-      icon: '🌅',
-      title: 'Daily Briefing',
-      description: "What's on my plate today",
-      prompt: `Give me my daily briefing for ${dayLabel}. I'll share what's on my calendar and task list — organize it into: Schedule, Priority Tasks, Replies Needed, and Heads Up.`,
-      color: 'from-amber-500/10 to-orange-500/5 border-amber-500/20 hover:border-amber-400/40',
-    },
-    {
-      icon: '✉️',
-      title: 'Draft an Email',
-      description: 'BLUF-style, ready to send',
-      prompt: "I need to draft an email. I'll tell you who it's to and what I need to say — write it using BLUF format, concise and ready to send.",
-      color: 'from-blue-500/10 to-sky-500/5 border-blue-500/20 hover:border-blue-400/40',
-    },
-    {
-      icon: '📅',
-      title: 'Schedule Something',
-      description: 'Find a time, draft an invite',
-      prompt: "Help me schedule a meeting. I'll tell you who it's with and roughly what it's for — suggest 2–3 time slots, draft the invite, and flag any timezone or timing considerations.",
-      color: 'from-violet-500/10 to-purple-500/5 border-violet-500/20 hover:border-violet-400/40',
-    },
-    {
-      icon: '📋',
-      title: 'Review My Tasks',
-      description: 'Prioritize and clear the list',
-      prompt: "Let's review my tasks. I'll share what's on my list — sort them by urgency and importance, flag what I should do today vs. defer, and identify anything I should delegate or drop.",
-      color: 'from-emerald-500/10 to-teal-500/5 border-emerald-500/20 hover:border-emerald-400/40',
-    },
-    {
-      icon: '🤝',
-      title: 'Meeting Prep',
-      description: 'Quick brief before you walk in',
-      prompt: "Prep me for a meeting. I'll give you the details — attendees, topic, what I need to accomplish — and you'll give me a concise brief: what to know, what to ask, and what outcome I'm driving toward.",
-      color: 'from-rose-500/10 to-pink-500/5 border-rose-500/20 hover:border-rose-400/40',
-    },
-    {
-      icon: '📡',
-      title: 'Follow-Up Nudge',
-      description: "Who haven't I heard back from",
-      prompt: "Help me draft a follow-up message. I'll tell you who I'm waiting on, what I asked for, and how long it's been — write a nudge that's direct but not pushy, calibrated to the timeline.",
-      color: 'from-cyan-500/10 to-sky-500/5 border-cyan-500/20 hover:border-cyan-400/40',
-    },
-  ];
+type SecTab = 'draft' | 'brief' | 'followup' | 'summary';
+
+const TEMPLATES = {
+  draft: [
+    { label: 'Professional email', prompt: 'Write a professional email to ' },
+    { label: 'Follow-up email', prompt: 'Write a follow-up email to ' },
+    { label: 'Proposal email', prompt: 'Write a proposal email about ' },
+    { label: 'Thank you email', prompt: 'Write a thank you email to ' },
+    { label: 'Decline politely', prompt: 'Write a polite decline email for ' },
+    { label: 'Request meeting', prompt: 'Write an email to request a meeting with ' },
+  ],
+  brief: [
+    { label: 'Meeting brief', prompt: 'Prepare a one-page brief for my meeting about ' },
+    { label: 'Client overview', prompt: 'Prepare a background brief on my client ' },
+    { label: 'Project status', prompt: 'Prepare a project status brief for ' },
+    { label: 'Research summary', prompt: 'Summarize research on ' },
+  ],
+  followup: [
+    { label: 'After meeting', prompt: 'Draft follow-up items after my meeting about ' },
+    { label: 'Action items', prompt: 'Extract and format the action items from: ' },
+    { label: 'Next steps', prompt: 'Draft a next steps summary for ' },
+  ],
+  summary: [
+    { label: 'Summarize text', prompt: 'Summarize this for me: ' },
+    { label: 'Key points', prompt: 'Extract the key points from: ' },
+    { label: 'Action items', prompt: 'Extract action items and decisions from: ' },
+    { label: 'One sentence', prompt: 'Summarize in one sentence: ' },
+  ],
+};
+
+const TAB_LABELS: Record<SecTab, string> = {
+  draft: '✉️ Draft',
+  brief: '📋 Brief',
+  followup: '🔄 Follow-up',
+  summary: '📄 Summary',
+};
+
+async function callGroq(prompt: string, context: string, settings: Record<string,string>, providers: any[]): Promise<string> {
+  const groq = providers?.find((p:any) => p.id === 'groq');
+  const apiKey = groq?.apiKey || '';
+  const model = settings?.companion_model || 'llama-3.3-70b-versatile';
+
+  if (!apiKey) return '⚠️ No Groq API key. Add one in Settings → AI Providers.';
+
+  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: 'system', content: 'You are Henry, a professional executive assistant. Write clearly and professionally. Be concise. Format output in clean paragraphs. For emails include Subject: line. For briefs use clear sections.' },
+        { role: 'user', content: prompt + (context ? '\n\nContext/Details:\n' + context : '') }
+      ],
+      max_tokens: 1000,
+      temperature: 0.6,
+    })
+  });
+
+  if (!res.ok) throw new Error('API error: ' + res.status);
+  const data = await res.json() as { choices: { message: { content: string } }[] };
+  return data.choices?.[0]?.message?.content || '(no response)';
 }
 
 export default function SecretaryPanel() {
-  const { setCurrentView } = useStore();
+  const { settings, providers, setCurrentView } = useStore();
+  const [tab, setTab] = useState<SecTab>('draft');
+  const [prompt, setPrompt] = useState('');
+  const [context, setContext] = useState('');
+  const [output, setOutput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const outputRef = useRef<HTMLTextAreaElement>(null);
 
-  const now = new Date();
-  const dayLabel = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
-  const hour = now.getHours();
-  const greeting = hour < 12 ? 'Good morning.' : hour < 17 ? 'Good afternoon.' : 'Good evening.';
-  const quickActions = buildQuickActions(dayLabel);
-
-  function launchAction(action: QuickAction) {
+  async function generate() {
+    if (!prompt.trim()) return;
+    setLoading(true); setOutput('');
     try {
-      localStorage.setItem('henry_operating_mode', 'secretary');
-    } catch {
-      /* ignore */
+      const result = await callGroq(prompt, context, settings, providers);
+      setOutput(result);
+    } catch (e) {
+      setOutput('Error: ' + (e instanceof Error ? e.message : String(e)));
     }
-    window.dispatchEvent(
-      new CustomEvent('henry_secretary_prompt', {
-        detail: { prompt: action.prompt, mode: 'secretary' },
-      })
-    );
-    setCurrentView('chat');
+    setLoading(false);
   }
 
-  function openSecretaryChat() {
-    try {
-      localStorage.setItem('henry_operating_mode', 'secretary');
-    } catch {
-      /* ignore */
-    }
-    window.dispatchEvent(
-      new CustomEvent('henry_secretary_prompt', { detail: { prompt: '', mode: 'secretary' } })
-    );
-    setCurrentView('chat');
+  function applyTemplate(tmplPrompt: string) {
+    setPrompt(tmplPrompt);
+    document.getElementById('prompt-input')?.focus();
   }
+
+  function copyOutput() {
+    navigator.clipboard?.writeText(output).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  function sendToChat() {
+    import('../../actions/store/chatBridgeStore').then(({ sendToHenry }) => {
+      sendToHenry(prompt + (context ? '\n\n' + context : ''));
+      setCurrentView('chat');
+    });
+  }
+
+  const inputCls = "w-full bg-henry-surface border border-henry-border/30 rounded-xl px-3 py-2.5 text-sm text-henry-text placeholder:text-henry-text-muted outline-none focus:border-henry-accent/50 transition-colors resize-none";
 
   return (
-    <div className="h-full flex flex-col bg-henry-bg overflow-hidden">
+    <div className="flex flex-col h-full bg-henry-bg overflow-y-auto">
       {/* Header */}
-      <div className="shrink-0 px-4 sm:px-8 pt-6 sm:pt-8 pb-5 sm:pb-6 border-b border-henry-border/30">
-        <div className="max-w-3xl">
-          <div className="flex items-center gap-3 mb-1">
-            <span className="text-2xl">🗓️</span>
-            <div className="flex items-center justify-between w-full">
-                <h1 className="text-lg font-semibold text-henry-text">Secretary</h1>
-                <button
-                onClick={() => PANEL_QUICK_ASK.secretary()}
-                className="text-[11px] px-3 py-1.5 rounded-lg bg-henry-accent/10 text-henry-accent hover:bg-henry-accent/20 transition-all"
-              >🧠 Ask Henry</button>
-              </div>
-          </div>
-          <p className="text-henry-text-dim text-sm leading-relaxed">
-            {greeting} {dayLabel}. What needs handling?
-          </p>
-        </div>
+      <div className="px-6 pt-5 pb-3 border-b border-henry-border/20 flex-shrink-0">
+        <h1 className="text-lg font-bold text-henry-text">Secretary</h1>
+        <p className="text-[11px] text-henry-text-muted mt-0.5">Draft emails, prepare briefs, extract action items</p>
       </div>
 
-      {/* Quick actions grid */}
-      <div className="flex-1 overflow-y-auto px-4 sm:px-8 py-5 sm:py-6">
-        <div className="max-w-3xl">
-          <p className="text-[11px] font-medium text-henry-text-muted uppercase tracking-wider mb-4">
-            Quick actions
-          </p>
+      {/* Tabs */}
+      <div className="flex gap-1 px-6 py-3 border-b border-henry-border/20 flex-shrink-0">
+        {(Object.keys(TAB_LABELS) as SecTab[]).map(t => (
+          <button key={t} onClick={() => { setTab(t); setPrompt(''); setContext(''); setOutput(''); }}
+            className={'text-[12px] px-3 py-1.5 rounded-lg font-medium transition-all ' +
+              (tab===t ? 'bg-henry-accent text-white' : 'bg-henry-surface border border-henry-border/30 text-henry-text-muted hover:text-henry-text')}>
+            {TAB_LABELS[t]}
+          </button>
+        ))}
+      </div>
 
-          <div className="grid grid-cols-2 gap-3 mb-8">
-            {quickActions.map((action) => (
-              <button
-                key={action.title}
-                onClick={() => launchAction(action)}
-                className={`group text-left p-4 rounded-xl border bg-gradient-to-br ${action.color} transition-all duration-150 hover:shadow-lg hover:shadow-black/10`}
-              >
-                <div className="flex items-start gap-3">
-                  <span className="text-xl leading-none mt-0.5">{action.icon}</span>
-                  <div className="min-w-0">
-                    <div className="text-sm font-medium text-henry-text group-hover:text-white transition-colors">
-                      {action.title}
-                    </div>
-                    <div className="text-xs text-henry-text-dim mt-0.5 leading-relaxed">
-                      {action.description}
-                    </div>
-                  </div>
-                  <svg
-                    className="ml-auto w-3.5 h-3.5 text-henry-text-muted group-hover:text-henry-accent transition-colors shrink-0 mt-0.5"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  >
-                    <path d="M5 12h14M12 5l7 7-7 7" />
-                  </svg>
-                </div>
+      <div className="flex-1 px-6 py-4 space-y-4 max-w-2xl">
+        {/* Template chips */}
+        <div>
+          <p className="text-[10px] uppercase tracking-wider text-henry-text-muted mb-2">Quick start</p>
+          <div className="flex flex-wrap gap-2">
+            {TEMPLATES[tab].map(t => (
+              <button key={t.label} onClick={() => applyTemplate(t.prompt)}
+                className="text-[11px] px-3 py-1.5 rounded-full bg-henry-surface border border-henry-border/30 text-henry-text-muted hover:text-henry-accent hover:border-henry-accent/40 transition-all">
+                {t.label}
               </button>
             ))}
           </div>
-
-          {/* Open-ended secretary chat */}
-          <div className="border border-henry-border/30 rounded-xl p-5 bg-henry-surface/30">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-henry-text mb-0.5">Open secretary chat</p>
-                <p className="text-xs text-henry-text-dim">
-                  Tell Henry exactly what you need — he'll handle it.
-                </p>
-              </div>
-              <button
-                onClick={openSecretaryChat}
-                className="shrink-0 flex items-center gap-2 px-4 py-2 rounded-lg bg-henry-accent/10 text-henry-accent text-xs font-medium hover:bg-henry-accent/20 transition-colors border border-henry-accent/20"
-              >
-                Start
-                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M5 12h14M12 5l7 7-7 7" />
-                </svg>
-              </button>
-            </div>
-          </div>
-
-          {/* What Henry can handle */}
-          <div className="mt-6">
-            <p className="text-[11px] font-medium text-henry-text-muted uppercase tracking-wider mb-3">
-              What Henry handles in secretary mode
-            </p>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {[
-                'Email drafts (BLUF)',
-                'Calendar scheduling',
-                'Meeting agendas',
-                'Task triage',
-                'Follow-up messages',
-                'Pre-meeting briefs',
-                'Weekly planning',
-                'Delegate + track',
-                'Daily briefings',
-              ].map((cap) => (
-                <div
-                  key={cap}
-                  className="text-xs text-henry-text-dim px-3 py-1.5 rounded-lg bg-henry-surface/30 border border-henry-border/20"
-                >
-                  {cap}
-                </div>
-              ))}
-            </div>
-          </div>
         </div>
+
+        {/* Prompt */}
+        <div>
+          <label className="text-[10px] uppercase tracking-wider text-henry-text-muted mb-1.5 block">
+            {tab === 'draft' ? 'What should I draft?' : tab === 'brief' ? 'What should I prepare a brief for?' : tab === 'followup' ? 'Follow up on what?' : 'What should I summarize?'}
+          </label>
+          <textarea id="prompt-input" value={prompt} onChange={e => setPrompt(e.target.value)} rows={2}
+            placeholder={tab === 'draft' ? 'e.g. "Write a follow-up email to John Smith about the web design proposal"' :
+              tab === 'brief' ? 'e.g. "Prepare a brief for my Monday meeting with the MixedMaker client"' :
+              tab === 'followup' ? 'e.g. "Action items from my call with the marketing team"' :
+              'e.g. "Summarize this client contract"'}
+            className={inputCls} />
+        </div>
+
+        {/* Context */}
+        <div>
+          <label className="text-[10px] uppercase tracking-wider text-henry-text-muted mb-1.5 block">
+            Context / paste text here (optional)
+          </label>
+          <textarea value={context} onChange={e => setContext(e.target.value)} rows={4}
+            placeholder="Paste emails, notes, meeting transcripts, or any relevant context…"
+            className={inputCls} />
+        </div>
+
+        {/* Generate button */}
+        <div className="flex gap-2">
+          <button onClick={generate} disabled={loading || !prompt.trim()}
+            className="flex-1 py-3 rounded-xl bg-henry-accent text-white font-bold text-sm hover:bg-henry-accent/80 disabled:opacity-40 transition-all">
+            {loading ? 'Henry is writing…' : `Generate ${tab === 'draft' ? 'Draft' : tab === 'brief' ? 'Brief' : tab === 'followup' ? 'Follow-up' : 'Summary'}`}
+          </button>
+          <button onClick={sendToChat} className="px-4 py-3 rounded-xl bg-henry-surface border border-henry-border/30 text-henry-text-muted text-sm hover:text-henry-text transition-all">
+            Chat →
+          </button>
+        </div>
+
+        {/* Output */}
+        {output && (
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[10px] uppercase tracking-wider text-henry-text-muted">Output</p>
+              <div className="flex gap-2">
+                <button onClick={copyOutput} className={'text-[11px] px-3 py-1 rounded-lg border transition-all ' + (copied ? 'bg-green-500/10 border-green-500/30 text-green-400' : 'border-henry-border/30 text-henry-text-muted hover:text-henry-text')}>
+                  {copied ? '✓ Copied' : 'Copy'}
+                </button>
+                <button onClick={() => setOutput('')} className="text-[11px] px-2 py-1 rounded-lg text-henry-text-muted hover:text-red-400 transition-all">✕</button>
+              </div>
+            </div>
+            <textarea ref={outputRef} value={output} onChange={e => setOutput(e.target.value)} rows={14}
+              className={inputCls + ' font-mono text-xs leading-relaxed'} />
+          </div>
+        )}
       </div>
     </div>
   );

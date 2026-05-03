@@ -137,6 +137,14 @@ contextBridge.exposeInMainWorld('henryAPI', {
   // Self-repair / health
   runDiagnostic: () => ipcRenderer.invoke('henry:diagnostic:run'),
   getLastDiagnostic: () => ipcRenderer.invoke('henry:diagnostic:last'),
+  // Lists
+  listsAll: () => ipcRenderer.invoke('lists:all'),
+  listsSave: (list: Record<string,unknown>) => ipcRenderer.invoke('lists:save', list),
+  listsDelete: (id: string) => ipcRenderer.invoke('lists:delete', id),
+  listsAddItem: (listId: string, item: Record<string,unknown>) => ipcRenderer.invoke('lists:add-item', listId, item),
+  listsToggleItem: (itemId: string) => ipcRenderer.invoke('lists:toggle-item', itemId),
+  listsDeleteItem: (itemId: string) => ipcRenderer.invoke('lists:delete-item', itemId),
+  listsClearDone: (listId: string) => ipcRenderer.invoke('lists:clear-done', listId),
   // Contacts / CRM
   contactsList: (query?: string) => ipcRenderer.invoke('contacts:list', query),
   contactsGet: (id: string) => ipcRenderer.invoke('contacts:get', id),

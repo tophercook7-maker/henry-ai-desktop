@@ -992,6 +992,13 @@ export function registerMemoryHandlers(database: Database.Database) {
   });
 
   // ── Personal Tasks ────────────────────────────────────────────────────────
+  db.prepare(`CREATE TABLE IF NOT EXISTS personal_tasks (
+    id TEXT PRIMARY KEY, title TEXT NOT NULL, notes TEXT,
+    status TEXT NOT NULL DEFAULT 'todo' CHECK(status IN ('todo','doing','done')),
+    priority INTEGER NOT NULL DEFAULT 2, due_at TEXT,
+    created_at TEXT NOT NULL, completed_at TEXT
+  )`).run();
+
   ipcMain.handle('tasks:list', (_e, filter?: { status?: string }) => {
     try {
       let sql = 'SELECT * FROM personal_tasks';
@@ -1191,6 +1198,64 @@ export function registerMemoryHandlers(database: Database.Database) {
       const now = new Date().toISOString();
       return db.prepare("SELECT * FROM reminders WHERE due_at <= ? AND done=0 AND notified_at IS NULL").all(now);
     } catch { return []; }
+  });
+
+  // ── Lists ─────────────────────────────────────────────────────────────────
+  db.prepare(`CREATE TABLE IF NOT EXISTS lists (
+    id TEXT PRIMARY KEY, name TEXT NOT NULL, icon TEXT DEFAULT '📝',
+    color TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+  )`).run();
+  db.prepare(`CREATE TABLE IF NOT EXISTS list_items (
+    id TEXT PRIMARY KEY, list_id TEXT NOT NULL, text TEXT NOT NULL,
+    done INTEGER DEFAULT 0, position INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (list_id) REFERENCES lists(id) ON DELETE CASCADE
+  )`).run();
+
+  ipcMain.handle('lists:all', () => {
+    try {
+      const allLists = db.prepare("SELECT * FROM lists ORDER BY updated_at DESC").all() as {id:string;name:string;icon:string;color:string;created_at:string;updated_at:string}[];
+      return allLists.map(l => ({
+        ...l,
+        items: db.prepare("SELECT * FROM list_items WHERE list_id=? ORDER BY done ASC, position ASC, created_at ASC").all(l.id)
+      }));
+    } catch { return []; }
+  });
+  ipcMain.handle('lists:save', (_e, list: Record<string,unknown>) => {
+    try {
+      const now = new Date().toISOString();
+      db.prepare("INSERT OR REPLACE INTO lists (id,name,icon,color,created_at,updated_at) VALUES (?,?,?,?,COALESCE((SELECT created_at FROM lists WHERE id=?),?),?)")
+        .run(list.id, list.name, list.icon||'📝', list.color||null, list.id, now, now);
+      return { ok: true };
+    } catch (e) { return { ok: false, error: String(e) }; }
+  });
+  ipcMain.handle('lists:delete', (_e, id: string) => {
+    try { db.prepare("DELETE FROM lists WHERE id=?").run(id); return { ok: true }; }
+    catch (e) { return { ok: false, error: String(e) }; }
+  });
+  ipcMain.handle('lists:add-item', (_e, listId: string, item: Record<string,unknown>) => {
+    try {
+      const now = new Date().toISOString();
+      const pos = (db.prepare("SELECT COUNT(*) as c FROM list_items WHERE list_id=?").get(listId) as {c:number}).c;
+      db.prepare("INSERT INTO list_items (id,list_id,text,done,position,created_at) VALUES (?,?,?,0,?,?)")
+        .run(item.id, listId, item.text, pos, now);
+      db.prepare("UPDATE lists SET updated_at=? WHERE id=?").run(now, listId);
+      return { ok: true };
+    } catch (e) { return { ok: false, error: String(e) }; }
+  });
+  ipcMain.handle('lists:toggle-item', (_e, itemId: string) => {
+    try {
+      db.prepare("UPDATE list_items SET done = CASE done WHEN 0 THEN 1 ELSE 0 END WHERE id=?").run(itemId);
+      return { ok: true };
+    } catch (e) { return { ok: false, error: String(e) }; }
+  });
+  ipcMain.handle('lists:delete-item', (_e, itemId: string) => {
+    try { db.prepare("DELETE FROM list_items WHERE id=?").run(itemId); return { ok: true }; }
+    catch (e) { return { ok: false, error: String(e) }; }
+  });
+  ipcMain.handle('lists:clear-done', (_e, listId: string) => {
+    try { db.prepare("DELETE FROM list_items WHERE list_id=? AND done=1").run(listId); return { ok: true }; }
+    catch (e) { return { ok: false, error: String(e) }; }
   });
 }
 
