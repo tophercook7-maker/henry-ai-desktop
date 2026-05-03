@@ -21,6 +21,7 @@ import {
   HENRY_OPERATING_MODES,
   type HenryOperatingMode,
   isHenryOperatingMode,
+  buildGroqFreeSystemPrompt,
 } from '@/henry/charter';
 import {
   classifyMessageIntent,
@@ -1394,6 +1395,7 @@ export default function ChatView() {
     };
 
     // ── Build system prompt for this tier ────────────────────────────────────
+
     let systemPrompt: string;
     if (customModeOverride?.systemPrompt) {
       systemPrompt = `${customModeOverride.systemPrompt}\n\n${memoryContext ? `## Memory Context\n${memoryContext}` : ''}`;
@@ -1505,6 +1507,70 @@ export default function ChatView() {
     ];
 
     const apiKey = provider.api_key || provider.apiKey || '';
+
+    // GROQ FREE TIER: bypass the full charter — use a minimal ~400 token prompt
+    if (companionProvider === 'groq') {
+      const minimalSys = buildGroqFreeSystemPrompt(effectiveMode);
+      const messagesPayloadGroq: HenryAIMessage[] = [
+        { role: 'system', content: minimalSys },
+        ...guardedHistory.map((m) => ({
+          role: m.role as HenryAIMessage['role'],
+          content: m.content,
+        })),
+        { role: 'user', content },
+      ];
+      // Hard cap total to 2000 chars per slot for safety
+      if (messagesPayloadGroq.length > 1) {
+        let budget = 6000;
+        const sys0 = messagesPayloadGroq[0];
+        const conv = messagesPayloadGroq.slice(1, -1);
+        const last = messagesPayloadGroq[messagesPayloadGroq.length - 1];
+        const kept: HenryAIMessage[] = [];
+        for (let i = conv.length - 1; i >= 0; i--) {
+          if (conv[i].content.length <= budget) { kept.unshift(conv[i]); budget -= conv[i].content.length; }
+        }
+        messagesPayloadGroq.splice(0, messagesPayloadGroq.length, sys0, ...kept, last);
+      }
+      const groqStream = window.henryAPI.streamMessage({
+        provider: companionProvider,
+        model: companionModel,
+        apiKey,
+        messages: messagesPayloadGroq,
+        temperature: 0.7,
+        maxTokens: 1024,
+      });
+      streamRef.current = groqStream;
+      groqStream.onChunk((chunk: string) => { appendStreamingContent(chunk); });
+      groqStream.onError((error: string) => {
+        let errorContent: string;
+        if (/tokens per minute|token.*limit|limit.*token|request too large|tpm/i.test(error)) {
+          errorContent = '**Groq rate limit hit.** Start a **New Chat** to clear context, or wait 60 seconds.';
+        } else if (/401|invalid.*key|incorrect api/i.test(error)) {
+          errorContent = '**Groq rejected the key.** Go to **Settings → AI Providers → Groq** and re-enter your key.';
+        } else {
+          errorContent = `**Groq error:** ${error}`;
+        }
+        addMessage({ id: crypto.randomUUID(), conversation_id: convId, role: 'assistant', content: errorContent, engine: 'companion', created_at: new Date().toISOString() });
+        setStreamingContent(''); setIsStreaming(false); setCompanionStatus({ status: 'idle' });
+      });
+      groqStream.onDone(async (fullText: string) => {
+        // Save the message and finalize
+        setStreamingContent('');
+        if (!fullText?.trim()) {
+          addMessage({ id: crypto.randomUUID(), conversation_id: convId, role: 'assistant' as const,
+            content: "Henry didn't respond. The message may have been too long or Groq hit a rate limit. Try a **New Chat**.",
+            engine: 'companion', created_at: new Date().toISOString() } as any);
+        } else {
+          const assistantMsg = { id: crypto.randomUUID(), conversation_id: convId, role: 'assistant' as const,
+            content: fullText, engine: 'companion', created_at: new Date().toISOString() } as any;
+          addMessage(assistantMsg);
+          try { await window.henryAPI.saveMessage(assistantMsg); } catch { /* ignore */ }
+        }
+        setIsStreaming(false);
+        setCompanionStatus({ status: 'idle' });
+      });
+      return;
+    }
 
     // ── HTTPS + Ollama guard ────────────────────────────────────────────────
     // Browsers silently block HTTP requests from HTTPS pages (mixed content).

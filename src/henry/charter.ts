@@ -800,6 +800,37 @@ export function buildMediumSystemPrompt(
 }
 
 /**
+ * GROQ FREE TIER system prompt — hard limit 400 tokens total.
+ * Groq free tier: 12,000-20,000 TPM. Henry's full charter is 12,000+ tokens.
+ * This replaces the charter entirely for Groq to guarantee it fits.
+ */
+export function buildGroqFreeSystemPrompt(mode: HenryOperatingMode): string {
+  const ownerName = safeLocalGet('henry:owner_name')?.trim() || 'you';
+  const macUsername = safeLocalGet('henry:mac_username')?.trim() || '';
+  const macHome = safeLocalGet('henry:mac_home')?.trim() || '';
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+
+  const line2 = dateStr + ' · ' + timeStr + (macUsername ? ' · Mac: ' + macUsername : '');
+  const lines = [
+    `You are Henry, ${ownerName}'s personal AI — direct, honest, action-oriented.`,
+    line2,
+    '',
+    'Be specific and actionable. Lead with the most useful thing. Skip filler phrases.',
+    'Execute computer commands immediately when asked. One-line result report after.',
+  ];
+
+  if (mode === 'biblical') {
+    lines.push('Biblical study mode: support scripture study, theology, and spiritual reflection.');
+  } else if (mode === 'writer') {
+    lines.push('Writer mode: help draft, edit, and improve documents.');
+  }
+
+  return lines.join('\n');
+}
+
+/**
  * Compact capability summary for "awareness" questions.
  * Replaces dumping the full capability block (saves ~800 tokens).
  */
