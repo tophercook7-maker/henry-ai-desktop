@@ -122,6 +122,12 @@ contextBridge.exposeInMainWorld('henryAPI', {
   // Self-repair / health
   runDiagnostic: () => ipcRenderer.invoke('henry:diagnostic:run'),
   getLastDiagnostic: () => ipcRenderer.invoke('henry:diagnostic:last'),
+  // Contacts / CRM
+  contactsList: (query?: string) => ipcRenderer.invoke('contacts:list', query),
+  contactsGet: (id: string) => ipcRenderer.invoke('contacts:get', id),
+  contactsCreate: (c: Record<string,unknown>) => ipcRenderer.invoke('contacts:create', c),
+  contactsUpdate: (id: string, patch: Record<string,unknown>) => ipcRenderer.invoke('contacts:update', id, patch),
+  contactsDelete: (id: string) => ipcRenderer.invoke('contacts:delete', id),
   // Personal tasks
   tasksList: (filter?: { status?: string }) => ipcRenderer.invoke('tasks:list', filter),
   tasksCreate: (task: Record<string, unknown>) => ipcRenderer.invoke('tasks:create', task),

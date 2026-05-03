@@ -78,6 +78,23 @@ export function registerMemoryHandlers(database: Database.Database) {
     importance?: number;
   }) => {
     try {
+      // Only save real extracted facts — never raw conversation messages
+      const BLOCKED_CATEGORIES = ['conversation', 'message', 'raw', 'chat'];
+      const factText = (fact.fact || '').trim();
+      const category = (fact.category || 'general').toLowerCase();
+
+      // Reject blocked categories
+      if (BLOCKED_CATEGORIES.includes(category)) return { skipped: true, reason: 'blocked category' };
+
+      // Reject raw-looking message text (questions, commands)
+      const rawPatterns = [/^(what|who|how|when|where|why|can you|do you|tell me|show me|i want|i need|please)/i, /\?$/, /^[a-z]/];
+      if (rawPatterns.slice(0,2).some(p => p.test(factText)) && !factText.includes(':')) {
+        return { skipped: true, reason: 'looks like raw message' };
+      }
+
+      // Minimum quality: must have a colon (structured fact like "Name: Topher") or be >= 15 chars of real info
+      if (factText.length < 10) return { skipped: true, reason: 'too short' };
+
       const convId = fact.conversationId || fact.conversation_id || null;
       const id = crypto.randomUUID();
       db.prepare(`
@@ -1013,6 +1030,65 @@ export function registerMemoryHandlers(database: Database.Database) {
 
   ipcMain.handle('tasks:delete', (_e, id: string) => {
     try { db.prepare('DELETE FROM personal_tasks WHERE id=?').run(id); return { ok: true }; }
+    catch (e) { return { ok: false, error: String(e) }; }
+  });
+
+  // ── Contacts / CRM ────────────────────────────────────────────────────────
+  db.prepare(`CREATE TABLE IF NOT EXISTS contacts (
+    id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT, phone TEXT,
+    company TEXT, role TEXT, notes TEXT, tags TEXT DEFAULT '[]',
+    last_contact TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+  )`).run();
+
+  ipcMain.handle('contacts:list', (_e, query?: string) => {
+    try {
+      if (query && query.trim()) {
+        return db.prepare(`SELECT * FROM contacts WHERE
+          name LIKE ? OR email LIKE ? OR company LIKE ? OR notes LIKE ?
+          ORDER BY name ASC LIMIT 50`)
+          .all(...Array(4).fill('%' + query.trim() + '%'));
+      }
+      return db.prepare('SELECT * FROM contacts ORDER BY name ASC').all();
+    } catch (e) { return []; }
+  });
+
+  ipcMain.handle('contacts:get', (_e, id: string) => {
+    try { return db.prepare('SELECT * FROM contacts WHERE id=?').get(id) || null; }
+    catch { return null; }
+  });
+
+  ipcMain.handle('contacts:create', (_e, c: Record<string,unknown>) => {
+    try {
+      const now = new Date().toISOString();
+      db.prepare(`INSERT INTO contacts (id,name,email,phone,company,role,notes,tags,last_contact,created_at,updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
+        .run(c.id,c.name,c.email||null,c.phone||null,c.company||null,c.role||null,
+             c.notes||null,JSON.stringify(c.tags||[]),c.last_contact||null,now,now);
+      return { ok: true };
+    } catch (e) { return { ok: false, error: String(e) }; }
+  });
+
+  ipcMain.handle('contacts:update', (_e, id: string, patch: Record<string,unknown>) => {
+    try {
+      const sets: string[] = [];
+      const vals: unknown[] = [];
+      const allowed = ['name','email','phone','company','role','notes','tags','last_contact'];
+      for (const k of allowed) {
+        if (patch[k] !== undefined) {
+          sets.push(k + '=?');
+          vals.push(k === 'tags' ? JSON.stringify(patch[k]) : patch[k]);
+        }
+      }
+      sets.push('updated_at=?'); vals.push(new Date().toISOString());
+      if (sets.length < 2) return { ok: true };
+      vals.push(id);
+      db.prepare('UPDATE contacts SET ' + sets.join(',') + ' WHERE id=?').run(...vals);
+      return { ok: true };
+    } catch (e) { return { ok: false, error: String(e) }; }
+  });
+
+  ipcMain.handle('contacts:delete', (_e, id: string) => {
+    try { db.prepare('DELETE FROM contacts WHERE id=?').run(id); return { ok: true }; }
     catch (e) { return { ok: false, error: String(e) }; }
   });
 }

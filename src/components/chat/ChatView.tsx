@@ -50,6 +50,7 @@ import { resolveChat, requiresQualityModel, modelShortName } from '@/henry/model
 import { speak as ttsSpeakFn, cancelTTS } from '@/henry/ttsService';
 import { recordUsage } from '@/henry/savingsEngine';
 import { runAutoMemory } from '@/henry/autoMemory';
+import { extractFactsFromConversation, addFacts, persistFactsToDb, buildMemoryContext } from '@/henry/memoryPipeline';
 import { getSmartSuggestions, type SmartSuggestion } from '@/henry/smartSuggestions';
 import { trackUsage } from '@/henry/henryAnalytics';
 import { shouldSummarize, buildSummaryPrompt, saveSessionSummary, getSessionSummary } from '@/henry/contextSummary';
@@ -1615,6 +1616,22 @@ export default function ChatView() {
           const totalTok = usage.total_tokens || (usage.input_tokens + (usage.output_tokens || 0));
           try { trackCost(companionModel, totalTok); } catch { /* ignore */ }
         }
+
+        // Extract facts from this exchange in the background (non-blocking)
+        void (async () => {
+          try {
+            const st = useStore.getState();
+            const groqKey = st.providers?.find((p: any) => p.id === 'groq')?.apiKey || '';
+            if (groqKey && messagesPayload.length >= 2) {
+              const recentMsgs = messagesPayload.slice(-6).map(m => ({ role: m.role, content: String(m.content || '') }));
+              const facts = await extractFactsFromConversation(recentMsgs, groqKey);
+              if (facts.length > 0) {
+                addFacts(facts);
+                await persistFactsToDb(facts);
+              }
+            }
+          } catch { /* non-critical — never block chat */ }
+        })();
         }
 
         // Action interceptor — detect and execute real computer actions from Henry's text

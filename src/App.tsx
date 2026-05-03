@@ -13,6 +13,7 @@ import { startSelfHealing, type HenryRepairEvent } from './henry/selfHealing';
 import { getTodayBriefing, saveBriefing, buildBriefingPrompt, getTodayKey } from './henry/proactiveBriefing';
 import { isNative } from './capacitor';
 import { checkAndNotify } from './henry/reminders';
+import { buildMemoryContext } from './henry/memoryPipeline';
 import { useCapturesStore } from './ambient/capturesStore';
 import { registerShortcuts, buildShortcuts } from './henry/keyboardShortcuts';
 import CompanionApp from './components/mobile/CompanionApp';
@@ -185,16 +186,9 @@ export default function App() {
       let content = getTodayBriefing()?.content ?? null;
 
       if (!content) {
-        // Build context from memory facts
-        const facts: string[] = [];
-        try {
-          const raw = localStorage.getItem('henry:facts') || '[]';
-          const arr = JSON.parse(raw) as Array<{ content?: string; text?: string }>;
-          facts.push(...arr.slice(0, 20).map((f) => f.content || f.text || '').filter(Boolean));
-        } catch { /* ignore */ }
-
-        const factsStr = facts.slice(0, 10).join('\n');
-        const prompt = buildBriefingPrompt(factsStr);
+        // Build context from memory pipeline (structured facts)
+        const memoryCtx = buildMemoryContext();
+        const prompt = buildBriefingPrompt(memoryCtx);
 
         // Build a simple non-streaming AI call using the companion provider
         const st = useStore.getState();
