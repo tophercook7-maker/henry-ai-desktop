@@ -1068,7 +1068,11 @@ pairBtn.addEventListener('click', submitManualPair);
   if (path === '/sync/health' && req.method === 'GET') {
     // Health is public — allows mobile to check server is up before pairing
     let appVersion = '0.7.2';
-    try { const pkg = (await import('../../package.json')).default; appVersion = pkg.version || appVersion; } catch { /* ignore */ }
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const pkg = require('../../package.json') as { version?: string };
+      appVersion = pkg.version || appVersion;
+    } catch { /* ignore */ }
     jsonResponse(res, 200, { ok: true, version: appVersion, paired: !!validateToken(req) });
     return;
   }
@@ -1252,6 +1256,7 @@ pairBtn.addEventListener('click', submitManualPair);
     jsonResponse(res, 200, resp);
     return;
   }
+
 
   // All routes below require a valid token
   const deviceId = validateToken(req);

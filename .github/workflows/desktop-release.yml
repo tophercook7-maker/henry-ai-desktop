@@ -34,10 +34,16 @@ jobs:
       - name: Rebuild native modules for Electron
         run: npm run rebuild
 
+      - name: Clean up any stuck DMG volumes
+        run: |
+          hdiutil detach "/Volumes/Henry AI" 2>/dev/null || true
+          hdiutil detach "/Volumes/Henry AI 1" 2>/dev/null || true
+
       - name: Build Mac DMG (unsigned)
         run: npm run build:mac:unsigned
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEBUG: electron-builder
 
       - name: Upload Mac artifact
         uses: actions/upload-artifact@v4

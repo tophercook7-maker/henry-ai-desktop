@@ -44,24 +44,36 @@ const STUDY_PROMPTS = [
   'Walk me through this verse word by word',
 ];
 
-async function groqStudy(passage: string, text: string, prompt: string, providers: any[]): Promise<string> {
-  const groq = providers?.find((p: any) => p.id === 'groq');
-  if (!groq?.apiKey) return '⚠️ Add a Groq API key in Settings to study with Henry.';
-  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${groq.apiKey}` },
-    body: JSON.stringify({
-      model: 'llama-3.3-70b-versatile',
+async function henryStudy(passage: string, text: string, prompt: string, providers: any[], settings: Record<string,string>): Promise<string> {
+  // Pick best available provider: Groq → Ollama → error
+  const groq = providers?.find((p: any) => p.id === 'groq' && (p.api_key || p.apiKey || '').length > 10);
+  const ollama = providers?.find((p: any) => p.id === 'ollama' && p.enabled);
+  const provider = groq ? 'groq' : ollama ? 'ollama' : null;
+  if (!provider) return '⚠️ Add a Groq API key in Settings → AI Providers, or install Ollama, to study with Henry.';
+
+  const apiKey = provider === 'groq' ? (groq?.api_key || groq?.apiKey || '') : '';
+  const model = provider === 'groq'
+    ? (settings?.chat_fast_model || 'llama-3.1-8b-instant')  // use 8b for study (lower token usage)
+    : (settings?.companion_model || 'llama3.2:latest');
+  const ollamaUrl = settings?.ollama_base_url || 'http://127.0.0.1:11434';
+
+  const sys = 'You are a Bible study companion. Give clear, reverent, biblically grounded responses. Respect orthodox Christian tradition. Be concise but thoughtful.';
+
+  return new Promise((resolve, reject) => {
+    const stream = (window as any).henryAPI.streamMessage({
+      provider, model, apiKey,
       messages: [
-        { role: 'system', content: 'You are a thoughtful Bible study companion. Provide clear, reverent, biblically grounded responses. When discussing theology, respect orthodox Christian tradition. Be concise but deep.' },
-        { role: 'user', content: `Passage: ${passage}\n\nText: "${text}"\n\nQuestion: ${prompt}` },
+        { role: 'system', content: sys },
+        { role: 'user', content: 'Passage: ' + passage + '\n\nText: "' + text + '"\n\nQuestion: ' + prompt },
       ],
-      max_tokens: 800, temperature: 0.5,
-    }),
+      temperature: 0.5, maxTokens: 600,
+      apiUrl: provider === 'ollama' ? ollamaUrl : undefined,
+    });
+    let full = '';
+    stream.onChunk((c: string) => { full += c; });
+    stream.onDone(() => resolve(full || '(no response)'));
+    stream.onError((e: string) => reject(new Error(e)));
   });
-  if (!res.ok) throw new Error('Study request failed');
-  const d = await res.json() as { choices: { message: { content: string } }[] };
-  return d.choices?.[0]?.message?.content || '(no response)';
 }
 
 export default function ScripturePanel() {
@@ -147,7 +159,8 @@ export default function ScripturePanel() {
     if (!text) return;
     setStudyLoading(true); setStudyOutput('');
     try {
-      const out = await groqStudy(ref, text, prompt, providers || []);
+      const s = useStore.getState().settings;
+      const out = await henryStudy(ref, text, prompt, providers || [], s as Record<string,string>);
       setStudyOutput(out);
     } catch (e) { setStudyOutput('Error: ' + String(e)); }
     setStudyLoading(false);
