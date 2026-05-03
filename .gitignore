@@ -56,3 +56,7 @@ renderer/assets/
 dist/
 dist-electron/
 
+
+# macOS Finder copy artifacts (e.g. "file 2.tsx")
+*\ 2\.*
+*\ 3\.*
