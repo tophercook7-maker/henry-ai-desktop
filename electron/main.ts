@@ -4,6 +4,7 @@ import fs from 'fs';
 import { autoUpdater } from 'electron-updater';
 import { initDatabase } from './ipc/database';
 import { registerSettingsHandlers } from './ipc/settings';
+import { registerGoogleAuthHandlers } from './ipc/googleAuth';
 import { registerAIHandlers } from './ipc/ai';
 import { registerFilesystemHandlers } from './ipc/filesystem';
 import { registerTaskBrokerHandlers } from './ipc/taskBroker';
@@ -219,6 +220,7 @@ app.whenReady().then(() => {
   createWindow();
 
   registerSettingsHandlers(db, getMainWindow);
+  registerGoogleAuthHandlers(getMainWindow);
 
   // After any provider save, re-sync SQLite providers → localStorage so the renderer picks it up
   const origProvidersSave = ipcMain.listeners('providers:save');

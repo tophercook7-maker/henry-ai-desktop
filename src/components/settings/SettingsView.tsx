@@ -21,14 +21,119 @@ import {
 import { useDebugStore } from '../../henry/debugStore';
 import DeviceLinkPanel from './DeviceLinkPanel';
 
+import { getGoogleClientId, setGoogleClientId, getGoogleClientSecret, setGoogleClientSecret } from '../../henry/googleStore';
+
+// ── Google Tab ─────────────────────────────────────────────────────────────
+
+function GoogleTab() {
+  const [clientId, setClientIdState]   = useState(() => getGoogleClientId());
+  const [secret, setSecretState]       = useState(() => getGoogleClientSecret());
+  const [connecting, setConnecting]    = useState(false);
+  const [connected, setConnected]      = useState(false);
+  const [status, setStatus]            = useState('');
+
+  // Check current connection status
+  useState(() => {
+    const api = (window as any).henryAPI;
+    if (!api?.googleHasCredentials) return;
+    api.googleHasCredentials().then((has: boolean) => setConnected(has)).catch(() => {});
+  });
+
+  async function handleConnect() {
+    const id = clientId.trim();
+    const sec = secret.trim();
+    if (!id || !sec) { setStatus('Enter both Client ID and Client Secret first.'); return; }
+    setGoogleClientId(id);
+    setGoogleClientSecret(sec);
+    setConnecting(true); setStatus('Opening browser for Google sign-in…');
+    try {
+      const api = (window as any).henryAPI;
+      await api.googleStartAuth({
+        clientId: id,
+        clientSecret: sec,
+        scopes: [
+          'https://www.googleapis.com/auth/gmail.readonly',
+          'https://www.googleapis.com/auth/calendar.readonly',
+          'https://www.googleapis.com/auth/drive.readonly',
+        ],
+      });
+      setConnected(true);
+      setStatus('✓ Google connected — Gmail, Calendar, and Drive are now active.');
+    } catch (e) {
+      setStatus('Connection failed: ' + (e instanceof Error ? e.message : String(e)));
+    }
+    setConnecting(false);
+  }
+
+  async function handleDisconnect() {
+    const api = (window as any).henryAPI;
+    await api.googleDisconnect?.().catch(() => {});
+    setConnected(false);
+    setStatus('Disconnected.');
+  }
+
+  const inp = "w-full bg-henry-surface border border-henry-border/30 rounded-xl px-3 py-2.5 text-sm text-henry-text placeholder:text-henry-text-muted outline-none focus:border-henry-accent/50 transition-all font-mono";
+
+  return (
+    <div className="space-y-5">
+      <div className="bg-henry-accent/5 border border-henry-accent/20 rounded-xl p-4 space-y-3">
+        <p className="text-sm font-semibold text-henry-text">Connect Google Account</p>
+        <p className="text-[12px] text-henry-text-muted leading-relaxed">
+          Connect once to unlock Gmail, Google Calendar, and Google Drive in Henry.
+          Uses secure PKCE OAuth — your credentials never leave your Mac.
+        </p>
+        <div className="space-y-1">
+          {['Enable Gmail API, Google Calendar API, Google Drive API', 'Create OAuth 2.0 credentials → Desktop app', 'Copy Client ID and Client Secret below'].map((s,i) => (
+            <p key={i} className="text-[11px] text-henry-text-muted flex gap-2">
+              <span className="text-henry-accent">{i+1}.</span>{s}
+            </p>
+          ))}
+          <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer"
+            className="text-[11px] text-henry-accent underline hover:opacity-80 block mt-1">
+            Open Google Cloud Console →
+          </a>
+        </div>
+      </div>
+
+      {connected ? (
+        <div className="bg-green-400/5 border border-green-400/20 rounded-xl p-4 flex items-center justify-between">
+          <div>
+            <p className="text-sm font-semibold text-green-400">✓ Google Connected</p>
+            <p className="text-[11px] text-henry-text-muted mt-0.5">Gmail, Calendar, and Drive are active</p>
+          </div>
+          <button onClick={handleDisconnect} className="text-[11px] px-3 py-1.5 rounded-lg bg-henry-surface border border-henry-border/30 text-henry-text-muted hover:text-red-400 transition-all">Disconnect</button>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div>
+            <label className="text-[10px] uppercase tracking-wider text-henry-text-muted mb-1.5 block">Google Client ID</label>
+            <input value={clientId} onChange={e => setClientIdState(e.target.value)} placeholder="123456789-abc...apps.googleusercontent.com" className={inp} />
+          </div>
+          <div>
+            <label className="text-[10px] uppercase tracking-wider text-henry-text-muted mb-1.5 block">Client Secret</label>
+            <input type="password" value={secret} onChange={e => setSecretState(e.target.value)} placeholder="GOCSPX-…" className={inp} />
+          </div>
+          <button onClick={handleConnect} disabled={connecting || !clientId.trim() || !secret.trim()}
+            className="w-full py-3 rounded-xl bg-henry-accent text-white font-bold text-sm hover:bg-henry-accent/80 disabled:opacity-40 transition-all">
+            {connecting ? 'Opening browser…' : 'Connect Google Account →'}
+          </button>
+        </div>
+      )}
+
+      {status && <p className={`text-[12px] ${status.startsWith('✓') ? 'text-green-400' : 'text-henry-text-muted'}`}>{status}</p>}
+    </div>
+  );
+}
+
 export default function SettingsView() {
   const [activeTab, setActiveTab] = useState<
-    'providers' | 'engines' | 'voice' | 'general' | 'memory' | 'companion'
+    'providers' | 'engines' | 'voice' | 'general' | 'memory' | 'companion' | 'google'
   >('providers');
 
   const tabs = [
     { id: 'providers' as const, label: 'AI Providers' },
     { id: 'engines' as const, label: 'Engines' },
+    { id: 'google' as const, label: 'Google' },
     { id: 'voice' as const, label: 'Voice & Model' },
     { id: 'general' as const, label: 'General' },
     { id: 'memory' as const, label: 'Memory' },
@@ -64,6 +169,7 @@ export default function SettingsView() {
           {activeTab === 'general' && <GeneralTab />}
           {activeTab === 'memory' && <MemoryTab />}
           {activeTab === 'companion' && <CompanionTab />}
+          {activeTab === 'google' && <GoogleTab />}
         </div>
       </div>
     </div>

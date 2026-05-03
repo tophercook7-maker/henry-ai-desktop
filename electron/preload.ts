@@ -138,6 +138,13 @@ contextBridge.exposeInMainWorld('henryAPI', {
   // Self-repair / health
   runDiagnostic: () => ipcRenderer.invoke('henry:diagnostic:run'),
   getLastDiagnostic: () => ipcRenderer.invoke('henry:diagnostic:last'),
+  // Google OAuth (PKCE desktop flow)
+  googleStartAuth: (opts: { clientId: string; clientSecret: string; scopes: string[] }) =>
+    ipcRenderer.invoke('google:startAuth', opts),
+  googleGetToken: () => ipcRenderer.invoke('google:getToken'),
+  googleRefreshToken: () => ipcRenderer.invoke('google:refreshToken'),
+  googleHasCredentials: () => ipcRenderer.invoke('google:hasCredentials'),
+  googleDisconnect: () => ipcRenderer.invoke('google:disconnect'),
   // Recordings (Meeting Recorder → SQLite)
   recordingsList: () => ipcRenderer.invoke('recordings:list'),
   recordingsGet: (id: string) => ipcRenderer.invoke('recordings:get', id),
