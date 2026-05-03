@@ -1,8 +1,7 @@
-import { app, BrowserWindow, shell, ipcMain , Notification } from 'electron';
+import { app, BrowserWindow, shell, ipcMain, Notification, Tray, Menu, MenuItem, globalShortcut, nativeImage } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { autoUpdater } from 'electron-updater';
-import { Menu, MenuItem } from 'electron';
 import { initDatabase } from './ipc/database';
 import { registerSettingsHandlers } from './ipc/settings';
 import { registerAIHandlers } from './ipc/ai';
@@ -32,6 +31,7 @@ process.on('uncaughtException', (err) => {
 
 
 let mainWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
 
 export function getMainWindow(): BrowserWindow | null {
   if (mainWindow && !mainWindow.isDestroyed()) return mainWindow;

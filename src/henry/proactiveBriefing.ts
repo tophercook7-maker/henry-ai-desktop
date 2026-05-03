@@ -61,7 +61,39 @@ export function setGenerating(v: boolean): void {
   }
 }
 
-export function buildBriefingPrompt(facts: string): string {
+/**
+ * Pull today's real data from SQLite for a richer briefing context.
+ * Returns a formatted context string for the briefing prompt.
+ */
+export async function buildLiveContext(): Promise<string> {
+  const api = (window as any).henryAPI;
+  if (!api) return '';
+  try {
+    const [tasks, reminders, finance] = await Promise.all([
+      api.tasksList({ status: 'todo' }).catch(() => []),
+      api.remindersDue().catch(() => []),
+      api.financeSummary(new Date().toISOString().slice(0, 7)).catch(() => null),
+    ]);
+    const lines: string[] = [];
+    if ((tasks || []).length > 0) {
+      const titles = (tasks as {title:string}[]).slice(0, 4).map(t => '• ' + t.title).join('\n');
+      lines.push('Open tasks:\n' + titles);
+    }
+    if ((reminders || []).length > 0) {
+      const rems = (reminders as {title:string;due_at:string}[]).slice(0, 3)
+        .map(r => '• ' + r.title + ' (due ' + r.due_at.slice(0,10) + ')').join('\n');
+      lines.push('Due reminders:\n' + rems);
+    }
+    if (finance && (finance.income > 0 || finance.expenses > 0)) {
+      lines.push(`This month: income $${finance.income.toFixed(0)}, expenses $${finance.expenses.toFixed(0)}, net $${finance.net.toFixed(0)}`);
+    }
+        return lines.join('\n\n');
+  } catch {
+    return '';
+  }
+}
+
+export function buildBriefingPrompt(facts: string, liveContext?: string): string {
   const now = new Date();
   const dateStr = now.toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',

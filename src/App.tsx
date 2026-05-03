@@ -82,6 +82,13 @@ export default function App() {
     // Sync reminders from SQLite to localStorage on startup
     void syncRemindersFromDb().catch(() => {});
 
+    // Tray navigation — handle 'navigate' IPC from tray menu
+    const handleNavigate = (_e: Event, view: string) => {
+      useStore.getState().setCurrentView(view as any);
+    };
+    (window as any).electron?.ipcRenderer?.on('navigate', handleNavigate);
+    return () => { (window as any).electron?.ipcRenderer?.off('navigate', handleNavigate); };
+
     // Check reminders every minute for due notifications
     const reminderInterval = setInterval(() => {
       try { checkAndNotify(); } catch { /* non-critical */ }

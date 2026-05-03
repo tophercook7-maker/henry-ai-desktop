@@ -1,7 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { useStore } from '../../store';
-import { getDailyCost } from '../../henry/gateway';
-import { getTodayBriefing, getTodayKey, saveBriefing, setGenerating, isGenerating, buildBriefingPrompt, buildLiveContext } from '../../henry/proactiveBriefing';
+import { getTodayBriefing, getTodayKey, saveBriefing, setGenerating, isGenerating, buildBriefingPrompt } from '../../henry/proactiveBriefing';
 import type { DailyBriefing } from '../../henry/proactiveBriefing';
 import { getDailyIntention, setDailyIntention, clearDailyIntention } from '../../henry/dailyIntention';
 import { PANEL_QUICK_ASK } from '../../henry/henryQuickAsk';
@@ -26,31 +25,6 @@ export default function TodayPanel() {
   const [briefing, setBriefing] = useState<DailyBriefing | null>(() => getTodayBriefing());
   const [generatingBriefing, setGeneratingBriefing] = useState(false);
   const [briefingExpanded, setBriefingExpanded] = useState(true);
-  const [dailyCost] = useState(() => getDailyCost());
-  const [liveData, setLiveData] = useState<{
-    dueTasks: number; dueReminders: number; focusToday: number;
-    income: number; expenses: number;
-  }>({ dueTasks: 0, dueReminders: 0, focusToday: 0, income: 0, expenses: 0 });
-
-  // Pull live data from SQLite
-  useState(() => {
-    const api = (window as any).henryAPI;
-    if (!api) return;
-    Promise.all([
-      api.tasksList({ status: 'todo' }).catch(() => []),
-      api.remindersDue().catch(() => []),
-      api.focusStats().catch(() => ({ todayMins: 0 })),
-      api.financeSummary(new Date().toISOString().slice(0,7)).catch(() => ({ income: 0, expenses: 0 })),
-    ]).then(([tasks, reminders, focus, finance]: any[]) => {
-      setLiveData({
-        dueTasks: (tasks || []).length,
-        dueReminders: (reminders || []).length,
-        focusToday: focus?.todayMins || 0,
-        income: finance?.income || 0,
-        expenses: finance?.expenses || 0,
-      });
-    }).catch(() => {});
-  });
   const [henryReply, setHenryReply] = useState('');
   const [henryStreaming, setHenryStreaming] = useState(false);
   const [lastQuestion, setLastQuestion] = useState('');
@@ -88,8 +62,7 @@ export default function TodayPanel() {
           return f.slice(0, 20).map((x: any) => x.content || x.fact || '').filter(Boolean).join(', ');
         } catch { return ''; }
       })();
-      const liveCtx = await buildLiveContext().catch(() => '');
-      const prompt = buildBriefingPrompt(facts, liveCtx);
+      const prompt = buildBriefingPrompt(facts);
       let full = '';
       const stream = window.henryAPI.streamMessage({ provider, model, apiKey, messages: [{ role: 'user', content: prompt }], temperature: 0.7 });
       briefingStreamRef.current = stream;
@@ -240,60 +213,6 @@ export default function TodayPanel() {
                   >Clear</button>
                 </div>
               )}
-            </div>
-          </div>
-        )}
-
-        {/* Cost dashboard — shows today's AI spending vs GPT-4 */}
-        {/* Live Data Strip */}
-        {(liveData.dueTasks > 0 || liveData.dueReminders > 0 || liveData.focusToday > 0) && (
-          <div className="w-full mb-3 flex gap-2 flex-wrap">
-            {liveData.dueTasks > 0 && (
-              <div onClick={() => useStore.getState().setCurrentView('tasks')}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-henry-accent/10 border border-henry-accent/20 cursor-pointer hover:bg-henry-accent/20 transition-all">
-                <span className="text-henry-accent text-sm">☐</span>
-                <span className="text-xs text-henry-text">{liveData.dueTasks} tasks</span>
-              </div>
-            )}
-            {liveData.dueReminders > 0 && (
-              <div onClick={() => useStore.getState().setCurrentView('reminders')}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-400/10 border border-red-400/20 cursor-pointer hover:bg-red-400/20 transition-all">
-                <span className="text-red-400 text-sm">🔔</span>
-                <span className="text-xs text-henry-text">{liveData.dueReminders} due</span>
-              </div>
-            )}
-            {liveData.focusToday > 0 && (
-              <div onClick={() => useStore.getState().setCurrentView('focus')}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-green-400/10 border border-green-400/20 cursor-pointer hover:bg-green-400/20 transition-all">
-                <span className="text-green-400 text-sm">◈</span>
-                <span className="text-xs text-henry-text">{liveData.focusToday}m focus</span>
-              </div>
-            )}
-            {(liveData.income > 0 || liveData.expenses > 0) && (
-              <div onClick={() => useStore.getState().setCurrentView('finance')}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-henry-surface border border-henry-border/20 cursor-pointer hover:bg-henry-surface/80 transition-all">
-                <span className="text-henry-text-muted text-sm">◆</span>
-                <span className="text-xs text-henry-text">
-                  ${(liveData.income - liveData.expenses).toFixed(0)} net
-                </span>
-              </div>
-            )}
-          </div>
-        )}
-
-        {dailyCost.tokens > 0 && (
-          <div className="w-full mb-4 px-4 py-3 rounded-xl bg-henry-surface/30 border border-henry-border/20">
-            <div className="flex items-center justify-between mb-1">
-              <p className="text-[11px] font-medium text-henry-text-muted uppercase tracking-wide">Today's AI Cost</p>
-              <p className="text-[11px] text-green-400 font-medium">
-                Saved ${dailyCost.savedVsGpt4.toFixed(4)} vs GPT-4
-              </p>
-            </div>
-            <div className="flex items-baseline gap-2">
-              <p className="text-lg font-bold text-henry-text">
-                ${dailyCost.costUsd < 0.0001 ? '< $0.0001' : `$${dailyCost.costUsd.toFixed(4)}`}
-              </p>
-              <p className="text-[11px] text-henry-text-muted">{dailyCost.tokens.toLocaleString()} tokens · {dailyCost.topModel.replace('llama-','').replace('-versatile','').replace('-instant','')}</p>
             </div>
           </div>
         )}

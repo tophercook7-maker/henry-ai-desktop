@@ -1067,7 +1067,7 @@ pairBtn.addEventListener('click', submitManualPair);
 
   if (path === '/sync/health' && req.method === 'GET') {
     // Health is public — allows mobile to check server is up before pairing
-    jsonResponse(res, 200, { ok: true, version: '0.6.0', paired: !!validateToken(req) });
+    jsonResponse(res, 200, { ok: true, version: '0.6.1', paired: !!validateToken(req) });
     return;
   }
 
