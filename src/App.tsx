@@ -13,6 +13,7 @@ import { startSelfHealing, type HenryRepairEvent } from './henry/selfHealing';
 import { getTodayBriefing, saveBriefing, buildBriefingPrompt, getTodayKey } from './henry/proactiveBriefing';
 import { isNative } from './capacitor';
 import { checkAndNotify, syncFromDb as syncRemindersFromDb } from './henry/reminders';
+import OnboardingWizard, { shouldShowOnboarding } from './components/onboarding/OnboardingWizard';
 import { buildMemoryContext } from './henry/memoryPipeline';
 import { useCapturesStore } from './ambient/capturesStore';
 import { registerShortcuts, buildShortcuts } from './henry/keyboardShortcuts';
@@ -46,6 +47,7 @@ export default function App() {
   const [nudge, setNudge] = useState<HenryNudge | null>(null);
   const [repair, setRepair] = useState<HenryRepairEvent | null>(null);
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(() => shouldShowOnboarding());
   const [showSplash, setShowSplash] = useState(() => {
     // Only show splash on first launch of a session (not every time)
     const seen = sessionStorage.getItem('henry_splash_seen');

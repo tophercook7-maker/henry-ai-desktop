@@ -1,6 +1,6 @@
 {
   "name": "henry-ai-desktop",
-  "version": "0.3.3",
+  "version": "0.4.0",
   "description": "Henry AI \u2014 Local-first desktop AI operating system with dual-engine architecture",
   "main": "dist-electron/main.js",
   "author": "Henry AI",
@@ -116,25 +116,49 @@
       "node_modules/bindings/**/*",
       "node_modules/file-uri-to-path/**/*"
     ],
-    "publish": null,
+    "publish": {
+      "provider": "github",
+      "owner": "tophercook7-maker",
+      "repo": "henry-ai-desktop",
+      "releaseType": "release"
+    },
     "mac": {
       "target": [
-        "dmg",
-        "zip"
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
       ],
       "category": "public.app-category.productivity",
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",
-      "entitlementsInherit": "build/entitlements.mac.plist"
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "icon": "build/icon.icns",
+      "identity": null
     },
     "dmg": {
-      "backgroundColor": "#0a0a0f",
       "title": "Henry AI",
+      "backgroundColor": "#08080e",
+      "window": {
+        "width": 540,
+        "height": 380
+      },
       "contents": [
         {
           "x": 130,
-          "y": 220
+          "y": 220,
+          "type": "file"
         },
         {
           "x": 410,
@@ -164,7 +188,8 @@
       "node_modules/better-sqlite3/**/*",
       "node_modules/bindings/**/*",
       "node_modules/file-uri-to-path/**/*"
-    ]
+    ],
+    "afterSign": null
   },
   "type": "module"
 }

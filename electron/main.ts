@@ -331,12 +331,29 @@ app.whenReady().then(() => {
     }
   }, 3000);
 
+  // Check for updates 30 seconds after launch (silently)
+  setTimeout(() => {
+    try { autoUpdater.checkForUpdates().catch(() => {}); } catch { /* ignore */ }
+  }, 30_000);
+
+  // Check every 4 hours
+  setInterval(() => {
+    try { autoUpdater.checkForUpdates().catch(() => {}); } catch { /* ignore */ }
+  }, 4 * 60 * 60 * 1000);
+
   // ── Auto-updater ────────────────────────────────────────────────────────────
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.allowPrerelease = false;
 
-  autoUpdater.on('update-available', () => {
-    getMainWindow()?.webContents.send('updater:update-available');
+  autoUpdater.on('update-available', (info: any) => {
+    getMainWindow()?.webContents.send('updater:update-available', info);
+  });
+  autoUpdater.on('update-not-available', () => {
+    // Silently ignore — no need to notify
+  });
+  autoUpdater.on('download-progress', (progress: any) => {
+    getMainWindow()?.webContents.send('updater:progress', progress);
   });
   autoUpdater.on('update-downloaded', () => {
     getMainWindow()?.webContents.send('updater:update-downloaded');
