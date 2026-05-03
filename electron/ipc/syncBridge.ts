@@ -93,6 +93,40 @@ function stopTunnel(): void {
 let server: http.Server | null = null;
 let sseClients: SSEClient[] = [];
 const linkedDevices: Map<string, DeviceInfo> = new Map();
+
+// Simple fact extraction — finds key facts stated in conversation
+function extractAndSaveFacts(userText: string, aiText: string): void {
+  try {
+    const facts: string[] = [];
+    const combined = userText + ' ' + aiText;
+
+    // Name patterns
+    const nameM = userText.match(/my name is ([A-Z][a-z]+ [A-Z][a-z]+|[A-Z][a-z]+)/);
+    if (nameM) facts.push('User name: ' + nameM[1]);
+
+    // Location
+    const locM = userText.match(/i(?:'m| am) (?:in|from|based in) ([A-Z][a-zA-Z\s,]+)/);
+    if (locM) facts.push('User location: ' + locM[1].trim());
+
+    // Preferences stated
+    const prefM = userText.match(/i (?:prefer|like|love|hate|always|never) ([^.!?]+)/gi);
+    if (prefM) prefM.slice(0,2).forEach(m => facts.push('Preference: ' + m));
+
+    // Save to SQLite
+    if (facts.length > 0) {
+      const { v4: uuidv4 } = require('uuid') as typeof import('uuid');
+      const now = new Date().toISOString();
+      for (const fact of facts) {
+        try {
+          dbRun(
+            'INSERT OR IGNORE INTO memory_facts (id, fact, category, importance, created_at) VALUES (?,?,?,?,?)',
+            uuidv4(), fact, 'mobile', 2, now
+          );
+        } catch { /* duplicate or error, ignore */ }
+      }
+    }
+  } catch { /* ignore fact extraction errors */ }
+}
 const companionTokens: Map<string, string> = new Map(); // token → deviceId
 
 // Per-device context memory — tracks last action for "do it again" / "open that"
@@ -461,6 +495,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
     <span id="bar-name">Henry</span>
     <span id="bar-status">Connecting…</span>
     <button id="screen-btn" onclick="toggleScreen()">📺 Screen</button>
+  <button id="voice-btn" onclick="toggleVoice()" title="Toggle voice" style="background:none;border:none;font-size:16px;cursor:pointer;padding:2px 4px;opacity:0.5">🔇</button>
   </div>
   <div id="msgs" style="display:none"></div>
   <div id="quick" style="display:none">
@@ -1467,8 +1502,13 @@ pairBtn.addEventListener('click', submitManualPair);
             if (data === '[DONE]') {
               if (!doneSent) {
                 doneSent = true;
-                // Track AI response for intent resolution ("yes, do it", etc.)
+                // Track AI response for intent resolution
                 deviceContext.set(deviceId, { ...deviceContext.get(deviceId), lastAiResponse: fullText });
+
+                // Extract and save any facts from this exchange
+                try {
+                  extractAndSaveFacts(body.text || '', fullText);
+                } catch { /* non-critical */ }
                 // Strip "I can't access your computer" type responses — these shouldn't reach the user
                 let cleanText = fullText;
                 const cantPhrases = [
