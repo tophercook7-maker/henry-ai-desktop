@@ -119,6 +119,16 @@ contextBridge.exposeInMainWorld('henryAPI', {
   saveFact: (fact: Record<string, unknown>) => ipcRenderer.invoke('memory:saveFact', fact),
   // Generic invoke — for panels that need direct IPC access
   invoke: (channel: string, ...args: unknown[]) => ipcRenderer.invoke(channel, ...args),
+  // Finance
+  financeList: (month?: string) => ipcRenderer.invoke('finance:list', month),
+  financeAdd: (t: Record<string,unknown>) => ipcRenderer.invoke('finance:add', t),
+  financeDelete: (id: string) => ipcRenderer.invoke('finance:delete', id),
+  financeSummary: (month: string) => ipcRenderer.invoke('finance:summary', month),
+  // Journal
+  journalList: (search?: string) => ipcRenderer.invoke('journal:list', search),
+  journalGet: (id: string) => ipcRenderer.invoke('journal:get', id),
+  journalSave: (entry: Record<string,unknown>) => ipcRenderer.invoke('journal:save', entry),
+  journalDelete: (id: string) => ipcRenderer.invoke('journal:delete', id),
   // Self-repair / health
   runDiagnostic: () => ipcRenderer.invoke('henry:diagnostic:run'),
   getLastDiagnostic: () => ipcRenderer.invoke('henry:diagnostic:last'),

@@ -1091,6 +1091,74 @@ export function registerMemoryHandlers(database: Database.Database) {
     try { db.prepare('DELETE FROM contacts WHERE id=?').run(id); return { ok: true }; }
     catch (e) { return { ok: false, error: String(e) }; }
   });
+
+  // ── Finance ───────────────────────────────────────────────────────────────
+  db.prepare(`CREATE TABLE IF NOT EXISTS transactions (
+    id TEXT PRIMARY KEY, type TEXT NOT NULL, amount REAL NOT NULL,
+    category TEXT NOT NULL, description TEXT, date TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  )`).run();
+
+  ipcMain.handle('finance:list', (_e, month?: string) => {
+    try {
+      if (month) return db.prepare("SELECT * FROM transactions WHERE date LIKE ? ORDER BY date DESC").all(month + '%');
+      return db.prepare("SELECT * FROM transactions ORDER BY date DESC LIMIT 200").all();
+    } catch { return []; }
+  });
+  ipcMain.handle('finance:add', (_e, t: Record<string,unknown>) => {
+    try {
+      const now = new Date().toISOString();
+      db.prepare("INSERT INTO transactions (id,type,amount,category,description,date,created_at) VALUES (?,?,?,?,?,?,?)")
+        .run(t.id, t.type, t.amount, t.category, t.description||null, t.date, now);
+      return { ok: true };
+    } catch (e) { return { ok: false, error: String(e) }; }
+  });
+  ipcMain.handle('finance:delete', (_e, id: string) => {
+    try { db.prepare("DELETE FROM transactions WHERE id=?").run(id); return { ok: true }; }
+    catch (e) { return { ok: false, error: String(e) }; }
+  });
+  ipcMain.handle('finance:summary', (_e, month: string) => {
+    try {
+      const rows = db.prepare("SELECT type, SUM(amount) as total, category FROM transactions WHERE date LIKE ? GROUP BY type, category").all(month + '%') as {type:string;total:number;category:string}[];
+      const income = rows.filter(r=>r.type==='income').reduce((s,r)=>s+r.total,0);
+      const expenses = rows.filter(r=>r.type==='expense').reduce((s,r)=>s+r.total,0);
+      return { income, expenses, net: income-expenses, breakdown: rows };
+    } catch { return { income:0, expenses:0, net:0, breakdown:[] }; }
+  });
+
+  // ── Journal ───────────────────────────────────────────────────────────────
+  db.prepare(`CREATE TABLE IF NOT EXISTS journal_entries (
+    id TEXT PRIMARY KEY, date TEXT NOT NULL UNIQUE, title TEXT,
+    content TEXT NOT NULL, mood TEXT, tags TEXT DEFAULT '[]',
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+  )`).run();
+
+  ipcMain.handle('journal:list', (_e, search?: string) => {
+    try {
+      if (search?.trim()) {
+        return db.prepare("SELECT * FROM journal_entries WHERE content LIKE ? OR title LIKE ? ORDER BY date DESC LIMIT 50")
+          .all('%'+search+'%', '%'+search+'%');
+      }
+      return db.prepare("SELECT id,date,title,mood,tags,created_at FROM journal_entries ORDER BY date DESC LIMIT 100").all();
+    } catch { return []; }
+  });
+  ipcMain.handle('journal:get', (_e, id: string) => {
+    try { return db.prepare("SELECT * FROM journal_entries WHERE id=?").get(id) || null; }
+    catch { return null; }
+  });
+  ipcMain.handle('journal:save', (_e, entry: Record<string,unknown>) => {
+    try {
+      const now = new Date().toISOString();
+      db.prepare(`INSERT INTO journal_entries (id,date,title,content,mood,tags,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)
+        ON CONFLICT(date) DO UPDATE SET title=excluded.title,content=excluded.content,mood=excluded.mood,tags=excluded.tags,updated_at=excluded.updated_at`)
+        .run(entry.id||crypto.randomUUID(),entry.date,entry.title||null,entry.content,entry.mood||null,JSON.stringify(entry.tags||[]),now,now);
+      return { ok: true };
+    } catch (e) { return { ok: false, error: String(e) }; }
+  });
+  ipcMain.handle('journal:delete', (_e, id: string) => {
+    try { db.prepare("DELETE FROM journal_entries WHERE id=?").run(id); return { ok: true }; }
+    catch (e) { return { ok: false, error: String(e) }; }
+  });
 }
 
 // ── Bandwidth-aware context builder ───────────────────────────────────────────

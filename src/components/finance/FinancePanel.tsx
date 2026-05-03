@@ -1,210 +1,168 @@
-import { useState, useCallback, useEffect } from 'react';
-import {
-  loadEntries, saveEntry, deleteEntry, newEntry, getMonthSummaries, getCurrentMonthEntries,
-  formatCurrency, INCOME_CATEGORIES, EXPENSE_CATEGORIES,
-  type FinanceEntry, type EntryType,
-} from '../../henry/financeData';
+import { useState, useEffect } from 'react';
+import { sendToHenry } from '../../actions/store/chatBridgeStore';
 import { useStore } from '../../store';
-import { PANEL_QUICK_ASK } from '../../henry/henryQuickAsk';
 
-export default function FinancePanel() {
+interface Transaction { id:string; type:'income'|'expense'; amount:number; category:string; description?:string; date:string; created_at:string }
+interface Summary { income:number; expenses:number; net:number; breakdown:{type:string;total:number;category:string}[] }
+
+const api = (window as any).henryAPI;
+
+const EXPENSE_CATS = ['Housing','Food','Transport','Health','Business','Marketing','Software','Entertainment','Utilities','Shopping','Other'];
+const INCOME_CATS  = ['Client Work','Product Sales','Freelance','Investments','Grants','Affiliate','Other'];
+
+function fmt(n:number){ return '$'+Math.abs(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function monthKey(d=new Date()){ return d.toISOString().slice(0,7); }
+function monthLabel(k:string){ const [y,m]=k.split('-'); return new Date(+y,+m-1,1).toLocaleDateString('en-US',{month:'long',year:'numeric'}); }
+
+export default function FinancePanel(){
   const { setCurrentView } = useStore();
-  const [entries, setEntries] = useState<FinanceEntry[]>([]);
-  const [summaries, setSummaries] = useState(getMonthSummaries());
-  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
-  const [editing, setEditing] = useState<FinanceEntry | null>(null);
-  const [addType, setAddType] = useState<EntryType>('income');
-  const [showAll, setShowAll] = useState(false);
+  const [month, setMonth] = useState(monthKey());
+  const [txns, setTxns]   = useState<Transaction[]>([]);
+  const [summary, setSummary] = useState<Summary>({income:0,expenses:0,net:0,breakdown:[]});
+  const [form, setForm]   = useState({type:'expense' as 'income'|'expense', amount:'', category:EXPENSE_CATS[1], description:'', date:new Date().toISOString().slice(0,10)});
+  const [adding, setAdding] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  const [error, setError] = useState<string | null>(null);
-
-  const reload = useCallback(() => {
-    setEntries(loadEntries());
-    setSummaries(getMonthSummaries());
-  }, []);
-
-  useEffect(() => { reload(); }, [reload]);
-
-  const monthEntries = entries.filter((e) => e.date.startsWith(selectedMonth));
-  const monthIncome = monthEntries.filter((e) => e.type === 'income').reduce((s, e) => s + e.amount, 0);
-  const monthExpenses = monthEntries.filter((e) => e.type === 'expense').reduce((s, e) => s + e.amount, 0);
-  const monthNet = monthIncome - monthExpenses;
-
-  function handleSave() {
-    if (!editing || !editing.amount || !editing.description.trim()) return;
-    try { saveEntry(editing); setEditing(null); reload(); }
-    catch (e) { setError(e instanceof Error ? e.message : 'Failed to save entry'); }
+  async function load(){
+    setLoading(true);
+    const [list, sum] = await Promise.all([api.financeList(month), api.financeSummary(month)]);
+    setTxns(list as Transaction[]);
+    setSummary(sum as Summary);
+    setLoading(false);
   }
 
-  function handleAddQuick(type: EntryType) {
-    setAddType(type);
-    setEditing(newEntry(type));
+  useEffect(()=>{ void load(); },[month]);
+
+  async function handleAdd(e:React.FormEvent){
+    e.preventDefault();
+    const amt = parseFloat(form.amount);
+    if(!amt || amt<=0) return;
+    await api.financeAdd({ id:crypto.randomUUID(), type:form.type, amount:amt, category:form.category, description:form.description||null, date:form.date });
+    setForm(f=>({...f, amount:'', description:''}));
+    setAdding(false);
+    await load();
   }
 
-  function exportCSV() {
-    const header = 'Date,Type,Category,Description,Amount';
-    const rows = entries.map((e) => `${e.date},${e.type},${e.category},"${e.description}",${e.amount}`);
-    const blob = new Blob([header + '\n' + rows.join('\n')], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = 'henry-finance.csv'; a.click();
-    URL.revokeObjectURL(url);
+  async function handleDelete(id:string){
+    await api.financeDelete(id);
+    await load();
   }
 
-  function askHenry() {
-    const summary = `Current month (${selectedMonth}): Income ${formatCurrency(monthIncome)}, Expenses ${formatCurrency(monthExpenses)}, Net ${formatCurrency(monthNet)}. Top expense categories: ${
-      Object.entries(monthEntries.filter((e) => e.type === 'expense').reduce((acc, e) => { acc[e.category] = (acc[e.category] || 0) + e.amount; return acc; }, {} as Record<string, number>))
-        .sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, v]) => `${k} ${formatCurrency(v)}`).join(', ')
-    }.`;
-    const prompt = `Here's my financial snapshot for ${selectedMonth}:\n${summary}\n\nGive me an honest read on how this month looks and one or two concrete things I should do differently.`;
-    window.dispatchEvent(new CustomEvent('henry_mode_launch', { detail: { mode: 'companion', prompt } }));
+  function askHenry(){
+    const cats = summary.breakdown.filter(b=>b.type==='expense').sort((a,b)=>b.total-a.total).slice(0,4).map(b=>`${b.category}: ${fmt(b.total)}`).join(', ');
+    sendToHenry(`My finances for ${monthLabel(month)}: Income ${fmt(summary.income)}, Expenses ${fmt(summary.expenses)}, Net ${fmt(summary.net)}. Top expenses: ${cats}. Give me a brief analysis and one practical suggestion.`);
     setCurrentView('chat');
   }
 
-  const formatMonthLabel = (m: string) => new Date(m + '-02').toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  const months = Array.from({length:6},(_,i)=>{ const d=new Date(); d.setMonth(d.getMonth()-i); return monthKey(d); });
+  const expenseCats = summary.breakdown.filter(b=>b.type==='expense').sort((a,b)=>b.total-a.total);
+  const cats = form.type==='expense'?EXPENSE_CATS:INCOME_CATS;
 
-  return (
-    <div className="flex h-full bg-henry-bg">
-      {/* Main content */}
-      <div className={`flex flex-col flex-1 min-h-0 ${editing ? 'hidden md:flex' : 'flex'}`}>
-        {/* Header */}
-        <div className="p-6 border-b border-henry-border/30">
-          <div className="flex items-center justify-between mb-4">
-              <button
-                onClick={() => PANEL_QUICK_ASK.finance()}
-                className="text-[11px] px-3 py-1.5 rounded-lg bg-henry-accent/10 text-henry-accent hover:bg-henry-accent/20 transition-all"
-              >🧠 Ask Henry</button>
-            <div>
-              <h1 className="text-xl font-semibold text-henry-text">Finance</h1>
-              <p className="text-xs text-henry-text-muted mt-0.5">{formatMonthLabel(selectedMonth)}</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <button onClick={exportCSV} className="px-3 py-1.5 text-xs text-henry-text-muted border border-henry-border/40 rounded-lg hover:text-henry-text transition-colors">Export CSV</button>
-              <button onClick={() => handleAddQuick('expense')} className="px-3 py-1.5 text-xs bg-henry-error/10 text-henry-error border border-henry-error/20 rounded-lg hover:bg-henry-error/20 transition-colors">− Expense</button>
-              <button onClick={() => handleAddQuick('income')} className="px-4 py-2 bg-henry-accent text-henry-bg rounded-xl text-xs font-semibold hover:bg-henry-accent/90 transition-colors">+ Income</button>
-            </div>
-          </div>
-
-          {/* Summary cards */}
-          <div className="grid grid-cols-3 gap-3">
-            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4">
-              <p className="text-[10px] text-emerald-400/70 uppercase tracking-wider font-medium">Income</p>
-              <p className="text-lg font-semibold text-emerald-400 mt-1">{formatCurrency(monthIncome)}</p>
-            </div>
-            <div className="bg-henry-error/10 border border-henry-error/20 rounded-xl p-4">
-              <p className="text-[10px] text-henry-error/70 uppercase tracking-wider font-medium">Expenses</p>
-              <p className="text-lg font-semibold text-henry-error mt-1">{formatCurrency(monthExpenses)}</p>
-            </div>
-            <div className={`border rounded-xl p-4 ${monthNet >= 0 ? 'bg-henry-accent/10 border-henry-accent/20' : 'bg-henry-error/10 border-henry-error/20'}`}>
-              <p className={`text-[10px] uppercase tracking-wider font-medium ${monthNet >= 0 ? 'text-henry-accent/70' : 'text-henry-error/70'}`}>Net</p>
-              <p className={`text-lg font-semibold mt-1 ${monthNet >= 0 ? 'text-henry-accent' : 'text-henry-error'}`}>{formatCurrency(monthNet)}</p>
-            </div>
-          </div>
+  return(
+    <div className="flex flex-col h-full bg-henry-bg overflow-y-auto">
+      {/* Header */}
+      <div className="px-6 pt-5 pb-4 border-b border-henry-border/20 flex items-center justify-between flex-shrink-0">
+        <div>
+          <h1 className="text-lg font-bold text-henry-text">Finance</h1>
+          <select value={month} onChange={e=>setMonth(e.target.value)} className="text-[11px] text-henry-text-muted bg-transparent border-none outline-none mt-0.5 cursor-pointer">
+            {months.map(m=><option key={m} value={m}>{monthLabel(m)}</option>)}
+          </select>
         </div>
-
-        {/* Month selector + entries */}
-        <div className="flex flex-1 min-h-0 overflow-hidden">
-          {/* Month list */}
-          <div className="w-40 shrink-0 border-r border-henry-border/30 overflow-y-auto py-2">
-            {summaries.length === 0 && (
-              <div className="p-4 text-xs text-henry-text-dim">No data yet</div>
-            )}
-            {summaries.map((s) => (
-              <button key={s.month} onClick={() => setSelectedMonth(s.month)}
-                className={`w-full text-left px-3 py-2.5 transition-colors ${selectedMonth === s.month ? 'bg-henry-accent/10 text-henry-accent' : 'text-henry-text-muted hover:text-henry-text hover:bg-henry-surface/40'}`}>
-                <p className="text-xs font-medium">{new Date(s.month + '-02').toLocaleDateString('en-US', { month: 'short', year: '2-digit' })}</p>
-                <p className={`text-[10px] mt-0.5 ${s.net >= 0 ? 'text-emerald-400' : 'text-henry-error'}`}>{formatCurrency(s.net)}</p>
-              </button>
-            ))}
-          </div>
-
-          {/* Entry list */}
-          <div className="flex-1 overflow-y-auto">
-            <div className="p-4">
-              <div className="flex items-center justify-between mb-3">
-                <p className="text-xs font-semibold text-henry-text-muted uppercase tracking-wider">{monthEntries.length} Entries</p>
-                <button onClick={askHenry} className="text-xs text-henry-accent hover:underline">Ask Henry to analyze</button>
-              </div>
-              {monthEntries.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-32 text-henry-text-dim">
-                  <span className="text-2xl mb-2">💵</span>
-                  <p className="text-xs">No entries for {formatMonthLabel(selectedMonth)}</p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {monthEntries.sort((a, b) => b.date.localeCompare(a.date)).map((e) => (
-                    <div key={e.id} className="group flex items-center gap-3 p-3 bg-henry-surface/40 rounded-xl border border-henry-border/20 hover:border-henry-border/40 transition-colors">
-                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm shrink-0 ${e.type === 'income' ? 'bg-emerald-500/15' : 'bg-henry-error/15'}`}>
-                        {e.type === 'income' ? '↑' : '↓'}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm text-henry-text">{e.description}</p>
-                        <p className="text-[10px] text-henry-text-dim">{e.category} · {e.date}</p>
-                      </div>
-                      <p className={`text-sm font-semibold shrink-0 ${e.type === 'income' ? 'text-emerald-400' : 'text-henry-error'}`}>
-                        {e.type === 'income' ? '+' : '-'}{formatCurrency(e.amount)}
-                      </p>
-                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button onClick={() => setEditing({ ...e })} className="p-1 text-henry-text-dim hover:text-henry-text">✏️</button>
-                        <button onClick={() => { deleteEntry(e.id); reload(); }} className="p-1 text-henry-text-dim hover:text-henry-error">✕</button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
+        <div className="flex gap-2">
+          <button onClick={askHenry} className="text-[11px] px-3 py-1.5 rounded-lg bg-henry-surface border border-henry-border/30 text-henry-text-muted hover:text-henry-accent transition-all">Ask Henry</button>
+          <button onClick={()=>setAdding(a=>!a)} className="text-[11px] px-4 py-1.5 rounded-lg bg-henry-accent text-white font-semibold hover:bg-henry-accent/80 transition-all">+ Add</button>
         </div>
       </div>
 
-      {/* Edit panel */}
-      {editing && (
-        <div className="w-full md:w-80 border-l border-henry-border/30 bg-henry-surface/50 flex flex-col">
-          <div className="p-4 border-b border-henry-border/30 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-henry-text">{entries.some((e) => e.id === editing.id) ? 'Edit' : 'New'} {editing.type === 'income' ? 'Income' : 'Expense'}</h2>
-            <button onClick={() => setEditing(null)} className="text-henry-text-dim hover:text-henry-text text-lg leading-none">×</button>
+      <div className="px-6 py-4 space-y-5">
+        {/* Summary cards */}
+        <div className="grid grid-cols-3 gap-3">
+          {[
+            {label:'Income', value:summary.income, color:'text-green-400', bg:'bg-green-400/5 border-green-400/20'},
+            {label:'Expenses', value:summary.expenses, color:'text-red-400', bg:'bg-red-400/5 border-red-400/20'},
+            {label:'Net', value:summary.net, color:summary.net>=0?'text-green-400':'text-red-400', bg:'bg-henry-surface/40 border-henry-border/20'},
+          ].map(s=>(
+            <div key={s.label} className={`rounded-xl border p-4 ${s.bg}`}>
+              <p className="text-[10px] uppercase tracking-wider text-henry-text-muted mb-1">{s.label}</p>
+              <p className={`text-xl font-bold font-mono ${s.color}`}>{summary.net<0&&s.label==='Net'?'-':''}{fmt(s.value)}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Top expense categories */}
+        {expenseCats.length>0 && (
+          <div>
+            <p className="text-[10px] uppercase tracking-wider text-henry-text-muted mb-2">Top Expenses</p>
+            <div className="space-y-1.5">
+              {expenseCats.slice(0,5).map(c=>{
+                const pct = summary.expenses>0?Math.round((c.total/summary.expenses)*100):0;
+                return(
+                  <div key={c.category} className="flex items-center gap-3">
+                    <span className="text-[11px] text-henry-text-muted w-28 truncate">{c.category}</span>
+                    <div className="flex-1 bg-henry-surface rounded-full h-1.5">
+                      <div className="bg-red-400/60 h-1.5 rounded-full transition-all" style={{width:pct+'%'}}/>
+                    </div>
+                    <span className="text-[11px] font-mono text-henry-text w-20 text-right">{fmt(c.total)}</span>
+                  </div>
+                );
+              })}
+            </div>
           </div>
-          <div className="flex-1 overflow-y-auto p-4 space-y-3">
-            <div className="grid grid-cols-2 gap-1.5">
-              {(['income', 'expense'] as EntryType[]).map((t) => (
-                <button key={t} onClick={() => setEditing({ ...editing, type: t, category: t === 'income' ? 'Sales' : 'Tools & Equipment' })}
-                  className={`py-2 rounded-lg text-xs font-medium capitalize transition-colors border ${editing.type === t ? (t === 'income' ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400' : 'bg-henry-error/15 border-henry-error/30 text-henry-error') : 'border-henry-border/30 text-henry-text-dim hover:text-henry-text'}`}
-                >{t}</button>
+        )}
+
+        {/* Add form */}
+        {adding && (
+          <form onSubmit={handleAdd} className="bg-henry-surface rounded-xl border border-henry-border/20 p-4 space-y-3">
+            <div className="flex gap-2">
+              {(['expense','income'] as const).map(t=>(
+                <button type="button" key={t} onClick={()=>setForm(f=>({...f,type:t,category:t==='expense'?EXPENSE_CATS[1]:INCOME_CATS[0]}))}
+                  className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all ${form.type===t?(t==='expense'?'bg-red-400/20 text-red-400 border border-red-400/30':'bg-green-400/20 text-green-400 border border-green-400/30'):'bg-henry-surface2 text-henry-text-muted border border-henry-border/20'}`}>
+                  {t==='expense'?'− Expense':'+ Income'}
+                </button>
               ))}
             </div>
-            <div>
-              <label className="block text-xs text-henry-text-muted mb-1">Amount *</label>
-              <input type="number" step="0.01" value={editing.amount || ''} onChange={(e) => setEditing({ ...editing, amount: parseFloat(e.target.value) || 0 })}
-                placeholder="0.00"
-                className="w-full bg-henry-bg border border-henry-border/50 rounded-lg px-3 py-2 text-sm text-henry-text placeholder-henry-text-dim focus:outline-none focus:border-henry-accent/50" />
-            </div>
-            <div>
-              <label className="block text-xs text-henry-text-muted mb-1">Description *</label>
-              <input value={editing.description} onChange={(e) => setEditing({ ...editing, description: e.target.value })} placeholder="What was this for?"
-                className="w-full bg-henry-bg border border-henry-border/50 rounded-lg px-3 py-2 text-sm text-henry-text placeholder-henry-text-dim focus:outline-none focus:border-henry-accent/50" />
-            </div>
-            <div>
-              <label className="block text-xs text-henry-text-muted mb-1">Category</label>
-              <select value={editing.category} onChange={(e) => setEditing({ ...editing, category: e.target.value })}
-                className="w-full bg-henry-bg border border-henry-border/50 rounded-lg px-3 py-2 text-sm text-henry-text focus:outline-none focus:border-henry-accent/50">
-                {(editing.type === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES).map((c) => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
+            <div className="grid grid-cols-2 gap-2">
+              <input type="number" step="0.01" placeholder="Amount" value={form.amount} onChange={e=>setForm(f=>({...f,amount:e.target.value}))} required
+                className="bg-henry-surface2 border border-henry-border/30 rounded-lg px-3 py-2 text-sm text-henry-text placeholder:text-henry-text-muted outline-none focus:border-henry-accent/50" />
+              <input type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))}
+                className="bg-henry-surface2 border border-henry-border/30 rounded-lg px-3 py-2 text-sm text-henry-text outline-none focus:border-henry-accent/50" />
+              <select value={form.category} onChange={e=>setForm(f=>({...f,category:e.target.value}))}
+                className="bg-henry-surface2 border border-henry-border/30 rounded-lg px-3 py-2 text-sm text-henry-text outline-none">
+                {cats.map(c=><option key={c}>{c}</option>)}
               </select>
+              <input placeholder="Description (optional)" value={form.description} onChange={e=>setForm(f=>({...f,description:e.target.value}))}
+                className="bg-henry-surface2 border border-henry-border/30 rounded-lg px-3 py-2 text-sm text-henry-text placeholder:text-henry-text-muted outline-none" />
             </div>
-            <div>
-              <label className="block text-xs text-henry-text-muted mb-1">Date</label>
-              <input type="date" value={editing.date} onChange={(e) => setEditing({ ...editing, date: e.target.value })}
-                className="w-full bg-henry-bg border border-henry-border/50 rounded-lg px-3 py-2 text-sm text-henry-text focus:outline-none focus:border-henry-accent/50" />
+            <div className="flex gap-2">
+              <button type="submit" className="px-4 py-2 rounded-lg bg-henry-accent text-white text-sm font-semibold hover:bg-henry-accent/80 transition-all">Save</button>
+              <button type="button" onClick={()=>setAdding(false)} className="px-4 py-2 rounded-lg bg-henry-surface2 border border-henry-border/30 text-henry-text-muted text-sm">Cancel</button>
             </div>
-          </div>
-          <div className="p-4 border-t border-henry-border/30 flex gap-2">
-            <button onClick={handleSave} disabled={!editing.amount || !editing.description.trim()} className="flex-1 py-2.5 bg-henry-accent text-henry-bg rounded-xl text-sm font-semibold hover:bg-henry-accent/90 disabled:opacity-40">Save</button>
-            {entries.some((e) => e.id === editing.id) && (
-              <button onClick={() => { deleteEntry(editing.id); setEditing(null); reload(); }} className="px-3 py-2.5 text-henry-error hover:bg-henry-error/10 rounded-xl text-sm">Delete</button>
-            )}
+          </form>
+        )}
+
+        {/* Transactions list */}
+        <div>
+          <p className="text-[10px] uppercase tracking-wider text-henry-text-muted mb-2">Transactions {loading?'…':''}</p>
+          {txns.length===0 && !loading && <p className="text-henry-text-muted text-sm py-4 text-center">No transactions this month.</p>}
+          <div className="space-y-1">
+            {txns.map(t=>(
+              <div key={t.id} className="group flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-henry-surface/40 transition-all">
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm flex-shrink-0 ${t.type==='income'?'bg-green-400/10 text-green-400':'bg-red-400/10 text-red-400'}`}>
+                  {t.type==='income'?'↑':'↓'}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-henry-text truncate">{t.description||t.category}</p>
+                  <p className="text-[10px] text-henry-text-muted">{t.category} · {t.date}</p>
+                </div>
+                <span className={`text-sm font-mono font-semibold flex-shrink-0 ${t.type==='income'?'text-green-400':'text-red-400'}`}>
+                  {t.type==='income'?'+':'-'}{fmt(t.amount)}
+                </span>
+                <button onClick={()=>handleDelete(t.id)} className="opacity-0 group-hover:opacity-100 text-henry-text-muted hover:text-red-400 text-xs transition-all">✕</button>
+              </div>
+            ))}
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }

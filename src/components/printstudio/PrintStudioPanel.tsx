@@ -7,8 +7,9 @@ import {
 } from '../../henry/printStudio';
 import { useStore } from '../../store';
 import { henryQuickAsk } from '../../henry/henryQuickAsk';
+import ModelGenerator from './ModelGenerator';
 
-type Tab = 'gallery' | 'filament' | 'bom';
+type Tab = 'gallery' | 'filament' | 'bom' | '3d';
 
 const MATERIALS: FilamentMaterial[] = ['PLA', 'PETG', 'ABS', 'ASA', 'TPU', 'Nylon', 'Resin', 'Other'];
 
@@ -222,6 +223,8 @@ export default function PrintStudioPanel() {
               )}
             </div>
           )}
+      {tab === '3d' && <ModelGenerator />}
+
         </div>
       </div>
 

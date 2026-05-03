@@ -1,292 +1,146 @@
 import { useState, useEffect, useRef } from 'react';
+import { sendToHenry } from '../../actions/store/chatBridgeStore';
 import { useStore } from '../../store';
-import ReactMarkdown from 'react-markdown';
-import { PANEL_QUICK_ASK } from '../../henry/henryQuickAsk';
 
-const JOURNAL_PREFIX = 'henry:journal:';
+interface JournalEntry { id:string; date:string; title?:string; content:string; mood?:string; tags:string[]; created_at:string; updated_at:string }
 
-interface JournalEntry {
-  date: string;
-  content: string;
-  henryNote?: string;
-  savedAt: string;
-}
+const api = (window as any).henryAPI;
+const MOODS = ['😊','😐','😔','🔥','🙏','💡','😤','😴'];
 
-function todayKey(): string {
-  return new Date().toISOString().slice(0, 10);
-}
+function todayKey(){ return new Date().toISOString().slice(0,10); }
 
-function formatDateLabel(dateStr: string): string {
-  try {
-    const d = new Date(dateStr + 'T12:00:00');
+export default function JournalPanel(){
+  const { setCurrentView } = useStore();
+  const [entries, setEntries]     = useState<JournalEntry[]>([]);
+  const [selected, setSelected]   = useState<JournalEntry|null>(null);
+  const [content, setContent]     = useState('');
+  const [title, setTitle]         = useState('');
+  const [mood, setMood]           = useState('');
+  const [search, setSearch]       = useState('');
+  const [dirty, setDirty]         = useState(false);
+  const [saving, setSaving]       = useState(false);
+  const [search_q, setSearchQ]    = useState('');
+  const textRef = useRef<HTMLTextAreaElement>(null);
+  const saveTimer = useRef<ReturnType<typeof setTimeout>|null>(null);
+
+  async function loadList(q?:string){
+    const data = await api.journalList(q||undefined) as JournalEntry[];
+    setEntries(data.map(e=>({...e, tags: JSON.parse(e.tags as any||'[]')})));
+  }
+
+  async function openEntry(e:JournalEntry){
+    const full = await api.journalGet(e.id) as JournalEntry|null;
+    const entry = full || e;
+    setSelected({...entry, tags: JSON.parse((entry.tags as any) || '[]')});
+    setContent(entry.content||'');
+    setTitle(entry.title||'');
+    setMood(entry.mood||'');
+    setDirty(false);
+  }
+
+  async function newEntry(){
     const today = todayKey();
-    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-    if (dateStr === today) return 'Today';
-    if (dateStr === yesterday) return 'Yesterday';
-    return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
-  } catch {
-    return dateStr;
+    const existing = entries.find(e=>e.date===today);
+    if(existing){ openEntry(existing); return; }
+    const entry:JournalEntry = { id:crypto.randomUUID(), date:today, content:'', tags:[], created_at:new Date().toISOString(), updated_at:new Date().toISOString() };
+    setSelected(entry); setContent(''); setTitle(''); setMood(''); setDirty(false);
+    setTimeout(()=>textRef.current?.focus(), 50);
   }
-}
 
-function loadEntry(dateKey: string): JournalEntry | null {
-  try {
-    const raw = localStorage.getItem(JOURNAL_PREFIX + dateKey);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-}
-
-function saveEntry(entry: JournalEntry): void {
-  try {
-    localStorage.setItem(JOURNAL_PREFIX + entry.date, JSON.stringify(entry));
-  } catch { /* ignore */ }
-}
-
-function loadAllEntries(): JournalEntry[] {
-  const entries: JournalEntry[] = [];
-  try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key?.startsWith(JOURNAL_PREFIX)) {
-        const raw = localStorage.getItem(key);
-        if (raw) {
-          try { entries.push(JSON.parse(raw)); } catch { /* skip */ }
-        }
-      }
-    }
-  } catch { /* ignore */ }
-  return entries.sort((a, b) => b.date.localeCompare(a.date));
-}
-
-export default function JournalPanel() {
-  const settings = useStore((s) => s.settings);
-  const [selectedDate, setSelectedDate] = useState(todayKey());
-  const [entries, setEntries] = useState<JournalEntry[]>([]);
-  const [draft, setDraft] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [gettingHenryNote, setGettingHenryNote] = useState(false);
-  const [liveHenryNote, setLiveHenryNote] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [view, setView] = useState<'write' | 'history'>('write');
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  useEffect(() => {
-    const all = loadAllEntries();
-    setEntries(all);
-    const todayEntry = all.find((e) => e.date === todayKey());
-    if (todayEntry) setDraft(todayEntry.content);
-  }, []);
-
-  function handleSave() {
-    if (!draft.trim()) return;
+  async function save(s?:JournalEntry, c?:string, ti?:string, mo?:string){
+    const entry = s||selected; if(!entry) return;
     setSaving(true);
-    const existing = loadEntry(selectedDate);
-    const entry: JournalEntry = {
-      date: selectedDate,
-      content: draft.trim(),
-      henryNote: existing?.henryNote,
-      savedAt: new Date().toISOString(),
-    };
-    saveEntry(entry);
-    const all = loadAllEntries();
-    setEntries(all);
-    setSaving(false);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    await api.journalSave({ id:entry.id, date:entry.date, title:(ti??title)||null, content:(c??content), mood:(mo??mood)||null, tags:entry.tags });
+    setSaving(false); setDirty(false);
+    await loadList(search_q);
   }
 
-  function handleBlur() {
-    if (draft.trim()) handleSave();
+  function handleChange(val:string){ setContent(val); setDirty(true); if(saveTimer.current)clearTimeout(saveTimer.current); saveTimer.current=setTimeout(()=>save(undefined,val),2000); }
+
+  async function handleDelete(){
+    if(!selected) return;
+    await api.journalDelete(selected.id);
+    setSelected(null); setContent(''); setTitle(''); setMood('');
+    await loadList(search_q);
   }
 
-  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if ((e.metaKey || e.ctrlKey) && e.key === 's') {
-      e.preventDefault();
-      handleSave();
-    }
+  function askHenry(){
+    if(!content.trim()) return;
+    sendToHenry(`I wrote in my journal today (${selected?.date}): "${content.slice(0,600)}". What insights or reflections do you have?`);
+    setCurrentView('chat');
   }
 
-  async function askHenry() {
-    if (!draft.trim()) return;
-    handleSave();
-    setGettingHenryNote(true);
-    setLiveHenryNote('');
-    try {
-      const s = useStore.getState().settings;
-      if (!s.companion_provider || !s.companion_model) {
-        setGettingHenryNote(false);
-        return;
-      }
-      const providers = await window.henryAPI.getProviders();
-      const provider = providers.find((p: any) => p.id === s.companion_provider);
-      if (!provider) { setGettingHenryNote(false); return; }
+  useEffect(()=>{ void loadList(); void newEntry(); },[]);
 
-      const prompt = `Here is today's journal entry:\n\n${draft}\n\nGive a brief, warm, thoughtful reflection on this — what stands out, what patterns you notice, one insight or question worth sitting with. Stay concise (2-4 sentences), no platitudes.`;
+  useEffect(()=>{
+    const t = setTimeout(()=>void loadList(search_q), 300);
+    return ()=>clearTimeout(t);
+  },[search_q]);
 
-      const stream = window.henryAPI.streamMessage({
-        provider: s.companion_provider,
-        model: s.companion_model,
-        apiKey: provider.api_key || provider.apiKey || '',
-        messages: [
-          { role: 'system', content: 'You are Henry — a thoughtful companion reflecting on journal entries. Be warm, perceptive, brief. No hollow affirmations.' },
-          { role: 'user', content: prompt },
-        ],
-        temperature: 0.8,
-      });
-      stream.onChunk((chunk: string) => {
-        setLiveHenryNote((prev) => prev + chunk);
-      });
-      stream.onDone((fullText: string) => {
-        setLiveHenryNote('');
-        const existing = loadEntry(selectedDate);
-        const target = existing ?? { date: selectedDate, content: draft.trim(), savedAt: new Date().toISOString() };
-        const updated = { ...target, henryNote: fullText };
-        saveEntry(updated);
-        setEntries(loadAllEntries());
-        setGettingHenryNote(false);
-      });
-      stream.onError(() => { setLiveHenryNote(''); setGettingHenryNote(false); });
-    } catch {
-      setLiveHenryNote('');
-      setGettingHenryNote(false);
-    }
-  }
+  const dateLabel = (d:string) => new Date(d+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
 
-  const selectedEntry = entries.find((e) => e.date === selectedDate);
-  const filtered = searchQuery.trim()
-    ? entries.filter((e) =>
-        e.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        e.henryNote?.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : entries;
-
-  const hour = new Date().getHours();
-  const eveningPrompt = hour >= 19
-    ? 'What happened today? Anything worth keeping?'
-    : hour < 12
-    ? "What's on your mind this morning?"
-    : 'What have you been working through today?';
-
-  return (
-    <div className="h-full flex flex-col bg-henry-bg">
-      {/* Header */}
-      <div className="shrink-0 px-6 py-4 border-b border-henry-border/50 flex items-center justify-between">
-        <div>
-          <div className="flex items-center justify-between w-full">
-              <h1 className="text-lg font-semibold text-henry-text">Journal</h1>
-              <button
-                onClick={() => PANEL_QUICK_ASK.journal()}
-                className="text-[11px] px-3 py-1.5 rounded-lg bg-henry-accent/10 text-henry-accent hover:bg-henry-accent/20 transition-all"
-              >🧠 Ask Henry</button>
-            </div>
-          <p className="text-xs text-henry-text-muted mt-0.5">{formatDateLabel(todayKey())}</p>
+  return(
+    <div className="flex h-full bg-henry-bg overflow-hidden">
+      {/* Sidebar */}
+      <div className="w-64 flex-shrink-0 border-r border-henry-border/20 flex flex-col">
+        <div className="p-3 border-b border-henry-border/20 space-y-2">
+          <button onClick={newEntry} className="w-full py-2 rounded-xl bg-henry-accent text-white text-sm font-semibold hover:bg-henry-accent/80 transition-all">
+            + New Entry
+          </button>
+          <input value={search_q} onChange={e=>setSearchQ(e.target.value)} placeholder="Search journal…"
+            className="w-full bg-henry-surface border border-henry-border/30 rounded-lg px-3 py-1.5 text-sm text-henry-text placeholder:text-henry-text-muted outline-none focus:border-henry-accent/50" />
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setView('write')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${view === 'write' ? 'bg-henry-accent/15 text-henry-accent' : 'text-henry-text-dim hover:text-henry-text'}`}
-          >
-            Write
-          </button>
-          <button
-            onClick={() => setView('history')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${view === 'history' ? 'bg-henry-accent/15 text-henry-accent' : 'text-henry-text-dim hover:text-henry-text'}`}
-          >
-            History ({entries.length})
-          </button>
+        <div className="flex-1 overflow-y-auto">
+          {entries.length===0 && <p className="p-4 text-henry-text-muted text-xs text-center">No entries yet.</p>}
+          {entries.map(e=>(
+            <button key={e.id} onClick={()=>openEntry(e)}
+              className={`w-full text-left px-4 py-3 border-b border-henry-border/10 hover:bg-henry-surface/40 transition-all ${selected?.id===e.id?'bg-henry-surface/60 border-l-2 border-l-henry-accent':''}`}>
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-henry-text">{dateLabel(e.date)}</p>
+                {e.mood && <span className="text-sm">{e.mood}</span>}
+              </div>
+              {e.title && <p className="text-[11px] text-henry-text-muted truncate mt-0.5">{e.title}</p>}
+            </button>
+          ))}
         </div>
       </div>
 
-      {view === 'write' ? (
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5 max-w-2xl w-full mx-auto">
-          {/* Today's entry */}
-          <div>
-            <p className="text-[11px] font-medium text-henry-text-muted uppercase tracking-wider mb-2">{eveningPrompt}</p>
-            <textarea
-              ref={textareaRef}
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onBlur={handleBlur}
-              onKeyDown={handleKeyDown}
-              placeholder="Start typing… this is just for you."
-              className="w-full min-h-[220px] bg-henry-surface/40 border border-henry-border/30 rounded-xl px-4 py-3.5 text-sm text-henry-text placeholder-henry-text-muted outline-none focus:border-henry-accent/40 focus:bg-henry-surface/60 transition-all resize-none leading-relaxed"
-            />
-            <div className="flex items-center gap-2.5 mt-3">
-              <button
-                onClick={handleSave}
-                disabled={saving || !draft.trim()}
-                className="px-4 py-2 rounded-lg text-xs font-medium bg-henry-surface border border-henry-border/40 text-henry-text hover:bg-henry-hover/50 disabled:opacity-40 transition-all"
-              >
-                {saving ? 'Saving…' : saved ? '✓ Saved' : 'Save'}
-              </button>
-              <button
-                onClick={askHenry}
-                disabled={gettingHenryNote || !draft.trim()}
-                className="px-4 py-2 rounded-lg text-xs font-medium bg-henry-accent/15 border border-henry-accent/25 text-henry-accent hover:bg-henry-accent/25 disabled:opacity-40 transition-all"
-              >
-                {gettingHenryNote ? 'Henry is reading…' : 'Ask Henry to reflect'}
-              </button>
-              <span className="text-[10px] text-henry-text-muted ml-auto">⌘S to save</span>
-            </div>
-          </div>
-
-          {/* Henry's note — streams live then persists */}
-          {(liveHenryNote || selectedEntry?.henryNote) && (
-            <div className="rounded-xl border border-henry-accent/20 bg-henry-accent/5 p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-sm">🧠</span>
-                <span className="text-[11px] font-medium text-henry-accent uppercase tracking-wide">Henry's reflection</span>
-                {gettingHenryNote && <span className="inline-block w-1.5 h-3.5 bg-henry-accent animate-pulse rounded-sm ml-1" />}
+      {/* Editor */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {selected ? (
+          <>
+            <div className="flex items-center gap-2 px-6 py-3 border-b border-henry-border/20 flex-shrink-0">
+              <input value={title} onChange={e=>{setTitle(e.target.value);setDirty(true);}} placeholder="Title (optional)"
+                className="flex-1 bg-transparent text-sm font-semibold text-henry-text placeholder:text-henry-text-muted outline-none" />
+              <div className="flex gap-1">
+                {MOODS.map(m=>(
+                  <button key={m} onClick={()=>{setMood(m===mood?'':m);setDirty(true);}}
+                    className={`text-base transition-all ${mood===m?'opacity-100 scale-110':'opacity-40 hover:opacity-80'}`}>{m}</button>
+                ))}
               </div>
-              <div className="text-sm text-henry-text-dim leading-relaxed">
-                <ReactMarkdown>{liveHenryNote || selectedEntry?.henryNote || ''}</ReactMarkdown>
+              <div className="flex gap-2 ml-2">
+                {dirty && <button onClick={()=>save()} disabled={saving} className="text-[11px] px-3 py-1 rounded-lg bg-henry-accent text-white hover:bg-henry-accent/80 disabled:opacity-40 transition-all">{saving?'Saving…':'Save'}</button>}
+                <button onClick={askHenry} className="text-[11px] px-3 py-1 rounded-lg bg-henry-surface border border-henry-border/30 text-henry-text-muted hover:text-henry-accent transition-all">Reflect</button>
+                <button onClick={handleDelete} className="text-[11px] px-2 py-1 rounded-lg text-henry-text-muted hover:text-red-400 transition-all">✕</button>
               </div>
             </div>
-          )}
-        </div>
-      ) : (
-        <div className="flex-1 overflow-y-auto px-6 py-5 max-w-2xl w-full mx-auto">
-          {/* Search */}
-          <div className="mb-4">
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search entries…"
-              className="w-full bg-henry-surface/40 border border-henry-border/30 rounded-xl px-4 py-2.5 text-sm text-henry-text placeholder-henry-text-muted outline-none focus:border-henry-accent/40 transition-all"
-            />
+            <div className="px-4 py-2 border-b border-henry-border/10 flex-shrink-0">
+              <p className="text-[10px] text-henry-text-muted">{dateLabel(selected.date)}</p>
+            </div>
+            <textarea ref={textRef} value={content} onChange={e=>handleChange(e.target.value)}
+              placeholder="Write anything. Henry saves automatically…"
+              className="flex-1 bg-transparent text-henry-text text-sm leading-relaxed p-6 outline-none resize-none placeholder:text-henry-text-muted/40" />
+          </>
+        ) : (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center">
+              <p className="text-4xl mb-3">✦</p>
+              <p className="text-henry-text-muted text-sm">Select an entry or start writing.</p>
+              <button onClick={newEntry} className="mt-3 text-[12px] px-4 py-2 rounded-xl bg-henry-accent text-white font-semibold">Start Today</button>
+            </div>
           </div>
-
-          {filtered.length === 0 ? (
-            <div className="text-center py-16">
-              <p className="text-henry-text-muted text-sm">{searchQuery ? 'No entries match that search.' : 'No journal entries yet.'}</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {filtered.map((entry) => (
-                <button
-                  key={entry.date}
-                  onClick={() => {
-                    setSelectedDate(entry.date);
-                    setDraft(entry.content);
-                    setView('write');
-                  }}
-                  className="w-full text-left p-4 rounded-xl border border-henry-border/20 bg-henry-surface/20 hover:bg-henry-surface/50 hover:border-henry-border/40 transition-all"
-                >
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-xs font-medium text-henry-text">{formatDateLabel(entry.date)}</span>
-                    {entry.henryNote && <span className="text-[10px] text-henry-accent">🧠 Henry reflected</span>}
-                  </div>
-                  <p className="text-xs text-henry-text-dim line-clamp-2 leading-relaxed">{entry.content}</p>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
