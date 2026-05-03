@@ -133,6 +133,20 @@ export function buildStreamError(
     ].join('\n');
   }
 
+  // Groq token-per-minute rate limit (413 + "Limit NNNNN" pattern)
+  if (/tokens per minute|token.*limit|limit.*token|request too large|tpm.*limit|tokens.*min/i.test(error)) {
+    return [
+      `**${label}: message too long for free tier.**`,
+      ``,
+      `Your conversation + Henry's context exceeded ${label}'s free tier limit (12,000 tokens/min).`,
+      ``,
+      `**Quick fixes:**`,
+      `→ Start a **New Chat** to clear history`,
+      `→ Or upgrade to a paid Groq plan at console.groq.com`,
+      `→ Or add an **OpenAI** or **Anthropic** key in Settings — they have higher limits`,
+    ].join('\n');
+  }
+
   if (isRateLimitError(error)) {
     return [
       `**${label} rate limit hit.**`,

@@ -1577,27 +1577,31 @@ export default function ChatView() {
       }
       // tier 2 uses the already-set companion_model (70b)
 
-      // Aggressively trim system prompt for Groq — their free tier models have context limits
-      // and Henry's charter can be 20k+ chars. Cap at ~24k chars (~6k tokens) for system.
-      if (companionProvider === 'groq' && messagesPayload[0]?.role === 'system') {
-        const sys = messagesPayload[0].content;
-        const SYS_CAP = 24_000; // ~6k tokens — leaves room for conversation + response
-        if (sys.length > SYS_CAP) {
-          messagesPayload[0].content = sys.slice(0, SYS_CAP) + '\n\n[System context trimmed for token limit]';
+      // GROQ FREE TIER: 12,000 tokens/minute hard limit.
+      // Henry's full charter is 12,000+ tokens alone. Must slash aggressively.
+      if (companionProvider === 'groq') {
+        // Cap system prompt to 4,000 chars (~1,000 tokens) — leaves 11k for conversation
+        if (messagesPayload[0]?.role === 'system') {
+          const sys = messagesPayload[0].content;
+          const SYS_CAP = 4_000;
+          if (sys.length > SYS_CAP) {
+            // Keep the first part (identity/role) which is most important
+            messagesPayload[0].content = sys.slice(0, SYS_CAP) + '\n[Context condensed for free tier]';
+          }
         }
-      }
-      // Also cap total payload — Groq llama-3.3-70b has 32k context on free tier
-      const totalChars = messagesPayload.reduce((s, m) => s + m.content.length, 0);
-      if (totalChars > 120_000 && companionProvider === 'groq') {
-        // Keep system + last N messages that fit
-        const sys = messagesPayload[0];
-        const rest = messagesPayload.slice(1);
-        let budget = 120_000 - sys.content.length;
-        const kept = [];
-        for (let i = rest.length - 1; i >= 0; i--) {
-          if (rest[i].content.length <= budget) { kept.unshift(rest[i]); budget -= rest[i].content.length; }
+        // Cap total to 8,000 chars (~2,000 tokens) — well under Groq free 12k TPM
+        const totalChars = messagesPayload.reduce((s, m) => s + m.content.length, 0);
+        if (totalChars > 8_000) {
+          const sys = messagesPayload[0];
+          const rest = messagesPayload.slice(1);
+          let budget = 4_000; // 4k for conversation history after system prompt
+          const kept: typeof rest = [];
+          for (let i = rest.length - 1; i >= 0; i--) {
+            const chars = rest[i].content.length;
+            if (chars <= budget) { kept.unshift(rest[i]); budget -= chars; }
+          }
+          messagesPayload.splice(0, messagesPayload.length, sys, ...kept);
         }
-        messagesPayload.splice(0, messagesPayload.length, sys, ...kept);
       }
 
       const stream = window.henryAPI.streamMessage({
