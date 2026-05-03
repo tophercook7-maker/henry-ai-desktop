@@ -49,16 +49,31 @@ interface SSEClient {
 
 export async function startSyncTunnel(port: number): Promise<string | null> {
   try {
-    const { spawn, execSync } = await import('child_process');
-    try { execSync('which cloudflared', { stdio: 'ignore' }); }
+    const { spawn, execSync } = await import('child_process') as typeof import('child_process');
+    const cfPath = '/opt/homebrew/bin/cloudflared';
+    try { execSync(`which cloudflared || test -f ${cfPath}`, { stdio: 'ignore' }); }
     catch {
-      console.log('[SyncBridge] cloudflared not installed — run: brew install cloudflared');
+      console.log('[SyncBridge] cloudflared not found');
       return null;
     }
+
+    // Try named tunnel first (same URL every time)
+    // Named tunnel config at ~/.cloudflared/henry.yml
+    const tunnelArgs = (() => {
+      try {
+        const configPath = require('os').homedir() + '/.cloudflared/henry.yml';
+        const fs = require('fs');
+        if (fs.existsSync(configPath)) {
+          console.log('[SyncBridge] Using named tunnel config:', configPath);
+          return ['tunnel', '--config', configPath, 'run', '--no-autoupdate'];
+        }
+      } catch { /* fall through */ }
+      // Quick tunnel — random URL each restart
+      return ['tunnel', '--url', `http://localhost:${port}`, '--no-autoupdate'];
+    })();
+
     return new Promise((resolve) => {
-      tunnelProcess = spawn('cloudflared', [
-        'tunnel', '--url', `http://localhost:${port}`, '--no-autoupdate',
-      ], { stdio: ['ignore', 'pipe', 'pipe'] });
+      tunnelProcess = spawn('cloudflared', tunnelArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
 
       let resolved = false;
       const tryResolve = (data: Buffer) => {

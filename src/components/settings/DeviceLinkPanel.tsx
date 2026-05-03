@@ -273,6 +273,21 @@ export default function DeviceLinkPanel() {
           <span className="text-[11px] text-henry-text-muted">Auto-start tunnel on launch</span>
         </label>
 
+        {/* Named tunnel tip */}
+        <div className="bg-henry-surface/40 border border-henry-border/20 rounded-xl p-3 mb-3">
+          <p className="text-[10px] font-semibold text-henry-text-muted uppercase tracking-wider mb-1">Same URL Every Time (Named Tunnel)</p>
+          <p className="text-[10px] text-henry-text-muted leading-relaxed mb-2">
+            Free tunnels get a new URL each restart. To get a permanent URL, create a free Cloudflare account and run:
+          </p>
+          <code className="text-[10px] text-henry-accent bg-black/20 px-2 py-1 rounded block font-mono">
+            cloudflared tunnel login
+          </code>
+          <code className="text-[10px] text-henry-accent bg-black/20 px-2 py-1 rounded block font-mono mt-1">
+            cloudflared tunnel create henry
+          </code>
+          <p className="text-[10px] text-henry-text-muted mt-1">Then restart Henry — it will use the named tunnel automatically.</p>
+        </div>
+
         {!tunnelUrl ? (
           <div>
             <p className="text-[11px] text-henry-text-muted mb-2">
