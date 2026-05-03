@@ -5,6 +5,7 @@ import Sidebar from './Sidebar';
 import MobileNav from './MobileNav';
 import ChatView from '../chat/ChatView';
 import TaskQueueView from '../queue/TaskQueueView';
+import HealthPanel from '../settings/HealthPanel';
 import TasksPanel from '../tasks/TasksPanel';
 import SettingsView from '../settings/SettingsView';
 import FileBrowser from '../files/FileBrowser';
@@ -108,6 +109,7 @@ export default function Layout() {
           {currentView === 'printer' && <PrinterPanel />}
           {currentView === 'costs' && <CostDashboard />}
           {currentView === 'settings' && <SettingsView />}
+          {currentView === 'health' && <HealthPanel />}
           {currentView === 'companion' && (
             <div className="h-full overflow-y-auto px-5 py-5">
               <h2 className="text-base font-semibold text-henry-text mb-1">Companion Devices</h2>

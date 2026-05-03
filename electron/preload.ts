@@ -119,6 +119,9 @@ contextBridge.exposeInMainWorld('henryAPI', {
   saveFact: (fact: Record<string, unknown>) => ipcRenderer.invoke('memory:saveFact', fact),
   // Generic invoke — for panels that need direct IPC access
   invoke: (channel: string, ...args: unknown[]) => ipcRenderer.invoke(channel, ...args),
+  // Self-repair / health
+  runDiagnostic: () => ipcRenderer.invoke('henry:diagnostic:run'),
+  getLastDiagnostic: () => ipcRenderer.invoke('henry:diagnostic:last'),
   // Personal tasks
   tasksList: (filter?: { status?: string }) => ipcRenderer.invoke('tasks:list', filter),
   tasksCreate: (task: Record<string, unknown>) => ipcRenderer.invoke('tasks:create', task),
@@ -336,6 +339,11 @@ contextBridge.exposeInMainWorld('henryAPI', {
     const handler = (_e: IpcRendererEvent, data: unknown) => cb(data);
     ipcRenderer.on('henry:companion:action-decision', handler);
     return () => ipcRenderer.removeListener('henry:companion:action-decision', handler);
+  },
+  onDiagnosticComplete: (cb: (report: unknown) => void) => {
+    const handler = (_e: IpcRendererEvent, data: unknown) => cb(data);
+    ipcRenderer.on('henry:diagnostic:complete', handler);
+    return () => ipcRenderer.removeListener('henry:diagnostic:complete', handler);
   },
   onCompanionDeviceLinked: (cb: (device: unknown) => void) => {
     const handler = (_e: IpcRendererEvent, data: unknown) => cb(data);

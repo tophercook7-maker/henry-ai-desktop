@@ -233,6 +233,35 @@ app.whenReady().then(() => {
   setSyncDb(db);
   registerSyncBridgeIpc();
 
+  // Self-diagnostic — runs on every launch, auto-fixes problems
+  setTimeout(async () => {
+    try {
+      console.log('[Henry] Running self-diagnostic...');
+      const report = await runDiagnostic(true); // autoFix=true
+      saveReport(db, report);
+      const { fixed, failed } = report.summary;
+      if (fixed > 0) console.log(`[Henry] Self-repair: fixed ${fixed} issue(s)`);
+      if (failed > 0) console.log(`[Henry] Self-repair: ${failed} issue(s) need attention`);
+      // Notify renderer so Health panel can update
+      getMainWindow()?.webContents.send('henry:diagnostic:complete', report);
+    } catch (e) {
+      console.error('[Henry] Self-diagnostic error:', e);
+    }
+  }, 5000); // after sync server + tunnel start
+
+  // Self-repair IPC — renderer can trigger and read diagnostics
+  ipcMain.handle('henry:diagnostic:run', async () => {
+    const report = await runDiagnostic(true);
+    saveReport(db, report);
+    return report;
+  });
+  ipcMain.handle('henry:diagnostic:last', () => {
+    try {
+      const row = db.prepare("SELECT value FROM settings WHERE key='last_diagnostic'").get() as { value: string } | undefined;
+      return row ? JSON.parse(row.value) : null;
+    } catch { return null; }
+  });
+
   // Native notifications — works even when app is in background
   ipcMain.handle('notification:show', (_e, opts: { title: string; body?: string; silent?: boolean }) => {
     if (Notification.isSupported()) {
