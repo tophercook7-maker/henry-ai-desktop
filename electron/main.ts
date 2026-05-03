@@ -235,6 +235,35 @@ app.whenReady().then(() => {
   // Auto-start sync server so companion devices can connect immediately
   startSyncServer(4242);
 
+  // Auto-start Cloudflare tunnel if enabled in settings (or cloudflared is available)
+  // This makes mobile work off home network without any setup
+  setTimeout(async () => {
+    try {
+      const { execSync } = await import('child_process');
+      const db2 = await import('./ipc/database');
+      const currentDb = db2.getDb();
+      const tunnelSetting = currentDb.prepare("SELECT value FROM settings WHERE key='auto_tunnel_enabled'").get() as {value:string} | undefined;
+      
+      // Auto-start if explicitly enabled, or if this is first launch and cloudflared exists
+      const autoEnabled = tunnelSetting?.value === 'true';
+      if (!autoEnabled) return;
+      
+      // Verify cloudflared is installed
+      try { execSync('which cloudflared', { stdio: 'ignore' }); }
+      catch { return; } // not installed, skip silently
+      
+      const { startSyncTunnel } = await import('./ipc/syncBridge');
+      const url = await startSyncTunnel(4242);
+      if (url) {
+        console.log('[Henry] Auto-tunnel active:', url);
+        // Store for mobile display
+        currentDb.prepare("INSERT OR REPLACE INTO settings(key,value) VALUES('last_tunnel_url',?)").run(url);
+      }
+    } catch (e) {
+      console.log('[Henry] Auto-tunnel skipped:', e instanceof Error ? e.message : String(e));
+    }
+  }, 3000); // wait 3s for sync server to be ready
+
   // ── Auto-updater ────────────────────────────────────────────────────────────
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;

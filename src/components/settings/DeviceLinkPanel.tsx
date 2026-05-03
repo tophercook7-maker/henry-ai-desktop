@@ -252,27 +252,46 @@ export default function DeviceLinkPanel() {
 
       {/* Remote Access — works from anywhere */}
       <div className="mt-4 pt-4 border-t border-henry-border/20">
-        <p className="text-[11px] font-semibold text-henry-text-muted uppercase tracking-wider mb-2">Remote Access</p>
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-[11px] font-semibold text-henry-text-muted uppercase tracking-wider">Remote Access</p>
+          {tunnelUrl && (
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-500/10 border border-green-500/20 text-green-400 font-medium">● Active</span>
+          )}
+        </div>
+
+        {/* Auto-tunnel toggle */}
+        <label className="flex items-center gap-2 cursor-pointer mb-3">
+          <input
+            type="checkbox"
+            className="w-3.5 h-3.5 accent-henry-accent"
+            defaultChecked={false}
+            onChange={async (e) => {
+              await syncFetch('/computer/shell', {command: `sqlite3 "$HOME/Library/Application Support/henry-ai-desktop/henry-workspace/henry.db" "INSERT OR REPLACE INTO settings(key,value) VALUES('auto_tunnel_enabled','${e.target.checked}')"` });
+              if (e.target.checked && !tunnelUrl) handleStartTunnel();
+            }}
+          />
+          <span className="text-[11px] text-henry-text-muted">Auto-start tunnel on launch</span>
+        </label>
+
         {!tunnelUrl ? (
           <div>
             <p className="text-[11px] text-henry-text-muted mb-2">
-              Connect from outside your home network. Requires{' '}
-              <code className="text-henry-accent">brew install cloudflared</code>
+              Start a secure tunnel so your phone works from anywhere — cellular, other WiFi, anywhere.
             </p>
             <button
               onClick={handleStartTunnel}
               disabled={tunnelLoading || !serverState?.running}
-              className="text-[11px] px-3 py-1.5 rounded-lg bg-henry-surface border border-henry-border/40 text-henry-text hover:border-henry-accent/40 transition-all disabled:opacity-40"
-            >{tunnelLoading ? 'Starting tunnel…' : '🌐 Start Remote Tunnel'}</button>
+              className="text-[11px] px-3 py-1.5 rounded-lg bg-henry-accent/10 border border-henry-accent/30 text-henry-accent hover:bg-henry-accent/20 transition-all disabled:opacity-40"
+            >{tunnelLoading ? 'Starting…' : '🌐 Start Remote Tunnel'}</button>
           </div>
         ) : (
           <div className="space-y-2">
-            <p className="text-[11px] text-henry-text-muted">Remote URL (works from anywhere):</p>
+            <p className="text-[11px] text-henry-text-muted">Open this URL on any device, anywhere:</p>
             <div className="flex items-center gap-2">
               <code className="text-[11px] text-henry-accent bg-henry-surface px-3 py-1.5 rounded-lg border border-henry-border/30 flex-1 truncate">{tunnelUrl}</code>
               <button
-                onClick={() => navigator.clipboard.writeText(tunnelUrl!)}
-                className="text-[11px] px-2 py-1.5 rounded-lg bg-henry-surface border border-henry-border/30 text-henry-text-muted hover:text-henry-text"
+                onClick={() => navigator.clipboard?.writeText(tunnelUrl!)}
+                className="text-[11px] px-2 py-1.5 rounded-lg bg-henry-surface border border-henry-border/30 text-henry-text-muted hover:text-henry-text shrink-0"
               >Copy</button>
             </div>
             <button onClick={handleStopTunnel} className="text-[10px] text-henry-text-muted hover:text-henry-error transition-colors">Stop tunnel</button>

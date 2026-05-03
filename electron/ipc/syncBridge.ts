@@ -47,7 +47,7 @@ interface SSEClient {
 
 // ── Cloudflare Tunnel (remote access from outside home network) ──────────
 
-async function startTunnel(port: number): Promise<string | null> {
+export async function startSyncTunnel(port: number): Promise<string | null> {
   try {
     const { spawn, execSync } = await import('child_process');
     try { execSync('which cloudflared', { stdio: 'ignore' }); }
@@ -94,6 +94,16 @@ let server: http.Server | null = null;
 let sseClients: SSEClient[] = [];
 const linkedDevices: Map<string, DeviceInfo> = new Map();
 const companionTokens: Map<string, string> = new Map(); // token → deviceId
+
+// Per-device context memory — tracks last action for "do it again" / "open that"
+interface DeviceContext {
+  lastCommand?: string;       // last shell command run
+  lastApp?: string;           // last app opened
+  lastFolder?: string;        // last folder created/opened
+  lastAiResponse?: string;    // last AI response text
+  lastUserText?: string;      // last thing user said
+}
+const deviceContext: Map<string, DeviceContext> = new Map();
 
 // Persist companion tokens to SQLite so they survive server restarts
 function saveCompanionTokens(): void {
@@ -1283,6 +1293,36 @@ pairBtn.addEventListener('click', submitManualPair);
   }
 
   // ── Text prompt ───────────────────────────────────────────────────────
+  // ── Intent resolver — stateless helper ────────────────────────────────────
+  function resolveIntent(text: string, ctx: DeviceContext): string {
+    const t = text.toLowerCase().trim();
+
+    // "do it again" / "again" / "repeat that"
+    if (/^(do it again|again|repeat( that)?|one more time|redo)\.?$/i.test(t)) {
+      if (ctx.lastCommand) return ctx.lastCommand;
+      if (ctx.lastApp) return 'open ' + ctx.lastApp;
+    }
+
+    // "open it" / "open that" → last app
+    if (/^open (it|that)\.?$/i.test(t) && ctx.lastApp) {
+      return 'open ' + ctx.lastApp;
+    }
+
+    // "show me" / "show it" → screenshot
+    if (/^show (me |it |that )?now\.?$/i.test(t) || t === 'show me') {
+      return 'take a screenshot';
+    }
+
+    // "yes" / "do it" / "go ahead" after AI suggested something
+    if (/^(yes|yeah|yep|do it|go ahead|sure|ok|okay|proceed)\.?$/i.test(t) && ctx.lastAiResponse) {
+      // Extract any command-like suggestion from last AI response
+      const cmdMatch = ctx.lastAiResponse.match(/`([^`]+)`/) || ctx.lastAiResponse.match(/run[:\s]+(.+)/i);
+      if (cmdMatch) return cmdMatch[1];
+    }
+
+    return text; // no resolution needed
+  }
+
   if (path === '/sync/prompt' && req.method === 'POST') {
     const body = await readBody<{
       text: string;
@@ -1297,6 +1337,13 @@ pairBtn.addEventListener('click', submitManualPair);
 
     const userText = (body.text || '').trim();
     const macHome = os.homedir();
+
+    // ── Intent resolution — "do it again", "open that", context-aware ──────────
+    const ctx = deviceContext.get(deviceId) || {};
+    const resolvedText = resolveIntent(text, ctx);
+
+    // Save last user text regardless
+    deviceContext.set(deviceId, { ...ctx, lastUserText: text });
 
     // Direct computer command detection — no AI, just execute
     async function tryComputerCommand(text: string): Promise<string | null> {
@@ -1325,6 +1372,7 @@ pairBtn.addEventListener('click', submitManualPair);
         try {
           fs.mkdirSync(fullPath, { recursive: true });
           exec('open "' + fullPath + '"');
+          deviceContext.set(deviceId, { ...deviceContext.get(deviceId), lastFolder: fullPath });
           return 'Created "' + name + '" on your ' + locStr + ' and opened it in Finder.';
         } catch (e) { return 'Failed: ' + (e instanceof Error ? e.message : String(e)); }
       }
@@ -1369,7 +1417,7 @@ pairBtn.addEventListener('click', submitManualPair);
     }
 
     try {
-      const cmdResult = await tryComputerCommand(userText);
+      const cmdResult = await tryComputerCommand(resolvedText);
       if (cmdResult !== null) {
         pushToDevice(deviceId, { type: 'companion_response', payload: { text: cmdResult, done: true } });
         return;
@@ -1419,6 +1467,8 @@ pairBtn.addEventListener('click', submitManualPair);
             if (data === '[DONE]') {
               if (!doneSent) {
                 doneSent = true;
+                // Track AI response for intent resolution ("yes, do it", etc.)
+                deviceContext.set(deviceId, { ...deviceContext.get(deviceId), lastAiResponse: fullText });
                 // Strip "I can't access your computer" type responses — these shouldn't reach the user
                 let cleanText = fullText;
                 const cantPhrases = [
@@ -1763,7 +1813,7 @@ export function registerSyncBridgeIpc(): void {
 
   ipcMain.handle('henry:sync:start-tunnel', async () => {
     if (tunnelUrl) return { ok: true, url: tunnelUrl };
-    const url = await startTunnel(currentPort);
+    const url = await startSyncTunnel(currentPort);
     return { ok: !!url, url };
   });
 
