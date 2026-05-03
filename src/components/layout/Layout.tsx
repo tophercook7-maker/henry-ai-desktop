@@ -5,6 +5,7 @@ import Sidebar from './Sidebar';
 import MobileNav from './MobileNav';
 import ChatView from '../chat/ChatView';
 import TaskQueueView from '../queue/TaskQueueView';
+import TasksPanel from '../tasks/TasksPanel';
 import SettingsView from '../settings/SettingsView';
 import FileBrowser from '../files/FileBrowser';
 import WorkspaceView from '../workspace/WorkspaceView';
@@ -99,7 +100,7 @@ export default function Layout() {
           {currentView === 'modes' && <ModesPanel />}
           {currentView === 'secretary' && <SecretaryPanel />}
           {currentView === 'contacts' && <ContactsPanel />}
-          {currentView === 'tasks' && <TaskQueueView />}
+          {currentView === 'tasks' && <TasksPanel />}
           {currentView === 'files' && <FileBrowser />}
           {currentView === 'workspace' && <WorkspaceView />}
           {currentView === 'terminal' && <TerminalView />}

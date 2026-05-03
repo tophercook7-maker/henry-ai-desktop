@@ -117,6 +117,15 @@ contextBridge.exposeInMainWorld('henryAPI', {
 
   // ── Memory — Legacy (backward-compatible) ─────────────────
   saveFact: (fact: Record<string, unknown>) => ipcRenderer.invoke('memory:saveFact', fact),
+  // Generic invoke — for panels that need direct IPC access
+  invoke: (channel: string, ...args: unknown[]) => ipcRenderer.invoke(channel, ...args),
+  // Personal tasks
+  tasksList: (filter?: { status?: string }) => ipcRenderer.invoke('tasks:list', filter),
+  tasksCreate: (task: Record<string, unknown>) => ipcRenderer.invoke('tasks:create', task),
+  tasksUpdate: (id: string, patch: Record<string, unknown>) => ipcRenderer.invoke('tasks:update', id, patch),
+  tasksDelete: (id: string) => ipcRenderer.invoke('tasks:delete', id),
+  // Native notification
+  showNotification: (opts: { title: string; body?: string }) => ipcRenderer.invoke('notification:show', opts),
   searchFacts: (query: Record<string, unknown>) => ipcRenderer.invoke('memory:searchFacts', query),
   getAllFacts: (limit?: number) => ipcRenderer.invoke('memory:getAllFacts', limit),
   buildContext: (params: Record<string, unknown>) => ipcRenderer.invoke('memory:buildContext', params),

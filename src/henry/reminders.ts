@@ -80,9 +80,15 @@ export function checkAndNotify(): number {
     if (r.done || r.notifiedAt) continue;
     const due = new Date(r.dueAt).getTime();
     if (now >= due) {
-      if (Notification.permission === 'granted') {
+      // Try native Electron notification first (works in background), fallback to browser
+      if ((window as any).henryAPI?.showNotification) {
+        (window as any).henryAPI.showNotification({
+          title: `Henry: ${r.title}`,
+          body: r.notes || 'Reminder due',
+        }).catch(() => {});
+      } else if (Notification.permission === 'granted') {
         new Notification(`Henry: ${r.title}`, {
-          body: r.notes || `Due reminder`,
+          body: r.notes || 'Reminder due',
           icon: '/favicon.ico',
           tag: r.id,
         });

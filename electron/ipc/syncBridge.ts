@@ -1018,6 +1018,12 @@ pairBtn.addEventListener('click', submitManualPair);
   }
 
   // ── Health ────────────────────────────────────────────────────────────
+  // Tunnel URL endpoint — returns current tunnel URL if active
+  if (path === '/sync/tunnel-url' && req.method === 'GET') {
+    jsonResponse(res, 200, { url: tunnelUrl || null });
+    return;
+  }
+
   // Live screen endpoint — no auth, returns fresh screenshot as JPEG
   if (path === '/screen' && req.method === 'GET') {
     try {

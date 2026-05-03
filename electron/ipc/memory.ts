@@ -973,6 +973,48 @@ export function registerMemoryHandlers(database: Database.Database) {
       return null as any;
     }
   });
+
+  // ── Personal Tasks ────────────────────────────────────────────────────────
+  ipcMain.handle('tasks:list', (_e, filter?: { status?: string }) => {
+    try {
+      let sql = 'SELECT * FROM personal_tasks';
+      const params: string[] = [];
+      if (filter?.status) { sql += ' WHERE status = ?'; params.push(filter.status); }
+      sql += ' ORDER BY CASE status WHEN \'doing\' THEN 0 WHEN \'todo\' THEN 1 ELSE 2 END, priority DESC, created_at DESC';
+      return db.prepare(sql).all(...params);
+    } catch (e) { console.error('[tasks:list]', e); return []; }
+  });
+
+  ipcMain.handle('tasks:create', (_e, task: { id: string; title: string; notes?: string; priority?: number; due_at?: string }) => {
+    try {
+      db.prepare('INSERT INTO personal_tasks (id,title,notes,status,priority,due_at,created_at) VALUES (?,?,?,\'todo\',?,?,?)')
+        .run(task.id, task.title, task.notes || null, task.priority ?? 2, task.due_at || null, new Date().toISOString());
+      return { ok: true };
+    } catch (e) { return { ok: false, error: String(e) }; }
+  });
+
+  ipcMain.handle('tasks:update', (_e, id: string, patch: { status?: string; title?: string; notes?: string; priority?: number }) => {
+    try {
+      const sets: string[] = [];
+      const vals: unknown[] = [];
+      if (patch.title !== undefined) { sets.push('title=?'); vals.push(patch.title); }
+      if (patch.notes !== undefined) { sets.push('notes=?'); vals.push(patch.notes); }
+      if (patch.priority !== undefined) { sets.push('priority=?'); vals.push(patch.priority); }
+      if (patch.status !== undefined) {
+        sets.push('status=?'); vals.push(patch.status);
+        if (patch.status === 'done') { sets.push('completed_at=?'); vals.push(new Date().toISOString()); }
+      }
+      if (sets.length === 0) return { ok: true };
+      vals.push(id);
+      db.prepare(`UPDATE personal_tasks SET ${sets.join(',')} WHERE id=?`).run(...vals);
+      return { ok: true };
+    } catch (e) { return { ok: false, error: String(e) }; }
+  });
+
+  ipcMain.handle('tasks:delete', (_e, id: string) => {
+    try { db.prepare('DELETE FROM personal_tasks WHERE id=?').run(id); return { ok: true }; }
+    catch (e) { return { ok: false, error: String(e) }; }
+  });
 }
 
 // ── Bandwidth-aware context builder ───────────────────────────────────────────

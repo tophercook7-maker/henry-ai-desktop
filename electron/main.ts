@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, ipcMain } from 'electron';
+import { app, BrowserWindow, shell, ipcMain , Notification } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { autoUpdater } from 'electron-updater';
@@ -232,37 +232,75 @@ app.whenReady().then(() => {
   // ── Companion Sync Bridge ────────────────────────────────────────────────
   setSyncDb(db);
   registerSyncBridgeIpc();
+
+  // Native notifications — works even when app is in background
+  ipcMain.handle('notification:show', (_e, opts: { title: string; body?: string; silent?: boolean }) => {
+    if (Notification.isSupported()) {
+      new Notification({
+        title: opts.title,
+        body: opts.body || '',
+        silent: opts.silent ?? false,
+      }).show();
+    }
+  });
+
   // Auto-start sync server so companion devices can connect immediately
   startSyncServer(4242);
 
-  // Auto-start Cloudflare tunnel if enabled in settings (or cloudflared is available)
-  // This makes mobile work off home network without any setup
+  // Auto-start Cloudflare tunnel — self-installing, zero user action required
   setTimeout(async () => {
     try {
-      const { execSync } = await import('child_process');
+      const { execSync, exec } = await import('child_process') as typeof import('child_process');
       const db2 = await import('./ipc/database');
       const currentDb = db2.getDb();
+
+      // Enable tunnel by default on first run
       const tunnelSetting = currentDb.prepare("SELECT value FROM settings WHERE key='auto_tunnel_enabled'").get() as {value:string} | undefined;
-      
-      // Auto-start if explicitly enabled, or if this is first launch and cloudflared exists
-      const autoEnabled = tunnelSetting?.value === 'true';
+      if (tunnelSetting === undefined) {
+        currentDb.prepare("INSERT OR IGNORE INTO settings(key,value) VALUES('auto_tunnel_enabled','true')").run();
+      }
+      const autoEnabled = (tunnelSetting?.value ?? 'true') !== 'false';
       if (!autoEnabled) return;
-      
-      // Verify cloudflared is installed
-      try { execSync('which cloudflared', { stdio: 'ignore' }); }
-      catch { return; } // not installed, skip silently
-      
+
+      // Check if cloudflared is installed — if not, install it automatically
+      let cloudflaredPath = '';
+      try {
+        cloudflaredPath = execSync('which cloudflared', { encoding: 'utf8' }).trim();
+      } catch {
+        // Not found — try to install via brew silently
+        console.log('[Henry] cloudflared not found — installing via brew...');
+        try {
+          // Check brew exists
+          const brewPath = execSync('which brew', { encoding: 'utf8' }).trim();
+          if (brewPath) {
+            execSync(`${brewPath} install cloudflared`, {
+              timeout: 120_000,
+              stdio: 'ignore',
+              env: { ...process.env, HOME: process.env.HOME || '/Users/' + process.env.USER },
+            });
+            cloudflaredPath = execSync('which cloudflared', { encoding: 'utf8' }).trim();
+            console.log('[Henry] cloudflared installed at:', cloudflaredPath);
+          }
+        } catch (installErr) {
+          console.log('[Henry] Could not auto-install cloudflared:', installErr instanceof Error ? installErr.message : String(installErr));
+          return;
+        }
+      }
+
+      if (!cloudflaredPath) return;
+
       const { startSyncTunnel } = await import('./ipc/syncBridge');
       const url = await startSyncTunnel(4242);
       if (url) {
-        console.log('[Henry] Auto-tunnel active:', url);
-        // Store for mobile display
+        console.log('[Henry] Tunnel active:', url);
         currentDb.prepare("INSERT OR REPLACE INTO settings(key,value) VALUES('last_tunnel_url',?)").run(url);
+        // Notify renderer so companion panel updates
+        getMainWindow()?.webContents.send('henry:tunnel:active', { url });
       }
     } catch (e) {
-      console.log('[Henry] Auto-tunnel skipped:', e instanceof Error ? e.message : String(e));
+      console.log('[Henry] Tunnel setup error:', e instanceof Error ? e.message : String(e));
     }
-  }, 3000); // wait 3s for sync server to be ready
+  }, 3000);
 
   // ── Auto-updater ────────────────────────────────────────────────────────────
   autoUpdater.autoDownload = true;
