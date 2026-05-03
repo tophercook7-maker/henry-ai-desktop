@@ -137,6 +137,14 @@ contextBridge.exposeInMainWorld('henryAPI', {
   // Self-repair / health
   runDiagnostic: () => ipcRenderer.invoke('henry:diagnostic:run'),
   getLastDiagnostic: () => ipcRenderer.invoke('henry:diagnostic:last'),
+  // Recordings (Meeting Recorder → SQLite)
+  recordingsList: () => ipcRenderer.invoke('recordings:list'),
+  recordingsGet: (id: string) => ipcRenderer.invoke('recordings:get', id),
+  recordingsSave: (r: Record<string,unknown>) => ipcRenderer.invoke('recordings:save', r),
+  recordingsDelete: (id: string) => ipcRenderer.invoke('recordings:delete', id),
+  // Quick captures
+  captureSave: (c: Record<string,unknown>) => ipcRenderer.invoke('capture:save', c),
+  captureList: (limit?: number) => ipcRenderer.invoke('capture:list', limit),
   // Scripture / DeepWellAudio
   scriptureSavedList: () => ipcRenderer.invoke('scripture:saved-list'),
   scriptureSaveVerse: (v: Record<string,unknown>) => ipcRenderer.invoke('scripture:save-verse', v),

@@ -23,6 +23,19 @@ function saveRecordings(recs: Recording[]) {
   try { localStorage.setItem(RECORDINGS_KEY, JSON.stringify(recs.slice(0, 30))); } catch { /* ignore */ }
 }
 
+async function persistRecording(r: Recording) {
+  try {
+    const api = (window as any).henryAPI;
+    if (api?.recordingsSave) {
+      await api.recordingsSave({
+        id: r.id, title: r.title, durationSecs: r.duration,
+        transcript: r.transcript, summary: r.summary,
+        actionItems: [], recordedAt: r.date,
+      });
+    }
+  } catch { /* non-critical */ }
+}
+
 function formatDuration(secs: number): string {
   const m = Math.floor(secs / 60);
   const s = secs % 60;

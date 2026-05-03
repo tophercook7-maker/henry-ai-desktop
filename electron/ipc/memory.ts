@@ -1338,6 +1338,55 @@ export function registerMemoryHandlers(database: Database.Database) {
         .all('%'+query+'%', '%'+query+'%', '%'+query+'%');
     } catch { return []; }
   });
+
+  // ── Meeting Recordings ────────────────────────────────────────────────────
+  db.prepare(`CREATE TABLE IF NOT EXISTS recordings (
+    id TEXT PRIMARY KEY, title TEXT NOT NULL, duration_secs INTEGER DEFAULT 0,
+    transcript TEXT, summary TEXT, action_items TEXT DEFAULT '[]',
+    recorded_at TEXT NOT NULL, updated_at TEXT NOT NULL
+  )`).run();
+
+  ipcMain.handle('recordings:list', () => {
+    try { return db.prepare("SELECT id,title,duration_secs,recorded_at,updated_at FROM recordings ORDER BY recorded_at DESC LIMIT 50").all(); }
+    catch { return []; }
+  });
+  ipcMain.handle('recordings:get', (_e, id: string) => {
+    try { return db.prepare("SELECT * FROM recordings WHERE id=?").get(id) || null; }
+    catch { return null; }
+  });
+  ipcMain.handle('recordings:save', (_e, r: Record<string,unknown>) => {
+    try {
+      const now = new Date().toISOString();
+      db.prepare(`INSERT INTO recordings (id,title,duration_secs,transcript,summary,action_items,recorded_at,updated_at) VALUES (?,?,?,?,?,?,?,?)
+        ON CONFLICT(id) DO UPDATE SET title=excluded.title,duration_secs=excluded.duration_secs,
+        transcript=excluded.transcript,summary=excluded.summary,action_items=excluded.action_items,updated_at=excluded.updated_at`)
+        .run(r.id, r.title, r.durationSecs||0, r.transcript||null, r.summary||null, JSON.stringify(r.actionItems||[]), r.recordedAt||now, now);
+      return { ok: true };
+    } catch (e) { return { ok: false, error: String(e) }; }
+  });
+  ipcMain.handle('recordings:delete', (_e, id: string) => {
+    try { db.prepare("DELETE FROM recordings WHERE id=?").run(id); return { ok: true }; }
+    catch (e) { return { ok: false, error: String(e) }; }
+  });
+
+  // ── Quick Captures (fast notes routed to tasks/reminders/journal) ─────────
+  db.prepare(`CREATE TABLE IF NOT EXISTS quick_captures (
+    id TEXT PRIMARY KEY, text TEXT NOT NULL, routed_to TEXT,
+    routed_id TEXT, captured_at TEXT NOT NULL
+  )`).run();
+
+  ipcMain.handle('capture:save', (_e, c: Record<string,unknown>) => {
+    try {
+      const now = new Date().toISOString();
+      db.prepare("INSERT INTO quick_captures (id,text,routed_to,routed_id,captured_at) VALUES (?,?,?,?,?)")
+        .run(c.id, c.text, c.routedTo||null, c.routedId||null, now);
+      return { ok: true };
+    } catch (e) { return { ok: false, error: String(e) }; }
+  });
+  ipcMain.handle('capture:list', (_e, limit=20) => {
+    try { return db.prepare("SELECT * FROM quick_captures ORDER BY captured_at DESC LIMIT ?").all(limit); }
+    catch { return []; }
+  });
 }
 
 // ── Bandwidth-aware context builder ───────────────────────────────────────────

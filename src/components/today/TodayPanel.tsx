@@ -21,6 +21,9 @@ function getGreeting(): { line1: string; line2: string } {
 export default function TodayPanel() {
   const { setCurrentView } = useStore();
   const [quickAsk, setQuickAsk] = useState('');
+  const [capture, setCapture] = useState('');
+  const [captureRoute, setCaptureRoute] = useState<'task'|'reminder'|'journal'|'auto'>('auto');
+  const [captureSaving, setCaptureSaving] = useState(false);
   const [intention, setIntentionState] = useState(() => getDailyIntention()?.text ?? '');
   const [intentionDraft, setIntentionDraft] = useState(() => getDailyIntention()?.text ?? '');
   const [briefing, setBriefing] = useState<DailyBriefing | null>(() => getTodayBriefing());
@@ -31,6 +34,44 @@ export default function TodayPanel() {
     dueTasks: number; dueReminders: number; focusToday: number;
     income: number; expenses: number;
   }>({ dueTasks: 0, dueReminders: 0, focusToday: 0, income: 0, expenses: 0 });
+
+  async function handleCapture(e: React.FormEvent) {
+    e.preventDefault();
+    const text = capture.trim();
+    if (!text) return;
+    setCaptureSaving(true);
+    const api = (window as any).henryAPI;
+    const lower = text.toLowerCase();
+
+    // Auto-detect route if 'auto'
+    let route = captureRoute;
+    if (route === 'auto') {
+      if (/remind|at \\d|tomorrow|tonight|pm|am|by |due/.test(lower)) route = 'reminder';
+      else if (/feel|today was|morning|evening|grateful|prayer/.test(lower)) route = 'journal';
+      else route = 'task';
+    }
+
+    const id = crypto.randomUUID();
+    const now = new Date().toISOString();
+
+    try {
+      if (route === 'task') {
+        await api.tasksCreate?.({ id, title: text, status: 'todo', priority: 2, created_at: now });
+      } else if (route === 'reminder') {
+        // Default due tomorrow at 9am
+        const due = new Date(); due.setDate(due.getDate()+1); due.setHours(9,0,0,0);
+        await api.remindersSave?.({ id, title: text, dueAt: due.toISOString(), done: false, repeat: 'none' });
+      } else {
+        await api.journalSave?.({ id, date: now.slice(0,10), content: text });
+      }
+      // Log the capture
+      await api.captureSave?.({ id, text, routedTo: route });
+      setCapture('');
+      // Refresh live data
+      void api.tasksList?.({ status: 'todo' }).then((t: any[]) => setLiveData(d => ({...d, dueTasks: (t||[]).length}))).catch(() => {});
+    } catch { /* non-critical */ }
+    setCaptureSaving(false);
+  }
 
   // Pull live data from SQLite
   useState(() => {
@@ -245,6 +286,29 @@ export default function TodayPanel() {
         )}
 
         {/* Cost dashboard — shows today's AI spending vs GPT-4 */}
+        {/* Quick Capture */}
+        <form onSubmit={handleCapture} className="w-full mb-3">
+          <div className="flex gap-2 items-center">
+            <input
+              value={capture}
+              onChange={e => setCapture(e.target.value)}
+              placeholder="Capture anything — task, reminder, or note…"
+              className="flex-1 bg-henry-surface border border-henry-border/30 rounded-xl px-3 py-2 text-sm text-henry-text placeholder:text-henry-text-muted outline-none focus:border-henry-accent/50 transition-all min-w-0"
+            />
+            <select value={captureRoute} onChange={e => setCaptureRoute(e.target.value as any)}
+              className="bg-henry-surface border border-henry-border/30 rounded-xl px-2 py-2 text-xs text-henry-text-muted outline-none cursor-pointer flex-shrink-0">
+              <option value="auto">Auto</option>
+              <option value="task">Task</option>
+              <option value="reminder">Remind</option>
+              <option value="journal">Journal</option>
+            </select>
+            <button type="submit" disabled={!capture.trim() || captureSaving}
+              className="px-3 py-2 rounded-xl bg-henry-accent text-white text-sm font-bold disabled:opacity-40 hover:bg-henry-accent/80 transition-all flex-shrink-0">
+              {captureSaving ? '…' : '→'}
+            </button>
+          </div>
+        </form>
+
         {/* Live Data Strip */}
         {(liveData.dueTasks > 0 || liveData.dueReminders > 0 || liveData.focusToday > 0) && (
           <div className="w-full mb-3 flex gap-2 flex-wrap">
