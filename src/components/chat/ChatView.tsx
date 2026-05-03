@@ -1508,8 +1508,10 @@ export default function ChatView() {
 
     const apiKey = provider.api_key || provider.apiKey || '';
 
-    // GROQ FREE TIER: bypass the full charter — use a minimal ~400 token prompt
-    if (companionProvider === 'groq') {
+    // LEAN PROMPT: for Groq free tier AND Ollama — bypass the full 12k-token charter
+    // Groq free tier: 12-20k TPM limit. Ollama: no limit but faster with lean prompt.
+    const useLeanPrompt = companionProvider === 'groq' || companionProvider === 'ollama';
+    if (useLeanPrompt) {
       const minimalSys = buildGroqFreeSystemPrompt(effectiveMode);
       const messagesPayloadGroq: HenryAIMessage[] = [
         { role: 'system', content: minimalSys },

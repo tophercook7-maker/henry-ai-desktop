@@ -22,6 +22,27 @@ export default function TodayPanel() {
   const { setCurrentView } = useStore();
   const [quickAsk, setQuickAsk] = useState('');
   const [capture, setCapture] = useState('');
+  const [henryStatus, setHenryStatus] = useState<'checking'|'ready'|'needs-key'|'ollama'>('checking');
+
+  // Check Henry's AI readiness
+  useState(() => {
+    const api = (window as any).henryAPI;
+    if (!api) return;
+    Promise.all([
+      api.getProviders().catch(() => []),
+      api.getSettings().catch(() => ({})),
+    ]).then(([providers, settings]: any[]) => {
+      const hasGroqKey = (providers || []).some((p: any) =>
+        p.id === 'groq' && (p.api_key || p.apiKey || '').length > 10
+      );
+      const isOllama = settings?.companion_provider === 'ollama';
+      if (hasGroqKey || isOllama) {
+        setHenryStatus(isOllama ? 'ollama' : 'ready');
+      } else {
+        setHenryStatus('needs-key');
+      }
+    }).catch(() => setHenryStatus('needs-key'));
+  });
   const [captureRoute, setCaptureRoute] = useState<'task'|'reminder'|'journal'|'auto'>('auto');
   const [captureSaving, setCaptureSaving] = useState(false);
   const [intention, setIntentionState] = useState(() => getDailyIntention()?.text ?? '');
@@ -286,6 +307,28 @@ export default function TodayPanel() {
         )}
 
         {/* Cost dashboard — shows today's AI spending vs GPT-4 */}
+        {/* Henry AI Status */}
+        {henryStatus !== 'checking' && (
+          <div className={`w-full mb-3 flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-medium ${
+            henryStatus === 'ready' ? 'bg-green-400/5 border-green-400/20 text-green-400' :
+            henryStatus === 'ollama' ? 'bg-blue-400/5 border-blue-400/20 text-blue-400' :
+            'bg-yellow-400/5 border-yellow-400/20 text-yellow-400'
+          }`}>
+            <span className="text-sm">{henryStatus === 'ready' ? '✓' : henryStatus === 'ollama' ? '⚡' : '⚠'}</span>
+            <span className="flex-1">
+              {henryStatus === 'ready' ? 'Henry is ready — Groq AI connected' :
+               henryStatus === 'ollama' ? 'Henry is ready — running on local Ollama' :
+               'Henry needs a Groq API key to respond'}
+            </span>
+            {henryStatus === 'needs-key' && (
+              <button onClick={() => (window as any).useStore?.getState?.()?.setCurrentView?.('settings')}
+                className="underline hover:opacity-80 transition-all flex-shrink-0">
+                Add key →
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Quick Capture */}
         <form onSubmit={handleCapture} className="w-full mb-3">
           <div className="flex gap-2 items-center">
