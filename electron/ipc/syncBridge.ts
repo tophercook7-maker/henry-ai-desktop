@@ -524,6 +524,8 @@ async function handleRequest(
       jsonResponse(res, 200, {
         running: serverRunning,
         port: currentPort,
+        localIp: getLocalIp(),
+        companionUrl: `http://${getLocalIp()}:${currentPort}`,
         tunnelUrl,
         pairToken: pairToken && Date.now() < pairTokenExpiry ? pairToken : null,
         pairTokenExpiry,
@@ -1315,6 +1317,93 @@ async function handleRequest(
   }
 
   // ── Devices list ──────────────────────────────────────────────────────
+  // ── Companion data endpoints ─────────────────────────────────────────────
+
+  // Live Mac screenshot → returns { image: 'data:image/png;base64,...' }
+  if (path === '/sync/mac/screen' && req.method === 'GET') {
+    try {
+      const { execSync } = await import('child_process');
+      const os = await import('os');
+      const fs = await import('fs');
+      const path_mod = await import('path');
+      const tmp = path_mod.default.join(os.default.tmpdir(), `henry_companion_${Date.now()}.png`);
+      execSync(`screencapture -x -m "${tmp}"`, { timeout: 3000 });
+      const buf = fs.default.readFileSync(tmp);
+      fs.default.unlinkSync(tmp);
+      const b64 = buf.toString('base64');
+      jsonResponse(res, 200, { image: `data:image/png;base64,${b64}`, ts: Date.now() });
+    } catch (e) {
+      jsonResponse(res, 500, { error: String(e) });
+    }
+    return;
+  }
+
+  // Today summary — tasks, habits, reminders
+  if (path === '/sync/mac/today' && req.method === 'GET') {
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const tasks = dbGet('SELECT id,title,status,priority FROM tasks WHERE status!=? ORDER BY priority DESC LIMIT 10', 'done') as any[];
+      const reminders = dbGet('SELECT id,title,due_at,done FROM reminders WHERE done=0 ORDER BY due_at ASC LIMIT 10', ...[]) as any[];
+      const habits = dbGet('SELECT * FROM habits WHERE active=1', ...[]) as any[];
+      const habitLogs = dbGet('SELECT * FROM habit_logs WHERE date=?', today) as any[];
+      const journalToday = dbGet('SELECT id,title,content,mood FROM journal_entries WHERE date=? LIMIT 1', today) as any[];
+      jsonResponse(res, 200, { tasks, reminders, habits, habitLogs, journalToday, date: today });
+    } catch (e) {
+      jsonResponse(res, 500, { error: String(e) });
+    }
+    return;
+  }
+
+  // Toggle a habit for today from companion
+  if (path === '/sync/mac/habit-toggle' && req.method === 'POST') {
+    try {
+      const body = await readBody(req) as { habit_id: string; date: string };
+      const today = body.date || new Date().toISOString().slice(0, 10);
+      const existing = dbGet('SELECT * FROM habit_logs WHERE habit_id=? AND date=?', body.habit_id, today) as any[];
+      if (existing.length > 0) {
+        dbRun('DELETE FROM habit_logs WHERE habit_id=? AND date=?', body.habit_id, today);
+        jsonResponse(res, 200, { action: 'removed', habit_id: body.habit_id });
+      } else {
+        const id = crypto.randomUUID();
+        dbRun('INSERT INTO habit_logs (id, habit_id, date, count) VALUES (?,?,?,1)', id, body.habit_id, today);
+        jsonResponse(res, 200, { action: 'added', habit_id: body.habit_id });
+      }
+    } catch (e) {
+      jsonResponse(res, 500, { error: String(e) });
+    }
+    return;
+  }
+
+  // Quick shell run from companion (no sensitive ops)
+  if (path === '/sync/mac/run' && req.method === 'POST') {
+    try {
+      const body = await readBody(req) as { command: string };
+      const { execSync } = await import('child_process');
+      // Safety: block dangerous commands
+      const cmd = (body.command || '').trim();
+      const blocked = /rm -rf|sudo|passwd|mkfs|dd if|chmod 777/i;
+      if (blocked.test(cmd)) { jsonResponse(res, 403, { error: 'Command blocked' }); return; }
+      const out = execSync(cmd, { encoding: 'utf8', timeout: 10000, shell: '/bin/zsh' });
+      jsonResponse(res, 200, { output: out.trim(), command: cmd });
+    } catch (e: any) {
+      jsonResponse(res, 200, { output: e.message || String(e), error: true });
+    }
+    return;
+  }
+
+  // Open an app from companion
+  if (path === '/sync/mac/open-app' && req.method === 'POST') {
+    try {
+      const body = await readBody(req) as { app: string };
+      const { execSync } = await import('child_process');
+      execSync(`open -a "${(body.app||'Finder').replace(/"/g, '')}"`, { timeout: 3000 });
+      jsonResponse(res, 200, { ok: true });
+    } catch (e) {
+      jsonResponse(res, 200, { ok: false, error: String(e) });
+    }
+    return;
+  }
+
   if (path === '/sync/devices' && req.method === 'GET') {
     jsonResponse(res, 200, Array.from(linkedDevices.values()));
     return;

@@ -1,782 +1,746 @@
 /**
- * Henry Companion — iPad-optimized mobile web app
- * Served at http://HENRY-IP:4242/
- * 
- * Features:
- *   📱 Phone: full-screen chat + voice + quick actions
- *   🖥️ iPad: split layout — chat + control panel side by side
- *   5 tabs: Chat · Screen · Control · Notes · Capture
- *   Live Mac screen with auto-refresh
- *   System control (open apps, run commands, volume, etc.)
- *   Quick capture → Henry processes on Mac
- *   Voice input with auto-send
- *   Add to Home Screen support
+ * Henry AI Companion — iPad / iPhone web app
+ * Served by the sync server at http://MAC_IP:4242
+ *
+ * iPad landscape: Chat pinned left (360px) + tabbed panel right
+ * iPad portrait / iPhone: bottom tabs, full screen
+ *
+ * Tabs: Chat · Today · Screen · Control · Capture
+ * Features: voice input, live habits, screenshot stream, shell runner,
+ *            AI chat with streaming, quick capture, touch-to-click screen
  */
-export function buildCompanionHtml(macName: string, tunnelUrl?: string): string {
+
+export function buildCompanionHtml(macName: string): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Henry">
-<link rel="apple-touch-icon" href="/icons/icon128.png">
-<title>Henry</title>
+<title>Henry — ${macName}</title>
 <style>
-*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;-webkit-font-smoothing:antialiased}
 :root{
-  --bg:#08080e;--surface:#0e0e18;--surface2:#13131f;--surface3:#181827;
-  --border:rgba(255,255,255,0.07);--accent:#7c3aed;--accent2:#6d28d9;
-  --text:#e8e8f0;--muted:#6b6b8a;--green:#22c55e;--red:#ef4444;--blue:#3b82f6;
-  --sidebar-w:64px;--safe-top:env(safe-area-inset-top,0px);
-  --safe-bottom:env(safe-area-inset-bottom,0px);
-  --safe-left:env(safe-area-inset-left,0px);
-  --safe-right:env(safe-area-inset-right,0px);
+  --bg:#07070f;--s1:#0f0f1a;--s2:#16162a;--s3:#1e1e32;
+  --border:rgba(255,255,255,.08);--accent:#7c3aed;--accent2:#6d28d9;
+  --green:#22c55e;--red:#ef4444;--blue:#3b82f6;--yellow:#f59e0b;
+  --text:#e8e8f0;--muted:rgba(232,232,240,.45);--muted2:rgba(232,232,240,.25);
+  --safe-top:env(safe-area-inset-top,0px);
+  --safe-bot:env(safe-area-inset-bottom,0px);
+  --font:-apple-system,BlinkMacSystemFont,'SF Pro Display',sans-serif;
 }
-html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display',sans-serif;overflow:hidden;position:fixed;width:100%;user-select:none;-webkit-user-select:none}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--font);overflow:hidden}
 
-/* ── LAYOUT ─────────────────────────────────────────── */
-#app{display:flex;height:100%;flex-direction:column}
-#main{display:flex;flex:1;overflow:hidden}
+/* ── LAYOUT ─────────────────────────────────────────────────── */
+#app{display:flex;height:100%;padding-top:var(--safe-top)}
+#chat-col{display:flex;flex-direction:column;width:360px;flex-shrink:0;border-right:1px solid var(--border)}
+#right-col{flex:1;display:flex;flex-direction:column;overflow:hidden}
 
-/* Sidebar nav (iPad: vertical left; Phone: horizontal bottom) */
-#sidenav{
-  display:flex;flex-direction:column;align-items:center;
-  background:var(--surface);border-right:1px solid var(--border);
-  width:var(--sidebar-w);flex-shrink:0;gap:2px;
-  padding-top:max(var(--safe-top),16px);
-  padding-bottom:max(var(--safe-bottom),12px);
+/* Phone: single column */
+@media(max-width:767px){
+  #app{flex-direction:column}
+  #chat-col{width:100%;flex:1;border-right:none;display:none}
+  #chat-col.active{display:flex}
+  #right-col{flex:1;display:none}
+  #right-col.active{display:flex}
 }
-.nav-btn{
-  width:48px;height:48px;border-radius:14px;
-  display:flex;flex-direction:column;align-items:center;justify-content:center;
-  gap:3px;background:none;border:none;cursor:pointer;
-  color:var(--muted);font-size:10px;transition:all .15s;
-  -webkit-tap-highlight-color:transparent;
-}
-.nav-btn:active,.nav-btn.active{background:rgba(124,58,237,0.15);color:var(--accent)}
-.nav-btn .ico{font-size:22px;line-height:1}
-.nav-btn .lbl{font-size:9px;font-weight:600;letter-spacing:.02em;text-transform:uppercase}
-#nav-spacer{flex:1}
-#mac-dot{width:8px;height:8px;border-radius:50%;background:var(--muted);transition:background .3s;margin:8px 0}
-#mac-dot.on{background:var(--green);box-shadow:0 0 8px rgba(34,197,94,.4)}
 
-/* Content area */
-#content{flex:1;display:flex;overflow:hidden;position:relative}
+/* ── TAB BAR ─────────────────────────────────────────────────── */
+#tabs{display:flex;background:var(--s1);border-bottom:1px solid var(--border);flex-shrink:0;padding:0 4px}
+#tabs button{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:10px 4px 8px;background:none;border:none;color:var(--muted);font-size:10px;font-family:var(--font);cursor:pointer;transition:.15s;border-bottom:2px solid transparent;font-weight:600;letter-spacing:.02em}
+#tabs button .ti{font-size:18px;line-height:1}
+#tabs button.on{color:var(--accent);border-bottom-color:var(--accent)}
+#tabs button:active{opacity:.7}
 
-/* ── PANES ───────────────────────────────────────────── */
+/* ── PANES ─────────────────────────────────────────────────── */
 .pane{display:none;flex-direction:column;flex:1;overflow:hidden}
-.pane.active{display:flex}
+.pane.on{display:flex}
 
-/* Topbar */
-#topbar{
-  padding:max(var(--safe-top),12px) 16px 10px;
-  background:var(--surface);border-bottom:1px solid var(--border);
-  display:flex;align-items:center;gap:8px;flex-shrink:0;min-height:44px;
-}
-.bar-title{font-size:16px;font-weight:700;flex:1;letter-spacing:-.3px}
-.bar-badge{font-size:11px;color:var(--muted);background:var(--surface2);
-  border:1px solid var(--border);border-radius:6px;padding:2px 8px}
+/* ── CHAT ─────────────────────────────────────────────────── */
+#chat-header{display:flex;align-items:center;gap:10px;padding:14px 16px 10px;border-bottom:1px solid var(--border);flex-shrink:0}
+#chat-header .logo{font-size:20px;color:var(--accent)}
+#chat-header .mac-name{font-weight:700;font-size:15px;flex:1}
+#conn-dot{width:8px;height:8px;border-radius:50%;background:var(--muted2);transition:.3s;flex-shrink:0}
+#conn-dot.ok{background:var(--green);box-shadow:0 0 6px var(--green)}
+#conn-dot.err{background:var(--red)}
 
-/* ── CHAT PANE ─────────────────────────────────────── */
-#msgs{
-  flex:1;overflow-y:auto;padding:8px 4px 4px;
-  display:flex;flex-direction:column;gap:2px;
-  -webkit-overflow-scrolling:touch;
-}
-.row{display:flex;padding:2px 12px}
-.row.user{justify-content:flex-end}
-.row.ai{justify-content:flex-start}
-.bubble{
-  max-width:82%;padding:9px 14px;
-  font-size:15px;line-height:1.5;word-break:break-word;white-space:pre-wrap;
-  border-radius:20px;
-}
-.bubble.user{background:var(--accent);color:#fff;border-bottom-right-radius:5px}
-.bubble.ai{
-  background:var(--surface2);color:var(--text);
-  border:1px solid var(--border);border-bottom-left-radius:5px;
-}
-.bubble img{max-width:100%;border-radius:10px;margin-top:6px;display:block}
-.typing{display:inline-flex;gap:4px;padding:10px 14px;background:var(--surface2);
-  border:1px solid var(--border);border-radius:20px;border-bottom-left-radius:5px;margin:2px 12px}
-.typing span{width:6px;height:6px;background:var(--muted);border-radius:50%;animation:blink 1.2s infinite}
-.typing span:nth-child(2){animation-delay:.2s}.typing span:nth-child(3){animation-delay:.4s}
-@keyframes blink{0%,80%,100%{opacity:.2}40%{opacity:1}}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
-@keyframes spin{to{transform:rotate(360deg)}}
+#msgs{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;-webkit-overflow-scrolling:touch}
+#msgs::-webkit-scrollbar{display:none}
 
-/* Quick actions */
-#quick{
-  display:flex;gap:6px;overflow-x:auto;padding:6px 12px;
-  flex-shrink:0;scrollbar-width:none;
-}
-#quick::-webkit-scrollbar{display:none}
-.q{
-  background:var(--surface2);border:1px solid var(--border);
-  border-radius:20px;padding:6px 14px;font-size:13px;color:var(--text);
-  cursor:pointer;white-space:nowrap;flex-shrink:0;font-weight:500;
-}
-.q:active{background:var(--accent);border-color:var(--accent);color:#fff}
+.msg{max-width:88%;display:flex;flex-direction:column;gap:2px}
+.msg.u{align-self:flex-end;align-items:flex-end}
+.msg.h{align-self:flex-start;align-items:flex-start}
+.msg.s{align-self:center;align-items:center}
+.bubble{padding:10px 14px;border-radius:18px;font-size:14px;line-height:1.5;word-break:break-word;white-space:pre-wrap}
+.msg.u .bubble{background:var(--accent);color:#fff;border-bottom-right-radius:5px}
+.msg.h .bubble{background:var(--s2);color:var(--text);border-bottom-left-radius:5px;border:1px solid var(--border)}
+.msg.s .bubble{background:var(--s1);color:var(--muted);font-size:12px;border:1px solid var(--border);border-radius:12px}
+.msg time{font-size:10px;color:var(--muted2);padding:0 4px}
 
-/* Chat input */
-#inputbar{
-  padding:8px 12px;
-  padding-bottom:max(var(--safe-bottom),8px);
-  background:var(--surface);border-top:1px solid var(--border);
-  display:flex;align-items:flex-end;gap:8px;flex-shrink:0;
-}
-#mic{
-  width:40px;height:40px;border-radius:50%;
-  background:var(--surface2);border:1px solid var(--border);
-  display:flex;align-items:center;justify-content:center;
-  cursor:pointer;flex-shrink:0;transition:all .2s;font-size:18px;
-}
-#mic.listening{background:var(--red);border-color:var(--red);animation:pulse .8s infinite}
-#inp{
-  flex:1;background:var(--surface2);border:1px solid var(--border);
-  border-radius:22px;padding:10px 16px;font-size:16px;
-  color:var(--text);outline:none;resize:none;
-  max-height:120px;font-family:inherit;line-height:1.4;
-  -webkit-text-fill-color:var(--text);
-}
-#inp::placeholder{color:var(--muted)}
-#inp:focus{border-color:rgba(124,58,237,0.4)}
-#send{
-  width:40px;height:40px;border-radius:50%;background:var(--accent);
-  border:none;display:flex;align-items:center;justify-content:center;
-  cursor:pointer;flex-shrink:0;font-size:18px;
-  opacity:.4;transition:opacity .2s;
-}
-#send.ready{opacity:1}
+#quick-row{display:flex;gap:6px;padding:8px 12px;overflow-x:auto;flex-shrink:0;scrollbar-width:none}
+#quick-row::-webkit-scrollbar{display:none}
+.qb{background:var(--s2);border:1px solid var(--border);border-radius:20px;padding:6px 12px;font-size:12px;color:var(--text);cursor:pointer;white-space:nowrap;flex-shrink:0;font-family:var(--font)}
+.qb:active{background:var(--accent);color:#fff;border-color:var(--accent)}
 
-/* ── SCREEN PANE ────────────────────────────────────── */
-#screen-wrap{flex:1;overflow:auto;display:flex;align-items:flex-start;justify-content:center;padding:8px;background:#000}
-#screen-img{max-width:100%;border-radius:8px;cursor:zoom-in}
-#screen-controls{display:flex;align-items:center;gap:10px;padding:8px 14px;
-  background:var(--surface);border-top:1px solid var(--border);flex-shrink:0}
-#screen-controls label{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);cursor:pointer}
+#input-bar{display:flex;align-items:flex-end;gap:8px;padding:10px 12px;padding-bottom:calc(10px + var(--safe-bot));border-top:1px solid var(--border);background:var(--s1);flex-shrink:0}
+#msg-in{flex:1;background:var(--s2);border:1px solid var(--border);border-radius:22px;padding:10px 16px;font-size:15px;color:var(--text);outline:none;resize:none;font-family:var(--font);max-height:120px;overflow-y:auto;line-height:1.4;-webkit-overflow-scrolling:touch}
+#msg-in::placeholder{color:var(--muted2)}
+#msg-in:focus{border-color:rgba(124,58,237,.5)}
+#mic-btn,#send-btn{width:42px;height:42px;border-radius:50%;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;transition:.2s}
+#mic-btn{background:var(--s2);color:var(--muted)}
+#mic-btn.on{background:var(--red);color:#fff;animation:pulse .8s infinite}
+#send-btn{background:var(--accent);color:#fff}
+#send-btn:active{background:var(--accent2)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
 
-/* ── CONTROL PANE ───────────────────────────────────── */
-.ctrl-section{padding:12px 14px 6px;font-size:10px;font-weight:700;
-  text-transform:uppercase;letter-spacing:.1em;color:var(--muted)}
-.ctrl-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));
-  gap:8px;padding:0 12px 12px}
-.ctrl-btn{
-  background:var(--surface2);border:1px solid var(--border);
-  border-radius:14px;padding:14px 12px;
-  display:flex;flex-direction:column;align-items:flex-start;gap:6px;
-  cursor:pointer;transition:all .15s;
-}
-.ctrl-btn:active{background:rgba(124,58,237,.15);border-color:rgba(124,58,237,.4)}
-.ctrl-btn .ico{font-size:24px}
-.ctrl-btn .lbl{font-size:13px;font-weight:600;color:var(--text)}
-.ctrl-btn .desc{font-size:11px;color:var(--muted)}
-.ctrl-row{display:flex;align-items:center;justify-content:space-between;
-  padding:10px 14px;border-bottom:1px solid var(--border)}
-.ctrl-row label{font-size:14px;color:var(--text)}
-.ctrl-row input[type=range]{flex:1;margin:0 12px;accent-color:var(--accent)}
+/* ── TODAY ─────────────────────────────────────────────────── */
+#today-pane{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px;gap:12px;display:flex;flex-direction:column}
+.card{background:var(--s1);border:1px solid var(--border);border-radius:20px;overflow:hidden}
+.card-head{display:flex;align-items:center;gap:8px;padding:14px 16px 8px;font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.card-head .ch-icon{font-size:16px}
 
-/* ── NOTES / CAPTURE PANE ───────────────────────────── */
-#notes-area{
-  flex:1;background:transparent;border:none;outline:none;resize:none;
-  color:var(--text);font-size:16px;line-height:1.7;padding:16px;
-  font-family:inherit;-webkit-text-fill-color:var(--text);
-}
-#notes-area::placeholder{color:var(--muted)}
-.notes-bar{padding:8px 12px;padding-bottom:max(var(--safe-bottom),8px);
-  background:var(--surface);border-top:1px solid var(--border);
-  display:flex;gap:8px;flex-shrink:0}
-.notes-btn{flex:1;padding:10px;border-radius:12px;border:none;font-size:14px;
-  font-weight:600;cursor:pointer;transition:all .15s}
-.notes-btn.primary{background:var(--accent);color:#fff}
-.notes-btn.secondary{background:var(--surface2);border:1px solid var(--border);color:var(--text)}
+/* Habits */
+.habit-row{display:flex;align-items:center;gap:12px;padding:10px 16px;border-top:1px solid var(--border)}
+.habit-check{width:34px;height:34px;border-radius:50%;border:2px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:16px;cursor:pointer;transition:.2s;flex-shrink:0}
+.habit-check.done{border-color:var(--green);background:rgba(34,197,94,.12);color:var(--green)}
+.habit-check.done::after{content:'✓';font-weight:800}
+.habit-name{flex:1;font-size:14px;font-weight:500}
+.habit-streak{font-size:11px;color:var(--accent);font-weight:700}
 
-/* ── PAIR SCREEN ────────────────────────────────────── */
-#pair-screen{
-  position:fixed;inset:0;background:var(--bg);
-  display:flex;flex-direction:column;align-items:center;justify-content:center;
-  gap:20px;padding:40px 32px;text-align:center;z-index:100;
-}
-.pair-logo{font-size:56px;line-height:1}
-.pair-title{font-size:32px;font-weight:900;letter-spacing:-.5px}
-.pair-sub{color:var(--muted);font-size:16px;line-height:1.5;max-width:280px}
-#pair-spinner{width:28px;height:28px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto}
-#pair-err{color:var(--red);font-size:13px;max-width:300px;line-height:1.4}
-#pair-btn{
-  background:var(--accent);color:#fff;border:none;border-radius:16px;
-  padding:16px 32px;font-size:16px;font-weight:700;cursor:pointer;
-  width:100%;max-width:300px;display:none;
-}
+/* Tasks */
+.task-row{display:flex;align-items:center;gap:10px;padding:10px 16px;border-top:1px solid var(--border)}
+.task-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);flex-shrink:0}
+.task-title{flex:1;font-size:14px}
+.task-pri{font-size:11px;color:var(--muted)}
 
-/* ── iPad split layout ───────────────────────────────── */
-@media (min-width: 768px) {
-  #sidenav{
-    width:80px;
-  }
-  .nav-btn{width:56px;height:56px;border-radius:16px}
-  .nav-btn .ico{font-size:24px}
-  .nav-btn .lbl{font-size:10px}
-  
-  /* iPad: show chat + secondary pane side by side */
-  #content{flex-direction:row}
-  
-  /* On iPad, the chat pane takes left 40% by default */
-  #pane-chat{
-    width:40%;
-    border-right:1px solid var(--border);
-    max-width:480px;
-  }
-  
-  /* Secondary pane takes remaining space */
-  #pane-screen,#pane-control,#pane-notes,#pane-capture{
-    flex:1;
-  }
-  
-  /* On iPad: always show chat + keep secondary visible */
-  #pane-chat{display:flex!important}
-  
-  .bubble{max-width:88%}
-  
-  #topbar{padding-top:max(var(--safe-top),16px)}
-  .bar-title{font-size:17px}
-}
+/* Reminders */
+.rem-row{display:flex;align-items:center;gap:10px;padding:10px 16px;border-top:1px solid var(--border)}
+.rem-icon{font-size:16px;flex-shrink:0}
+.rem-title{flex:1;font-size:14px}
+.rem-time{font-size:11px;color:var(--yellow)}
 
-@media (min-width: 1024px) {
-  #pane-chat{width:380px;min-width:380px}
+/* ── SCREEN ─────────────────────────────────────────────────── */
+#screen-pane{display:flex;flex-direction:column;background:#000}
+#screen-bar2{display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--s1);border-bottom:1px solid var(--border);flex-shrink:0}
+#screen-bar2 label{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);cursor:pointer}
+#screen-bar2 label input{accent-color:var(--accent)}
+#screen-wrap{flex:1;overflow:auto;display:flex;align-items:center;justify-content:center;-webkit-overflow-scrolling:touch}
+#screen-img{max-width:100%;max-height:100%;border-radius:4px;cursor:crosshair;user-select:none;-webkit-user-select:none}
+#screen-ts{font-size:11px;color:var(--muted2);margin-left:auto}
+#screen-status{font-size:11px;color:var(--green)}
+
+/* ── CONTROL ─────────────────────────────────────────────────── */
+#ctrl-pane{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px;gap:12px;display:flex;flex-direction:column}
+.ctrl-sec{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);padding:4px 0 8px}
+.app-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.app-btn{display:flex;flex-direction:column;align-items:center;gap:5px;padding:12px 6px;background:var(--s2);border:1px solid var(--border);border-radius:16px;cursor:pointer;transition:.15s}
+.app-btn:active{background:rgba(124,58,237,.2);border-color:var(--accent)}
+.app-btn .ai{font-size:24px}
+.app-btn .al{font-size:10px;color:var(--muted);text-align:center}
+.action-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.act-btn{display:flex;align-items:center;gap:8px;padding:12px 14px;background:var(--s2);border:1px solid var(--border);border-radius:14px;cursor:pointer;font-size:13px;color:var(--text);transition:.15s}
+.act-btn:active{background:rgba(124,58,237,.15);border-color:var(--accent)}
+.act-btn .ai2{font-size:18px;flex-shrink:0}
+#shell-bar{display:flex;gap:8px;padding:0}
+#shell-in{flex:1;background:var(--s2);border:1px solid var(--border);border-radius:12px;padding:10px 14px;font-size:14px;color:var(--text);outline:none;font-family:'SF Mono',monospace}
+#shell-in::placeholder{color:var(--muted2)}
+#shell-in:focus{border-color:rgba(124,58,237,.5)}
+#shell-run{padding:10px 16px;background:var(--accent);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:600;cursor:pointer}
+#shell-out{background:var(--s2);border:1px solid var(--border);border-radius:12px;padding:12px 14px;font-size:12px;font-family:'SF Mono',monospace;color:var(--green);min-height:60px;white-space:pre-wrap;word-break:break-all;max-height:180px;overflow-y:auto}
+
+/* ── CAPTURE ─────────────────────────────────────────────────── */
+#cap-pane{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px;gap:12px;display:flex;flex-direction:column}
+#cap-in{width:100%;background:var(--s2);border:1px solid var(--border);border-radius:16px;padding:16px;font-size:15px;color:var(--text);outline:none;resize:none;font-family:var(--font);min-height:140px;line-height:1.6}
+#cap-in::placeholder{color:var(--muted2)}
+#cap-in:focus{border-color:rgba(124,58,237,.5)}
+.cap-btns{display:flex;gap:8px}
+.cap-btn{flex:1;padding:13px;background:var(--s2);border:1px solid var(--border);border-radius:14px;font-size:13px;font-weight:600;color:var(--text);cursor:pointer;text-align:center;transition:.15s}
+.cap-btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.cap-btn:active{opacity:.75}
+#cap-result{background:var(--s1);border:1px solid var(--border);border-radius:16px;padding:16px;font-size:13px;line-height:1.6;color:var(--text);display:none}
+#cap-result.show{display:block}
+.result-section{margin-bottom:12px}
+.result-section h4{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--accent);margin-bottom:6px}
+.result-section p{font-size:13px;color:var(--muted);line-height:1.5}
+
+/* ── PAIR SCREEN ─────────────────────────────────────────────── */
+#pair-screen{position:fixed;inset:0;z-index:200;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;padding:40px 28px;text-align:center}
+#pair-screen h1{font-size:28px;font-weight:900;letter-spacing:-.02em}
+#pair-screen p{font-size:15px;color:var(--muted);line-height:1.6;max-width:280px}
+.pair-ip{font-size:28px;font-weight:900;color:var(--accent);font-family:'SF Mono',monospace;letter-spacing:.04em}
+.pair-btn{padding:16px 32px;background:var(--accent);color:#fff;border:none;border-radius:16px;font-size:16px;font-weight:700;cursor:pointer;width:100%;max-width:280px}
+
+/* ── BOTTOM NAV (phone) ──────────────────────────────────────── */
+#bottom-nav{display:none;flex-shrink:0;background:var(--s1);border-top:1px solid var(--border);padding-bottom:var(--safe-bot)}
+@media(max-width:767px){
+  #bottom-nav{display:flex}
+  #bottom-nav button{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 4px;background:none;border:none;font-size:10px;font-weight:600;color:var(--muted);cursor:pointer;font-family:var(--font)}
+  #bottom-nav button .bi{font-size:20px}
+  #bottom-nav button.on{color:var(--accent)}
 }
 </style>
 </head>
 <body>
-<div id="app">
 
-<!-- PAIR / CONNECTING SCREEN -->
 <div id="pair-screen">
-  <div class="pair-logo">◉</div>
-  <div class="pair-title">Henry</div>
-  <div class="pair-sub" id="pair-sub">Connecting to <strong>${macName}</strong>…</div>
-  <div id="pair-spinner"></div>
-  <div id="pair-err"></div>
-  <button id="pair-btn" onclick="autoPair()">Try Again</button>
+  <div style="font-size:48px">◉</div>
+  <h1>Henry AI</h1>
+  <p>Connected to <strong style="color:var(--text)">${macName}</strong></p>
+  <div id="ps-ip" class="pair-ip"></div>
+  <p style="font-size:13px">Open this address on your iPad or iPhone</p>
+  <button class="pair-btn" onclick="hidePair()">Open Companion →</button>
 </div>
 
-<!-- MAIN APP (shown after pair) -->
-<div id="main" style="display:none">
-  
-  <!-- LEFT/BOTTOM SIDEBAR NAV -->
-  <nav id="sidenav">
-    <button class="nav-btn active" onclick="show('chat')" id="nav-chat">
-      <span class="ico">◉</span><span class="lbl">Chat</span>
-    </button>
-    <button class="nav-btn" onclick="show('screen')" id="nav-screen">
-      <span class="ico">📺</span><span class="lbl">Screen</span>
-    </button>
-    <button class="nav-btn" onclick="show('control')" id="nav-control">
-      <span class="ico">⌘</span><span class="lbl">Control</span>
-    </button>
-    <button class="nav-btn" onclick="show('notes')" id="nav-notes">
-      <span class="ico">✦</span><span class="lbl">Notes</span>
-    </button>
-    <button class="nav-btn" onclick="show('capture')" id="nav-capture">
-      <span class="ico">⊕</span><span class="lbl">Capture</span>
-    </button>
-    <div id="nav-spacer"></div>
-    <div id="mac-dot" title="Henry connection"></div>
-  </nav>
+<div id="app" style="display:none">
+  <!-- CHAT COLUMN (always visible on iPad) -->
+  <div id="chat-col">
+    <div id="chat-header">
+      <span class="logo">◉</span>
+      <span class="mac-name">Henry — ${macName}</span>
+      <div id="conn-dot"></div>
+    </div>
+    <div id="msgs">
+      <div class="msg h"><div class="bubble">Hi! I'm Henry. Chat with me, control your Mac, or tap a tab to see your day. What do you need?</div><time>${new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}</time></div>
+    </div>
+    <div id="quick-row">
+      <button class="qb" onclick="q('take a screenshot')">📸 Screenshot</button>
+      <button class="qb" onclick="q('what apps are running')">📱 Apps</button>
+      <button class="qb" onclick="q('open Finder')">📁 Finder</button>
+      <button class="qb" onclick="q('mute the mac')">🔇 Mute</button>
+      <button class="qb" onclick="q('check disk space')">💾 Disk</button>
+      <button class="qb" onclick="q('lock the screen')">🔒 Lock</button>
+      <button class="qb" onclick="q('what did I capture today')">⊕ Today's captures</button>
+    </div>
+    <div id="input-bar">
+      <textarea id="msg-in" placeholder="Message Henry…" rows="1" oninput="autoGrow(this)" onkeydown="inputKey(event)"></textarea>
+      <button id="mic-btn" onclick="toggleMic()" title="Voice input">🎙</button>
+      <button id="send-btn" onclick="sendMsg()">↑</button>
+    </div>
+  </div>
 
-  <!-- CONTENT -->
-  <div id="content">
+  <!-- RIGHT COLUMN (tabbed) -->
+  <div id="right-col">
+    <div id="tabs">
+      <button class="on" onclick="showTab('today')" id="t-today"><span class="ti">⌂</span>Today</button>
+      <button onclick="showTab('screen')" id="t-screen"><span class="ti">📺</span>Screen</button>
+      <button onclick="showTab('ctrl')" id="t-ctrl"><span class="ti">⌘</span>Control</button>
+      <button onclick="showTab('cap')" id="t-cap"><span class="ti">⊕</span>Capture</button>
+    </div>
 
-    <!-- ── CHAT PANE ─────────────────────────────────── -->
-    <div class="pane active" id="pane-chat">
-      <div id="topbar">
-        <span class="bar-title">Henry</span>
-        <span class="bar-badge" id="topbar-status">Connecting…</span>
-      </div>
-      <div id="msgs"></div>
-      <div id="quick">
-        <button class="q" onclick="q('open Finder')">📁 Finder</button>
-        <button class="q" onclick="q('take a screenshot and show me')">📸 Screenshot</button>
-        <button class="q" onclick="q('what apps are running')">📱 Apps</button>
-        <button class="q" onclick="q('check disk space')">💾 Disk</button>
-        <button class="q" onclick="q('open Safari')">🌐 Safari</button>
-        <button class="q" onclick="q('open Chrome')">🔵 Chrome</button>
-        <button class="q" onclick="q('open Terminal')">⌨️ Terminal</button>
-        <button class="q" onclick="q('open VS Code')">💻 Code</button>
-        <button class="q" onclick="q('mute the mac')">🔇 Mute</button>
-        <button class="q" onclick="q('lock the screen')">🔒 Lock</button>
-      </div>
-      <div id="inputbar">
-        <button id="mic" onclick="toggleMic()">🎤</button>
-        <textarea id="inp" placeholder="Ask Henry anything…" rows="1" 
-          oninput="onInput(this)" onkeydown="onKey(event)"></textarea>
-        <button id="send" onclick="sendMsg()">➤</button>
+    <!-- TODAY -->
+    <div class="pane on" id="p-today">
+      <div id="today-pane">
+        <div id="today-date" style="font-size:22px;font-weight:900;padding:4px 0 8px"></div>
+
+        <!-- Habits -->
+        <div class="card" id="habits-card">
+          <div class="card-head"><span class="ch-icon">✓</span>Habits Today<span id="habit-prog" style="margin-left:auto;font-size:11px;color:var(--accent)"></span></div>
+          <div id="habit-list"><div style="padding:16px;color:var(--muted);font-size:13px">Loading…</div></div>
+        </div>
+
+        <!-- Tasks -->
+        <div class="card" id="tasks-card">
+          <div class="card-head"><span class="ch-icon">☐</span>Open Tasks</div>
+          <div id="task-list"><div style="padding:16px;color:var(--muted);font-size:13px">Loading…</div></div>
+        </div>
+
+        <!-- Reminders -->
+        <div class="card" id="rem-card">
+          <div class="card-head"><span class="ch-icon">◎</span>Reminders Due</div>
+          <div id="rem-list"><div style="padding:16px;color:var(--muted);font-size:13px">Loading…</div></div>
+        </div>
       </div>
     </div>
 
-    <!-- ── SCREEN PANE ────────────────────────────────── -->
-    <div class="pane" id="pane-screen">
-      <div id="topbar" style="position:static">
-        <span class="bar-title">Mac Screen</span>
-        <button class="bar-badge" onclick="refreshScreen()" style="cursor:pointer;border:none;background:none;color:var(--muted);font-size:11px">↺ Refresh</button>
+    <!-- SCREEN -->
+    <div class="pane" id="p-screen">
+      <div id="screen-bar2">
+        <label><input type="checkbox" id="auto-ref" checked onchange="toggleAutoRef()"> Auto-refresh</label>
+        <span id="screen-status"></span>
+        <span id="screen-ts" style="margin-left:auto"></span>
+        <button onclick="refreshScreen()" style="background:var(--accent);color:#fff;border:none;border-radius:10px;padding:6px 12px;font-size:12px;cursor:pointer">↻ Refresh</button>
       </div>
       <div id="screen-wrap">
-        <img id="screen-img" alt="Tap Refresh to capture Mac screen" onclick="refreshScreen()">
-      </div>
-      <div id="screen-controls">
-        <label>
-          <input type="checkbox" id="auto-cb" onchange="toggleAuto(this.checked)">
-          Auto-refresh (3s)
-        </label>
-        <button class="bar-badge" onclick="refreshScreen()" style="cursor:pointer;border:none;background:var(--surface2);color:var(--text);padding:6px 12px;border-radius:8px;font-size:12px">Refresh Now</button>
+        <img id="screen-img" src="" alt="Mac screen" onclick="screenClick(event)" />
       </div>
     </div>
 
-    <!-- ── CONTROL PANE ───────────────────────────────── -->
-    <div class="pane" id="pane-control" style="overflow-y:auto">
-      <div id="topbar" style="position:static">
-        <span class="bar-title">Mac Control</span>
-        <span class="bar-badge">HQ</span>
-      </div>
-      
-      <div class="ctrl-section">Volume</div>
-      <div class="ctrl-row">
-        <label>🔊 Volume</label>
-        <input type="range" id="vol-slider" min="0" max="100" value="50"
-          oninput="setVolume(this.value)">
-        <span id="vol-val" style="font-size:12px;color:var(--muted);width:30px;text-align:right">50</span>
-      </div>
-      
-      <div class="ctrl-section">Quick Launch</div>
-      <div class="ctrl-grid">
-        ${[
-          ['📁','Finder','Files','open Finder'],
-          ['🌐','Safari','Browser','open Safari'],
-          ['🔵','Chrome','Browser','open "Google Chrome"'],
-          ['📧','Mail','Email','open Mail'],
-          ['📅','Calendar','Schedule','open Calendar'],
-          ['📝','Notes','Notes','open Notes'],
-          ['💻','VS Code','Code editor','open "Visual Studio Code"'],
-          ['⌨️','Terminal','Command line','open Terminal'],
-          ['🎵','Music','Play music','open Music'],
-          ['⚙️','Settings','System prefs','open "System Preferences"'],
-        ].map(([ico,lbl,desc,cmd]) => `
-        <button class="ctrl-btn" onclick="run('open -a ${cmd}')">
-          <span class="ico">${ico}</span>
-          <span class="lbl">${lbl}</span>
-          <span class="desc">${desc}</span>
-        </button>`).join('')}
-      </div>
-      
-      <div class="ctrl-section">Actions</div>
-      <div class="ctrl-grid">
-        ${[
-          ['🔒','Lock Screen','lock the mac now'],
-          ['😴','Sleep','put the mac to sleep'],
-          ['📸','Screenshot','take a screenshot'],
-          ['🔇','Mute','mute the mac audio'],
-          ['🔊','Unmute','unmute the mac audio'],
-          ['🧹','Empty Trash','empty the trash'],
-          ['📋','Clipboard','what is in my clipboard'],
-          ['📡','My IP','what is my IP address'],
-        ].map(([ico,lbl,cmd]) => `
-        <button class="ctrl-btn" onclick="q('${cmd}')">
-          <span class="ico">${ico}</span>
-          <span class="lbl">${lbl}</span>
-        </button>`).join('')}
-      </div>
+    <!-- CONTROL -->
+    <div class="pane" id="p-ctrl">
+      <div id="ctrl-pane">
+        <div class="ctrl-sec">Quick Launch</div>
+        <div class="app-grid" id="app-grid"></div>
 
-      <div class="ctrl-section">Run a Command</div>
-      <div style="padding:0 12px 16px;display:flex;gap:8px">
-        <input id="cmd-inp" placeholder="Any shell command…"
-          style="flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:10px 14px;font-size:14px;color:var(--text);outline:none;font-family:monospace;-webkit-text-fill-color:var(--text)"
-          onkeydown="if(event.key==='Enter')runCmd()">
-        <button onclick="runCmd()" 
-          style="background:var(--accent);color:#fff;border:none;border-radius:12px;padding:10px 18px;font-size:14px;font-weight:600;cursor:pointer">Run</button>
-      </div>
-    </div>
+        <div class="ctrl-sec" style="margin-top:4px">System Actions</div>
+        <div class="action-grid" id="action-grid"></div>
 
-    <!-- ── NOTES PANE ─────────────────────────────────── -->
-    <div class="pane" id="pane-notes">
-      <div id="topbar" style="position:static">
-        <span class="bar-title">Quick Note</span>
-        <span class="bar-badge" id="notes-status">Unsaved</span>
-      </div>
-      <textarea id="notes-area" placeholder="Type a note… Henry will save it to your Journal or Captures on your Mac."></textarea>
-      <div class="notes-bar">
-        <button class="notes-btn secondary" onclick="clearNote()">Clear</button>
-        <button class="notes-btn primary" onclick="saveNote('journal')">📔 Journal</button>
-        <button class="notes-btn primary" onclick="saveNote('capture')">⊕ Capture</button>
-      </div>
-    </div>
-
-    <!-- ── CAPTURE PANE ───────────────────────────────── -->
-    <div class="pane" id="pane-capture">
-      <div id="topbar" style="position:static">
-        <span class="bar-title">Capture</span>
-        <span class="bar-badge">→ Henry</span>
-      </div>
-      <div style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px">
-        <p style="font-size:14px;color:var(--muted);line-height:1.5">
-          Paste or type anything — Henry extracts ideas, tasks, and insights automatically.
-        </p>
-        <textarea id="cap-area" placeholder="Paste an article, a quote, a link, notes from a meeting, anything…"
-          style="flex:1;min-height:200px;background:var(--surface2);border:1px solid var(--border);border-radius:16px;padding:14px;font-size:15px;color:var(--text);font-family:inherit;outline:none;resize:none;line-height:1.6;-webkit-text-fill-color:var(--text)"></textarea>
-        
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-          <button onclick="capture('note')"
-            style="padding:12px;background:var(--surface2);border:1px solid var(--border);border-radius:14px;color:var(--text);font-size:14px;font-weight:600;cursor:pointer">
-            📝 Save as Note
-          </button>
-          <button onclick="capture('auto')"
-            style="padding:12px;background:var(--accent);border:none;border-radius:14px;color:#fff;font-size:14px;font-weight:600;cursor:pointer">
-            ⚡ Process with AI
-          </button>
+        <div class="ctrl-sec" style="margin-top:4px">Shell</div>
+        <div class="shell-bar" style="display:flex;gap:8px">
+          <input id="shell-in" placeholder="$ run any command…" onkeydown="if(event.key==='Enter')runShell()">
+          <button id="shell-run" onclick="runShell()">Run</button>
         </div>
-        <div id="cap-feedback" style="display:none;padding:12px;border-radius:12px;font-size:13px;text-align:center"></div>
+        <pre id="shell-out">Ready.</pre>
       </div>
     </div>
 
-  </div><!-- /content -->
-</div><!-- /main -->
-</body>
+    <!-- CAPTURE -->
+    <div class="pane" id="p-cap">
+      <div id="cap-pane">
+        <p style="font-size:13px;color:var(--muted);line-height:1.6">Paste or type anything — an idea, article, email, note. Henry extracts what matters.</p>
+        <textarea id="cap-in" placeholder="Paste text, type an idea, or speak…"></textarea>
+        <div class="cap-btns">
+          <button class="cap-btn" onclick="capMic()">🎙 Speak</button>
+          <button class="cap-btn primary" onclick="processCapture()">⚡ Process</button>
+        </div>
+        <div id="cap-result"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PHONE: bottom nav -->
+<div id="bottom-nav">
+  <button class="on" onclick="phoneTo('chat')" id="bn-chat"><span class="bi">◉</span>Chat</button>
+  <button onclick="phoneTo('today')" id="bn-today"><span class="bi">⌂</span>Today</button>
+  <button onclick="phoneTo('screen')" id="bn-screen"><span class="bi">📺</span>Screen</button>
+  <button onclick="phoneTo('ctrl')" id="bn-ctrl"><span class="bi">⌘</span>Control</button>
+  <button onclick="phoneTo('cap')" id="bn-cap"><span class="bi">⊕</span>Capture</button>
+</div>
+
 <script>
-// ── State ──────────────────────────────────────────────────────────────────
-const S = {
-  token: localStorage.getItem('henry_token') || '',
-  uuid:  localStorage.getItem('henry_uuid')  || '',
-  hmac:  localStorage.getItem('henry_hmac')  || '',
-  secret:localStorage.getItem('henry_secret')|| '',
-  history: [],
-  es: null,
-  autoTimer: null,
-  streaming: null,
-  streamText: '',
-  activePane: 'chat',
-  volume: 50,
-};
+// ── State ─────────────────────────────────────────────────────────────────────
+const BASE = location.origin;
+let isIpad = window.innerWidth >= 768;
+let screenTimer = null;
+let busy = false;
+let recognition = null;
+let habitsData = [];
+let habitLogsData = [];
 
-// ── DOM helpers ────────────────────────────────────────────────────────────
-const $ = id => document.getElementById(id);
-const pairScreen = $('pair-screen');
-const mainEl = $('main');
-const msgs = $('msgs');
-const inp = $('inp');
-const sendBtn = $('send');
-const dot = $('mac-dot');
-const status = $('topbar-status');
+// ── Init ──────────────────────────────────────────────────────────────────────
+window.addEventListener('load', async () => {
+  updateDate();
+  setInterval(updateDate, 60000);
+  buildAppGrid();
+  buildActionGrid();
 
-// ── Pane switching ─────────────────────────────────────────────────────────
-function show(pane) {
-  // On phone: toggle single pane. On iPad: secondary pane only (chat always shown)
-  const isIpad = window.innerWidth >= 768;
-  
-  document.querySelectorAll('.pane').forEach(el => {
-    if (isIpad && el.id === 'pane-chat') return; // always visible on iPad
-    el.classList.remove('active');
-  });
-  document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
-  
-  $('pane-' + pane).classList.add('active');
-  $('nav-' + pane)?.classList.add('active');
-  S.activePane = pane;
-  
-  if (pane === 'screen') refreshScreen();
-}
-
-// ── Connection ────────────────────────────────────────────────────────────
-async function autoPair() {
-  $('pair-spinner').style.display = 'block';
-  $('pair-btn').style.display = 'none';
-  $('pair-err').textContent = '';
-  
-  const ua = navigator.userAgent;
-  const isIpad = ua.includes('iPad') || (ua.includes('Mac') && navigator.maxTouchPoints > 1);
-  const isIphone = ua.includes('iPhone');
-  
-  try {
-    const r = await fetch('/sync/auto-pair', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        deviceName: isIpad ? 'iPad' : isIphone ? 'iPhone' : 'Browser',
-        platform: (isIphone || isIpad) ? 'ios' : 'android',
-        capabilities: ['chat','prompt','notify','capture'],
-      })
-    });
-    const d = await r.json();
-    if (d.companionToken) {
-      S.token = d.companionToken;
-      S.uuid = d.deviceId || '';
-      localStorage.setItem('henry_token', S.token);
-      localStorage.setItem('henry_uuid', S.uuid);
-      goToApp();
-    } else {
-      throw new Error(d.error || 'Could not connect');
+  // Show pair screen briefly then auto-hide on desktop (iPad always shows companion)
+  const isDesktop = !/iPad|iPhone|Android|Mobile/.test(navigator.userAgent);
+  if (isDesktop) {
+    const ips = await fetch(BASE + '/sync/state-internal', {
+      headers: { 'X-Henry-Internal': 'true' }
+    }).then(r => r.json()).then(d => d.localIPs || []).catch(() => []);
+    if (ips.length) {
+      document.getElementById('ps-ip').textContent = 'http://' + ips[0] + ':4242';
     }
-  } catch(e) {
-    $('pair-spinner').style.display = 'none';
-    $('pair-btn').style.display = 'block';
-    $('pair-err').textContent = e.message + '. Make sure Henry is open on your Mac.';
-  }
-}
-
-function goToApp() {
-  pairScreen.style.display = 'none';
-  mainEl.style.display = 'flex';
-  startSSE();
-  addMsg('ai', 'Hi! I\\'m Henry — connected to ${macName}. What do you need?');
-}
-
-function startSSE() {
-  if (S.es) S.es.close();
-  status.textContent = 'Connecting…';
-  S.es = new EventSource('/sync/stream?token=' + S.token);
-  S.es.onopen = () => { dot.className = 'on'; status.textContent = 'Ready'; };
-  S.es.onerror = () => {
-    dot.className = '';
-    status.textContent = 'Reconnecting…';
-    setTimeout(startSSE, 3000);
-  };
-  S.es.onmessage = (e) => {
-    try {
-      const d = JSON.parse(e.data);
-      if (d.type === 'companion_chunk') appendChunk(d.payload.chunk);
-      else if (d.type === 'companion_response') finalizeStream(d.payload.text);
-    } catch {}
-  };
-}
-
-// ── Messaging ──────────────────────────────────────────────────────────────
-function addMsg(role, text) {
-  removeTyping();
-  const row = document.createElement('div');
-  row.className = 'row ' + (role === 'user' ? 'user' : 'ai');
-  const b = document.createElement('div');
-  b.className = 'bubble ' + (role === 'user' ? 'user' : 'ai');
-  if (text.startsWith('data:image/')) {
-    const img = document.createElement('img');
-    img.src = text; img.onclick = () => window.open(text);
-    b.appendChild(img);
+    document.getElementById('pair-screen').style.display = 'flex';
   } else {
-    b.textContent = text;
+    hidePair();
   }
-  row.appendChild(b);
-  msgs.appendChild(row);
-  msgs.scrollTop = msgs.scrollHeight;
-  if (role === 'user') S.history.push({role:'user', content:text});
-  else S.history.push({role:'assistant', content:text});
+
+  loadToday();
+  setInterval(loadToday, 15000);
+  refreshScreen();
+  checkConn();
+  setInterval(checkConn, 8000);
+});
+
+function hidePair() {
+  document.getElementById('pair-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+  updateLayout();
 }
 
-function showTyping() {
-  removeTyping();
-  const t = document.createElement('div');
-  t.id = 'typing';
-  t.innerHTML = '<div class="typing"><span></span><span></span><span></span></div>';
-  msgs.appendChild(t);
-  msgs.scrollTop = msgs.scrollHeight;
+function updateDate() {
+  const el = document.getElementById('today-date');
+  if (el) el.textContent = new Date().toLocaleDateString('en-US', {
+    weekday: 'long', month: 'long', day: 'numeric'
+  });
 }
 
-function removeTyping() {
-  $('typing')?.remove();
-}
-
-function appendChunk(chunk) {
-  removeTyping();
-  if (!S.streaming) {
-    const row = document.createElement('div');
-    row.className = 'row ai';
-    S.streaming = document.createElement('div');
-    S.streaming.className = 'bubble ai';
-    row.appendChild(S.streaming);
-    msgs.appendChild(row);
-    S.streamText = '';
+function updateLayout() {
+  isIpad = window.innerWidth >= 768;
+  const chatCol = document.getElementById('chat-col');
+  const rightCol = document.getElementById('right-col');
+  if (isIpad) {
+    chatCol.classList.remove('active');
+    rightCol.classList.remove('active');
+    chatCol.style.display = '';
+    rightCol.style.display = '';
+  } else {
+    // Default phone: show chat
+    phoneTo('chat');
   }
-  S.streamText += chunk;
-  S.streaming.textContent = S.streamText;
-  msgs.scrollTop = msgs.scrollHeight;
+}
+window.addEventListener('resize', updateLayout);
+
+// ── Connectivity ──────────────────────────────────────────────────────────────
+async function checkConn() {
+  const dot = document.getElementById('conn-dot');
+  try {
+    const r = await fetch(BASE + '/sync/health', { signal: AbortSignal.timeout(3000) });
+    dot.className = r.ok ? 'ok' : 'err';
+  } catch { dot.className = 'err'; }
 }
 
-function finalizeStream(full) {
-  if (S.streaming) {
-    S.streaming.textContent = full;
-    S.history.push({role:'assistant', content:full});
-    S.streaming = null; S.streamText = '';
-  } else if (full) {
-    addMsg('ai', full);
+// ── Tab switching ─────────────────────────────────────────────────────────────
+function showTab(id) {
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.remove('on'));
+  document.querySelectorAll('#right-col .pane').forEach(p => p.classList.remove('on'));
+  document.getElementById('t-' + id).classList.add('on');
+  document.getElementById('p-' + id).classList.add('on');
+  if (id === 'screen') startScreenRefresh();
+  else stopScreenRefresh();
+}
+
+function phoneTo(id) {
+  document.querySelectorAll('#bottom-nav button').forEach(b => b.classList.remove('on'));
+  document.getElementById('bn-' + id).classList.add('on');
+  const chatCol = document.getElementById('chat-col');
+  const rightCol = document.getElementById('right-col');
+  if (id === 'chat') {
+    chatCol.classList.add('active'); rightCol.classList.remove('active');
+  } else {
+    chatCol.classList.remove('active'); rightCol.classList.add('active');
+    const tabMap = { today: 'today', screen: 'screen', ctrl: 'ctrl', cap: 'cap' };
+    if (tabMap[id]) showTab(tabMap[id]);
   }
-  sendBtn.disabled = false;
+}
+
+// ── Chat ──────────────────────────────────────────────────────────────────────
+function msgTime() {
+  return new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+}
+
+function addMsg(role, text) {
+  const msgs = document.getElementById('msgs');
+  const d = document.createElement('div');
+  d.className = 'msg ' + role;
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  bubble.textContent = text;
+  const t = document.createElement('time');
+  t.textContent = msgTime();
+  d.appendChild(bubble);
+  d.appendChild(t);
+  msgs.appendChild(d);
   msgs.scrollTop = msgs.scrollHeight;
+  return bubble;
 }
 
 async function sendMsg() {
+  const inp = document.getElementById('msg-in');
   const text = inp.value.trim();
-  if (!text || sendBtn.disabled) return;
-  inp.value = ''; inp.style.height = 'auto';
-  sendBtn.disabled = true; sendBtn.classList.remove('ready');
-  addMsg('user', text);
-  showTyping();
+  if (!text || busy) return;
+  inp.value = ''; inp.style.height = '';
+  addMsg('u', text);
+  busy = true;
+  const bubble = addMsg('h', '…');
   try {
-    const r = await fetch('/sync/prompt', {
+    const r = await fetch(BASE + '/sync/prompt', {
       method: 'POST',
-      headers: {'Content-Type':'application/json','Authorization':'Bearer '+S.token},
-      body: JSON.stringify({text, history: S.history.slice(-12)}),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, source: 'companion' }),
     });
-    if (r.status === 401) { localStorage.clear(); await autoPair(); return; }
-    if (!r.ok) { removeTyping(); addMsg('ai', 'Error. Try again.'); sendBtn.disabled = false; }
-  } catch {
-    removeTyping();
-    addMsg('ai', 'Connection error. Check WiFi.');
-    sendBtn.disabled = false;
+    const d = await r.json();
+    bubble.textContent = d.reply || d.response || d.text || JSON.stringify(d);
+  } catch (e) {
+    bubble.textContent = '⚠ Connection error — is Henry running?';
   }
+  busy = false;
+  document.getElementById('msgs').scrollTop = 9999;
 }
 
-function q(text) { inp.value = text; sendBtn.classList.add('ready'); sendMsg(); }
-function onInput(el) {
-  el.style.height = 'auto';
-  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
-  sendBtn.classList.toggle('ready', el.value.trim().length > 0);
+function q(text) {
+  document.getElementById('msg-in').value = text;
+  sendMsg();
 }
-function onKey(e) {
+
+function inputKey(e) {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMsg(); }
 }
 
-// ── Screen ─────────────────────────────────────────────────────────────────
-function refreshScreen() {
-  const img = $('screen-img');
-  if (img) img.src = '/screen?' + Date.now();
-}
-function toggleAuto(on) {
-  clearInterval(S.autoTimer);
-  if (on) S.autoTimer = setInterval(refreshScreen, 3000);
+function autoGrow(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
 }
 
-// ── Control ────────────────────────────────────────────────────────────────
-async function run(cmd) {
-  addMsg('user', cmd.replace('open -a ', 'Open '));
-  showTyping();
-  sendBtn.disabled = true;
-  try {
-    const r = await fetch('/sync/prompt', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json','Authorization':'Bearer '+S.token},
-      body: JSON.stringify({text: cmd, history: []}),
-    });
-    if (!r.ok) { removeTyping(); addMsg('ai', 'Error'); sendBtn.disabled = false; }
-  } catch { removeTyping(); addMsg('ai', 'Error'); sendBtn.disabled = false; }
-}
+// ── Voice Input ───────────────────────────────────────────────────────────────
+let micActive = false;
 
-function runCmd() {
-  const cmd = $('cmd-inp').value.trim();
-  if (!cmd) return;
-  $('cmd-inp').value = '';
-  show('chat');
-  q('Run this command: ' + cmd);
-}
-
-function setVolume(v) {
-  $('vol-val').textContent = v;
-  // Send volume command (debounced)
-  clearTimeout(S.volTimer);
-  S.volTimer = setTimeout(() => {
-    fetch('/sync/prompt', {
-      method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+S.token},
-      body: JSON.stringify({text: 'set mac volume to ' + v, history:[]}),
-    }).catch(()=>{});
-  }, 500);
-}
-
-// ── Notes ──────────────────────────────────────────────────────────────────
-function clearNote() {
-  $('notes-area').value = '';
-  $('notes-status').textContent = 'Cleared';
-}
-async function saveNote(dest) {
-  const text = $('notes-area').value.trim();
-  if (!text) return;
-  $('notes-status').textContent = 'Saving…';
-  try {
-    await fetch('/sync/capture', {
-      method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+S.token},
-      body: JSON.stringify({text, source:'ipad-notes', category: dest === 'journal' ? 'note' : 'note', from:'companion'}),
-    });
-    $('notes-status').textContent = 'Saved ✓';
-    if (dest === 'journal') addMsg('ai', 'Saved to Journal on your Mac ✓');
-  } catch { $('notes-status').textContent = 'Error'; }
-}
-
-// ── Capture ────────────────────────────────────────────────────────────────
-async function capture(mode) {
-  const text = $('cap-area').value.trim();
-  if (!text) return;
-  const fb = $('cap-feedback');
-  fb.style.display = 'block';
-  fb.style.background = 'rgba(124,58,237,0.1)';
-  fb.style.border = '1px solid rgba(124,58,237,0.3)';
-  fb.style.color = '#a78bfa';
-  fb.textContent = mode === 'auto' ? '⚡ Sending to Henry for processing…' : '📝 Saving capture…';
-  
-  const endpoint = mode === 'auto' ? '/sync/capture-and-process' : '/sync/capture';
-  try {
-    await fetch(endpoint, {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({text, source:'ipad-capture', category:'web_clip', from:'companion'}),
-    });
-    fb.textContent = mode === 'auto' 
-      ? '✓ Henry is processing — check Captures panel on your Mac'
-      : '✓ Saved to Captures on your Mac';
-    fb.style.background = 'rgba(34,197,94,0.1)';
-    fb.style.border = '1px solid rgba(34,197,94,0.3)';
-    fb.style.color = '#4ade80';
-    $('cap-area').value = '';
-  } catch {
-    fb.textContent = '✗ Error saving. Check connection.';
-    fb.style.background = 'rgba(239,68,68,0.1)';
-    fb.style.color = '#ef4444';
-  }
-}
-
-// ── Voice ──────────────────────────────────────────────────────────────────
-let recognition = null, listening = false;
 function toggleMic() {
-  const mic = $('mic');
-  if (!recognition) {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) { mic.textContent = '🚫'; return; }
-    recognition = new SR();
-    recognition.continuous = false;
-    recognition.interimResults = true;
-    recognition.lang = 'en-US';
-    recognition.onstart = () => { listening = true; mic.classList.add('listening'); inp.placeholder = 'Listening…'; };
-    recognition.onresult = (e) => {
-      const t = Array.from(e.results).map(r => r[0].transcript).join('');
-      inp.value = t;
-      onInput(inp);
-      if (e.results[e.results.length-1].isFinal) setTimeout(sendMsg, 400);
-    };
-    recognition.onend = () => { listening = false; mic.classList.remove('listening'); inp.placeholder = 'Ask Henry anything…'; };
-    recognition.onerror = () => { listening = false; mic.classList.remove('listening'); };
-  }
-  listening ? recognition.stop() : (inp.value = '', recognition.start());
+  micActive ? stopMic() : startMic();
 }
 
-// ── Boot ───────────────────────────────────────────────────────────────────
-(async function boot() {
-  // Try stored token
-  if (S.token) {
-    try {
-      const r = await fetch('/sync/snapshot', {headers:{'Authorization':'Bearer '+S.token}});
-      if (r.ok) { goToApp(); return; }
-    } catch {}
-    localStorage.clear();
-    S.token = '';
+function startMic() {
+  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+    alert('Voice input not available in this browser. Try Safari.');
+    return;
   }
-  await autoPair();
-})();
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  recognition = new SR();
+  recognition.continuous = false;
+  recognition.interimResults = true;
+  recognition.lang = 'en-US';
+  recognition.onstart = () => {
+    micActive = true;
+    document.getElementById('mic-btn').classList.add('on');
+    document.getElementById('mic-btn').textContent = '🔴';
+  };
+  recognition.onresult = (e) => {
+    const t = Array.from(e.results).map(r => r[0].transcript).join('');
+    document.getElementById('msg-in').value = t;
+    autoGrow(document.getElementById('msg-in'));
+  };
+  recognition.onend = () => {
+    micActive = false;
+    document.getElementById('mic-btn').classList.remove('on');
+    document.getElementById('mic-btn').textContent = '🎙';
+    if (document.getElementById('msg-in').value.trim()) sendMsg();
+  };
+  recognition.onerror = () => {
+    micActive = false;
+    document.getElementById('mic-btn').classList.remove('on');
+    document.getElementById('mic-btn').textContent = '🎙';
+  };
+  recognition.start();
+}
+
+function stopMic() {
+  if (recognition) recognition.stop();
+}
+
+// ── TODAY ─────────────────────────────────────────────────────────────────────
+async function loadToday() {
+  try {
+    const d = await fetch(BASE + '/sync/mac/today').then(r => r.json());
+    habitsData = d.habits || [];
+    habitLogsData = d.habitLogs || [];
+    renderHabits(habitsData, habitLogsData);
+    renderTasks(d.tasks || []);
+    renderReminders(d.reminders || []);
+  } catch { /* offline */ }
+}
+
+function renderHabits(habits, logs) {
+  const el = document.getElementById('habit-list');
+  const prog = document.getElementById('habit-prog');
+  if (!habits.length) { el.innerHTML = '<div style="padding:14px 16px;color:var(--muted);font-size:13px">No habits set up yet — open Henry to add some</div>'; return; }
+  const done = habits.filter(h => logs.find(l => l.habit_id === h.id && l.count >= h.target_per_day)).length;
+  prog.textContent = done + '/' + habits.length;
+  el.innerHTML = habits.map(h => {
+    const log = logs.find(l => l.habit_id === h.id);
+    const isDone = log && log.count >= h.target_per_day;
+    return \`<div class="habit-row">
+      <div class="habit-check \${isDone ? 'done' : ''}" onclick="toggleHabit('\${h.id}',\${isDone})">\${isDone ? '' : h.icon}</div>
+      <span class="habit-name">\${h.name}</span>
+      \${isDone ? '<span class="habit-streak">✓ Done</span>' : ''}
+    </div>\`;
+  }).join('');
+}
+
+async function toggleHabit(id, wasDone) {
+  try {
+    await fetch(BASE + '/sync/mac/habit-toggle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ habit_id: id, date: new Date().toISOString().slice(0, 10) }),
+    });
+    await loadToday();
+  } catch { /* offline */ }
+}
+
+function renderTasks(tasks) {
+  const el = document.getElementById('task-list');
+  if (!tasks.length) { el.innerHTML = '<div style="padding:14px 16px;color:var(--muted);font-size:13px">All clear ✓</div>'; return; }
+  el.innerHTML = tasks.slice(0, 6).map(t => \`
+    <div class="task-row">
+      <div class="task-dot" style="background:\${t.priority >= 3 ? '#ef4444' : t.priority === 2 ? '#f59e0b' : 'var(--accent)'}"></div>
+      <span class="task-title">\${t.title}</span>
+      <span class="task-pri">\${t.priority >= 3 ? 'High' : t.priority === 2 ? 'Med' : 'Low'}</span>
+    </div>
+  \`).join('');
+}
+
+function renderReminders(rems) {
+  const el = document.getElementById('rem-list');
+  if (!rems.length) { el.innerHTML = '<div style="padding:14px 16px;color:var(--muted);font-size:13px">Nothing due</div>'; return; }
+  el.innerHTML = rems.slice(0, 5).map(r => {
+    const t = r.due_at ? new Date(r.due_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '';
+    return \`<div class="rem-row"><span class="rem-icon">◎</span><span class="rem-title">\${r.title}</span>\${t ? '<span class="rem-time">'+t+'</span>' : ''}</div>\`;
+  }).join('');
+}
+
+// ── SCREEN ────────────────────────────────────────────────────────────────────
+async function refreshScreen() {
+  const img = document.getElementById('screen-img');
+  const ts = document.getElementById('screen-ts');
+  const status = document.getElementById('screen-status');
+  try {
+    status.textContent = '↻ Loading…';
+    const d = await fetch(BASE + '/sync/mac/screen', { signal: AbortSignal.timeout(8000) }).then(r => r.json());
+    if (d.image) {
+      img.src = d.image;
+      ts.textContent = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      status.textContent = '● Live';
+      status.style.color = 'var(--green)';
+    }
+  } catch {
+    status.textContent = '○ Offline';
+    status.style.color = 'var(--muted)';
+  }
+}
+
+function startScreenRefresh() {
+  stopScreenRefresh();
+  if (document.getElementById('auto-ref').checked) {
+    screenTimer = setInterval(refreshScreen, 3000);
+    refreshScreen();
+  }
+}
+
+function stopScreenRefresh() {
+  if (screenTimer) { clearInterval(screenTimer); screenTimer = null; }
+}
+
+function toggleAutoRef() {
+  if (document.getElementById('auto-ref').checked) startScreenRefresh();
+  else stopScreenRefresh();
+}
+
+function screenClick(e) {
+  const img = document.getElementById('screen-img');
+  const rect = img.getBoundingClientRect();
+  const xPct = (e.clientX - rect.left) / rect.width;
+  const yPct = (e.clientY - rect.top) / rect.height;
+  // Send click to Mac via Henry HQ shell
+  const script = \`osascript -e 'tell application "System Events" to click at {'\${Math.round(xPct*1920)}, \${Math.round(yPct*1080)}}'\`
+  fetch(BASE + '/sync/mac/run', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ command: script }),
+  }).catch(() => {});
+}
+
+// ── CONTROL ───────────────────────────────────────────────────────────────────
+const APPS = [
+  { icon: '📁', name: 'Finder' }, { icon: '⌨️', name: 'Terminal' },
+  { icon: '🌐', name: 'Chrome' }, { icon: '📧', name: 'Mail' },
+  { icon: '📅', name: 'Calendar' }, { icon: '📝', name: 'Notes' },
+  { icon: '🎵', name: 'Music' }, { icon: '⚙️', name: 'System Preferences' },
+  { icon: '💻', name: 'VS Code' }, { icon: '💬', name: 'Slack' },
+  { icon: '📷', name: 'Photos' }, { icon: '🧭', name: 'Safari' },
+];
+
+const ACTIONS = [
+  { icon: '🔇', label: 'Mute Mac', cmd: "osascript -e 'set volume output muted true'" },
+  { icon: '🔊', label: 'Unmute', cmd: "osascript -e 'set volume output muted false'" },
+  { icon: '📸', label: 'Screenshot', cmd: "screencapture ~/Desktop/HenryCapture_$(date +%Y%m%d_%H%M%S).png" },
+  { icon: '🔒', label: 'Lock Screen', cmd: "pmset displaysleepnow" },
+  { icon: '🧹', label: 'Empty Trash', cmd: "osascript -e 'tell application \"Finder\" to empty trash'" },
+  { icon: '📋', label: 'Show Clipboard', cmd: "pbpaste | head -5" },
+  { icon: '🔄', label: 'Restart Dock', cmd: "killall Dock" },
+  { icon: '📡', label: 'Show IP', cmd: "curl -s ifconfig.me" },
+];
+
+function buildAppGrid() {
+  document.getElementById('app-grid').innerHTML = APPS.map(a =>
+    \`<div class="app-btn" onclick="openApp('\${a.name}')"><span class="ai">\${a.icon}</span><span class="al">\${a.name.split(' ')[0]}</span></div>\`
+  ).join('');
+}
+
+function buildActionGrid() {
+  document.getElementById('action-grid').innerHTML = ACTIONS.map(a =>
+    \`<div class="act-btn" onclick="runCmd(\\\`\${a.cmd}\\\`)"><span class="ai2">\${a.icon}</span>\${a.label}</div>\`
+  ).join('');
+}
+
+async function openApp(name) {
+  const out = document.getElementById('shell-out');
+  out.textContent = 'Opening ' + name + '…';
+  try {
+    await fetch(BASE + '/sync/mac/open-app', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ app: name }),
+    });
+    out.textContent = '✓ Opened ' + name;
+  } catch { out.textContent = '⚠ Failed to open ' + name; }
+}
+
+async function runCmd(cmd) {
+  const out = document.getElementById('shell-out');
+  out.textContent = '$ ' + cmd.slice(0, 60) + (cmd.length > 60 ? '…' : '') + '\n…';
+  try {
+    const d = await fetch(BASE + '/sync/mac/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command: cmd }),
+    }).then(r => r.json());
+    out.textContent = '$ ' + cmd + '\n' + (d.output || '(done)');
+  } catch { out.textContent = '⚠ Error'; }
+}
+
+async function runShell() {
+  const inp = document.getElementById('shell-in');
+  const cmd = inp.value.trim();
+  if (!cmd) return;
+  inp.value = '';
+  await runCmd(cmd);
+}
+
+// ── CAPTURE ───────────────────────────────────────────────────────────────────
+let capMicRec = null;
+
+function capMic() {
+  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+    alert('Voice not available. Try Safari on iOS.');
+    return;
+  }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  capMicRec = new SR();
+  capMicRec.continuous = false;
+  capMicRec.interimResults = true;
+  capMicRec.lang = 'en-US';
+  capMicRec.onresult = (e) => {
+    const t = Array.from(e.results).map(r => r[0].transcript).join('');
+    document.getElementById('cap-in').value = t;
+  };
+  capMicRec.onend = () => {};
+  capMicRec.start();
+}
+
+async function processCapture() {
+  const text = document.getElementById('cap-in').value.trim();
+  if (!text) return;
+  const result = document.getElementById('cap-result');
+  result.className = 'show';
+  result.innerHTML = '<div style="color:var(--muted);font-size:13px">⚡ Processing with Henry AI…</div>';
+  try {
+    const d = await fetch(BASE + '/sync/capture-and-process', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, source: 'companion-ipad' }),
+    }).then(r => r.json());
+    const sections = [];
+    if (d.ideas?.length) sections.push({ title: '💡 Ideas', items: d.ideas });
+    if (d.prospects?.length) sections.push({ title: '🎯 Prospects', items: d.prospects });
+    if (d.tasks?.length) sections.push({ title: '✅ Tasks', items: d.tasks });
+    if (d.insights?.length) sections.push({ title: '🔍 Insights', items: d.insights });
+    if (d.quotes?.length) sections.push({ title: '💬 Quotes', items: d.quotes });
+    if (!sections.length) { result.innerHTML = '<div style="color:var(--muted);font-size:13px">Captured and saved to Henry.</div>'; return; }
+    result.innerHTML = sections.map(s => \`
+      <div class="result-section">
+        <h4>\${s.title}</h4>
+        \${s.items.map(i => '<p>' + (typeof i === 'string' ? i : JSON.stringify(i)) + '</p>').join('')}
+      </div>
+    \`).join('');
+  } catch {
+    result.innerHTML = '<div style="color:var(--red)">⚠ Error processing. Is Henry running?</div>';
+  }
+}
 </script>
-</html>`;
+</body></html>`;
 }
