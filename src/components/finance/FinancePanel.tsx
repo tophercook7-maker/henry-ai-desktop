@@ -62,6 +62,18 @@ export default function FinancePanel(){
     await load();
   }
 
+  function exportCSV() {
+    if (!txns.length) return;
+    const header = 'Date,Type,Category,Description,Amount';
+    const rows = txns.map(t => `${t.date},${t.type},${t.category},"${(t.description||'').replace(/"/g,'""')}",${t.type==='income'?'+':'−'}${t.amount.toFixed(2)}`);
+    const csv = [header, ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `henry-finance-${month}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  }
+
   function askHenry(){
     const cats = summary.breakdown.filter(b=>b.type==='expense').sort((a,b)=>b.total-a.total).slice(0,4).map(b=>`${b.category}: ${fmt(b.total)}`).join(', ');
     sendToHenry(`My finances for ${monthLabel(month)}: Income ${fmt(summary.income)}, Expenses ${fmt(summary.expenses)}, Net ${fmt(summary.net)}. Top expenses: ${cats}. Give me a brief analysis and one practical suggestion.`);
@@ -83,6 +95,7 @@ export default function FinancePanel(){
           </select>
         </div>
         <div className="flex gap-2">
+          <button onClick={exportCSV} disabled={!txns.length} className="text-[11px] px-3 py-1.5 rounded-lg bg-henry-surface border border-henry-border/30 text-henry-text-muted hover:text-henry-text disabled:opacity-30 transition-all">↓ CSV</button>
           <button onClick={askHenry} className="text-[11px] px-3 py-1.5 rounded-lg bg-henry-surface border border-henry-border/30 text-henry-text-muted hover:text-henry-accent transition-all">Ask Henry</button>
           <button onClick={()=>setAdding(a=>!a)} className="text-[11px] px-4 py-1.5 rounded-lg bg-henry-accent text-white font-semibold hover:bg-henry-accent/80 transition-all">+ Add</button>
         </div>

@@ -66,6 +66,26 @@ export default function GoalsPanel() {
     setGoals(active);
     setAllGoals(all);
   }
+  async function coachGoal(goal: Goal) {
+    if (coachingBusy) return;
+    setShowCoach(true);
+    setCoachingBusy(true);
+    setCoaching('');
+    const ownerName = localStorage.getItem('henry:owner_name') || 'you';
+    const prompt = 'You are Henry, an encouraging life coach. ' + ownerName + ' has a goal: "' + goal.title + '". Priority: ' + Math.round(goal.priority_score * 10) + '/10. Status: ' + goal.status + (goal.summary ? '. Details: ' + goal.summary : '') + '. Give a 3-4 sentence coaching response: acknowledge the goal, one practical next step for today, brief encouragement.';
+    const deviceId = (() => { let id = localStorage.getItem('henry:device_id'); if (!id) { id = crypto.randomUUID(); localStorage.setItem('henry:device_id', id); } return id; })();
+    try {
+      const r = await fetch('https://henry-proxy.henryai.workers.dev/v1/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Henry-Device': deviceId },
+        body: JSON.stringify({ model: 'llama-3.1-8b-instant', messages: [{ role: 'user', content: prompt }], max_tokens: 300, stream: false }),
+      });
+      const d = await r.json() as any;
+      setCoaching(d?.choices?.[0]?.message?.content || 'No response');
+    } catch { setCoaching('Could not reach Henry AI.'); }
+    setCoachingBusy(false);
+  }
+
 
   async function loadCommitments() {
     const data = await api.getCommitments({ limit: 40 }) as Commitment[] || [];
@@ -265,6 +285,20 @@ export default function GoalsPanel() {
                 </div>
                 <div className="flex items-center gap-2">
                   <ScoreBar value={g.priority_score} />
+                  <div className="ml-auto flex gap-1">
+                    <button
+                      onClick={e => { e.stopPropagation(); void coachGoal(g); }}
+                      className="text-[10px] px-2 py-1 rounded-lg bg-henry-accent/15 border border-henry-accent/30 text-henry-accent hover:bg-henry-accent/25 transition-all">
+                      ⚡ Coach
+                    </button>
+                    {g.status !== 'done' && (
+                      <button
+                        onClick={e => { e.stopPropagation(); void api.goalsUpdate?.(g.id, { status: 'done' }); void loadGoals(); }}
+                        className="text-[10px] px-2 py-1 rounded-lg border border-henry-border/20 text-henry-text-muted hover:text-green-400 hover:border-green-400/30 transition-all">
+                        ✓ Done
+                      </button>
+                    )}
+                  </div>
                 </div>
               </button>
             ))}

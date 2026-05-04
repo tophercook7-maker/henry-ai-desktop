@@ -23,6 +23,8 @@ export default function TodayPanel() {
   const { setCurrentView } = useStore();
   const [quickAsk, setQuickAsk] = useState('');
   const [capture, setCapture] = useState('');
+  const [quickTask, setQuickTask] = useState('');
+  const [addingTask, setAddingTask] = useState(false);
   const [calEvents, setCalEvents] = useState<{id:string;summary:string;start:string;location?:string}[]>([]);
   const [todayHabits, setTodayHabits] = useState<{habit: any; done: boolean}[]>([]);
   const [henryStatus, setHenryStatus] = useState<'checking'|'ready'|'needs-key'|'ollama'|'proxy'>('checking');
@@ -53,6 +55,10 @@ export default function TodayPanel() {
   const [briefing, setBriefing] = useState<DailyBriefing | null>(() => getTodayBriefing());
   const [generatingBriefing, setGeneratingBriefing] = useState(false);
   const [showPlanner, setShowPlanner] = useState(false);
+  const [showReport, setShowReport] = useState(false);
+  const [reportBusy, setReportBusy] = useState(false);
+  const [reportText, setReportText] = useState('');
+  const [verseOfDay, setVerseOfDay] = useState<{ref: string; text: string} | null>(null);
   const [plannerResult, setPlannerResult] = useState('');
   const [plannerBusy, setPlannerBusy] = useState(false);
   const [briefingExpanded, setBriefingExpanded] = useState(true);
@@ -107,6 +113,19 @@ export default function TodayPanel() {
           habit: h,
           done: (logs2 || []).some((l: any) => l.habit_id === h.id && l.count >= h.target_per_day),
         })));
+      }).catch(() => {});
+    }
+
+    // Verse of the day from local KJV DB
+    const api4 = (window as any).henryAPI;
+    if (api4?.scriptureSearch) {
+      const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000);
+      // Cycle through classic verses by day
+      const classicVerses = ['John 3:16','Psalm 23:1','Romans 8:28','Proverbs 3:5','Jeremiah 29:11',
+        'Philippians 4:13','Isaiah 40:31','Joshua 1:9','Matthew 6:33','Psalm 46:1'];
+      const todayVerse = classicVerses[dayOfYear % classicVerses.length];
+      api4.scriptureLookup?.(todayVerse).then((r: any) => {
+        if (r?.text) setVerseOfDay({ ref: r.normalizedReference || todayVerse, text: r.text });
       }).catch(() => {});
     }
 
@@ -245,6 +264,24 @@ Write 2-4 short sentences covering: one encouraging opening, what to focus on to
     } catch { setGeneratingBriefing(false); setGenerating(false); }
   }
 
+  async function addQuickTask() {
+    const title = quickTask.trim();
+    if (!title) return;
+    const api2 = (window as any).henryAPI;
+    await api2.tasksCreate?.({
+      id: crypto.randomUUID(),
+      title,
+      priority: 2,
+      status: 'todo',
+    }).catch(() => {});
+    setQuickTask('');
+    setAddingTask(false);
+    // Refresh live data
+    api2.tasksList?.({ status: 'todo' }).then((tasks: any[]) =>
+      setLiveData(d => ({ ...d, dueTasks: (tasks||[]).length }))
+    ).catch(() => {});
+  }
+
   async function generateDailyPlan() {
     if (plannerBusy) return;
     setPlannerBusy(true);
@@ -288,6 +325,63 @@ Write 2-4 short sentences covering: one encouraging opening, what to focus on to
       setPlannerResult(d?.choices?.[0]?.message?.content || 'No response');
     } catch { setPlannerResult('Could not reach Henry AI.'); }
     setPlannerBusy(false);
+  }
+
+  async function generateDailyReport() {
+    if (reportBusy) return;
+    setReportBusy(true);
+    setReportText('');
+    setShowReport(true);
+    const api2 = (window as any).henryAPI;
+    const ownerName = localStorage.getItem('henry:owner_name') || 'you';
+    const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+
+    let context = '';
+    try {
+      const [tasks, rems, habits, habitLogs, txns] = await Promise.all([
+        api2.tasksList?.({ status: 'todo' }).catch(() => []),
+        api2.remindersDue?.().catch(() => []),
+        api2.healthHabitList?.().catch(() => []),
+        api2.healthHabitLogsForDate?.(new Date().toISOString().slice(0,10)).catch(() => []),
+        api2.financeList?.(new Date().toISOString().slice(0,7)).catch(() => []),
+      ]);
+      const doneHabits = (habits||[]).filter((h:any) => (habitLogs||[]).some((l:any) => l.habit_id === h.id)).map((h:any) => h.name).join(', ');
+      const pendingTasks = (tasks||[]).slice(0,5).map((t:any) => '\u2022 ' + t.title).join('\n');
+      const todayTxns = (txns||[]).filter((t:any) => t.date === new Date().toISOString().slice(0,10));
+      context = [
+        doneHabits ? `Habits completed: ${doneHabits}` : 'No habits completed yet',
+        pendingTasks ? 'Open tasks:\n' + pendingTasks : 'No open tasks',
+        todayTxns.length ? `Today's transactions: ${todayTxns.length}` : '',
+        (rems||[]).length ? `Reminders due: ${(rems||[]).length}` : '',
+      ].filter(Boolean).join('\n');
+    } catch { /* use empty context */ }
+
+    const prompt = `Write a brief end-of-day report for ${ownerName} — ${today}.
+
+${context}
+
+Format:
+**Today's Summary**
+[2-3 sentences about what was accomplished]
+
+**Still Open**
+[1-2 bullets for tomorrow]
+
+**One takeaway**
+[1 sentence reflection]
+
+Keep it brief and encouraging.`;
+    const deviceId = (() => { let id = localStorage.getItem('henry:device_id'); if (!id) { id = crypto.randomUUID(); localStorage.setItem('henry:device_id', id); } return id; })();
+    try {
+      const r = await fetch('https://henry-proxy.henryai.workers.dev/v1/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Henry-Device': deviceId },
+        body: JSON.stringify({ model: 'llama-3.1-8b-instant', messages: [{ role: 'user', content: prompt }], max_tokens: 350, stream: false }),
+      });
+      const d = await r.json() as any;
+      setReportText(d?.choices?.[0]?.message?.content || 'No response');
+    } catch { setReportText('Could not reach Henry AI.'); }
+    setReportBusy(false);
   }
 
   async function askHenryInline(text: string) {
@@ -532,6 +626,36 @@ Write 2-4 short sentences covering: one encouraging opening, what to focus on to
             })}
           </div>
         )}
+
+        {/* Verse of the day */}
+        {verseOfDay && (
+          <div className="w-full mb-3 p-3 bg-henry-accent/5 border border-henry-accent/15 rounded-xl">
+            <p className="text-[9px] uppercase tracking-widest text-henry-accent/70 mb-1.5 font-semibold">✝ Verse of the Day</p>
+            <p className="text-xs text-henry-text leading-relaxed italic">"{verseOfDay.text.slice(0, 120)}{verseOfDay.text.length > 120 ? '…' : ''}"</p>
+            <p className="text-[10px] text-henry-text-muted mt-1 font-medium">— {verseOfDay.ref}</p>
+          </div>
+        )}
+
+        {/* Quick add task */}
+        <div className="w-full mb-2">
+          {addingTask ? (
+            <div className="flex gap-2">
+              <input value={quickTask} onChange={e => setQuickTask(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') void addQuickTask(); if (e.key === 'Escape') setAddingTask(false); }}
+                placeholder="New task…" autoFocus
+                className="flex-1 bg-henry-surface border border-henry-border/30 rounded-xl px-3 py-2 text-sm text-henry-text placeholder:text-henry-text-muted outline-none focus:border-henry-accent/50" />
+              <button onClick={() => void addQuickTask()}
+                className="px-3 py-2 bg-henry-accent text-white text-sm rounded-xl font-semibold hover:bg-henry-accent/80 transition-all">Add</button>
+              <button onClick={() => setAddingTask(false)}
+                className="px-3 py-2 border border-henry-border/30 text-henry-text-muted text-sm rounded-xl hover:text-henry-text transition-all">✕</button>
+            </div>
+          ) : (
+            <button onClick={() => setAddingTask(true)}
+              className="w-full py-2 rounded-xl border border-dashed border-henry-border/40 text-henry-text-muted text-xs hover:border-henry-accent/40 hover:text-henry-accent transition-all">
+              + Quick task
+            </button>
+          )}
+        </div>
 
         {(liveData.dueTasks > 0 || liveData.dueReminders > 0 || liveData.focusToday > 0) && (
           <div className="w-full mb-3 flex gap-2 flex-wrap">
