@@ -108,6 +108,10 @@ export default function ScripturePanel() {
   const [note, setNote]       = useState('');
   const [editNoteRef, setEditNoteRef] = useState<string | null>(null);
   const [studyText, setStudyText] = useState('');
+  const [readingPlanDay, setReadingPlanDay] = useState<number>(() => {
+    const saved = localStorage.getItem('henry:scripture_plan_day');
+    return saved ? parseInt(saved) : 1;
+  });
   const [studyRef, setStudyRef]   = useState('');
   const [studyOutput, setStudyOutput] = useState('');
   const [studyLoading, setStudyLoading] = useState(false);

@@ -108,6 +108,24 @@ Write a brief P&L summary in 3 sentences: how the month went, biggest expense ar
     URL.revokeObjectURL(url);
   }
 
+  const [insight, setInsight] = useState('');
+  const [insightBusy, setInsightBusy] = useState(false);
+
+  async function getInsight() {
+    if (insightBusy || !summary) return;
+    setInsightBusy(true); setInsight('');
+    const ownerName = localStorage.getItem('henry:owner_name') || 'you';
+    const topExp = expenseCats.slice(0,3).map(c=>c.category+' $'+c.total.toFixed(0)).join(', ');
+    const prompt = ownerName + ' spent $' + summary.expenses.toFixed(0) + ' this month with income of $' + summary.income.toFixed(0) + '. Top expenses: ' + (topExp||'none yet') + '. Net: $' + (summary.income-summary.expenses).toFixed(0) + '. In 2-3 sentences give a helpful financial observation and one actionable tip. Be direct and practical.';
+    const deviceId = (() => { let id = localStorage.getItem('henry:device_id'); if (!id) { id = crypto.randomUUID(); localStorage.setItem('henry:device_id', id); } return id; })();
+    try {
+      const r = await fetch('https://henry-proxy.henryai.workers.dev/v1/chat', { method:'POST', headers:{'Content-Type':'application/json','X-Henry-Device':deviceId}, body:JSON.stringify({model:'llama-3.1-8b-instant',messages:[{role:'user',content:prompt}],max_tokens:150,stream:false}) });
+      const d = await r.json() as any;
+      setInsight(d?.choices?.[0]?.message?.content || '');
+    } catch { setInsight('Could not reach Henry AI.'); }
+    setInsightBusy(false);
+  }
+
   function askHenry(){
     const cats = summary.breakdown.filter(b=>b.type==='expense').sort((a,b)=>b.total-a.total).slice(0,4).map(b=>`${b.category}: ${fmt(b.total)}`).join(', ');
     sendToHenry(`My finances for ${monthLabel(month)}: Income ${fmt(summary.income)}, Expenses ${fmt(summary.expenses)}, Net ${fmt(summary.net)}. Top expenses: ${cats}. Give me a brief analysis and one practical suggestion.`);
@@ -131,6 +149,7 @@ Write a brief P&L summary in 3 sentences: how the month went, biggest expense ar
         <div className="flex gap-2">
           <button onClick={exportCSV} disabled={!txns.length} className="text-[11px] px-3 py-1.5 rounded-lg bg-henry-surface border border-henry-border/30 text-henry-text-muted hover:text-henry-text disabled:opacity-30 transition-all">↓ CSV</button>
           <button onClick={() => void generatePLReport()} disabled={plBusy || !txns.length} className="text-[11px] px-3 py-1.5 rounded-lg bg-henry-surface border border-henry-border/30 text-henry-text-muted hover:text-henry-accent disabled:opacity-30 transition-all">⚡ P&L</button>
+          <button onClick={() => void getInsight()} disabled={insightBusy || !summary} className="text-[11px] px-3 py-1.5 rounded-lg bg-henry-surface border border-henry-border/30 text-henry-text-muted hover:text-henry-accent disabled:opacity-30 transition-all">{insightBusy ? '⟳' : '💡 Insight'}</button>
           <button onClick={askHenry} className="text-[11px] px-3 py-1.5 rounded-lg bg-henry-surface border border-henry-border/30 text-henry-text-muted hover:text-henry-accent transition-all">Ask Henry</button>
           <button onClick={()=>setAdding(a=>!a)} className="text-[11px] px-4 py-1.5 rounded-lg bg-henry-accent text-white font-semibold hover:bg-henry-accent/80 transition-all">+ Add</button>
         </div>
@@ -150,6 +169,16 @@ Write a brief P&L summary in 3 sentences: how the month went, biggest expense ar
             </div>
           ))}
         </div>
+
+        {insight && (
+          <div className="bg-henry-accent/8 border border-henry-accent/20 rounded-xl p-3 flex items-start gap-2">
+            <span className="text-henry-accent text-sm flex-shrink-0">💡</span>
+            <div className="flex-1">
+              <p className="text-xs text-henry-text leading-relaxed">{insight}</p>
+              <button onClick={() => setInsight('')} className="text-[10px] text-henry-text-muted hover:text-henry-text mt-1 transition-all">Dismiss</button>
+            </div>
+          </div>
+        )}
 
         {/* 6-month trend bars */}
         {trends.length > 0 && (

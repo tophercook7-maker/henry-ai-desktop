@@ -131,17 +131,38 @@ export default function OnboardingWizard({ onComplete }: Props) {
         )}
 
         {step === 'done' && (
-          <div className="text-center space-y-6">
-            <div><p className="text-5xl mb-4">✓</p>
+          <div className="space-y-5">
+            <div className="text-center">
+              <p className="text-5xl mb-3">✓</p>
               <h2 className="text-2xl font-bold text-white">Henry is ready.</h2>
-              <p className="text-white/50 text-sm mt-2 leading-relaxed">Ask him anything. Tell him to do things. He learns your preferences and gets better every day.</p>
+              <p className="text-white/50 text-sm mt-2">50 free AI requests/day — no API key needed to start.</p>
             </div>
-            <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-left space-y-2">
-              <p className="text-[10px] uppercase tracking-wider text-white/30 mb-3">Try these</p>
-              {['Create a folder called Work on my Desktop','What can you do?','Remind me to check email at 9am','Take a screenshot'].map(s => (
-                <p key={s} className="text-white/50 text-xs font-mono bg-white/5 rounded-lg px-3 py-2">"{s}"</p>
+
+            {/* Companion URL */}
+            {localUrl !== 'http://192.168.x.x:4242' && (
+              <div className="bg-henry-accent/10 border border-henry-accent/25 rounded-xl p-4">
+                <p className="text-[10px] uppercase tracking-wider text-henry-accent mb-2">📱 iPad / iPhone Companion</p>
+                <p className="text-white font-mono text-sm break-all">{localUrl}</p>
+                <p className="text-white/40 text-xs mt-1">Open in Safari on your iPad · same WiFi</p>
+                <button onClick={() => navigator.clipboard?.writeText(localUrl)}
+                  className="mt-2 text-[11px] text-henry-accent hover:underline">Copy URL →</button>
+              </div>
+            )}
+
+            {/* Quick actions to try */}
+            <div className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-2">
+              <p className="text-[10px] uppercase tracking-wider text-white/30 mb-3">Try these first</p>
+              {[
+                'What should I work on today?',
+                'Add a reminder to call Mom tomorrow at 10am',
+                'Look up John 3:16',
+                'Take a screenshot of my screen',
+                'What can you do?',
+              ].map(s => (
+                <p key={s} className="text-white/50 text-xs font-mono bg-white/5 rounded-lg px-3 py-2 cursor-pointer hover:text-white/70 transition-all">"{s}"</p>
               ))}
             </div>
+
             <button onClick={finish} className={primary}>Start using Henry →</button>
           </div>
         )}

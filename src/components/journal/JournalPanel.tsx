@@ -104,6 +104,19 @@ export default function JournalPanel(){
           <button onClick={newEntry} className="w-full py-2 rounded-xl bg-henry-accent text-white text-sm font-semibold hover:bg-henry-accent/80 transition-all">
             + New Entry
           </button>
+          {entries.length > 0 && (
+            <div className="flex items-center justify-between text-[10px] text-henry-text-muted px-1">
+              <span>{entries.length} entries</span>
+              <span>
+                {(() => {
+                  const moods = entries.filter(e=>e.mood).map(e=>e.mood);
+                  const top = moods.reduce((a:Record<string,number>,m)=>({...a,[m!]:(a[m!]||0)+1}),{});
+                  const best = Object.entries(top).sort((a,b)=>b[1]-a[1])[0];
+                  return best ? `${best[0]} most common` : '';
+                })()}
+              </span>
+            </div>
+          )}
           <input value={search_q} onChange={e=>setSearchQ(e.target.value)} placeholder="Search journal…"
             className="w-full bg-henry-surface border border-henry-border/30 rounded-lg px-3 py-1.5 text-sm text-henry-text placeholder:text-henry-text-muted outline-none focus:border-henry-accent/50" />
         </div>

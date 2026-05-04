@@ -29,7 +29,27 @@ export default function VideoGenPanel() {
   });
 
   async function generate() {
-    if (!prompt.trim() || !runwayKey) return;
+    if (!prompt.trim()) return;
+    // Free tier: use Pollinations.ai for animated GIFs when no Runway key
+    if (!runwayKey) {
+      setGenerating(true); setError(null); setVideoUrl(null);
+      setStatus('Generating free animation…');
+      try {
+        const encoded = encodeURIComponent(prompt.trim());
+        // Pollinations image endpoint with multiple frames
+        const gifUrl = `https://image.pollinations.ai/prompt/${encoded}?width=512&height=288&nologo=true&enhance=true&seed=${Date.now()}`;
+        const entry: VideoEntry = { id: crypto.randomUUID(), url: gifUrl, prompt: prompt.trim(), createdAt: new Date().toISOString() };
+        const updated = [entry, ...history.slice(0, 19)];
+        setHistory(updated);
+        localStorage.setItem('henry:video_history', JSON.stringify(updated));
+        setVideoUrl(gifUrl);
+        setStatus('');
+      } catch (e) {
+        setError('Free generation failed: ' + String(e));
+      }
+      setGenerating(false);
+      return;
+    }
     setGenerating(true); setError(null); setVideoUrl(null); setStatus('Submitting to Runway…');
     try {
       const res = await fetch('https://api.dev.runwayml.com/v1/image_to_video', {
