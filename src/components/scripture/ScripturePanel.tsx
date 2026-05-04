@@ -188,15 +188,76 @@ export default function ScripturePanel() {
   const savedCount = saved.length;
 
   async function downloadKJV(booksOnly?: string[]) {
-    setDownloading(true);
-    setDownloadProgress('Downloading KJV from Bible CDN…');
-    try {
-      const r = await api.scriptureDownloadKJV(booksOnly);
-      setDownloadProgress('✓ Imported ' + r.imported.toLocaleString() + ' verses' + (r.errors?.length ? ' (' + r.errors.length + ' errors)' : ''));
-    } catch (e) {
-      setDownloadProgress('Error: ' + String(e));
+    const ALL_BOOKS = [
+      'Genesis','Exodus','Leviticus','Numbers','Deuteronomy','Joshua','Judges','Ruth',
+      '1Samuel','2Samuel','1Kings','2Kings','1Chronicles','2Chronicles','Ezra','Nehemiah',
+      'Esther','Job','Psalms','Proverbs','Ecclesiastes','SongofSolomon','Isaiah','Jeremiah',
+      'Lamentations','Ezekiel','Daniel','Hosea','Joel','Amos','Obadiah','Jonah','Micah',
+      'Nahum','Habakkuk','Zephaniah','Haggai','Zechariah','Malachi',
+      'Matthew','Mark','Luke','John','Acts','Romans',
+      '1Corinthians','2Corinthians','Galatians','Ephesians','Philippians','Colossians',
+      '1Thessalonians','2Thessalonians','1Timothy','2Timothy','Titus','Philemon',
+      'Hebrews','James','1Peter','2Peter','1John','2John','3John','Jude','Revelation',
+    ];
+    const CDN = 'https://cdn.jsdelivr.net/gh/aruljohn/Bible-kjv/';
+    const target = booksOnly && booksOnly.length ? booksOnly : ALL_BOOKS;
+
+    function humanName(b: string) {
+      return b.replace(/([0-9])([A-Z])/,'$1 $2').replace(/([a-z])([A-Z])/g,'$1 $2')
+               .replace('Songof Solomon','Song of Solomon').replace('Songof','Song of');
     }
+
+    function parseBook(data: any, bookFile: string) {
+      const bookName = humanName(bookFile);
+      const chapters: any[] = data.chapters || [];
+      const entries: Array<{reference:string; text:string; sourceLabel:string}> = [];
+      for (let ci = 0; ci < chapters.length; ci++) {
+        const ch = chapters[ci];
+        const isRich = ch && !Array.isArray(ch) && 'verses' in ch;
+        const chNum = isRich ? (parseInt(ch.chapter) || ci+1) : ci+1;
+        const verses = isRich ? ch.verses : (Array.isArray(ch) ? ch : []);
+        for (let vi = 0; vi < verses.length; vi++) {
+          const v = verses[vi];
+          const text = typeof v === 'string' ? v : v?.text;
+          const vsNum = typeof v === 'object' ? (parseInt(v?.verse) || vi+1) : vi+1;
+          if (text) entries.push({ reference: bookName + ' ' + chNum + ':' + vsNum, text, sourceLabel: 'King James Version' });
+        }
+      }
+      return entries;
+    }
+
+    setDownloading(true);
+    let total = 0;
+    const errors: string[] = [];
+
+    for (let i = 0; i < target.length; i++) {
+      const book = target[i];
+      setDownloadProgress('Downloading ' + humanName(book) + '… (' + (i+1) + '/' + target.length + ')');
+      try {
+        const resp = await fetch(CDN + book + '.json');
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const data = await resp.json();
+        const entries = parseBook(data, book);
+        if (entries.length > 0) {
+          // Use existing scriptureImport IPC — already wired and confirmed working
+          const henryAPI = (window as any).henryAPI;
+          await henryAPI.scriptureImport(entries);
+          total += entries.length;
+        }
+      } catch (e) {
+        errors.push(book + ': ' + String(e));
+      }
+    }
+
+    setDownloadProgress(
+      errors.length === 0
+        ? '✓ ' + total.toLocaleString() + ' verses downloaded and ready'
+        : '✓ ' + total.toLocaleString() + ' verses — ' + errors.length + ' books failed'
+    );
     setDownloading(false);
+    // Refresh saved count
+    const henryAPI = (window as any).henryAPI;
+    await loadSaved();
   }
 
   return (
