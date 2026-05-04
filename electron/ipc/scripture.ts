@@ -161,6 +161,84 @@ export function registerScriptureHandlers(db: Database.Database, getWindow?: Win
     }
   );
 
+  // ── Auto-download KJV from CDN ─────────────────────────────────────────────
+  ipcMain.handle('scripture:downloadKJV', async (_event, books?: string[]) => {
+    const { default: https } = await import('https');
+    const CDN = 'https://cdn.jsdelivr.net/gh/aruljohn/Bible-kjv/';
+
+    const ALL_BOOKS = [
+      'Genesis','Exodus','Leviticus','Numbers','Deuteronomy','Joshua','Judges','Ruth',
+      '1Samuel','2Samuel','1Kings','2Kings','1Chronicles','2Chronicles','Ezra','Nehemiah',
+      'Esther','Job','Psalms','Proverbs','Ecclesiastes','SongofSolomon','Isaiah','Jeremiah',
+      'Lamentations','Ezekiel','Daniel','Hosea','Joel','Amos','Obadiah','Jonah','Micah',
+      'Nahum','Habakkuk','Zephaniah','Haggai','Zechariah','Malachi',
+      'Matthew','Mark','Luke','John','Acts','Romans',
+      '1Corinthians','2Corinthians','Galatians','Ephesians','Philippians','Colossians',
+      '1Thessalonians','2Thessalonians','1Timothy','2Timothy','Titus','Philemon',
+      'Hebrews','James','1Peter','2Peter','1John','2John','3John','Jude','Revelation',
+    ];
+
+    const target = books && books.length ? books : ALL_BOOKS;
+
+    function fetchBook(book: string): Promise<{book: string; chapters: string[][]}> {
+      return new Promise((resolve, reject) => {
+        https.get(CDN + book + '.json', (res) => {
+          let raw = '';
+          res.on('data', (chunk) => raw += chunk);
+          res.on('end', () => {
+            try { resolve(JSON.parse(raw)); }
+            catch (e) { reject(new Error('Parse error for ' + book)); }
+          });
+          res.on('error', reject);
+        }).on('error', reject);
+      });
+    }
+
+    // Map "SongofSolomon" → "Song of Solomon", "1Samuel" → "1 Samuel", etc.
+    function humanName(b: string): string {
+      return b
+        .replace(/([0-9])([A-Z])/, '$1 $2')
+        .replace(/([a-z])([A-Z])/g, '$1 $2')
+        .replace('Songof Solomon', 'Song of Solomon')
+        .replace('Songof', 'Song of');
+    }
+
+    const stmt = db.prepare(
+      `INSERT OR REPLACE INTO scripture_entries (id, normalized_reference, book, chapter, verse, text, translation, source_label) VALUES (?, ?, ?, ?, ?, ?, 'KJV', 'King James Version')`
+    );
+
+    let imported = 0;
+    let errors: string[] = [];
+
+    for (const bookFile of target) {
+      try {
+        const data = await fetchBook(bookFile);
+        const bookName = humanName(bookFile);
+        const chapters = data.chapters || data as any;
+
+        const insertMany = db.transaction(() => {
+          for (let ci = 0; ci < chapters.length; ci++) {
+            const chapter = chapters[ci];
+            for (let vi = 0; vi < chapter.length; vi++) {
+              const verseText = chapter[vi];
+              if (!verseText) continue;
+              const ch = ci + 1, vs = vi + 1;
+              const ref = `${bookName} ${ch}:${vs}`;
+              const id = `kjv_${bookFile}_${ch}_${vs}`;
+              stmt.run(id, ref, bookName, ch, vs, verseText, ref);
+              imported++;
+            }
+          }
+        });
+        insertMany();
+      } catch (e) {
+        errors.push(bookFile + ': ' + String(e));
+      }
+    }
+
+    return { imported, errors, books: target.length };
+  });
+
   ipcMain.handle('scripture:count', async () => {
     const row = db.prepare(`SELECT COUNT(*) AS c FROM scripture_entries`).get() as { c: number };
     return row.c;

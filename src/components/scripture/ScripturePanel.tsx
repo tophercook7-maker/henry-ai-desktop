@@ -79,6 +79,8 @@ async function henryStudy(passage: string, text: string, prompt: string, provide
 export default function ScripturePanel() {
   const { setCurrentView, providers } = useStore();
   const [tab, setTab]         = useState<Tab>('lookup');
+  const [downloading, setDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState('');
   const [query, setQuery]     = useState('');
   const [result, setResult]   = useState<VerseResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -184,6 +186,18 @@ export default function ScripturePanel() {
   }
 
   const savedCount = saved.length;
+
+  async function downloadKJV(booksOnly?: string[]) {
+    setDownloading(true);
+    setDownloadProgress('Downloading KJV from Bible CDN…');
+    try {
+      const r = await api.scriptureDownloadKJV(booksOnly);
+      setDownloadProgress('✓ Imported ' + r.imported.toLocaleString() + ' verses' + (r.errors?.length ? ' (' + r.errors.length + ' errors)' : ''));
+    } catch (e) {
+      setDownloadProgress('Error: ' + String(e));
+    }
+    setDownloading(false);
+  }
 
   return (
     <div className="flex flex-col h-full bg-henry-bg overflow-hidden">
@@ -413,80 +427,70 @@ export default function ScripturePanel() {
       )}
       {/* ── IMPORT TAB ── */}
       {tab === 'import' && (
-        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4 max-w-2xl">
-          <div className="bg-henry-surface rounded-xl border border-henry-border/20 p-5 space-y-3">
-            <p className="text-sm font-semibold text-henry-text">Import a Bible Translation</p>
-            <p className="text-[12px] text-henry-text-muted leading-relaxed">
-              Henry stores Bible text locally — no internet required for lookups.
-              Import any translation as a JSON file. Once imported, all lookup, study, and
-              auto-detection in chat works offline.
-            </p>
-            <div className="bg-henry-bg rounded-lg border border-henry-border/20 p-3 space-y-1">
-              <p className="text-[10px] uppercase tracking-wider text-henry-text-muted mb-2">Expected JSON format</p>
-              <pre className="text-[11px] text-henry-accent font-mono leading-relaxed whitespace-pre-wrap">{`[
-  {
-    "reference": "Genesis 1:1",
-    "text": "In the beginning God created...",
-    "sourceLabel": "KJV"
-  },
-  {
-    "reference": "John 3:16",
-    "text": "For God so loved the world...",
-    "sourceLabel": "KJV"
-  }
-]`}</pre>
+        <div className="flex-1 overflow-y-auto px-6 py-5 max-w-2xl space-y-5">
+          {/* One-click KJV download */}
+          <div className="bg-henry-surface rounded-2xl border border-henry-border/20 p-5 space-y-3">
+            <div className="flex items-start gap-3">
+              <span className="text-2xl">📖</span>
+              <div>
+                <p className="font-semibold text-henry-text">Download King James Bible</p>
+                <p className="text-xs text-henry-text-muted mt-0.5">
+                  Full KJV — 66 books, 31,102 verses — downloaded from a free public CDN.
+                  Takes about 30 seconds on WiFi.
+                </p>
+              </div>
             </div>
-
-            <div className="bg-blue-400/5 border border-blue-400/20 rounded-xl p-4 space-y-2">
-              <p className="text-[11px] font-semibold text-blue-400">Free public domain translations</p>
-              <p className="text-[11px] text-henry-text-muted">These translations are in the public domain and can be freely imported:</p>
+            {downloadProgress && (
+              <div className={`text-sm px-3 py-2 rounded-xl ${downloadProgress.startsWith('✓') ? 'bg-green-400/10 text-green-400 border border-green-400/20' : downloadProgress.startsWith('Error') ? 'bg-red-400/10 text-red-400' : 'bg-henry-bg text-henry-text-muted'}`}>
+                {downloading && <span className="inline-block animate-spin mr-2">⟳</span>}
+                {downloadProgress}
+              </div>
+            )}
+            <button onClick={() => void downloadKJV()} disabled={downloading}
+              className="w-full py-3 bg-henry-accent text-white font-bold rounded-xl text-sm hover:bg-henry-accent/80 disabled:opacity-50 transition-all">
+              {downloading ? 'Downloading…' : '⬇ Download Full KJV (31,102 verses)'}
+            </button>
+            <div className="grid grid-cols-2 gap-2">
               {[
-                ['King James Version (KJV)', 'Published 1611, public domain worldwide'],
-                ['American Standard Version (ASV)', 'Published 1901, public domain worldwide'],
-                ['World English Bible (WEB)', 'Modern public domain translation'],
-                ['Douay-Rheims Bible (DRA)', 'Catholic public domain translation'],
-              ].map(([name, note]) => (
-                <div key={name} className="flex items-center gap-2">
-                  <span className="text-henry-accent text-xs">✓</span>
-                  <div>
-                    <span className="text-[11px] text-henry-text font-medium">{name}</span>
-                    <span className="text-[10px] text-henry-text-muted ml-2">{note}</span>
-                  </div>
-                </div>
+                { label: '📜 New Testament only', books: ['Matthew','Mark','Luke','John','Acts','Romans','1Corinthians','2Corinthians','Galatians','Ephesians','Philippians','Colossians','1Thessalonians','2Thessalonians','1Timothy','2Timothy','Titus','Philemon','Hebrews','James','1Peter','2Peter','1John','2John','3John','Jude','Revelation'] },
+                { label: '📜 Psalms & Proverbs', books: ['Psalms','Proverbs'] },
+                { label: '📜 Gospels only', books: ['Matthew','Mark','Luke','John'] },
+                { label: "📜 Paul's Letters", books: ['Romans','1Corinthians','2Corinthians','Galatians','Ephesians','Philippians','Colossians','1Thessalonians','2Thessalonians','1Timothy','2Timothy','Titus','Philemon'] },
+              ].map(s => (
+                <button key={s.label} onClick={() => void downloadKJV(s.books)} disabled={downloading}
+                  className="py-2 px-3 rounded-xl border border-henry-border/30 text-xs text-henry-text-muted hover:text-henry-text hover:border-henry-accent/40 disabled:opacity-40 transition-all text-left">
+                  {s.label}
+                </button>
               ))}
             </div>
+          </div>
 
-            <div className="bg-henry-bg rounded-lg border border-henry-border/20 p-3 text-[11px] text-henry-text-muted">
-              <p className="font-semibold text-henry-text mb-1">Quick conversion tip</p>
-              <p>Many Bible APIs and tools export in the format above. You can also convert from OSIS or USX XML using free tools, or ask Henry to help you write a conversion script.</p>
+          {/* Manual JSON import */}
+          <div className="bg-henry-surface/50 rounded-2xl border border-henry-border/15 p-5 space-y-3">
+            <p className="text-sm font-semibold text-henry-text">Import your own translation</p>
+            <p className="text-xs text-henry-text-muted leading-relaxed">
+              Import any translation as a JSON file. Format: array of objects with
+              <code className="bg-henry-bg px-1 rounded text-henry-accent mx-1">reference</code>,
+              <code className="bg-henry-bg px-1 rounded text-henry-accent mx-1">text</code> fields.
+            </p>
+            <div className="bg-henry-bg rounded-xl p-3 text-[11px] font-mono text-henry-text-muted">
+              {'[{"reference":"John 3:16","text":"For God so loved..."},...]'}
             </div>
-
-            <button onClick={handlePickImport} disabled={importing}
-              className="w-full py-3 rounded-xl bg-henry-accent text-white font-bold text-sm hover:bg-henry-accent/80 disabled:opacity-40 transition-all">
-              {importing ? 'Importing…' : '📂 Choose JSON File to Import'}
+            <div className="flex gap-2">
+              <p className="text-xs text-henry-text-muted">Free translations: KJV, ASV, WEB, Darby — available at ebible.org</p>
+              <button onClick={() => api.computerRunShell?.({ command: 'open https://ebible.org/find/', timeout: 3000 })}
+                className="text-xs text-henry-accent hover:underline flex-shrink-0">Open ↗</button>
+            </div>
+            <button onClick={async () => {
+              const result = await api.scripturePickImportJson?.();
+              if (result?.imported) setDownloadProgress('✓ Imported ' + result.imported + ' verses from file');
+            }} className="w-full py-2.5 rounded-xl border border-henry-border/30 text-sm text-henry-text-muted hover:text-henry-text hover:border-henry-accent/30 transition-all">
+              📁 Choose JSON file…
             </button>
-
-            {count > 0 && (
-              <div className="text-center py-2">
-                <p className="text-henry-accent text-sm font-semibold">✓ {count.toLocaleString()} verses loaded</p>
-                <p className="text-[11px] text-henry-text-muted mt-1">Henry can look up any reference in your translation.</p>
-              </div>
-            )}
-
-            {importResult && (
-              <div className={`rounded-xl border p-4 space-y-1 ${importResult.errors.length ? 'bg-yellow-400/5 border-yellow-400/20' : 'bg-green-400/5 border-green-400/20'}`}>
-                <p className={`text-sm font-semibold ${importResult.errors.length ? 'text-yellow-400' : 'text-green-400'}`}>
-                  {importResult.imported > 0 ? `✓ ${importResult.imported.toLocaleString()} verses imported` : 'Import complete'}
-                </p>
-                {importResult.skipped > 0 && <p className="text-[11px] text-henry-text-muted">{importResult.skipped} skipped (already exist or invalid)</p>}
-                {importResult.errors.slice(0, 3).map((e, i) => (
-                  <p key={i} className="text-[10px] text-red-400 font-mono">{e}</p>
-                ))}
-              </div>
-            )}
           </div>
         </div>
       )}
+
     </div>
   );
 }
