@@ -17,6 +17,7 @@ import DeviceLinkPanel from '../settings/DeviceLinkPanel';
 import PrinterPanel from '../computer/PrinterPanel';
 import SecretaryPanel from '../secretary/SecretaryPanel';
 import GoalsPanel from '../goals/GoalsPanel';
+import HQPanel from '../hq/HQPanel';
 import TodayPanel from '../today/TodayPanel';
 import ContactsPanel from '../contacts/ContactsPanel';
 import CommandPalette from '../chat/CommandPalette';
@@ -124,6 +125,7 @@ export default function Layout() {
           {currentView === 'finance' && <FinancePanel />}
           {currentView === 'lists' && <ListsPanel />}
           {currentView === 'goals' && <GoalsPanel />}
+          {currentView === 'hq' && <HQPanel />}
           {currentView === 'printstudio' && <PrintStudioPanel />}
           {currentView === 'scripture' && <ScripturePanel />}
           {currentView === 'imagegen' && <ImageGenPanel />}

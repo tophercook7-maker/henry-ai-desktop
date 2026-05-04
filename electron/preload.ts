@@ -138,6 +138,25 @@ contextBridge.exposeInMainWorld('henryAPI', {
   // Self-repair / health
   runDiagnostic: () => ipcRenderer.invoke('henry:diagnostic:run'),
   getLastDiagnostic: () => ipcRenderer.invoke('henry:diagnostic:last'),
+  // ── System stats + computer control ────────────────────────────────────
+  computerSystemStats: () => ipcRenderer.invoke('computer:systemStats'),
+  computerClipboardRead: () => ipcRenderer.invoke('computer:clipboard:read'),
+  computerClipboardWrite: (text: string) => ipcRenderer.invoke('computer:clipboard:write', text),
+  computerSetVolume: (level: number) => ipcRenderer.invoke('computer:setVolume', level),
+  computerGetVolume: () => ipcRenderer.invoke('computer:getVolume'),
+  computerNotify: (opts: { title: string; body?: string }) => ipcRenderer.invoke('computer:notify', opts),
+  computerDesktopMode: (opts: { enable: boolean; fullscreen?: boolean }) => ipcRenderer.invoke('computer:desktopMode', opts),
+  computerKillProcess: (pid: number) => ipcRenderer.invoke('computer:killProcess', pid),
+  computerScheduleTask: (task: { id: string; intervalMs: number; command: string; label: string }) =>
+    ipcRenderer.invoke('computer:scheduleTask', task),
+  computerUnscheduleTask: (id: string) => ipcRenderer.invoke('computer:unscheduleTask', id),
+  computerListScheduled: () => ipcRenderer.invoke('computer:listScheduled'),
+  onScheduledTaskResult: (cb: (result: unknown) => void) => {
+    const handler = (_: IpcRendererEvent, result: unknown) => cb(result);
+    ipcRenderer.on('computer:scheduledTask:result', handler);
+    return () => ipcRenderer.removeListener('computer:scheduledTask:result', handler);
+  },
+
   // Google OAuth (PKCE desktop flow)
   googleStartAuth: (opts: { clientId: string; clientSecret: string; scopes: string[] }) =>
     ipcRenderer.invoke('google:startAuth', opts),
