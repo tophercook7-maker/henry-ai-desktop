@@ -294,71 +294,197 @@ app.whenReady().then(() => {
   });
 
   // ── Global hotkeys ───────────────────────────────────────────────────────────
-  // ⌘+Shift+H — Henry Quick Capture (system-wide)
-  // Flow: user selects text + ⌘C → then ⌘⇧H → Henry grabs clipboard + processes
-  // OR: user just hits ⌘⇧H with any clipboard content
-  globalShortcut.register('CommandOrControl+Shift+H', async () => {
+  // SIMPLE: One key to capture anything, one key to open Henry.
+  //
+  // ⌥Space — Henry Smart Capture  (Option + Space, works in ANY app)
+  //   Select text anywhere → hit ⌥Space → Henry grabs it automatically.
+  //   No need to ⌘C first. Henry simulates the copy, reads it, restores clipboard.
+  //   Then processes it: ideas, prospects, tasks, insights — all extracted.
+  //
+  // ⌥H     — Open / focus Henry   (Option + H, simple single-modifier)
+
+  // ── HUD window for capture feedback ─────────────────────────────────────────
+  let hudWindow: BrowserWindow | null = null;
+
+  function showHUD(text: string, charCount: number) {
+    if (hudWindow && !hudWindow.isDestroyed()) {
+      hudWindow.close();
+      hudWindow = null;
+    }
+
+    const { screen } = require('electron');
+    const display = screen.getPrimaryDisplay();
+    const { width } = display.workAreaSize;
+
+    hudWindow = new BrowserWindow({
+      width: 340,
+      height: 68,
+      x: width - 360,
+      y: 20,
+      frame: false,
+      transparent: true,
+      alwaysOnTop: true,
+      skipTaskbar: true,
+      focusable: false,
+      resizable: false,
+      movable: false,
+      hasShadow: true,
+      webPreferences: { contextIsolation: true },
+    });
+
+    const preview = text.length > 55 ? text.slice(0, 55) + '…' : text;
+    const html = `<!DOCTYPE html><html><head><style>
+      * { margin:0; padding:0; box-sizing:border-box; }
+      body {
+        background: rgba(10,10,18,0.92);
+        border: 1px solid rgba(124,58,237,0.4);
+        border-radius: 14px;
+        font-family: -apple-system, sans-serif;
+        overflow: hidden;
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        animation: slideIn 0.2s ease;
+      }
+      @keyframes slideIn { from { opacity:0; transform:translateY(-8px); } to { opacity:1; transform:translateY(0); } }
+      .row { display:flex; align-items:center; gap:10px; padding:14px 16px; }
+      .icon { font-size:20px; flex-shrink:0; }
+      .info { flex:1; min-width:0; }
+      .title { color:#a78bfa; font-size:11px; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; }
+      .preview { color:rgba(255,255,255,0.65); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:2px; }
+      .badge { background:rgba(124,58,237,0.25); border:1px solid rgba(124,58,237,0.4); color:#a78bfa; font-size:10px; font-weight:600; padding:2px 7px; border-radius:20px; flex-shrink:0; }
+    </style></head><body>
+    <div class="row">
+      <span class="icon">⚡</span>
+      <div class="info">
+        <div class="title">Henry captured</div>
+        <div class="preview">${preview.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
+      </div>
+      <span class="badge">${charCount} chars</span>
+    </div>
+    </body></html>`;
+
+    hudWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+    hudWindow.setIgnoreMouseEvents(false);
+
+    // Auto-close after 2.5 seconds
+    setTimeout(() => {
+      if (hudWindow && !hudWindow.isDestroyed()) {
+        hudWindow.close();
+        hudWindow = null;
+      }
+    }, 2500);
+  }
+
+  // ── Smart capture function ────────────────────────────────────────────────────
+  async function henrySmartCapture() {
     try {
-      const { clipboard } = await import('electron');
-      const text = clipboard.readText().trim();
-      if (!text || text.length < 3) {
-        // Nothing useful in clipboard — just focus Henry
-        const win = getMainWindow();
-        if (win) { win.show(); win.focus(); }
+      const { execSync } = await import('child_process');
+      const { clipboard: cb } = await import('electron');
+
+      // Save original clipboard
+      const originalText = cb.readText();
+      const originalHTML = cb.readHTML();
+
+      // Simulate ⌘C to copy whatever is selected in the frontmost app
+      // This uses AppleScript — requires Accessibility permission
+      try {
+        execSync(
+          `osascript -e 'tell application "System Events" to keystroke "c" using command down'`,
+          { timeout: 500, stdio: 'ignore' }
+        );
+        // Small delay for clipboard to update
+        await new Promise(r => setTimeout(r, 120));
+      } catch {
+        // AppleScript failed (no Accessibility permission) — use existing clipboard
+      }
+
+      const captured = cb.readText().trim();
+
+      // Restore original clipboard if nothing new was captured
+      if (!captured || captured === originalText || captured.length < 2) {
+        // Fall back to existing clipboard
+        const fallback = originalText.trim();
+        if (!fallback || fallback.length < 2) {
+          // Nothing to capture — just open Henry
+          const win = getMainWindow();
+          if (win) { win.show(); win.focus(); }
+          return;
+        }
+        // Use existing clipboard content
+        await processCapture(fallback, 'clipboard');
         return;
       }
 
-      // Show a brief notification
-      if (Notification.isSupported()) {
-        new Notification({
-          title: 'Henry — Captured',
-          body: text.slice(0, 80) + (text.length > 80 ? '…' : ''),
-          silent: true,
-        }).show();
+      // Restore original clipboard
+      if (originalText) {
+        cb.writeText(originalText);
+      } else {
+        cb.clear();
       }
 
-      // POST to capture-and-process endpoint
-      const http = await import('http');
-      const postBody = JSON.stringify({ text, source: 'clipboard', context: 'hotkey' });
-      const req = http.default.request({
-        hostname: '127.0.0.1',
-        port: 4242,
-        path: '/sync/capture-and-process',
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Henry-Internal': 'true',
-          'Content-Length': Buffer.byteLength(postBody),
-        },
-      }, (res) => { res.resume(); });
-      req.on('error', () => {});
-      req.write(postBody);
-      req.end();
-
-      // Focus Henry and navigate to Captures
-      const win = getMainWindow();
-      if (win) {
-        win.show();
-        win.focus();
-        win.webContents.executeJavaScript(`
-          try {
-            window.dispatchEvent(new CustomEvent('henry_open_capture'));
-            if (window.__useStore) window.__useStore.getState().setCurrentView('captures');
-          } catch {}
-        `).catch(() => {});
-      }
+      await processCapture(captured, 'selection');
     } catch (e) {
-      console.error('[Henry] Quick capture hotkey error:', e);
+      console.error('[Henry] Smart capture error:', e);
     }
-  });
+  }
 
-  // ⌘+Option+H — Open/focus Henry (existing behavior)
-  globalShortcut.register('CommandOrControl+Alt+H', () => {
+  async function processCapture(text: string, source: string) {
+    // Show HUD immediately
+    showHUD(text, text.length);
+
+    // POST to capture-and-process endpoint (non-blocking)
+    const http = await import('http');
+    const postBody = JSON.stringify({ text, source, context: 'hotkey' });
+    const req = http.default.request({
+      hostname: '127.0.0.1', port: 4242,
+      path: '/sync/capture-and-process',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Henry-Internal': 'true',
+        'Content-Length': Buffer.byteLength(postBody),
+      },
+    }, (res) => { res.resume(); });
+    req.on('error', () => {});
+    req.write(postBody);
+    req.end();
+
+    // Navigate to captures in background (don't steal focus unless Henry is open)
+    const win = getMainWindow();
+    if (win?.isVisible()) {
+      win.webContents.executeJavaScript(`
+        try {
+          if (window.__useStore) window.__useStore.getState().setCurrentView('captures');
+        } catch {}
+      `).catch(() => {});
+    }
+  }
+
+  // ── Register hotkeys ──────────────────────────────────────────────────────────
+
+  // ⌥Space — Smart Capture (primary capture hotkey — simple, one modifier)
+  const spaceOk = globalShortcut.register('Alt+Space', () => { void henrySmartCapture(); });
+  if (!spaceOk) {
+    // ⌥Space is taken (Spotlight?) — fall back to ⌥C
+    globalShortcut.register('Alt+C', () => { void henrySmartCapture(); });
+    console.log('[Henry] ⌥Space unavailable — using ⌥C for capture');
+  }
+
+  // ⌥H — Open / focus Henry (simple, one key + one modifier)
+  globalShortcut.register('Alt+H', () => {
     const win = getMainWindow();
     if (win) {
-      if (win.isVisible()) { win.focus(); } else { win.show(); win.focus(); }
+      if (win.isVisible() && win.isFocused()) {
+        win.hide(); // Toggle: if already focused, hide
+      } else {
+        win.show(); win.focus();
+        if (!win.isVisible()) win.restore();
+      }
     }
   });
+
+  // Keep ⌘⇧H as backup for users who prefer it
+  globalShortcut.register('CommandOrControl+Shift+H', () => { void henrySmartCapture(); });
 
   // Unregister on quit
   app.on('will-quit', () => {

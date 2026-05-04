@@ -360,7 +360,7 @@ export default function HQPanel() {
                   </button>
                 </div>
                 <div className="flex gap-2 mt-2 flex-wrap">
-                  {['What apps are running?','Show disk space','Open Finder + Terminal','Mute the Mac','Take a screenshot'].map(q => (
+                  {['What apps are running?','Show disk space','Open Finder + Terminal','Mute the Mac','Take a screenshot','Run a backup of my Desktop'].map(q => (
                     <button key={q} onClick={() => { setChatInput(q); }}
                       className="text-[10px] px-2 py-1 rounded-lg bg-white/5 border border-white/8 text-white/40 hover:text-white/70 hover:border-purple-500/30 transition-all">
                       {q}

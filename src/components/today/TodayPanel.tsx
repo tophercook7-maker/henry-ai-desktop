@@ -307,25 +307,44 @@ export default function TodayPanel() {
         )}
 
         {/* Cost dashboard — shows today's AI spending vs GPT-4 */}
-        {/* Henry AI Status */}
+        {/* Henry AI Status + hotkey reference */}
         {henryStatus !== 'checking' && (
-          <div className={`w-full mb-3 flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-medium ${
-            henryStatus === 'ready' ? 'bg-green-400/5 border-green-400/20 text-green-400' :
-            henryStatus === 'ollama' ? 'bg-blue-400/5 border-blue-400/20 text-blue-400' :
-            'bg-yellow-400/5 border-yellow-400/20 text-yellow-400'
-          }`}>
-            <span className="text-sm">{henryStatus === 'ready' ? '✓' : henryStatus === 'ollama' ? '⚡' : '⚠'}</span>
-            <span className="flex-1">
-              {henryStatus === 'ready' ? 'Henry is ready — Groq AI connected' :
-               henryStatus === 'ollama' ? 'Henry is ready — running on local Ollama' :
-               'Henry needs a Groq API key to respond'}
-            </span>
-            {henryStatus === 'needs-key' && (
-              <button onClick={() => (window as any).useStore?.getState?.()?.setCurrentView?.('settings')}
-                className="underline hover:opacity-80 transition-all flex-shrink-0">
-                Add key →
-              </button>
-            )}
+          <div className="w-full mb-3 space-y-1.5">
+            <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-medium ${
+              henryStatus === 'ready' ? 'bg-green-400/5 border-green-400/20 text-green-400' :
+              henryStatus === 'ollama' ? 'bg-blue-400/5 border-blue-400/20 text-blue-400' :
+              'bg-yellow-400/5 border-yellow-400/20 text-yellow-400'
+            }`}>
+              <span className="text-sm">{henryStatus === 'ready' ? '✓' : henryStatus === 'ollama' ? '⚡' : '⚠'}</span>
+              <span className="flex-1">
+                {henryStatus === 'ready' ? 'Henry is ready — Groq AI connected' :
+                 henryStatus === 'ollama' ? 'Henry is ready — running on local Ollama' :
+                 'Henry needs a Groq API key to respond'}
+              </span>
+              {henryStatus === 'needs-key' && (
+                <button onClick={() => (window as any).useStore?.getState?.()?.setCurrentView?.('settings')}
+                  className="underline hover:opacity-80 transition-all flex-shrink-0">
+                  Add key →
+                </button>
+              )}
+            </div>
+            {/* Hotkey reference card */}
+            <div className="flex items-center gap-3 px-3 py-2 rounded-xl bg-henry-surface/50 border border-henry-border/15">
+              <div className="flex items-center gap-2">
+                <kbd className="bg-henry-surface border border-henry-border/40 text-henry-accent font-mono text-[10px] px-2 py-0.5 rounded-md">⌥Space</kbd>
+                <span className="text-[11px] text-henry-text-muted">Capture anything</span>
+              </div>
+              <div className="w-px h-3 bg-henry-border/30" />
+              <div className="flex items-center gap-2">
+                <kbd className="bg-henry-surface border border-henry-border/40 text-henry-text-muted font-mono text-[10px] px-2 py-0.5 rounded-md">⌥H</kbd>
+                <span className="text-[11px] text-henry-text-muted">Open / hide</span>
+              </div>
+              <div className="w-px h-3 bg-henry-border/30" />
+              <div className="flex items-center gap-2">
+                <kbd className="bg-henry-surface border border-henry-border/40 text-henry-text-muted font-mono text-[10px] px-2 py-0.5 rounded-md">⌘⇧H</kbd>
+                <span className="text-[11px] text-henry-text-muted">Capture (backup)</span>
+              </div>
+            </div>
           </div>
         )}
 
