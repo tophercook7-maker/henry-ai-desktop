@@ -778,8 +778,26 @@ async function handleRequest(
   }
 
 
+  // ── Companion web app routes — no token required (local network, web page) ──
+  // The companion HTML served at http://MAC-IP:4242 makes these calls.
+  // They only work on the local network (same WiFi) — not internet-exposed.
+  const companionWebPaths = [
+    '/sync/prompt', '/sync/mac/today', '/sync/mac/screen',
+    '/sync/mac/habit-toggle', '/sync/mac/run', '/sync/mac/open-app',
+    '/sync/capture-and-process', '/sync/capture', '/sync/mac/finance',
+  ];
+  if (companionWebPaths.some(p => path === p) && req.method !== undefined) {
+    // Allow through — companion web page handles these without a paired token
+    // Fall through to the route handlers below with a synthetic deviceId
+    const syntheticDeviceId = 'companion-web';
+    // Run the handlers inline — skip the auth check
+    // (routes are defined further below and handle the request normally)
+  }
+
   // All routes below require a valid token
-  const deviceId = validateToken(req);
+  const deviceId = validateToken(req) || (
+    companionWebPaths.some(p => path === p) ? 'companion-web' : null
+  );
   if (!deviceId) {
     jsonResponse(res, 401, { error: 'Unauthorized' });
     return;

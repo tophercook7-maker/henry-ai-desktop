@@ -348,9 +348,16 @@ window.addEventListener('load', async () => {
   buildAppGrid();
   buildActionGrid();
 
-  // Show pair screen briefly then auto-hide on desktop (iPad always shows companion)
-  const isDesktop = !/iPad|iPhone|Android|Mobile/.test(navigator.userAgent);
-  if (isDesktop) {
+  // Auto-hide pair screen if we're already at the Henry sync server URL
+  // (i.e., the user opened http://192.168.x.x:4242 directly — no pairing needed)
+  const isHenryServer = location.port === '4242' || location.hostname === '127.0.0.1';
+  const isMobile = /iPad|iPhone|Android|Mobile/.test(navigator.userAgent);
+
+  if (isHenryServer) {
+    // Already at the companion URL — skip pairing, go straight in
+    hidePair();
+  } else if (!isMobile) {
+    // Desktop browser not at server URL — show the connect URL
     const ips = await fetch(BASE + '/sync/state-internal', {
       headers: { 'X-Henry-Internal': 'true' }
     }).then(r => r.json()).then(d => d.localIPs || []).catch(() => []);
@@ -465,9 +472,16 @@ async function sendMsg() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text, source: 'companion' }),
+      signal: AbortSignal.timeout(30000),
     });
-    const d = await r.json();
-    bubble.textContent = d.reply || d.response || d.text || JSON.stringify(d);
+    if (!r.ok) {
+      bubble.textContent = r.status === 401
+        ? '⚠ Henry AI is not connected. Make sure you opened Henry on your Mac and try again.'
+        : '⚠ Error ' + r.status + '. Is Henry running on your Mac?';
+    } else {
+      const d = await r.json();
+      bubble.textContent = d.reply || d.response || d.text || d.content || JSON.stringify(d);
+    }
   } catch (e) {
     bubble.textContent = '⚠ Connection error — is Henry running?';
   }
@@ -790,7 +804,9 @@ async function lookupVerse(ref) {
     currentVerseRef = ref.trim();
   } catch {
     // Fallback: try scripture lookup IPC via sync
-    textEl.textContent = '⚠ Could not reach Henry. Make sure the app is running.';
+    textEl.textContent = r.status === 401
+        ? '⚠ Could not connect to Henry. Open Henry on your Mac and make sure you\'re on the same WiFi, then reload this page.'
+        : '⚠ Verse not found. Try downloading the KJV first (✝ Scripture → 📥 Import in the desktop app).';
   }
 }
 

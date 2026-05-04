@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import TitleBar from './TitleBar';
 import PresenceBar from './PresenceBar';
 import Sidebar from './Sidebar';
@@ -48,6 +48,71 @@ import GDrivePanel from '../integrations/GDrivePanel';
 import { useStore } from '../../store';
 import { isHenryOperatingMode, type HenryOperatingMode } from '../../henry/charter';
 import { useEffect } from 'react';
+
+function CompanionUrlCard() {
+  const [state, setState] = React.useState<{localIp?: string; tunnelUrl?: string; running?: boolean} | null>(null);
+  const [copied, setCopied] = React.useState(false);
+
+  React.useEffect(() => {
+    fetch('http://127.0.0.1:4242/sync/state-internal', { headers: {'X-Henry-Internal':'true'} })
+      .then(r => r.json())
+      .then((d: any) => setState({ localIp: d.localIp, tunnelUrl: d.tunnelUrl, running: d.running }))
+      .catch(() => {});
+  }, []);
+
+  const localUrl = state?.localIp ? `http://${state.localIp}:4242` : 'http://192.168.x.x:4242';
+  const tunnelUrl = state?.tunnelUrl || null;
+
+  function copy(url: string) {
+    navigator.clipboard?.writeText(url).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
+  }
+
+  function openInBrowser(url: string) {
+    (window as any).henryAPI?.computerRunShell?.({ command: `open "${url}"`, timeout: 3000 });
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="bg-henry-surface border border-henry-border/20 rounded-2xl p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <span className="text-green-400 text-sm">●</span>
+          <p className="text-sm font-semibold text-henry-text">Open on same WiFi</p>
+        </div>
+        <div className="bg-henry-bg rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+          <p className="font-mono text-henry-accent text-sm font-bold">{localUrl}</p>
+          <div className="flex gap-2 flex-shrink-0">
+            <button onClick={() => copy(localUrl)}
+              className="text-[11px] px-3 py-1.5 rounded-lg bg-henry-accent/15 border border-henry-accent/30 text-henry-accent hover:bg-henry-accent/25 transition-all">
+              {copied ? '✓ Copied' : 'Copy'}
+            </button>
+            <button onClick={() => openInBrowser(localUrl)}
+              className="text-[11px] px-3 py-1.5 rounded-lg border border-henry-border/30 text-henry-text-muted hover:text-henry-text transition-all">
+              Open ↗
+            </button>
+          </div>
+        </div>
+        <p className="text-[11px] text-henry-text-muted leading-relaxed">
+          On your iPad or iPhone: open Safari, type this URL, bookmark it. Both must be on the same WiFi.
+        </p>
+      </div>
+      {tunnelUrl && (
+        <div className="bg-henry-surface border border-henry-border/20 rounded-2xl p-4 space-y-2">
+          <div className="flex items-center gap-2">
+            <span className="text-blue-400 text-sm">●</span>
+            <p className="text-sm font-semibold text-henry-text">From anywhere</p>
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-400/10 border border-blue-400/20 text-blue-400">Tunnel active</span>
+          </div>
+          <div className="bg-henry-bg rounded-xl px-3 py-2.5 flex items-center justify-between gap-2">
+            <p className="font-mono text-henry-accent text-xs truncate">{tunnelUrl}</p>
+            <button onClick={() => copy(tunnelUrl)}
+              className="text-[11px] px-3 py-1.5 rounded-lg bg-henry-accent/15 border border-henry-accent/30 text-henry-accent flex-shrink-0">Copy</button>
+          </div>
+          <p className="text-[11px] text-henry-text-muted">Works over cellular. URL changes each restart.</p>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function Layout() {
   const currentView = useStore((s) => s.currentView);
@@ -115,10 +180,25 @@ export default function Layout() {
           {currentView === 'settings' && <SettingsView />}
           {currentView === 'health' && <HealthPanel />}
           {currentView === 'companion' && (
-            <div className="h-full overflow-y-auto px-5 py-5">
-              <h2 className="text-base font-semibold text-henry-text mb-1">Companion Devices</h2>
-              <p className="text-xs text-henry-text-muted mb-4">Connect your iPhone or iPad to Henry over WiFi or from anywhere.</p>
-              <DeviceLinkPanel />
+            <div className="h-full overflow-y-auto px-5 py-5 max-w-lg space-y-5">
+              <div>
+                <h2 className="text-lg font-bold text-henry-text">iPad / iPhone Companion</h2>
+                <p className="text-xs text-henry-text-muted mt-1">Open the link below on any device on your WiFi network.</p>
+              </div>
+
+              {/* Primary: web companion URL */}
+              <CompanionUrlCard />
+
+              {/* Secondary: full pairing for native app */}
+              <details className="group">
+                <summary className="text-xs text-henry-text-muted cursor-pointer hover:text-henry-text transition-all list-none flex items-center gap-1">
+                  <span className="group-open:rotate-90 transition-transform inline-block">▶</span>
+                  Advanced: pair a native iOS app
+                </summary>
+                <div className="mt-3">
+                  <DeviceLinkPanel />
+                </div>
+              </details>
             </div>
           )}
           {currentView === 'reminders' && <RemindersPanel />}
