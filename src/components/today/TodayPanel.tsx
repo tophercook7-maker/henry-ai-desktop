@@ -195,7 +195,7 @@ Write 2-4 short sentences covering: one encouraging opening, what to focus on to
           if (!id) { id = crypto.randomUUID(); localStorage.setItem('henry:device_id', id); }
           return id;
         })();
-        const proxyUrl = (import.meta as any).env?.VITE_HENRY_PROXY_URL || 'https://henry-proxy.tophercook7-maker.workers.dev';
+        const proxyUrl = (import.meta as any).env?.VITE_HENRY_PROXY_URL || 'https://henry-proxy.henryai.workers.dev';
         try {
           const r = await fetch(proxyUrl + '/v1/chat', {
             method: 'POST',

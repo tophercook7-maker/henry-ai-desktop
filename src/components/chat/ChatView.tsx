@@ -320,7 +320,7 @@ function resumeModeLabel(m: HenryOperatingMode): string {
 
 // Henry Cloud Proxy — provides AI access without a personal API key
 // Users get 50 free requests/day. Pro users get 2000/day with a license key.
-const HENRY_PROXY_URL = (import.meta as any).env?.VITE_HENRY_PROXY_URL || 'https://henry-proxy.tophercook7-maker.workers.dev';
+const HENRY_PROXY_URL = (import.meta as any).env?.VITE_HENRY_PROXY_URL || 'https://henry-proxy.henryai.workers.dev';
 const HENRY_PROXY_ENABLED = true; // Enable cloud proxy as fallback
 
 export default function ChatView() {
