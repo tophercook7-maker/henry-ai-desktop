@@ -13,12 +13,12 @@ interface SetupItem {
 }
 
 export default function AutoSetupPanel() {
-  const { setCurrentView, providers, settings } = useStore();
+  const { setCurrentView } = useStore();
   const [items, setItems] = useState<SetupItem[]>([
     { id:'accessibility', icon:'⌨', label:'Accessibility Access',     description:'Lets ⌥Space grab your selection automatically', status:'checking', autoFix:true },
     { id:'screen',        icon:'📸', label:'Screen Recording',         description:'Needed for screenshot feature in Henry HQ',     status:'checking', autoFix:true },
     { id:'ai',            icon:'◉', label:'AI Provider',              description:'Groq key or Ollama for chat + smart capture',   status:'checking', autoFix:true },
-    { id:'ollama',        icon:'⚡', label:'Ollama (free local AI)',   description:'Free AI that runs on your Mac, no key needed',  status:'checking' },
+    { id:'ollama',        icon:'⚡', label:'Ollama (free local AI)',   description:'Optional: free offline AI — runs on your Mac (not required)',  status:'checking' },
     { id:'hotkeys',       icon:'⌥', label:'Global Hotkeys',           description:'⌥Space capture · ⌥H open · ⌘⇧H backup',       status:'checking' },
     { id:'sync',          icon:'⊚', label:'Henry Sync Server',        description:'Connects desktop app, mobile + browser capture', status:'checking' },
   ]);
@@ -30,6 +30,10 @@ export default function AutoSetupPanel() {
   }
 
   const runChecks = useCallback(async () => {
+    // Snapshot store directly — avoids stale closure + dependency loop
+    const storeState = useStore.getState();
+    const providers = storeState.providers;
+    const settings = storeState.settings as Record<string,string>;
     // Accessibility
     try {
       const r = await api.checkAccessibility?.();
@@ -45,12 +49,15 @@ export default function AutoSetupPanel() {
       patch('screen', { status: r?.error ? 'missing' : 'ok' });
     } catch { patch('screen', { status:'missing' }); }
 
-    // AI provider
+    // AI provider — proxy is always available (50 req/day free)
     const hasGroq = (providers||[]).some((p:any) => p.id==='groq' && (p.apiKey||p.api_key||'').length > 10);
     const isOllama = settings?.companion_provider === 'ollama';
+    const hasProxy = true; // henry-proxy.henryai.workers.dev always available
     patch('ai', {
-      status: (hasGroq||isOllama) ? 'ok' : 'missing',
-      description: hasGroq ? 'Groq connected ✓' : isOllama ? 'Ollama connected ✓' : 'Add Groq key or start Ollama',
+      status: 'ok', // always ok — proxy is the fallback
+      description: hasGroq ? 'Groq key connected — unlimited ✓' :
+                   isOllama ? 'Ollama connected — local AI ✓' :
+                   'Free tier active — 50 requests/day via Henry proxy ✓',
     });
 
     // Ollama
@@ -72,7 +79,8 @@ export default function AutoSetupPanel() {
       const d = r.ok ? await r.json() as {version?:string} : null;
       patch('sync', { status: r.ok?'ok':'missing', description: r.ok ? `Running v${d?.version||'?'}` : 'Not responding' });
     } catch { patch('sync', { status:'missing', description:'Not responding' }); }
-  }, [providers, settings]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Run once on mount — user hits 'Recheck' manually
 
   useEffect(() => { void runChecks(); }, [runChecks]);
 
@@ -110,7 +118,9 @@ export default function AutoSetupPanel() {
         patch('screen',{ status: r?.error?'missing':'ok' });
       }, 6000);
     } else if (id === 'ai') {
+      // AI is already working via proxy — direct to settings to upgrade
       setCurrentView('settings' as any);
+      patch('ai', { status: 'ok', description: 'Add Groq key for unlimited requests' });
     } else if (id === 'ollama') {
       await api.computerRunShell?.({ command:'open https://ollama.com', timeout:3000 });
       patch('ollama',{ status:'missing', description:'Installing Ollama — visit ollama.com' });

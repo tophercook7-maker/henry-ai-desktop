@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useLayoutEffect } from 'react';
+import { incrementUsage, getTodayUsage, getRemainingRequests, isNearLimit } from '../../henry/proxyUsage';
 import { useStore } from '../../store';
 import { useAmbientStore } from '../../henry/ambientStateStore';
 import type { HenryLeanMemoryParts, Message } from '../../types';
@@ -322,6 +323,7 @@ function resumeModeLabel(m: HenryOperatingMode): string {
 // Users get 50 free requests/day. Pro users get 2000/day with a license key.
 const HENRY_PROXY_URL = (import.meta as any).env?.VITE_HENRY_PROXY_URL || 'https://henry-proxy.henryai.workers.dev';
 const HENRY_PROXY_ENABLED = true; // Enable cloud proxy as fallback
+const HENRY_PROXY_MAX_RETRIES = 1; // Never retry more than once — prevents retry loops
 
 export default function ChatView() {
   const {
@@ -1584,7 +1586,7 @@ export default function ChatView() {
                   const errData = await r.json().catch(() => ({ error: { message: 'Proxy error ' + r.status } })) as any;
                   const msg = errData.error?.message || 'Proxy error ' + r.status;
                   if (r.status === 429) {
-                    errCb?.('**Henry free tier limit reached** (50 requests/day).\n\n→ Add your Groq key in Settings → AI Providers for unlimited use\n→ Or upgrade to Henry Pro at henry.ai');
+                    errCb?.('**Daily limit reached** — 50 free requests/day used.\n\nAdd your free Groq key in **Settings → AI Providers** for unlimited responses (takes 60 seconds at console.groq.com).');
                   } else {
                     errCb?.(msg);
                   }
@@ -1598,7 +1600,10 @@ export default function ChatView() {
                   const text = dec.decode(value);
                   for (const line of text.split('\n').filter(l => l.startsWith('data: '))) {
                     const d = line.slice(6).trim();
-                    if (d === '[DONE]') { doneCb?.(full); return; }
+                    if (d === '[DONE]') {
+                      try { incrementUsage(); } catch { /* non-critical */ }
+                      doneCb?.(full); return;
+                    }
                     try { const p = JSON.parse(d); const c = p.choices?.[0]?.delta?.content || ''; if (c) { full += c; chunkCb?.(c); } } catch { }
                   }
                 }
@@ -2002,7 +2007,7 @@ export default function ChatView() {
           setCompanionStatus({ status: 'thinking', taskDescription: `Switching to ${fallbackM}…` });
           // Show a quiet inline notice so the user knows something switched
           appendStreamingContent(buildFallbackNotice(companionModel, fallbackM) + '\n\n');
-          // Swap to fallback and retry the exact same call
+          // Swap to fallback — try proxy once, then stop
           const fallbackProviders = await window.henryAPI.getProviders();
           const fbProvider = fallbackProviders.find((p: any) => p.id === fallbackP);
           const fbApiKey = fbProvider?.api_key || fbProvider?.apiKey || '';

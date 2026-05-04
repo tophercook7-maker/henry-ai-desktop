@@ -24,7 +24,7 @@ export default function TodayPanel() {
   const [quickAsk, setQuickAsk] = useState('');
   const [capture, setCapture] = useState('');
   const [calEvents, setCalEvents] = useState<{id:string;summary:string;start:string;location?:string}[]>([]);
-  const [henryStatus, setHenryStatus] = useState<'checking'|'ready'|'needs-key'|'ollama'>('checking');
+  const [henryStatus, setHenryStatus] = useState<'checking'|'ready'|'needs-key'|'ollama'|'proxy'>('checking');
 
   // Check Henry's AI readiness
   useState(() => {
@@ -373,9 +373,10 @@ Write 2-4 short sentences covering: one encouraging opening, what to focus on to
             <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-medium ${
               henryStatus === 'ready' ? 'bg-green-400/5 border-green-400/20 text-green-400' :
               henryStatus === 'ollama' ? 'bg-blue-400/5 border-blue-400/20 text-blue-400' :
+              henryStatus === 'proxy' ? 'bg-purple-400/5 border-purple-400/20 text-purple-400' :
               'bg-yellow-400/5 border-yellow-400/20 text-yellow-400'
             }`}>
-              <span className="text-sm">{henryStatus === 'ready' ? '✓' : henryStatus === 'ollama' ? '⚡' : '⚠'}</span>
+              <span className="text-sm">{henryStatus === 'ready' ? '✓' : henryStatus === 'ollama' ? '⚡' : henryStatus === 'proxy' ? '◉' : '⚠'}</span>
               <span className="flex-1">
                 {henryStatus === 'ready' ? 'Henry is ready — Groq AI connected' :
                  henryStatus === 'ollama' ? 'Henry is ready — running on local Ollama' :

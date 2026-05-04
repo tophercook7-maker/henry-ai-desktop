@@ -309,6 +309,11 @@ function ProviderWizard({
   const [ollamaUrl, setOllamaUrl] = useState(settings.ollama_base_url || 'http://localhost:11434');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [usage, setUsage] = useState(() => getTodayUsage());
+  const [licenseKey, setLicenseKeyState] = useState(() => getLicenseKey());
+  const [licenseInput, setLicenseInput] = useState('');
+  const [checkingLicense, setCheckingLicense] = useState(false);
+  const [licenseMsg, setLicenseMsg] = useState('');
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<'ok'|'fail'|null>(null);
   const [ollamaModels, setOllamaModels] = useState<string[]>([]);
@@ -324,6 +329,36 @@ function ProviderWizard({
   const isOllama = providerId === 'ollama';
   const totalSteps = wizard?.steps.length ?? 0;
   const isLastStep = step === totalSteps - 1;
+
+  useEffect(() => {
+    // Sync usage from proxy on settings open
+    syncUsageFromProxy().then(u => setUsage(u)).catch(() => {});
+  }, []);
+
+  async function redeemLicense() {
+    const key = licenseInput.trim();
+    if (!key) return;
+    setCheckingLicense(true);
+    setLicenseMsg('');
+    try {
+      const r = await fetch('https://henry-proxy.henryai.workers.dev/v1/license', {
+        headers: { 'X-Henry-License': key, 'X-Henry-Device': getDeviceId() },
+        signal: AbortSignal.timeout(8000),
+      });
+      const d = await r.json() as { valid: boolean; tier?: string; owner?: string };
+      if (d.valid) {
+        setLicenseKey(key);
+        setLicenseKeyState(key);
+        setLicenseInput('');
+        setLicenseMsg('✓ ' + (d.tier === 'pro' ? 'Pro license activated — 2,000 requests/day' : 'License activated'));
+        const u = await syncUsageFromProxy();
+        setUsage(u);
+      } else {
+        setLicenseMsg('✗ License key not found or expired');
+      }
+    } catch { setLicenseMsg('✗ Could not verify — check your connection'); }
+    setCheckingLicense(false);
+  }
 
   useEffect(() => {
     const existing = providers.find((p) => p.id === providerId);
@@ -656,6 +691,53 @@ function ProvidersTab() {
       <p className="text-xs text-henry-text-dim pb-1">
         Connect AI providers to give Henry intelligence. Each has a step-by-step setup guide — click <strong className="text-henry-text">Set up</strong> to get started.
       </p>
+
+      {/* Free tier usage bar */}
+      {!getLicenseKey() && (
+        <div className="bg-henry-surface/50 border border-henry-border/20 rounded-2xl p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold text-henry-text">Henry Free Tier</p>
+              <p className="text-xs text-henry-text-muted">{usage.used}/{usage.limit} requests used today</p>
+            </div>
+            <div className="text-right">
+              <p className="text-lg font-bold text-henry-accent">{Math.max(0, usage.limit - usage.used)}</p>
+              <p className="text-[10px] text-henry-text-muted">remaining</p>
+            </div>
+          </div>
+          <div className="w-full bg-henry-surface rounded-full h-2">
+            <div className="h-2 rounded-full transition-all"
+              style={{ width: Math.min(100, Math.round((usage.used/usage.limit)*100)) + '%',
+                       backgroundColor: usage.used/usage.limit > 0.8 ? '#ef4444' : usage.used/usage.limit > 0.5 ? '#f59e0b' : '#7c3aed' }} />
+          </div>
+          <p className="text-[11px] text-henry-text-muted">Resets daily at midnight. Add a free Groq key below for unlimited requests.</p>
+
+          {/* License key redemption */}
+          <div className="pt-2 border-t border-henry-border/15 space-y-2">
+            <p className="text-[10px] uppercase tracking-wider text-henry-text-muted">Have a Pro license key?</p>
+            <div className="flex gap-2">
+              <input value={licenseInput} onChange={e => setLicenseInput(e.target.value)}
+                placeholder="henry_pro_..."
+                className="flex-1 bg-henry-surface border border-henry-border/30 rounded-xl px-3 py-2 text-sm text-henry-text placeholder:text-henry-text-muted outline-none focus:border-henry-accent/50 font-mono" />
+              <button onClick={() => void redeemLicense()} disabled={checkingLicense || !licenseInput.trim()}
+                className="px-4 py-2 bg-henry-accent text-white text-sm font-semibold rounded-xl disabled:opacity-40 hover:bg-henry-accent/80 transition-all">
+                {checkingLicense ? '…' : 'Activate'}
+              </button>
+            </div>
+            {licenseMsg && <p className={`text-xs ${licenseMsg.startsWith('✓') ? 'text-green-400' : 'text-red-400'}`}>{licenseMsg}</p>}
+          </div>
+        </div>
+      )}
+      {getLicenseKey() && (
+        <div className="bg-green-400/5 border border-green-400/20 rounded-2xl p-4 flex items-center justify-between">
+          <div>
+            <p className="text-sm font-semibold text-green-400">✓ Pro License Active</p>
+            <p className="text-xs text-henry-text-muted">{usage.used}/{usage.limit} requests today · {Math.max(0, usage.limit - usage.used)} remaining</p>
+          </div>
+          <button onClick={() => { setLicenseKey(''); setLicenseKeyState(''); }}
+            className="text-xs text-henry-text-muted hover:text-red-400 transition-all">Remove</button>
+        </div>
+      )}
 
       {(Object.keys(PROVIDERS) as ProviderId[]).map((id) => {
         const provider = PROVIDERS[id];
