@@ -369,6 +369,11 @@ declare global {
     syncUpdateNotes?: (notes: unknown[]) => Promise<{ ok: boolean }>;
     syncUpdateSettings?: (settings: Record<string, unknown>) => Promise<{ ok: boolean }>;
     onQuickExtractResult?: (cb: (result: unknown) => void) => () => void;
+    requestAccessibility?: () => Promise<{ granted: boolean }>;
+    checkAccessibility?: () => Promise<{ granted: boolean }>;
+    openPermissions?: () => Promise<{ ok: boolean }>;
+    openScreenRecording?: () => Promise<{ ok: boolean }>;
+    onPermissionsStatus?: (cb: (status: { accessibility: boolean; screenRecording: boolean }) => void) => () => void;
     onCompanionCapture?: (cb: (capture: unknown) => void) => () => void;
     onCompanionPrompt?: (cb: (data: unknown) => void) => () => void;
     onCompanionActionDecision?: (cb: (decision: unknown) => void) => () => void;

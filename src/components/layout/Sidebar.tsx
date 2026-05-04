@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useStore } from '../../store';
 
-type ViewType = 'today' | 'chat' | 'companion' | 'secretary' | 'contacts' | 'tasks' | 'files' | 'workspace' | 'terminal' | 'computer' | 'printer' | 'costs' | 'settings' | 'journal' | 'focus' | 'recorder' | 'modes' | 'reminders' | 'crm' | 'finance' | 'lists' | 'printstudio' | 'imagegen' | 'videogen' | 'integrations' | 'github' | 'linear' | 'notion' | 'slack' | 'captures' | 'weekly' | 'health' | 'goals' | 'hq'
+type ViewType = 'today' | 'chat' | 'companion' | 'secretary' | 'contacts' | 'tasks' | 'files' | 'workspace' | 'terminal' | 'computer' | 'printer' | 'costs' | 'settings' | 'journal' | 'focus' | 'recorder' | 'modes' | 'reminders' | 'crm' | 'finance' | 'lists' | 'printstudio' | 'imagegen' | 'videogen' | 'integrations' | 'github' | 'linear' | 'notion' | 'slack' | 'captures' | 'weekly' | 'health' | 'goals' | 'hq' | 'setup'
   | 'scripture';
 
 // Core nav — the things you actually use daily
@@ -38,6 +38,7 @@ const MORE_NAV: { id: ViewType; icon: string; label: string }[] = [
 ];
 
 const BOTTOM_NAV: { id: ViewType; icon: string; label: string }[] = [
+  { id: 'setup',      icon: '⚙',  label: 'Setup' },
   { id: 'companion',  icon: '⊚',  label: 'Companion' },
   { id: 'settings',   icon: '⊙',  label: 'Settings' },
 ];

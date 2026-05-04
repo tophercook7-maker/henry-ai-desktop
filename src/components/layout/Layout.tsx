@@ -18,6 +18,7 @@ import PrinterPanel from '../computer/PrinterPanel';
 import SecretaryPanel from '../secretary/SecretaryPanel';
 import GoalsPanel from '../goals/GoalsPanel';
 import HQPanel from '../hq/HQPanel';
+import AutoSetupPanel from '../setup/AutoSetupPanel';
 import TodayPanel from '../today/TodayPanel';
 import ContactsPanel from '../contacts/ContactsPanel';
 import CommandPalette from '../chat/CommandPalette';
@@ -126,6 +127,7 @@ export default function Layout() {
           {currentView === 'lists' && <ListsPanel />}
           {currentView === 'goals' && <GoalsPanel />}
           {currentView === 'hq' && <HQPanel />}
+          {currentView === 'setup' && <AutoSetupPanel />}
           {currentView === 'printstudio' && <PrintStudioPanel />}
           {currentView === 'scripture' && <ScripturePanel />}
           {currentView === 'imagegen' && <ImageGenPanel />}

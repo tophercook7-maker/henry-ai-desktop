@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, ipcMain, Notification, Tray, Menu, MenuItem, globalShortcut, nativeImage } from 'electron';
+import { app, BrowserWindow, shell, ipcMain, Notification, Tray, Menu, MenuItem, globalShortcut, nativeImage, systemPreferences } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { autoUpdater } from 'electron-updater';
@@ -219,6 +219,51 @@ app.whenReady().then(() => {
 
   createWindow();
 
+  // ── Auto-permission setup — no user instruction needed ───────────────────────
+  // Henry checks and requests all required permissions automatically on launch.
+  // If Accessibility is missing: auto-trigger the macOS dialog when capture first fires.
+  // User just clicks 'OK' once — never needs to navigate to System Settings.
+  setTimeout(async () => {
+    try {
+      const hasAccessibility = systemPreferences.isTrustedAccessibilityClient(false);
+      if (!hasAccessibility) {
+        // Auto-request without prompting — Henry silently gets the dialog ready
+        // The actual dialog fires the first time capture is attempted
+        console.log('[Henry] Accessibility not granted — will request on first use');
+        getMainWindow()?.webContents.send('henry:permissions:status', {
+          accessibility: false, screenRecording: false,
+        });
+      } else {
+        console.log('[Henry] Accessibility: granted');
+        getMainWindow()?.webContents.send('henry:permissions:status', {
+          accessibility: true, screenRecording: true,
+        });
+      }
+    } catch { /* ignore on non-macOS */ }
+  }, 2000);
+
+  // IPC: renderer can request permission grants
+  ipcMain.handle('henry:requestAccessibility', () => {
+    try {
+      // This triggers the macOS "Henry AI wants Accessibility access" dialog
+      const trusted = systemPreferences.isTrustedAccessibilityClient(true);
+      return { granted: trusted };
+    } catch { return { granted: false }; }
+  });
+  ipcMain.handle('henry:checkAccessibility', () => {
+    try {
+      return { granted: systemPreferences.isTrustedAccessibilityClient(false) };
+    } catch { return { granted: false }; }
+  });
+  ipcMain.handle('henry:openPermissions', async () => {
+    await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility');
+    return { ok: true };
+  });
+  ipcMain.handle('henry:openScreenRecording', async () => {
+    await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');
+    return { ok: true };
+  });
+
   registerSettingsHandlers(db, getMainWindow);
   registerGoogleAuthHandlers(getMainWindow);
 
@@ -386,7 +431,16 @@ app.whenReady().then(() => {
       const originalHTML = cb.readHTML();
 
       // Simulate ⌘C to copy whatever is selected in the frontmost app
-      // This uses AppleScript — requires Accessibility permission
+      // Requires Accessibility. If missing, Henry auto-requests it.
+      const hasAccess = systemPreferences.isTrustedAccessibilityClient(false);
+      if (!hasAccess) {
+        // Auto-trigger the macOS permission dialog — user just clicks OK once
+        console.log('[Henry] Requesting Accessibility for capture…');
+        systemPreferences.isTrustedAccessibilityClient(true);
+        // Show HUD telling user to click OK
+        showHUD('Grant access in the dialog — then try ⌥Space again', 0);
+        return;
+      }
       try {
         execSync(
           `osascript -e 'tell application "System Events" to keystroke "c" using command down'`,
@@ -395,7 +449,7 @@ app.whenReady().then(() => {
         // Small delay for clipboard to update
         await new Promise(r => setTimeout(r, 120));
       } catch {
-        // AppleScript failed (no Accessibility permission) — use existing clipboard
+        // AppleScript failed despite permission — use existing clipboard
       }
 
       const captured = cb.readText().trim();

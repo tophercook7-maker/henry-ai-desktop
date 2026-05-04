@@ -138,7 +138,18 @@ contextBridge.exposeInMainWorld('henryAPI', {
   // Self-repair / health
   runDiagnostic: () => ipcRenderer.invoke('henry:diagnostic:run'),
   getLastDiagnostic: () => ipcRenderer.invoke('henry:diagnostic:last'),
-  // ── System stats + computer control ────────────────────────────────────
+  // ── Auto-setup & permissions ─────────────────────────────────────────────
+  requestAccessibility: () => ipcRenderer.invoke('henry:requestAccessibility'),
+  checkAccessibility: () => ipcRenderer.invoke('henry:checkAccessibility'),
+  openPermissions: () => ipcRenderer.invoke('henry:openPermissions'),
+  openScreenRecording: () => ipcRenderer.invoke('henry:openScreenRecording'),
+  onPermissionsStatus: (cb: (status: { accessibility: boolean; screenRecording: boolean }) => void) => {
+    const handler = (_: IpcRendererEvent, status: { accessibility: boolean; screenRecording: boolean }) => cb(status);
+    ipcRenderer.on('henry:permissions:status', handler);
+    return () => ipcRenderer.removeListener('henry:permissions:status', handler);
+  },
+
+  // ── System stats + computer control ────────────────────────────────────────
   computerSystemStats: () => ipcRenderer.invoke('computer:systemStats'),
   computerClipboardRead: () => ipcRenderer.invoke('computer:clipboard:read'),
   computerClipboardWrite: (text: string) => ipcRenderer.invoke('computer:clipboard:write', text),
