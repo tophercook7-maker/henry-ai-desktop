@@ -366,6 +366,33 @@ Give me a brief health reflection and any suggestions.`);
         {/* ── WEEK TRENDS ── */}
         {tab === 'trends' && (
           <div className="space-y-4">
+            {/* Weight trend if logged */}
+            {/* Weight / mood mini sparkline from health logs */}
+            {logs.filter(l => l.category === 'weight' && l.value).length >= 2 && (() => {
+              const pts = logs.filter(l => l.category === 'weight' && l.value).slice(0, 7).reverse();
+              const vals = pts.map(p => p.value!);
+              const min = Math.min(...vals) - 1;
+              const max = Math.max(...vals) + 1;
+              const W = 280, H = 60;
+              const x = (i: number) => (i / (pts.length - 1)) * W;
+              const y = (v: number) => H - ((v - min) / (max - min)) * H;
+              const pathD = pts.map((p, i) => `${i===0?'M':'L'}${x(i)},${y(p.value!)}`).join(' ');
+              return (
+                <div className="p-4 rounded-xl bg-henry-surface/40 border border-henry-border/10">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2"><span>⚖</span><span className="text-sm font-medium text-henry-text">Weight trend</span></div>
+                    <span className="text-sm font-bold text-henry-accent">{vals[vals.length-1]} lbs</span>
+                  </div>
+                  <svg width="100%" viewBox={`0 0 ${W} ${H}`} className="overflow-visible">
+                    <polyline points={pts.map((p,i) => `${x(i)},${y(p.value!)}`).join(' ')} fill="none" stroke="var(--color-accent,#7c3aed)" strokeWidth="2" strokeLinejoin="round" />
+                    {pts.map((p,i) => <circle key={i} cx={x(i)} cy={y(p.value!)} r="3" fill="var(--color-accent,#7c3aed)" />)}
+                  </svg>
+                  <div className="flex justify-between mt-1">
+                    {pts.map((p,i) => <span key={i} className="text-[9px] text-henry-text-muted">{p.date?.slice(5)}</span>)}
+                  </div>
+                </div>
+              );
+            })()}
             <p className="text-xs text-henry-text-muted">Last 7 days completion</p>
             {habits.map(habit => {
               const days = Array.from({ length: 7 }, (_, i) => {

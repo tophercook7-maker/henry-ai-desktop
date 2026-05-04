@@ -18,6 +18,7 @@ export default function ListsPanel() {
   const [editName, setEditName] = useState(false);
   const [editVal, setEditVal] = useState('');
   const itemRef = useRef<HTMLInputElement>(null);
+  const [suggesting, setSuggesting] = useState(false);
 
   const selected = lists.find(l => l.id === selId) || null;
 
@@ -81,6 +82,27 @@ export default function ListsPanel() {
     await api.listsSave({ id: selected.id, name: editVal.trim(), icon: selected.icon });
     setEditName(false);
     await load();
+  }
+
+  async function suggestItems() {
+    if (!selected || suggesting) return;
+    setSuggesting(true);
+    const existing = selected.items.map(i => i.text).join(', ');
+    const deviceId = (() => { let id = localStorage.getItem('henry:device_id'); if (!id) { id = crypto.randomUUID(); localStorage.setItem('henry:device_id', id); } return id; })();
+    try {
+      const r = await fetch('https://henry-proxy.henryai.workers.dev/v1/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Henry-Device': deviceId },
+        body: JSON.stringify({ model: 'llama-3.1-8b-instant', messages: [{ role: 'user', content: 'For a list called "' + selected.name + '" that already has: ' + (existing || 'nothing yet') + ' — suggest 5 more useful items. Reply with ONLY the items, one per line, no numbers or bullets.' }], max_tokens: 150, stream: false }),
+      });
+      const d = await r.json() as any;
+      const suggestions = (d?.choices?.[0]?.message?.content || '').split('\n').map((s: string) => s.trim()).filter(Boolean).slice(0, 5);
+      for (const sug of suggestions) {
+        await api.listsAddItem(selected.id, { id: crypto.randomUUID(), text: sug });
+      }
+      await load();
+    } catch { /* ignore */ }
+    setSuggesting(false);
   }
 
   async function askHenry() {
@@ -148,7 +170,10 @@ export default function ListsPanel() {
               <div className="flex items-center gap-2">
                 {totalCount > 0 && <span className="text-[11px] text-henry-text-muted">{doneCount}/{totalCount}</span>}
                 {doneCount > 0 && <button onClick={() => void clearDone()} className="text-[10px] text-henry-text-muted hover:text-henry-text transition-all px-2 py-1 rounded border border-henry-border/30">Clear done</button>}
-                <button onClick={askHenry} className="text-[11px] px-2 py-1 rounded border border-henry-border/30 text-henry-text-muted hover:text-henry-accent transition-all">Ask Henry</button>
+                <button onClick={() => void suggestItems()} disabled={suggesting} className="text-[11px] px-2 py-1 rounded border border-henry-border/30 text-henry-text-muted hover:text-henry-accent disabled:opacity-40 transition-all">
+                    {suggesting ? '…' : '✨ Suggest'}
+                  </button>
+                  <button onClick={askHenry} className="text-[11px] px-2 py-1 rounded border border-henry-border/30 text-henry-text-muted hover:text-henry-accent transition-all">Ask Henry</button>
                 <button onClick={() => void deleteList(selected.id)} className="text-[11px] text-henry-text-muted hover:text-red-400 transition-all px-1">✕</button>
               </div>
             </div>

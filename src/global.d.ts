@@ -291,6 +291,14 @@ declare global {
 
     scriptureLookup: (reference: string) => Promise<ScriptureLookupResult>;
     scriptureImport: (entries: ScriptureImportRow[]) => Promise<ScriptureImportResult>;
+    memoryGetAllFacts: () => Promise<unknown[]>;
+    memoryDeleteFact: (id: string) => Promise<void>;
+    memorySaveFact: (fact: Record<string,unknown>) => Promise<unknown>;
+    memoryGetPersonalMemory: () => Promise<unknown[]>;
+    recordingsList: () => Promise<unknown[]>;
+    recordingsGet: (id: string) => Promise<unknown>;
+    recordingsSave: (r: Record<string,unknown>) => Promise<unknown>;
+    recordingsDelete: (id: string) => Promise<unknown>;
     captureList: (limit?: number) => Promise<unknown[]>;
     captureSave: (c: Record<string,unknown>) => Promise<{ id: string }>;
     scriptureCount: () => Promise<number>;

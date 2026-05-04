@@ -149,7 +149,8 @@ export default function RemindersPanel() {
                 <div className="flex-1 h-px bg-henry-error/20" />
               </div>
               <div className="space-y-2">
-                {overdue.map((r) => <ReminderCard key={r.id} reminder={r} onToggle={handleToggle} onEdit={setEditing} onDelete={handleDelete} />)}
+                {overdue.map((r) => <ReminderCard key={r.id} reminder={r} onToggle={handleToggle} onEdit={setEditing} onDelete={handleDelete}
+                onSnooze={(updated: Reminder) => { saveReminderToDb(updated); reload(); }} />)}
               </div>
             </div>
           )}
@@ -162,7 +163,8 @@ export default function RemindersPanel() {
                 </div>
               )}
               <div className="space-y-2">
-                {upcoming.map((r) => <ReminderCard key={r.id} reminder={r} onToggle={handleToggle} onEdit={setEditing} onDelete={handleDelete} />)}
+                {upcoming.map((r) => <ReminderCard key={r.id} reminder={r} onToggle={handleToggle} onEdit={setEditing} onDelete={handleDelete}
+                onSnooze={(updated: Reminder) => { saveReminderToDb(updated); reload(); }} />)}
               </div>
             </div>
           )}
@@ -266,11 +268,12 @@ export default function RemindersPanel() {
   );
 }
 
-function ReminderCard({ reminder: r, onToggle, onEdit, onDelete }: {
+function ReminderCard({ reminder: r, onToggle, onEdit, onDelete, onSnooze }: {
   reminder: Reminder;
   onToggle: (id: string) => void;
   onEdit: (r: Reminder) => void;
   onDelete: (id: string) => void;
+  onSnooze?: (r: Reminder) => void;
 }) {
   const overdue = isOverdue(r);
   const meta = CATEGORY_META[r.category];

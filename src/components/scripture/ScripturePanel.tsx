@@ -112,6 +112,7 @@ export default function ScripturePanel() {
   const [studyOutput, setStudyOutput] = useState('');
   const [studyLoading, setStudyLoading] = useState(false);
   const [customPrompt, setCustomPrompt] = useState('');
+  const [showReadingPlan, setShowReadingPlan] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<{imported:number;skipped:number;errors:string[]} | null>(null);
@@ -296,7 +297,7 @@ export default function ScripturePanel() {
             <button key={t} onClick={() => setTab(t)}
               className={'text-[12px] px-3 py-1.5 rounded-lg font-medium transition-all capitalize ' +
                 (tab===t ? 'bg-henry-accent text-white' : 'bg-henry-surface border border-henry-border/30 text-henry-text-muted hover:text-henry-text')}>
-              {t==='lookup'?'Lookup':t==='saved'?`Saved${savedCount>0?' ('+savedCount+')':''}`:t==='study'?'Study':'📥 Import'}
+              {t==='lookup'?'Lookup':t==='saved'?`Saved${savedCount>0?' ('+savedCount+')':''}`:t==='study'?(tab==='study' ? <span className='flex items-center gap-1'>Study <button onClick={e=>{e.stopPropagation();setShowReadingPlan(s=>!s)}} className='text-[9px] bg-henry-accent/15 text-henry-accent px-1.5 rounded'>📅</button></span> : 'Study'):'📥 Import'}
             </button>
           ))}
         </div>
@@ -522,7 +523,27 @@ export default function ScripturePanel() {
         </div>
       )}
       {/* ── IMPORT TAB ── */}
-      {tab === 'import' && (
+      {/* 31-Day NT Reading Plan */}
+      {tab === 'study' && showReadingPlan && (
+        <div className="px-6 pb-2">
+          <div className="bg-henry-surface/40 border border-henry-border/15 rounded-xl p-3 max-h-40 overflow-y-auto space-y-1">
+            {Object.entries({1:"Matthew 1-2",2:"Matthew 3-4",3:"Matthew 5-7",4:"Matthew 8-10",5:"Matthew 11-13",6:"Matthew 14-16",7:"Matthew 17-19",8:"Matthew 20-22",9:"Matthew 23-25",10:"Matthew 26-28",11:"Mark 1-2",12:"Mark 3-4",13:"Mark 5-7",14:"Mark 8-10",15:"Mark 11-13",16:"Mark 14-16",17:"Luke 1-3",18:"Luke 4-6",19:"Luke 7-9",20:"Luke 10-12",21:"Luke 13-15",22:"Luke 16-18",23:"Luke 19-21",24:"Luke 22-24",25:"John 1-3",26:"John 4-6",27:"John 7-9",28:"John 10-12",29:"John 13-15",30:"John 16-18",31:"John 19-21"}).map(([day, passage]) => {
+              const isToday = parseInt(day) === new Date().getDate();
+              return (
+                <div key={day} className="flex items-center gap-2">
+                  <span className="text-[10px] text-henry-text-muted w-5">{day}</span>
+                  <button onClick={() => { setQuery(passage); setTab('lookup'); setShowReadingPlan(false); }}
+                    className={`text-xs hover:text-henry-accent transition-all ${isToday ? 'text-henry-accent font-bold' : 'text-henry-text-muted'}`}>
+                    {isToday && '→ '}{passage}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+            {tab === 'import' && (
         <div className="flex-1 overflow-y-auto px-6 py-5 max-w-2xl space-y-5">
           {/* One-click KJV download */}
           <div className="bg-henry-surface rounded-2xl border border-henry-border/20 p-5 space-y-3">

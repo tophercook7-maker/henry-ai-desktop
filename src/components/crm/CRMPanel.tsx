@@ -204,6 +204,21 @@ export default function CRMPanel() {
               <h2 className="text-sm font-bold text-henry-text">{editing ? 'Edit Client' : 'New Client'}</h2>
               <button onClick={() => { setAdding(false); setEditing(false); }} className="text-henry-text-muted hover:text-henry-text text-sm">✕</button>
             </div>
+            {!editing && (
+              <div className="flex gap-1.5 mb-3 flex-wrap">
+                <p className="text-[9px] uppercase tracking-wider text-henry-text-muted w-full mb-1">Quick fill:</p>
+                {[
+                  { label: '🌐 Web Design', role: 'Business Owner', notes: 'Web design project', source: 'Referral' },
+                  { label: '🖨 3D Print', role: 'Client', notes: '3D printing project', source: 'Online' },
+                  { label: '👤 General', role: 'Contact', notes: '', source: 'Referral' },
+                ].map(t => (
+                  <button key={t.label} onClick={() => setForm(f => ({ ...f, role: t.role, notes: t.notes, source: t.source }))}
+                    className="text-[10px] px-2.5 py-1 rounded-lg border border-henry-border/30 text-henry-text-muted hover:border-henry-accent/30 hover:text-henry-accent transition-all">
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <input value={form.name} onChange={e => setForm(f=>({...f,name:e.target.value}))} placeholder="Name *" className={inp} autoFocus />
               <input value={form.company} onChange={e => setForm(f=>({...f,company:e.target.value}))} placeholder="Company" className={inp} />

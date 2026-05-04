@@ -1182,6 +1182,14 @@ const henryAPI: Window['henryAPI'] = {
     const scriptureStore = getStore<Record<string, unknown>>('henry:scripture', {});
     return Object.keys(scriptureStore).length;
   },
+  memoryGetAllFacts: async () => [],
+  memoryDeleteFact: async (_id: string) => {},
+  memorySaveFact: async (_f: unknown) => {},
+  memoryGetPersonalMemory: async () => [],
+  recordingsList: async () => [],
+  recordingsGet: async (_id: string) => null,
+  recordingsSave: async (_r: unknown) => {},
+  recordingsDelete: async (_id: string) => {},
   captureList: async (_limit?: number) => [],
   captureSave: async (_c: unknown) => ({ id: '' }),
   scriptureDownloadKJV: async (_books?: string[]) => ({ imported: 0, errors: [] as string[], books: 0 }),

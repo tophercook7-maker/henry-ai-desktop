@@ -14,6 +14,8 @@ import TerminalView from '../terminal/TerminalView';
 import CostDashboard from '../costs/CostDashboard';
 import ComputerPanel from '../computer/ComputerPanel';
 import DeviceLinkPanel from '../settings/DeviceLinkPanel';
+import MemoryPanel from '../memory/MemoryPanel';
+import RecorderPanel from '../recorder/RecorderPanel';
 import PrinterPanel from '../computer/PrinterPanel';
 import SecretaryPanel from '../secretary/SecretaryPanel';
 import GoalsPanel from '../goals/GoalsPanel';
@@ -218,6 +220,8 @@ export default function Layout() {
           {currentView === 'notion' && <NotionPanel />}
           {currentView === 'slack' && <SlackPanel />}
           {currentView === 'captures' && <CapturesPanel />}
+          {currentView === 'memory' && <MemoryPanel />}
+          {currentView === 'recorder' && <RecorderPanel />}
           {currentView === 'weekly' && <WeeklyReviewPanel />}
           {currentView === 'stripe' && <StripePanel />}
           {currentView === 'gcal' && <GCalPanel />}

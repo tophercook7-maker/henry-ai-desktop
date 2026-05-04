@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useStore } from '../../store';
 
-type ViewType = 'today' | 'chat' | 'companion' | 'secretary' | 'contacts' | 'tasks' | 'files' | 'workspace' | 'terminal' | 'computer' | 'printer' | 'costs' | 'settings' | 'journal' | 'focus' | 'recorder' | 'modes' | 'reminders' | 'crm' | 'finance' | 'lists' | 'printstudio' | 'imagegen' | 'videogen' | 'integrations' | 'github' | 'linear' | 'notion' | 'slack' | 'captures' | 'weekly' | 'health' | 'goals' | 'hq' | 'setup'
+type ViewType = 'today' | 'chat' | 'companion' | 'secretary' | 'contacts' | 'tasks' | 'files' | 'workspace' | 'terminal' | 'computer' | 'printer' | 'costs' | 'settings' | 'journal' | 'focus' | 'recorder' | 'modes' | 'reminders' | 'crm' | 'finance' | 'lists' | 'printstudio' | 'imagegen' | 'videogen' | 'integrations' | 'github' | 'linear' | 'notion' | 'slack' | 'captures' | 'weekly' | 'health' | 'goals' | 'hq' | 'setup' | 'memory' | 'recorder'
   | 'scripture';
 
 // Core nav — the things you actually use daily
@@ -15,6 +15,8 @@ const CORE_NAV: { id: ViewType; icon: string; label: string }[] = [
   { id: 'scripture',  icon: '✝',  label: 'Scripture' },
   { id: 'reminders',  icon: '◎',  label: 'Reminders' },
   { id: 'captures',   icon: '⊕',  label: 'Captures' },
+  { id: 'memory',     icon: '🧠', label: 'Memory' },
+  { id: 'recorder',   icon: '🎙', label: 'Recorder' },
   { id: 'focus',      icon: '◈',  label: 'Focus' },
 ];
 

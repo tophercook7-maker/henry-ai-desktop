@@ -6,7 +6,7 @@
  * and life areas. Not a cold analytics dashboard — a living overview.
  */
 
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback, useEffect } from 'react';
 import { loadActiveThreads, resolveThread, type ContinuityThread } from '../../henry/threads/threadStore';
 import { loadWorkingMemory } from '../../henry/workingMemory';
 import { getRhythmState } from '../../henry/dailyRhythm';
@@ -678,11 +678,11 @@ export default function WeeklyReviewPanel() {
     memories: { fact:string; category:string }[];
   }>({ tasks:[], journal:[], finance:[], focusStats:null, reminders:[], memories:[] });
 
-  useState(() => {
+  useEffect(() => {
     const api = (window as any).henryAPI;
     if (!api?.weeklyData) return;
     api.weeklyData().then((d:any) => { if(d) setWeekData(d); }).catch(() => {});
-  });
+  }, []);
 
   // Commitments — local state drives re-render on change
   const [commitments, setCommitments] = useState<Commitment[]>(() => loadOpenCommitments());

@@ -18,6 +18,9 @@ export default function FinancePanel(){
   const { setCurrentView } = useStore();
   const [month, setMonth] = useState(monthKey());
   const [txns, setTxns]   = useState<Transaction[]>([]);
+  const [plBusy, setPlBusy] = useState(false);
+  const [plResult, setPlResult] = useState('');
+  const [showPL, setShowPL] = useState(false);
   const [summary, setSummary] = useState<Summary>({income:0,expenses:0,net:0,breakdown:[]});
   const [form, setForm]   = useState({type:'expense' as 'income'|'expense', amount:'', category:EXPENSE_CATS[1], description:'', date:new Date().toISOString().slice(0,10)});
   const [adding, setAdding] = useState(false);
@@ -62,6 +65,37 @@ export default function FinancePanel(){
     await load();
   }
 
+  async function generatePLReport() {
+    if (plBusy) return;
+    setPlBusy(true); setShowPL(true); setPlResult('');
+    const income = txns.filter(t => t.type === 'income').reduce((a, t) => a + t.amount, 0);
+    const expenses = txns.filter(t => t.type === 'expense').reduce((a, t) => a + t.amount, 0);
+    const net = income - expenses;
+    const cats = txns.reduce((acc: Record<string,number>, t) => {
+      acc[t.category] = (acc[t.category] || 0) + t.amount; return acc;
+    }, {});
+    const topCats = Object.entries(cats).sort((a,b) => b[1]-a[1]).slice(0,5)
+      .map(([k,v]) => `${k}: $${v.toFixed(0)}`).join(', ');
+    const ownerName = localStorage.getItem('henry:owner_name') || 'you';
+    const prompt = `${ownerName}'s finances for ${month}:
+Income: $${income.toFixed(2)}
+Expenses: $${expenses.toFixed(2)}
+Net: $${net.toFixed(2)}
+Top categories: ${topCats}
+
+Write a brief P&L summary in 3 sentences: how the month went, biggest expense area, and one actionable tip for next month.`;
+    const deviceId = (() => { let id = localStorage.getItem('henry:device_id'); if (!id) { id = crypto.randomUUID(); localStorage.setItem('henry:device_id', id); } return id; })();
+    try {
+      const r = await fetch('https://henry-proxy.henryai.workers.dev/v1/chat', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Henry-Device': deviceId },
+        body: JSON.stringify({ model: 'llama-3.1-8b-instant', messages: [{ role: 'user', content: prompt }], max_tokens: 250, stream: false }),
+      });
+      const d = await r.json() as any;
+      setPlResult(d?.choices?.[0]?.message?.content || 'No response');
+    } catch { setPlResult('Could not reach Henry AI.'); }
+    setPlBusy(false);
+  }
+
   function exportCSV() {
     if (!txns.length) return;
     const header = 'Date,Type,Category,Description,Amount';
@@ -96,6 +130,7 @@ export default function FinancePanel(){
         </div>
         <div className="flex gap-2">
           <button onClick={exportCSV} disabled={!txns.length} className="text-[11px] px-3 py-1.5 rounded-lg bg-henry-surface border border-henry-border/30 text-henry-text-muted hover:text-henry-text disabled:opacity-30 transition-all">↓ CSV</button>
+          <button onClick={() => void generatePLReport()} disabled={plBusy || !txns.length} className="text-[11px] px-3 py-1.5 rounded-lg bg-henry-surface border border-henry-border/30 text-henry-text-muted hover:text-henry-accent disabled:opacity-30 transition-all">⚡ P&L</button>
           <button onClick={askHenry} className="text-[11px] px-3 py-1.5 rounded-lg bg-henry-surface border border-henry-border/30 text-henry-text-muted hover:text-henry-accent transition-all">Ask Henry</button>
           <button onClick={()=>setAdding(a=>!a)} className="text-[11px] px-4 py-1.5 rounded-lg bg-henry-accent text-white font-semibold hover:bg-henry-accent/80 transition-all">+ Add</button>
         </div>
