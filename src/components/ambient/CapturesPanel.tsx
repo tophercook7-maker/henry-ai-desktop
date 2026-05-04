@@ -26,6 +26,7 @@ import {
   type RouteDest,
 } from '../../ambient/noteRouter';
 import { wakeWordManager } from '../../henry/wakeWord';
+const api = (window as any).henryAPI;
 import { PANEL_QUICK_ASK } from '../../henry/henryQuickAsk';
 
 // ── Route destination options ─────────────────────────────────────────────────
@@ -255,7 +256,15 @@ function CaptureCard({ note }: { note: CapturedNote }) {
 export default function CapturesPanel() {
   const { captures, clearArchived, clearAll, openPanel } = useCapturesStore();
   const [filter, setFilter] = useState<'all' | 'unrouted' | 'archived'>('all');
+  const [dbCaptures, setDbCaptures] = useState<{id:string;text:string;captured_at:string;routed_to?:string}[]>([]);
+  const [reviewing, setReviewing] = useState(false);
+  const [reviewResult, setReviewResult] = useState('');
   const [wakeActive, setWakeActive] = useState(wakeWordManager.isActive);
+
+  // Load SQLite-backed captures (from ⌥Space hotkey captures)
+  useEffect(() => {
+    api?.captureList?.(30).then((data: any) => setDbCaptures(data || [])).catch(() => {});
+  }, [captures]);
   const [ambientFlash, setAmbientFlash] = useState<string | null>(null);
 
   // Sync wake state
@@ -305,7 +314,18 @@ export default function CapturesPanel() {
         <div className="flex items-start justify-between gap-3 mb-3">
           <div>
             <div className="flex items-center justify-between w-full">
-                <h2 className="text-base font-semibold text-henry-text">Captures</h2>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-base font-semibold text-henry-text">Captures</h2>
+                  {dbCaptures.length > 0 && (
+                    <span className="text-[10px] bg-henry-accent/20 text-henry-accent px-2 py-0.5 rounded-full font-semibold">{dbCaptures.length}</span>
+                  )}
+                </div>
+                {dbCaptures.length > 0 && (
+                  <button onClick={() => void reviewAllWithHenry()} disabled={reviewing}
+                    className="text-xs px-3 py-1.5 rounded-xl bg-henry-accent/15 border border-henry-accent/30 text-henry-accent hover:bg-henry-accent/25 disabled:opacity-40 transition-all flex-shrink-0">
+                    {reviewing ? '⟳ Reviewing…' : '⚡ Review all'}
+                  </button>
+                )}
                 <button
                 onClick={() => PANEL_QUICK_ASK.captures()}
                 className="text-[11px] px-3 py-1.5 rounded-lg bg-henry-accent/10 text-henry-accent hover:bg-henry-accent/20 transition-all"
@@ -349,6 +369,32 @@ export default function CapturesPanel() {
           )}
         </div>
       </div>
+
+      {/* Henry review result */}
+      {reviewResult && (
+        <div className="mx-4 mb-3 p-3 bg-henry-accent/8 border border-henry-accent/20 rounded-xl">
+          <div className="flex items-center justify-between mb-1.5">
+            <p className="text-[10px] font-semibold text-henry-accent uppercase tracking-wider">⚡ Henry's review</p>
+            <button onClick={() => setReviewResult('')} className="text-henry-text-muted hover:text-henry-text text-xs">✕</button>
+          </div>
+          <p className="text-xs text-henry-text leading-relaxed">{reviewResult}</p>
+        </div>
+      )}
+
+      {/* DB-backed captures (from ⌥Space hotkey) */}
+      {dbCaptures.length > 0 && (
+        <div className="px-4 pb-2">
+          <p className="text-[9px] uppercase tracking-widest text-henry-text-muted mb-1.5">Hotkey captures (⌥Space)</p>
+          <div className="space-y-1 max-h-32 overflow-y-auto">
+            {dbCaptures.slice(0,8).map(cap => (
+              <div key={cap.id} className="flex items-start gap-2 p-2 rounded-lg bg-henry-surface/40 border border-henry-border/10 text-xs">
+                <span className="text-henry-text-muted flex-shrink-0">{cap.captured_at?.slice(11,16)}</span>
+                <span className="text-henry-text truncate flex-1">{cap.text?.slice(0,80)}{cap.text?.length > 80 ? '…' : ''}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Filter tabs */}
       <div className="flex items-center gap-1 px-4 py-2 border-b border-henry-border/30 shrink-0">

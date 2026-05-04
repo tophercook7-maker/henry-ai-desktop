@@ -45,6 +45,9 @@ function ScoreBar({ value, color = 'bg-henry-accent' }: { value: number; color?:
 
 export default function GoalsPanel() {
   const { setCurrentView } = useStore();
+  const [coaching, setCoaching] = useState('');
+  const [coachingBusy, setCoachingBusy] = useState(false);
+  const [showCoach, setShowCoach] = useState(false);
   const [tab, setTab]             = useState<Tab>('goals');
   const [goals, setGoals]         = useState<Goal[]>([]);
   const [allGoals, setAllGoals]   = useState<Goal[]>([]);
@@ -354,6 +357,21 @@ export default function GoalsPanel() {
           </>
         )}
       </div>
+
+      {/* Henry AI coaching panel */}
+      {showCoach && (
+        <div className="mx-0 mt-4 p-4 bg-henry-accent/8 border border-henry-accent/20 rounded-2xl">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-semibold text-henry-accent">⚡ Henry's coaching</p>
+            <button onClick={() => setShowCoach(false)} className="text-henry-text-muted hover:text-henry-text text-xs transition-all">✕</button>
+          </div>
+          {coachingBusy ? (
+            <div className="flex items-center gap-2 text-henry-text-muted text-sm"><span className="animate-spin">⟳</span> Henry is thinking…</div>
+          ) : (
+            <p className="text-sm text-henry-text leading-relaxed">{coaching}</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
