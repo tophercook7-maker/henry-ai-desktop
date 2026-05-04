@@ -669,6 +669,8 @@ export default function WeeklyReviewPanel() {
   const { setCurrentView } = useStore();
 
   // Live data from SQLite — tasks, finance, focus, journal
+  const [weekSummary, setWeekSummary] = useState('');
+  const [weekSummaryBusy, setWeekSummaryBusy] = useState(false);
   const [weekData, setWeekData] = useState<{
     tasks: { title:string; status:string }[];
     journal: { date:string; title?:string; mood?:string }[];
@@ -686,6 +688,46 @@ export default function WeeklyReviewPanel() {
 
   // Commitments — local state drives re-render on change
   const [commitments, setCommitments] = useState<Commitment[]>(() => loadOpenCommitments());
+
+  async function generateWeeklySummary() {
+    if (weekSummaryBusy) return;
+    setWeekSummaryBusy(true);
+    setWeekSummary('');
+    const ownerName = localStorage.getItem('henry:owner_name') || 'you';
+    const tasksDone = weekData.tasks.filter(t => t.status === 'done').length;
+    const tasksOpen = weekData.tasks.filter(t => t.status !== 'done').length;
+    const journalDays = weekData.journal.length;
+    const focusMins = weekData.focusStats?.mins || 0;
+    const commitsDone = commitments.filter(c => c.status === 'resolved').length;
+    const parts = [
+      `Tasks: ${tasksDone} done, ${tasksOpen} still open`,
+      journalDays ? `Journal: ${journalDays} entries this week` : '',
+      focusMins ? `Focus: ${focusMins} minutes of deep work` : '',
+      commitsDone ? `Commitments resolved: ${commitsDone}` : '',
+      weekData.reminders.length ? `Open reminders: ${weekData.reminders.length}` : '',
+    ].filter(Boolean).join('. ');
+    const prompt = `Write a brief weekly review for ${ownerName}.
+
+This week: ${parts || 'not much data yet'}.
+
+Format:
+**What went well:** 1-2 sentences
+**What to carry forward:** 1-2 bullets
+**One focus for next week:** 1 sentence
+
+Be encouraging and specific. Keep it under 80 words total.`;
+    const deviceId = (() => { let id = localStorage.getItem('henry:device_id'); if (!id) { id = crypto.randomUUID(); localStorage.setItem('henry:device_id', id); } return id; })();
+    try {
+      const r = await fetch('https://henry-proxy.henryai.workers.dev/v1/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Henry-Device': deviceId },
+        body: JSON.stringify({ model: 'llama-3.1-8b-instant', messages: [{ role: 'user', content: prompt }], max_tokens: 300, stream: false }),
+      });
+      const d = await r.json() as any;
+      setWeekSummary(d?.choices?.[0]?.message?.content || 'No response');
+    } catch { setWeekSummary('Could not reach Henry AI.'); }
+    setWeekSummaryBusy(false);
+  }
 
   const refreshCommitments = useCallback(() => {
     setCommitments(loadOpenCommitments());
@@ -812,6 +854,10 @@ export default function WeeklyReviewPanel() {
             <h1 className="text-base font-semibold text-henry-text">Weekly Overview</h1>
             <p className="text-xs text-henry-text-dim mt-0.5">Week of {weekLabel}</p>
           </div>
+          <button onClick={() => void generateWeeklySummary()} disabled={weekSummaryBusy}
+            className="text-[11px] px-3 py-1.5 rounded-xl bg-henry-accent/15 border border-henry-accent/30 text-henry-accent hover:bg-henry-accent/25 disabled:opacity-40 transition-all flex-shrink-0">
+            {weekSummaryBusy ? '⟳ Thinking…' : '⚡ Week summary'}
+          </button>
           <div className="flex items-center gap-2 text-[10px] text-henry-text-dim">
             <button
               onClick={() => PANEL_QUICK_ASK.weekly()}

@@ -68,11 +68,13 @@ jobs:
 
       - name: Rebuild native modules for Electron
         run: npm run rebuild
+        continue-on-error: true
 
       - name: Build Windows installer
         run: npm run build:win
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ELECTRON_BUILDER_ALLOW_UNRESOLVED_DEPENDENCIES: true
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4

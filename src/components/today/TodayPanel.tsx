@@ -24,6 +24,8 @@ export default function TodayPanel() {
   const [quickAsk, setQuickAsk] = useState('');
   const [capture, setCapture] = useState('');
   const [quickTask, setQuickTask] = useState('');
+  const [henryFocusQ, setHenryFocusQ] = useState('');
+  const [henryFocusBusy, setHenryFocusBusy] = useState(false);
   const [addingTask, setAddingTask] = useState(false);
   const [calEvents, setCalEvents] = useState<{id:string;summary:string;start:string;location?:string}[]>([]);
   const [todayHabits, setTodayHabits] = useState<{habit: any; done: boolean}[]>([]);
@@ -262,6 +264,38 @@ Write 2-4 short sentences covering: one encouraging opening, what to focus on to
       });
       stream.onError(() => { setGeneratingBriefing(false); setGenerating(false); });
     } catch { setGeneratingBriefing(false); setGenerating(false); }
+  }
+
+  async function askFocusNow() {
+    if (henryFocusBusy) return;
+    setHenryFocusBusy(true);
+    setHenryFocusQ('');
+    const api2 = (window as any).henryAPI;
+    const ownerName = localStorage.getItem('henry:owner_name') || 'you';
+    const hour = new Date().getHours();
+    const timeOfDay = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening';
+    let ctx = '';
+    try {
+      const [tasks, rems] = await Promise.all([
+        api2.tasksList?.({ status: 'todo' }).catch(() => []),
+        api2.remindersDue?.().catch(() => []),
+      ]);
+      const topTasks = (tasks||[]).slice(0,5).map((t:any)=>`• ${t.title} [${t.priority===3?'HIGH':t.priority===2?'MED':'LOW'}]`).join(', ');
+      const dueRems = (rems||[]).slice(0,3).map((r:any)=>r.title).join(', ');
+      ctx = [topTasks && `Tasks: ${topTasks}`, dueRems && `Due today: ${dueRems}`].filter(Boolean).join('. ');
+    } catch { /* empty */ }
+    const prompt = `${ownerName} is asking what to focus on right now (${timeOfDay}). ${ctx || 'No task data available.'} In 1-2 sentences, tell them the single most important thing to work on and why. Be direct and specific.`;
+    const deviceId = (() => { let id = localStorage.getItem('henry:device_id'); if (!id) { id = crypto.randomUUID(); localStorage.setItem('henry:device_id', id); } return id; })();
+    try {
+      const r = await fetch('https://henry-proxy.henryai.workers.dev/v1/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Henry-Device': deviceId },
+        body: JSON.stringify({ model: 'llama-3.1-8b-instant', messages: [{ role: 'user', content: prompt }], max_tokens: 120, stream: false }),
+      });
+      const d = await r.json() as any;
+      setHenryFocusQ(d?.choices?.[0]?.message?.content || '');
+    } catch { /* ignore */ }
+    setHenryFocusBusy(false);
   }
 
   async function addQuickTask() {
@@ -635,6 +669,21 @@ Keep it brief and encouraging.`;
             <p className="text-[10px] text-henry-text-muted mt-1 font-medium">— {verseOfDay.ref}</p>
           </div>
         )}
+
+        {/* Henry focus nudge */}
+        <div className="w-full mb-2">
+          <button onClick={() => void askFocusNow()} disabled={henryFocusBusy}
+            className="w-full py-1.5 rounded-xl border border-dashed border-henry-accent/30 text-henry-accent/70 text-xs hover:border-henry-accent/60 hover:text-henry-accent disabled:opacity-40 transition-all">
+            {henryFocusBusy ? '⚡ Thinking…' : '⚡ What should I work on right now?'}
+          </button>
+          {henryFocusQ && (
+            <div className="mt-1.5 flex items-start gap-2 p-2.5 bg-henry-accent/5 border border-henry-accent/15 rounded-xl">
+              <span className="text-henry-accent text-xs flex-shrink-0 mt-0.5">◉</span>
+              <p className="text-xs text-henry-text leading-snug flex-1">{henryFocusQ}</p>
+              <button onClick={() => setHenryFocusQ('')} className="text-henry-text-muted hover:text-henry-text text-xs flex-shrink-0 transition-all">✕</button>
+            </div>
+          )}
+        </div>
 
         {/* Quick add task */}
         <div className="w-full mb-2">

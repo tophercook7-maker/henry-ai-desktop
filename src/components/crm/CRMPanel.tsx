@@ -104,6 +104,33 @@ export default function CRMPanel() {
     setAdding(true);
   }
 
+  const [bulkDrafting, setBulkDrafting] = useState(false);
+  const [bulkResult, setBulkResult] = useState('');
+
+  async function bulkFollowUp() {
+    const overdue = contacts.filter(ct => {
+      const d = daysSince(ct.last_contact || (ct as any).last_contacted_at);
+      return d !== null && d > 14 && ct.stage !== 'lost';
+    }).slice(0, 5);
+    if (!overdue.length) { alert('No contacts overdue for follow-up (14+ days).'); return; }
+    setBulkDrafting(true);
+    setBulkResult('');
+    const ownerName = localStorage.getItem('henry:owner_name') || 'you';
+    const list = overdue.map(ct => ct.name + (ct.company ? ' at ' + ct.company : '') + ' (' + (daysSince(ct.last_contact || (ct as any).last_contacted_at) ?? '?') + ' days, stage: ' + ct.stage + ')').join('\n');
+    const prompt = ownerName + ' needs to follow up with these clients:\n' + list + '\n\nWrite a short, warm follow-up email template for each. Keep each email to 3-4 sentences. Format: NAME: [email body]. Be professional but personal.';
+    const deviceId = (() => { let id = localStorage.getItem('henry:device_id'); if (!id) { id = crypto.randomUUID(); localStorage.setItem('henry:device_id', id); } return id; })();
+    try {
+      const r = await fetch('https://henry-proxy.henryai.workers.dev/v1/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Henry-Device': deviceId },
+        body: JSON.stringify({ model: 'llama-3.1-8b-instant', messages: [{ role: 'user', content: prompt }], max_tokens: 600, stream: false }),
+      });
+      const d = await r.json() as any;
+      setBulkResult(d?.choices?.[0]?.message?.content || 'No response');
+    } catch { setBulkResult('Could not reach Henry AI.'); }
+    setBulkDrafting(false);
+  }
+
   function askHenryAbout(c: Contact) {
     const days = daysSince(c.last_contact || c.last_contacted_at);
     sendToHenry(`Write a short, warm follow-up email to ${c.name}${c.company ? ' at ' + c.company : ''}. Context: they're a ${c.stage} client${c.project_value ? ', project value ~' + fmt(c.project_value) : ''}. ${days ? 'Last contacted ' + days + ' days ago.' : ''} Notes: ${c.notes || 'none'}. Keep it brief and professional.`);
@@ -123,17 +150,23 @@ export default function CRMPanel() {
     (tab===t ? 'bg-henry-accent text-white' : 'text-henry-text-muted hover:text-henry-text hover:bg-henry-surface/60');
 
   return (
-    <div className="flex h-full bg-henry-bg overflow-hidden">
+    <div className="flex h-full bg-henry-bg overflow-hidden relative">
       {/* ── Sidebar ── */}
       <div className="flex flex-col h-full w-64 flex-shrink-0 border-r border-henry-border/20 overflow-hidden">
         {/* Header */}
         <div className="px-4 pt-5 pb-3 border-b border-henry-border/20 flex-shrink-0 space-y-3">
           <div className="flex items-center justify-between">
             <h1 className="text-base font-bold text-henry-text">Clients</h1>
-            <button onClick={() => { setAdding(true); setEditing(false); setForm(emptyForm()); }}
+            <div className="flex gap-2 flex-shrink-0">
+              <button onClick={() => void bulkFollowUp()} disabled={bulkDrafting}
+                className="text-[11px] px-3 py-1.5 rounded-xl bg-henry-surface border border-henry-border/30 text-henry-text-muted hover:text-henry-accent hover:border-henry-accent/30 disabled:opacity-40 transition-all">
+                {bulkDrafting ? '⟳ Drafting…' : '📧 Bulk follow-up'}
+              </button>
+              <button onClick={() => { setAdding(true); setEditing(false); setForm(emptyForm()); }}
               className="text-[11px] px-3 py-1 rounded-lg bg-henry-accent text-white font-bold hover:bg-henry-accent/80 transition-all">
               + Add
             </button>
+            </div>
           </div>
           <input value={search} onChange={e => setSearch(e.target.value)}
             placeholder="Search clients…"
@@ -358,6 +391,20 @@ export default function CRMPanel() {
             </div>
           </div>
         ) : null}
+
+        {/* Bulk follow-up result */}
+        {bulkResult && (
+          <div className="p-4 border-t border-henry-border/20 max-h-48 overflow-y-auto flex-shrink-0">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-semibold text-henry-text">📧 Bulk Follow-up Drafts</p>
+              <div className="flex gap-2">
+                <button onClick={() => navigator.clipboard?.writeText(bulkResult)} className="text-[10px] text-henry-text-muted hover:text-henry-accent transition-all">Copy all</button>
+                <button onClick={() => setBulkResult('')} className="text-[10px] text-henry-text-muted hover:text-henry-text transition-all">✕</button>
+              </div>
+            </div>
+            <div className="text-xs text-henry-text leading-relaxed whitespace-pre-wrap">{bulkResult}</div>
+          </div>
+        )}
       </div>
     </div>
   );
