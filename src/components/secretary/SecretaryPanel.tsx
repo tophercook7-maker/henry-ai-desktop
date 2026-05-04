@@ -45,28 +45,40 @@ const TAB_LABELS: Record<SecTab, string> = {
   summary: '📄 Summary',
 };
 
-async function callGroq(prompt: string, context: string, settings: Record<string,string>, providers: any[]): Promise<string> {
+const PROXY_URL = 'https://henry-proxy.henryai.workers.dev';
+
+async function callHenryAI(prompt: string, context: string, settings: Record<string,string>, providers: any[]): Promise<string> {
   const groq = providers?.find((p:any) => p.id === 'groq');
-  const apiKey = groq?.apiKey || '';
+  const apiKey = groq?.apiKey || (groq as any)?.api_key || '';
   const model = settings?.companion_model || 'llama-3.3-70b-versatile';
+  const systemPrompt = 'You are Henry, a professional executive assistant. Write clearly and professionally. Be concise. Format output in clean paragraphs. For emails include Subject: line. For briefs use clear sections.';
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: prompt + (context ? '\n\nContext/Details:\n' + context : '') }
+  ];
 
-  if (!apiKey) return '⚠️ No Groq API key. Add one in Settings → AI Providers.';
+  // Use personal key if available, else fall back to proxy
+  const useProxy = !apiKey || apiKey.length < 10;
+  const url = useProxy ? PROXY_URL + '/v1/chat' : 'https://api.groq.com/openai/v1/chat/completions';
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
 
-  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+  if (useProxy) {
+    const deviceId = (() => { let id = localStorage.getItem('henry:device_id'); if (!id) { id = crypto.randomUUID(); localStorage.setItem('henry:device_id', id); } return id; })();
+    headers['X-Henry-Device'] = deviceId;
+  } else {
+    headers['Authorization'] = 'Bearer ' + apiKey;
+  }
+
+  const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: 'system', content: 'You are Henry, a professional executive assistant. Write clearly and professionally. Be concise. Format output in clean paragraphs. For emails include Subject: line. For briefs use clear sections.' },
-        { role: 'user', content: prompt + (context ? '\n\nContext/Details:\n' + context : '') }
-      ],
-      max_tokens: 1000,
-      temperature: 0.6,
-    })
+    headers,
+    body: JSON.stringify({ model: useProxy ? 'llama-3.1-8b-instant' : model, messages, max_tokens: 1200, temperature: 0.6 })
   });
 
-  if (!res.ok) throw new Error('API error: ' + res.status);
+  if (!res.ok) {
+    if (res.status === 429) return '⚠️ Daily AI limit reached. Add your Groq key in Settings → AI Providers for unlimited use.';
+    throw new Error('API error: ' + res.status);
+  }
   const data = await res.json() as { choices: { message: { content: string } }[] };
   return data.choices?.[0]?.message?.content || '(no response)';
 }
@@ -85,7 +97,7 @@ export default function SecretaryPanel() {
     if (!prompt.trim()) return;
     setLoading(true); setOutput('');
     try {
-      const result = await callGroq(prompt, context, settings, providers);
+      const result = await callHenryAI(prompt, context, settings, providers);
       setOutput(result);
     } catch (e) {
       setOutput('Error: ' + (e instanceof Error ? e.message : String(e)));

@@ -41,6 +41,8 @@ export default function TasksPanel() {
   const [filter, setFilter] = useState<'all' | 'todo' | 'doing' | 'done'>('all');
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [triaging, setTriaging] = useState(false);
+  const [triageResult, setTriageResult] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
   async function reload() {
@@ -100,7 +102,20 @@ export default function TasksPanel() {
       {/* Header */}
       <div className="flex items-center justify-between px-6 pt-5 pb-3 border-b border-henry-border/20 flex-shrink-0">
         <div>
-          <h1 className="text-lg font-bold text-henry-text">Tasks</h1>
+          <div className="flex items-center justify-between">
+            <h1 className="text-lg font-bold text-henry-text">Tasks</h1>
+            <button onClick={() => void triageTasks()} disabled={triaging || tasks.length === 0}
+              className="text-[11px] px-3 py-1.5 rounded-xl bg-henry-surface border border-henry-border/30 text-henry-text-muted hover:text-henry-accent hover:border-henry-accent/30 disabled:opacity-40 transition-all">
+              {triaging ? '⚡ Thinking…' : '⚡ Henry: What first?'}
+            </button>
+          </div>
+          {triageResult && (
+            <div className="mt-2 p-3 bg-henry-accent/8 border border-henry-accent/20 rounded-xl">
+              <p className="text-[11px] text-henry-accent font-semibold mb-1">⚡ Henry's take</p>
+              <p className="text-xs text-henry-text-muted leading-relaxed">{triageResult}</p>
+              <button onClick={() => setTriageResult('')} className="text-[10px] text-henry-text-muted hover:text-henry-text mt-1.5 transition-all">Dismiss</button>
+            </div>
+          )}
           <p className="text-[11px] text-henry-text-muted mt-0.5">
             {grouped.todo.length + grouped.doing.length} active · {grouped.done.length} done
           </p>

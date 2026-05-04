@@ -265,6 +265,47 @@ app.whenReady().then(() => {
   });
 
   registerSettingsHandlers(db, getMainWindow);
+
+  // ── Reminder notification poller ─────────────────────────────────────────────
+  // Checks every 60 seconds for reminders that are due and haven't been notified.
+  // Fires a native macOS notification + marks as notified in SQLite.
+  const checkReminders = async () => {
+    try {
+      const now = new Date().toISOString();
+      const due = db.prepare(
+        "SELECT * FROM reminders WHERE due_at <= ? AND done=0 AND notified_at IS NULL"
+      ).all(now) as { id: string; title: string; notes?: string; due_at: string }[];
+
+      for (const rem of due) {
+        // Fire macOS notification
+        if (Notification.isSupported()) {
+          const n = new Notification({
+            title: '⏰ ' + rem.title,
+            body: rem.notes || new Date(rem.due_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+            silent: false,
+          });
+          n.show();
+          n.on('click', () => {
+            const win = getMainWindow();
+            if (win) { win.show(); win.focus(); }
+            win?.webContents.executeJavaScript(
+              'try { window.__useStore?.getState?.()?.setCurrentView?.("reminders"); } catch {}'
+            ).catch(() => {});
+          });
+        }
+        // Mark as notified
+        db.prepare("UPDATE reminders SET notified_at=? WHERE id=?").run(now, rem.id);
+        // Also send to renderer
+        getMainWindow()?.webContents.send('reminder:fired', rem);
+      }
+    } catch (e) {
+      console.error('[Henry] Reminder check error:', e);
+    }
+  };
+  // Check immediately and every 60s
+  checkReminders();
+  const reminderInterval = setInterval(checkReminders, 60_000);
+  app.on('will-quit', () => clearInterval(reminderInterval));
   registerGoogleAuthHandlers(getMainWindow);
 
   // After any provider save, re-sync SQLite providers → localStorage so the renderer picks it up

@@ -138,6 +138,13 @@ contextBridge.exposeInMainWorld('henryAPI', {
   // Self-repair / health
   runDiagnostic: () => ipcRenderer.invoke('henry:diagnostic:run'),
   getLastDiagnostic: () => ipcRenderer.invoke('henry:diagnostic:last'),
+  // ── Reminder events ──────────────────────────────────────────────────────────
+  onReminderFired: (cb: (rem: unknown) => void) => {
+    const handler = (_: IpcRendererEvent, rem: unknown) => cb(rem);
+    ipcRenderer.on('reminder:fired', handler);
+    return () => ipcRenderer.removeListener('reminder:fired', handler);
+  },
+
   // ── Recurring Transactions ───────────────────────────────────────────────
   financeRecurringList: () => ipcRenderer.invoke('finance:recurring:list'),
   financeRecurringSave: (r: Record<string,unknown>) => ipcRenderer.invoke('finance:recurring:save', r),

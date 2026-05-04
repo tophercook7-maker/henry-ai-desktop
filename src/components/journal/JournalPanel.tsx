@@ -84,6 +84,23 @@ export default function JournalPanel(){
       {/* Sidebar */}
       <div className="w-64 flex-shrink-0 border-r border-henry-border/20 flex flex-col">
         <div className="p-3 border-b border-henry-border/20 space-y-2">
+          {/* Streak display */}
+          {(() => {
+            const today = todayKey();
+            let streak = 0;
+            for (let i = 0; i < 30; i++) {
+              const d = new Date(); d.setDate(d.getDate() - i);
+              const ds = d.toISOString().slice(0,10);
+              if (entries.find(e => e.date === ds)) streak++;
+              else if (i > 0) break;
+            }
+            return streak > 1 ? (
+              <div className="flex items-center gap-2 px-1 py-1 mb-1">
+                <span className="text-base">🔥</span>
+                <span className="text-xs font-bold text-henry-accent">{streak} day streak</span>
+              </div>
+            ) : null;
+          })()}
           <button onClick={newEntry} className="w-full py-2 rounded-xl bg-henry-accent text-white text-sm font-semibold hover:bg-henry-accent/80 transition-all">
             + New Entry
           </button>
@@ -119,7 +136,8 @@ export default function JournalPanel(){
                 ))}
               </div>
               <div className="flex gap-2 ml-2">
-                {dirty && <button onClick={()=>save()} disabled={saving} className="text-[11px] px-3 py-1 rounded-lg bg-henry-accent text-white hover:bg-henry-accent/80 disabled:opacity-40 transition-all">{saving?'Saving…':'Save'}</button>}
+                <span className="text-[10px] text-henry-text-muted">{content.split(/\s+/).filter(Boolean).length} words</span>
+              {dirty && <button onClick={()=>save()} disabled={saving} className="text-[11px] px-3 py-1 rounded-lg bg-henry-accent text-white hover:bg-henry-accent/80 disabled:opacity-40 transition-all">{saving?'Saving…':'Save'}</button>}
                 <button onClick={askHenry} className="text-[11px] px-3 py-1 rounded-lg bg-henry-surface border border-henry-border/30 text-henry-text-muted hover:text-henry-accent transition-all">Reflect</button>
                 <button onClick={handleDelete} className="text-[11px] px-2 py-1 rounded-lg text-henry-text-muted hover:text-red-400 transition-all">✕</button>
               </div>
