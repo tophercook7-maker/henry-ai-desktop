@@ -29,7 +29,16 @@
       "@capacitor-mlkit/barcode-scanning": [
         "./src/stubs/barcodeScanning.ts"
       ]
-    }
+    },
+    "typeRoots": [
+      "./node_modules/@types",
+      "./src/types"
+    ],
+    "types": [
+      "node",
+      "react",
+      "react-dom"
+    ]
   },
   "include": [
     "src"

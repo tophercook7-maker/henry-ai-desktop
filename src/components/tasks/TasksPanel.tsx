@@ -52,6 +52,26 @@ export default function TasksPanel() {
     setLoading(false);
   }
 
+  async function triageTasks() {
+    if (triaging || tasks.length === 0) return;
+    setTriaging(true); setTriageResult('');
+    const todo = tasks.filter(t => t.status !== 'done').slice(0, 20);
+    const list = todo.map((t, i) => `${i+1}. [${t.priority===3?'HIGH':t.priority===2?'MED':'LOW'}] ${t.title}${t.due_at?' (due '+t.due_at.slice(0,10)+')':''}`).join('\n');
+    const ownerName = localStorage.getItem('henry:owner_name') || 'you';
+    const prompt = `${ownerName} has these open tasks:\n${list}\n\nGive a brief triage: which 1-3 should be done first today and why. Be direct, 3-5 sentences max.`;
+    try {
+      const deviceId = (() => { let id = localStorage.getItem('henry:device_id'); if (!id) { id = crypto.randomUUID(); localStorage.setItem('henry:device_id', id); } return id; })();
+      const res = await fetch('https://henry-proxy.henryai.workers.dev/v1/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Henry-Device': deviceId },
+        body: JSON.stringify({ model: 'llama-3.1-8b-instant', messages: [{ role: 'user', content: prompt }], max_tokens: 300, stream: false }),
+      });
+      const data = await res.json() as any;
+      setTriageResult(data?.choices?.[0]?.message?.content || 'No response');
+    } catch { setTriageResult('Could not reach Henry AI.'); }
+    setTriaging(false);
+  }
+
   useEffect(() => { void reload(); }, [filter]);
 
   async function handleCreate(e: React.FormEvent) {

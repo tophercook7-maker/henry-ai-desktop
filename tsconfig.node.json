@@ -21,7 +21,10 @@
       "@capacitor-mlkit/barcode-scanning": [
         "./src/stubs/barcodeScanning.ts"
       ]
-    }
+    },
+    "types": [
+      "node"
+    ]
   },
   "include": [
     "vite.config.ts",

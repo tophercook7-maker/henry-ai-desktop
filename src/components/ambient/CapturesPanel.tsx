@@ -265,6 +265,26 @@ export default function CapturesPanel() {
   useEffect(() => {
     api?.captureList?.(30).then((data: any) => setDbCaptures(data || [])).catch(() => {});
   }, [captures]);
+
+  async function reviewAllWithHenry() {
+    const all = dbCaptures.slice(0, 10).map((cap: any) => cap.text).join('\n---\n');
+    if (!all.trim()) return;
+    setReviewing(true);
+    setReviewResult('');
+    const ownerName = localStorage.getItem('henry:owner_name') || 'you';
+    const prompt = `Review these ${dbCaptures.length} captures from ${ownerName}'s day:\n\n${all}\n\nIn 3-5 sentences: what patterns do you see? What 1-2 things should ${ownerName} act on? What can be dismissed? Be direct.`;
+    const deviceId = (() => { let id = localStorage.getItem('henry:device_id'); if (!id) { id = crypto.randomUUID(); localStorage.setItem('henry:device_id', id); } return id; })();
+    try {
+      const r = await fetch('https://henry-proxy.henryai.workers.dev/v1/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Henry-Device': deviceId },
+        body: JSON.stringify({ model: 'llama-3.1-8b-instant', messages: [{ role: 'user', content: prompt }], max_tokens: 350, stream: false }),
+      });
+      const d = await r.json() as any;
+      setReviewResult(d?.choices?.[0]?.message?.content || 'No response');
+    } catch { setReviewResult('Could not reach Henry AI.'); }
+    setReviewing(false);
+  }
   const [ambientFlash, setAmbientFlash] = useState<string | null>(null);
 
   // Sync wake state

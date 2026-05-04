@@ -51,6 +51,9 @@ export default function TodayPanel() {
   const [intentionDraft, setIntentionDraft] = useState(() => getDailyIntention()?.text ?? '');
   const [briefing, setBriefing] = useState<DailyBriefing | null>(() => getTodayBriefing());
   const [generatingBriefing, setGeneratingBriefing] = useState(false);
+  const [showPlanner, setShowPlanner] = useState(false);
+  const [plannerResult, setPlannerResult] = useState('');
+  const [plannerBusy, setPlannerBusy] = useState(false);
   const [briefingExpanded, setBriefingExpanded] = useState(true);
   const [dailyCost] = useState(() => getDailyCost());
   const [liveData, setLiveData] = useState<{
@@ -224,6 +227,51 @@ Write 2-4 short sentences covering: one encouraging opening, what to focus on to
       });
       stream.onError(() => { setGeneratingBriefing(false); setGenerating(false); });
     } catch { setGeneratingBriefing(false); setGenerating(false); }
+  }
+
+  async function generateDailyPlan() {
+    if (plannerBusy) return;
+    setPlannerBusy(true);
+    setPlannerResult('');
+    setShowPlanner(true);
+    const ownerName = localStorage.getItem('henry:owner_name') || 'you';
+    const todayStr = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+    const api2 = (window as any).henryAPI;
+    let context = '';
+    try {
+      const [tasks, rems, habits, habitLogs] = await Promise.all([
+        api2.tasksList({ status: 'todo' }).catch(() => []),
+        api2.remindersDue().catch(() => []),
+        api2.healthHabitList?.().catch(() => []),
+        api2.healthHabitLogsForDate?.(new Date().toISOString().slice(0,10)).catch(() => []),
+      ]);
+      const taskList = (tasks||[]).slice(0,8).map((t:any) => `- ${t.title} [${t.priority===3?'HIGH':t.priority===2?'MED':'LOW'}]`).join('\n');
+      const remList = (rems||[]).slice(0,5).map((r:any) => `- ${r.title}${r.due_at?' at '+r.due_at.slice(11,16):''}`).join('\n');
+      const habitList = (habits||[]).map((h:any) => {
+        const done = (habitLogs||[]).some((l:any) => l.habit_id === h.id);
+        return `- ${h.name}: ${done ? '✓ done' : 'not yet'}`;
+      }).join('\n');
+      context = [
+        taskList ? `Tasks:\n${taskList}` : '',
+        remList ? `Reminders today:\n${remList}` : '',
+        habitList ? `Habits:\n${habitList}` : '',
+      ].filter(Boolean).join('\n\n');
+    } catch { /* use empty context */ }
+    const planParts = [`You are Henry, ${ownerName}'s AI assistant. Today is ${todayStr}.`];
+    if (context) planParts.push('Context:\n' + context);
+    planParts.push(`Create a focused daily plan for ${ownerName}. Format:\n**Morning** (1-2 things)\n**Afternoon** (1-2 things)\n**This evening** (1 thing)\n\nBe specific to their actual tasks/reminders. Keep each line short. End with one sentence of encouragement.`);
+    const prompt = planParts.join('\n\n');
+    const deviceId = (() => { let id = localStorage.getItem('henry:device_id'); if (!id) { id = crypto.randomUUID(); localStorage.setItem('henry:device_id', id); } return id; })();
+    try {
+      const r = await fetch('https://henry-proxy.henryai.workers.dev/v1/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Henry-Device': deviceId },
+        body: JSON.stringify({ model: 'llama-3.1-8b-instant', messages: [{ role: 'user', content: prompt }], max_tokens: 350, stream: false }),
+      });
+      const d = await r.json() as any;
+      setPlannerResult(d?.choices?.[0]?.message?.content || 'No response');
+    } catch { setPlannerResult('Could not reach Henry AI.'); }
+    setPlannerBusy(false);
   }
 
   async function askHenryInline(text: string) {

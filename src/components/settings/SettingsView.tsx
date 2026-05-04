@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { getTodayUsage, syncUsageFromProxy, setLicenseKey, getLicenseKey, getDeviceId } from '../../henry/proxyUsage';
 import { useStore } from '../../store';
 import {
   PROVIDERS,
@@ -309,11 +310,7 @@ function ProviderWizard({
   const [ollamaUrl, setOllamaUrl] = useState(settings.ollama_base_url || 'http://localhost:11434');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [usage, setUsage] = useState(() => getTodayUsage());
-  const [licenseKey, setLicenseKeyState] = useState(() => getLicenseKey());
-  const [licenseInput, setLicenseInput] = useState('');
-  const [checkingLicense, setCheckingLicense] = useState(false);
-  const [licenseMsg, setLicenseMsg] = useState('');
+  // usage state moved to ProvidersTab
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<'ok'|'fail'|null>(null);
   const [ollamaModels, setOllamaModels] = useState<string[]>([]);
@@ -329,36 +326,6 @@ function ProviderWizard({
   const isOllama = providerId === 'ollama';
   const totalSteps = wizard?.steps.length ?? 0;
   const isLastStep = step === totalSteps - 1;
-
-  useEffect(() => {
-    // Sync usage from proxy on settings open
-    syncUsageFromProxy().then(u => setUsage(u)).catch(() => {});
-  }, []);
-
-  async function redeemLicense() {
-    const key = licenseInput.trim();
-    if (!key) return;
-    setCheckingLicense(true);
-    setLicenseMsg('');
-    try {
-      const r = await fetch('https://henry-proxy.henryai.workers.dev/v1/license', {
-        headers: { 'X-Henry-License': key, 'X-Henry-Device': getDeviceId() },
-        signal: AbortSignal.timeout(8000),
-      });
-      const d = await r.json() as { valid: boolean; tier?: string; owner?: string };
-      if (d.valid) {
-        setLicenseKey(key);
-        setLicenseKeyState(key);
-        setLicenseInput('');
-        setLicenseMsg('✓ ' + (d.tier === 'pro' ? 'Pro license activated — 2,000 requests/day' : 'License activated'));
-        const u = await syncUsageFromProxy();
-        setUsage(u);
-      } else {
-        setLicenseMsg('✗ License key not found or expired');
-      }
-    } catch { setLicenseMsg('✗ Could not verify — check your connection'); }
-    setCheckingLicense(false);
-  }
 
   useEffect(() => {
     const existing = providers.find((p) => p.id === providerId);
@@ -684,6 +651,40 @@ function CompanionTab() {
 
 function ProvidersTab() {
   const { providers } = useStore();
+  const [usage, setUsage] = useState(() => getTodayUsage());
+  const [licenseKeyState, setLicenseKeyState] = useState(() => getLicenseKey());
+  const [licenseInput, setLicenseInput] = useState('');
+  const [checkingLicense, setCheckingLicense] = useState(false);
+  const [licenseMsg, setLicenseMsg] = useState('');
+
+  useEffect(() => {
+    syncUsageFromProxy().then(u => setUsage(u)).catch(() => {});
+  }, []);
+
+  async function redeemLicense() {
+    const key = licenseInput.trim();
+    if (!key) return;
+    setCheckingLicense(true);
+    setLicenseMsg('');
+    try {
+      const r = await fetch('https://henry-proxy.henryai.workers.dev/v1/license', {
+        headers: { 'X-Henry-License': key, 'X-Henry-Device': getDeviceId() },
+        signal: AbortSignal.timeout(8000),
+      });
+      const d = await r.json() as { valid: boolean; tier?: string; owner?: string };
+      if (d.valid) {
+        setLicenseKey(key);
+        setLicenseKeyState(key);
+        setLicenseInput('');
+        setLicenseMsg('✓ ' + (d.tier === 'pro' ? 'Pro license activated — 2,000 requests/day' : 'License activated'));
+        const u = await syncUsageFromProxy();
+        setUsage(u);
+      } else {
+        setLicenseMsg('✗ License key not found or expired');
+      }
+    } catch { setLicenseMsg('✗ Could not verify — check your connection'); }
+    setCheckingLicense(false);
+  }
   const [wizardOpen, setWizardOpen] = useState<string | null>(null);
 
   return (
@@ -693,7 +694,7 @@ function ProvidersTab() {
       </p>
 
       {/* Free tier usage bar */}
-      {!getLicenseKey() && (
+      {!licenseKeyState && (
         <div className="bg-henry-surface/50 border border-henry-border/20 rounded-2xl p-4 space-y-3">
           <div className="flex items-center justify-between">
             <div>
@@ -728,7 +729,7 @@ function ProvidersTab() {
           </div>
         </div>
       )}
-      {getLicenseKey() && (
+      {licenseKeyState && (
         <div className="bg-green-400/5 border border-green-400/20 rounded-2xl p-4 flex items-center justify-between">
           <div>
             <p className="text-sm font-semibold text-green-400">✓ Pro License Active</p>

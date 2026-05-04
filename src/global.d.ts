@@ -291,6 +291,8 @@ declare global {
 
     scriptureLookup: (reference: string) => Promise<ScriptureLookupResult>;
     scriptureImport: (entries: ScriptureImportRow[]) => Promise<ScriptureImportResult>;
+    captureList: (limit?: number) => Promise<unknown[]>;
+    captureSave: (c: Record<string,unknown>) => Promise<{ id: string }>;
     scriptureCount: () => Promise<number>;
     scriptureDownloadKJV: (books?: string[]) => Promise<{ imported: number; errors: string[]; books: number }>;
     scriptureSearch: (q: string) => Promise<unknown[]>;
