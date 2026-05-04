@@ -22,10 +22,17 @@ export default function FinancePanel(){
   const [form, setForm]   = useState({type:'expense' as 'income'|'expense', amount:'', category:EXPENSE_CATS[1], description:'', date:new Date().toISOString().slice(0,10)});
   const [adding, setAdding] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [trends, setTrends] = useState<{month:string;income:number;expenses:number;net:number}[]>([]);
 
   async function load(){
     setLoading(true);
-    const [list, sum] = await Promise.all([api.financeList(month), api.financeSummary(month)]);
+    const months6 = Array.from({length:6},(_,i)=>{ const d=new Date(); d.setMonth(d.getMonth()-i); return monthKey(d); }).reverse();
+    const [list, sum, ...trendData] = await Promise.all([
+      api.financeList(month), 
+      api.financeSummary(month),
+      ...months6.map(m => api.financeSummary(m)),
+    ]);
+    setTrends(months6.map((m,i) => ({month:m,...(trendData[i] as any)})));
     setTxns(list as Transaction[]);
     setSummary(sum as Summary);
     setLoading(false);
@@ -88,6 +95,37 @@ export default function FinancePanel(){
             </div>
           ))}
         </div>
+
+        {/* 6-month trend bars */}
+        {trends.length > 0 && (
+          <div>
+            <p className="text-[10px] uppercase tracking-wider text-henry-text-muted mb-3">6-Month Trend</p>
+            <div className="flex items-end gap-2 h-24">
+              {trends.map(t => {
+                const maxVal = Math.max(...trends.map(x => Math.max(x.income, x.expenses)), 1);
+                const incH = Math.round((t.income / maxVal) * 80);
+                const expH = Math.round((t.expenses / maxVal) * 80);
+                const mo = new Date(t.month + '-15').toLocaleDateString('en-US', {month:'short'});
+                return (
+                  <div key={t.month} className="flex-1 flex flex-col items-center gap-1">
+                    <div className="flex items-end gap-0.5 h-20">
+                      <div className="w-2 rounded-t bg-green-400/50 transition-all" style={{height: incH + 'px'}} title={'Income: $' + t.income.toFixed(0)} />
+                      <div className="w-2 rounded-t bg-red-400/50 transition-all" style={{height: expH + 'px'}} title={'Expenses: $' + t.expenses.toFixed(0)} />
+                    </div>
+                    <span className="text-[9px] text-henry-text-muted">{mo}</span>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="flex gap-4 mt-1">
+              <span className="flex items-center gap-1 text-[10px] text-henry-text-muted"><span className="w-2 h-2 rounded bg-green-400/50 inline-block"/>Income</span>
+              <span className="flex items-center gap-1 text-[10px] text-henry-text-muted"><span className="w-2 h-2 rounded bg-red-400/50 inline-block"/>Expenses</span>
+              {(() => { const ytd = trends.reduce((a,t) => ({inc:a.inc+t.income, exp:a.exp+t.expenses}), {inc:0,exp:0}); return (
+                <span className="ml-auto text-[10px] text-henry-text-muted">YTD net: <span className={ytd.inc-ytd.exp >= 0 ? 'text-green-400' : 'text-red-400'}>{fmt(ytd.inc-ytd.exp)}</span></span>
+              ); })()}
+            </div>
+          </div>
+        )}
 
         {/* Top expense categories */}
         {expenseCats.length>0 && (

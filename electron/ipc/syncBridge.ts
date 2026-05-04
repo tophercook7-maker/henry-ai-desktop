@@ -587,7 +587,7 @@ async function handleRequest(
 
   if (path === '/sync/health' && req.method === 'GET') {
     // Health is public — allows mobile to check server is up before pairing
-    let appVersion = '0.8.3'; // updated each release
+    let appVersion = '0.8.5'; // updated each release
     try {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const pkg = require('../../package.json') as { version?: string };
@@ -1030,6 +1030,33 @@ async function handleRequest(
   }
 
   if (path === '/sync/prompt' && req.method === 'POST') {
+    // ── Bible shortcut: BIBLE_LOOKUP:ref → fast DB query, no AI ─────────────
+    if (req.method === 'POST') {
+      try {
+        // Peek at body without consuming (clone via Buffer)
+        const rawPeek = await new Promise<string>((resolve) => {
+          let data = '';
+          req.on('data', (chunk: Buffer) => data += chunk.toString());
+          req.on('end', () => resolve(data));
+        });
+        const peekBody = JSON.parse(rawPeek || '{}') as {text?: string};
+        if (peekBody.text?.startsWith('BIBLE_LOOKUP:')) {
+          const ref = peekBody.text.slice('BIBLE_LOOKUP:'.length).trim();
+          const rows = dbGet(
+            "SELECT text, normalized_reference FROM scripture_entries WHERE LOWER(normalized_reference) LIKE LOWER(?) LIMIT 1",
+            ref + '%'
+          ) as {text:string; normalized_reference:string}[];
+          if (rows.length) {
+            jsonResponse(res, 200, { reply: rows[0].text, ref: rows[0].normalized_reference });
+          } else {
+            jsonResponse(res, 200, { reply: 'Verse not found in your Bible. Go to ✝ Scripture → Import to download the KJV.' });
+          }
+          return;
+        }
+        // Not a Bible lookup — reconstruct req body for normal handler
+        (req as any)._rawBody = rawPeek;
+      } catch { /* continue normally */ }
+    }
     const body = await readBody<{
       text: string;
       conversationId?: string;
@@ -1401,6 +1428,25 @@ async function handleRequest(
     } catch (e) {
       jsonResponse(res, 200, { ok: false, error: String(e) });
     }
+    return;
+  }
+
+  // Finance summary for companion
+  if (path === '/sync/mac/finance' && req.method === 'GET') {
+    try {
+      const months = Array.from({length: 4}, (_, i) => {
+        const d = new Date(); d.setMonth(d.getMonth() - i);
+        return d.toISOString().slice(0, 7);
+      });
+      const trends = months.reverse().map(m => {
+        const income = (dbGet('SELECT COALESCE(SUM(amount),0) as t FROM transactions WHERE type="income" AND strftime("%Y-%m",date)=?', m) as any[])[0]?.t || 0;
+        const expenses = (dbGet('SELECT COALESCE(SUM(amount),0) as t FROM transactions WHERE type="expense" AND strftime("%Y-%m",date)=?', m) as any[])[0]?.t || 0;
+        return { month: m, income, expenses, net: income - expenses };
+      });
+      const currentMonth = new Date().toISOString().slice(0, 7);
+      const recentTxns = dbGet('SELECT * FROM transactions WHERE strftime("%Y-%m",date)=? ORDER BY date DESC LIMIT 8', currentMonth) as any[];
+      jsonResponse(res, 200, { trends, recent: recentTxns });
+    } catch (e) { jsonResponse(res, 500, { error: String(e) }); }
     return;
   }
 

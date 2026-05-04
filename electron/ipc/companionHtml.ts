@@ -150,6 +150,26 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 #shell-run{padding:10px 16px;background:var(--accent);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:600;cursor:pointer}
 #shell-out{background:var(--s2);border:1px solid var(--border);border-radius:12px;padding:12px 14px;font-size:12px;font-family:'SF Mono',monospace;color:var(--green);min-height:60px;white-space:pre-wrap;word-break:break-all;max-height:180px;overflow-y:auto}
 
+/* ── BIBLE ──────────────────────────────────────────────────── */
+#bible-pane{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px;gap:12px;display:flex;flex-direction:column}
+#bible-search-bar{display:flex;gap:8px}
+#bible-ref-in{flex:1;background:var(--s2);border:1px solid var(--border);border-radius:12px;padding:11px 14px;font-size:15px;color:var(--text);outline:none;font-family:var(--font)}
+#bible-ref-in::placeholder{color:var(--muted2)}
+#bible-ref-in:focus{border-color:rgba(124,58,237,.5)}
+#bible-look-btn{padding:11px 16px;background:var(--accent);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:600;cursor:pointer}
+#bible-result{background:var(--s1);border:1px solid var(--border);border-radius:16px;padding:18px;display:none}
+#bible-result.show{display:block}
+#bible-ref-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--accent);margin-bottom:8px}
+#bible-text{font-size:16px;line-height:1.7;color:var(--text)}
+.bible-qr{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:4px}
+.bq{background:var(--s2);border:1px solid var(--border);border-radius:20px;padding:5px 12px;font-size:12px;color:var(--text);cursor:pointer}
+.bq:active{background:var(--accent);color:#fff;border-color:var(--accent)}
+#study-result{background:var(--s1);border:1px solid rgba(124,58,237,.3);border-radius:16px;padding:16px;display:none;font-size:13px;line-height:1.6;color:var(--text)}
+#study-result.show{display:block}
+#study-bar{display:flex;gap:8px}
+#study-prompt-in{flex:1;background:var(--s2);border:1px solid var(--border);border-radius:12px;padding:10px 14px;font-size:14px;color:var(--text);outline:none;font-family:var(--font)}
+#study-prompt-in:focus{border-color:rgba(124,58,237,.5)}
+
 /* ── CAPTURE ─────────────────────────────────────────────────── */
 #cap-pane{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px;gap:12px;display:flex;flex-direction:column}
 #cap-in{width:100%;background:var(--s2);border:1px solid var(--border);border-radius:16px;padding:16px;font-size:15px;color:var(--text);outline:none;resize:none;font-family:var(--font);min-height:140px;line-height:1.6}
@@ -227,6 +247,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
       <button onclick="showTab('screen')" id="t-screen"><span class="ti">📺</span>Screen</button>
       <button onclick="showTab('ctrl')" id="t-ctrl"><span class="ti">⌘</span>Control</button>
       <button onclick="showTab('cap')" id="t-cap"><span class="ti">⊕</span>Capture</button>
+      <button onclick="showTab('bible')" id="t-bible"><span class="ti">✝</span>Bible</button>
     </div>
 
     <!-- TODAY -->
@@ -307,6 +328,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
   <button onclick="phoneTo('screen')" id="bn-screen"><span class="bi">📺</span>Screen</button>
   <button onclick="phoneTo('ctrl')" id="bn-ctrl"><span class="bi">⌘</span>Control</button>
   <button onclick="phoneTo('cap')" id="bn-cap"><span class="bi">⊕</span>Capture</button>
+  <button onclick="phoneTo('bible')" id="bn-bible"><span class="bi">✝</span>Bible</button>
 </div>
 
 <script>
@@ -404,7 +426,7 @@ function phoneTo(id) {
     chatCol.classList.add('active'); rightCol.classList.remove('active');
   } else {
     chatCol.classList.remove('active'); rightCol.classList.add('active');
-    const tabMap = { today: 'today', screen: 'screen', ctrl: 'ctrl', cap: 'cap' };
+    const tabMap = { today: 'today', screen: 'screen', ctrl: 'ctrl', cap: 'cap', bible: 'bible' };
     if (tabMap[id]) showTab(tabMap[id]);
   }
 }
@@ -739,6 +761,68 @@ async function processCapture() {
     \`).join('');
   } catch {
     result.innerHTML = '<div style="color:var(--red)">⚠ Error processing. Is Henry running?</div>';
+  }
+}
+
+// ── BIBLE ─────────────────────────────────────────────────────────────────────
+let currentVerseText = '';
+let currentVerseRef = '';
+
+async function lookupVerse(ref) {
+  if (!ref || !ref.trim()) return;
+  const resultEl = document.getElementById('bible-result');
+  const refLabel = document.getElementById('bible-ref-label');
+  const textEl = document.getElementById('bible-text');
+  resultEl.className = 'show';
+  refLabel.textContent = ref.trim().toUpperCase();
+  textEl.textContent = 'Looking up…';
+
+  try {
+    const r = await fetch(BASE + '/sync/prompt', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: 'BIBLE_LOOKUP:' + ref.trim(), source: 'companion-bible' }),
+    });
+    const d = await r.json();
+    const text = d.reply || d.response || d.text || '';
+    textEl.textContent = text;
+    currentVerseText = text;
+    currentVerseRef = ref.trim();
+  } catch {
+    // Fallback: try scripture lookup IPC via sync
+    textEl.textContent = '⚠ Could not reach Henry. Make sure the app is running.';
+  }
+}
+
+async function studyPassage() {
+  const prompt = document.getElementById('study-prompt-in').value.trim();
+  if (!prompt || !currentVerseText) return;
+  studyWith(prompt);
+}
+
+async function studyWith(prompt) {
+  if (!currentVerseText) {
+    document.getElementById('study-result').className = 'show';
+    document.getElementById('study-result').textContent = 'Look up a verse first, then ask your question.';
+    return;
+  }
+  const result = document.getElementById('study-result');
+  result.className = 'show';
+  result.textContent = 'Henry is studying…';
+
+  try {
+    const r = await fetch(BASE + '/sync/prompt', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: 'Study this passage: "' + currentVerseRef + '" — ' + currentVerseText + '\n\nQuestion: ' + prompt,
+        source: 'companion-study',
+      }),
+    });
+    const d = await r.json();
+    result.textContent = d.reply || d.response || d.text || 'No response';
+  } catch {
+    result.textContent = '⚠ Could not reach Henry.';
   }
 }
 </script>
