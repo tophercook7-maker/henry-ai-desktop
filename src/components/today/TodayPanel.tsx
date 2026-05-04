@@ -97,7 +97,7 @@ export default function TodayPanel() {
       const now = new Date().toISOString();
       const end = new Date();
       end.setHours(23, 59, 59);
-      fetch(`/proxy/gcal/calendar/v3/calendars/primary/events?orderBy=startTime&singleEvents=true&timeMin=${encodeURIComponent(now)}&timeMax=${encodeURIComponent(end.toISOString())}&maxResults=5`, {
+      fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?orderBy=startTime&singleEvents=true&timeMin=${encodeURIComponent(now)}&timeMax=${encodeURIComponent(end.toISOString())}&maxResults=8`, {
         headers: { Authorization: `Bearer ${gToken}` }
       }).then(r => r.ok ? r.json() : null).then((d: any) => {
         if (d?.items) {
@@ -161,23 +161,61 @@ export default function TodayPanel() {
     try {
       const s = useStore.getState().settings;
       const providers = useStore.getState().providers;
-      const provider = s.companion_provider || localStorage.getItem('henry:settings') && JSON.parse(localStorage.getItem('henry:settings')!).companion_provider;
-      const model = s.companion_model;
-      const prov = providers.find((p) => p.id === provider);
-      const apiKey = prov?.apiKey || '';
-      if (!provider || !model || !apiKey) return;
+      const provider = s.companion_provider || 'groq';
+      const model = s.companion_model || 'llama-3.1-8b-instant';
+      const prov = providers.find((p: any) => p.id === provider);
+      const apiKey = prov?.apiKey || (prov as any)?.api_key || '';
+      const ownerName = localStorage.getItem('henry:owner_name') || 'there';
+
       const facts = (() => {
         try {
           const f = JSON.parse(localStorage.getItem('henry:facts') || '[]') as any[];
-          return f.slice(0, 20).map((x: any) => x.content || x.fact || '').filter(Boolean).join(', ');
+          return f.slice(0, 15).map((x: any) => x.content || x.fact || '').filter(Boolean).join('; ');
         } catch { return ''; }
       })();
       const liveCtx = await buildLiveContext().catch(() => '');
-      const prompt = buildBriefingPrompt(facts, liveCtx);
+      const dayOfWeek = new Date().toLocaleDateString('en-US', { weekday: 'long' });
+      const dateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+
+      const prompt = `You are Henry, ${ownerName}'s personal AI. Write a brief morning briefing for ${ownerName} on this ${dayOfWeek}, ${dateStr}.
+
+${liveCtx ? 'Context: ' + liveCtx : ''}
+${facts ? 'Known about ' + ownerName + ': ' + facts : ''}
+
+Write 2-4 short sentences covering: one encouraging opening, what to focus on today, and one practical nudge. Be personal, warm, and direct — not generic. End with one line about what matters most today. No headers, no bullets. Just a brief human message.`;
+
       let full = '';
-      const stream = window.henryAPI.streamMessage({ provider, model, apiKey, messages: [{ role: 'user', content: prompt }], temperature: 0.7 });
+
+      // Use cloud proxy if no personal API key
+      const useProxy = !apiKey || apiKey.length < 10;
+
+      if (useProxy) {
+        const deviceId = (() => {
+          let id = localStorage.getItem('henry:device_id');
+          if (!id) { id = crypto.randomUUID(); localStorage.setItem('henry:device_id', id); }
+          return id;
+        })();
+        const proxyUrl = (import.meta as any).env?.VITE_HENRY_PROXY_URL || 'https://henry-proxy.tophercook7-maker.workers.dev';
+        try {
+          const r = await fetch(proxyUrl + '/v1/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Henry-Device': deviceId },
+            body: JSON.stringify({ model: 'llama-3.1-8b-instant', messages: [{ role: 'user', content: prompt }], max_tokens: 300, stream: false }),
+          });
+          if (r.ok) {
+            const data = await r.json() as any;
+            full = data?.choices?.[0]?.message?.content || '';
+          }
+        } catch { /* proxy unavailable */ }
+        if (full) { saveBriefing(full); setBriefing(getTodayBriefing()); }
+        setGeneratingBriefing(false);
+        setGenerating(false);
+        return;
+      }
+
+      const stream = window.henryAPI.streamMessage({ provider, model, apiKey, messages: [{ role: 'user', content: prompt }], temperature: 0.7, maxTokens: 300 });
       briefingStreamRef.current = stream;
-      stream.onChunk((c: string) => { full += c; });
+      stream.onChunk((chunk: string) => { full += chunk; });
       stream.onDone(() => {
         const b = saveBriefing(full);
         setBriefing(b);

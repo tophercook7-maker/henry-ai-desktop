@@ -1047,6 +1047,16 @@ export function registerMemoryHandlers(database: Database.Database) {
     last_contact TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
   )`).run();
 
+  // Migrate contacts table — add columns if missing
+  try {
+    const cols = (db.prepare("PRAGMA table_info(contacts)").all() as any[]).map((r:any) => r.name);
+    if (!cols.includes('project_value'))  db.prepare("ALTER TABLE contacts ADD COLUMN project_value REAL DEFAULT 0").run();
+    if (!cols.includes('revenue_total'))  db.prepare("ALTER TABLE contacts ADD COLUMN revenue_total REAL DEFAULT 0").run();
+    if (!cols.includes('next_followup'))  db.prepare("ALTER TABLE contacts ADD COLUMN next_followup TEXT").run();
+    if (!cols.includes('priority'))       db.prepare("ALTER TABLE contacts ADD COLUMN priority INTEGER DEFAULT 2").run();
+    if (!cols.includes('source'))         db.prepare("ALTER TABLE contacts ADD COLUMN source TEXT").run();
+  } catch { /* columns may already exist */ }
+
   ipcMain.handle('contacts:list', (_e, query?: string) => {
     try {
       if (query && query.trim()) {
@@ -1467,6 +1477,50 @@ export function registerMemoryHandlers(database: Database.Database) {
   });
   ipcMain.handle('health:habitLogsRange', (_e, from: string, to: string) => {
     return db.prepare('SELECT * FROM habit_logs WHERE date>=? AND date<=? ORDER BY date DESC').all(from, to);
+  });
+
+  // ── Recurring transactions ──────────────────────────────────────────────────
+  db.prepare(`CREATE TABLE IF NOT EXISTS recurring_transactions (
+    id TEXT PRIMARY KEY,
+    type TEXT NOT NULL CHECK(type IN ('income','expense')),
+    amount REAL NOT NULL,
+    category TEXT NOT NULL,
+    description TEXT,
+    day_of_month INTEGER NOT NULL DEFAULT 1,
+    active INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`).run();
+
+  ipcMain.handle('finance:recurring:list', () => {
+    return db.prepare('SELECT * FROM recurring_transactions WHERE active=1 ORDER BY day_of_month').all();
+  });
+  ipcMain.handle('finance:recurring:save', (_e, r: { id?: string; type: string; amount: number; category: string; description?: string; day_of_month: number }) => {
+    const id = r.id || crypto.randomUUID();
+    db.prepare(`INSERT OR REPLACE INTO recurring_transactions (id, type, amount, category, description, day_of_month) VALUES (?,?,?,?,?,?)`)
+      .run(id, r.type, r.amount, r.category, r.description || null, r.day_of_month || 1);
+    return { id };
+  });
+  ipcMain.handle('finance:recurring:delete', (_e, id: string) => {
+    db.prepare('UPDATE recurring_transactions SET active=0 WHERE id=?').run(id);
+    return { ok: true };
+  });
+  // Auto-post recurring transactions for the current month if not already posted
+  ipcMain.handle('finance:recurring:autopost', async () => {
+    const today = new Date();
+    const month = today.toISOString().slice(0, 7);
+    const dayOfMonth = today.getDate();
+    const recurrings = db.prepare('SELECT * FROM recurring_transactions WHERE active=1 AND day_of_month <= ?').all(dayOfMonth) as any[];
+    let posted = 0;
+    for (const r of recurrings) {
+      const dateStr = `${month}-${String(r.day_of_month).padStart(2, '0')}`;
+      const existing = db.prepare("SELECT id FROM transactions WHERE description LIKE ? AND date=?").get(`[Auto] ${r.description || r.category}%`, dateStr);
+      if (!existing) {
+        db.prepare(`INSERT INTO transactions (id, type, amount, category, description, date, created_at) VALUES (?,?,?,?,?,?,?)`)
+          .run(crypto.randomUUID(), r.type, r.amount, r.category, `[Auto] ${r.description || r.category}`, dateStr, new Date().toISOString());
+        posted++;
+      }
+    }
+    return { posted };
   });
 
   ipcMain.handle('capture:list', (_e, limit=20) => {

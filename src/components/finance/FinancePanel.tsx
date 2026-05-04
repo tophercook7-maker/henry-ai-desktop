@@ -22,6 +22,9 @@ export default function FinancePanel(){
   const [form, setForm]   = useState({type:'expense' as 'income'|'expense', amount:'', category:EXPENSE_CATS[1], description:'', date:new Date().toISOString().slice(0,10)});
   const [adding, setAdding] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [recurrings, setRecurrings] = useState<{id:string;type:string;amount:number;category:string;description?:string;day_of_month:number}[]>([]);
+  const [showRecurring, setShowRecurring] = useState(false);
+  const [newRecurring, setNewRecurring] = useState({type:'expense' as 'income'|'expense', amount:'', category:EXPENSE_CATS[1], description:'', day:1});
   const [trends, setTrends] = useState<{month:string;income:number;expenses:number;net:number}[]>([]);
 
   async function load(){
@@ -39,6 +42,10 @@ export default function FinancePanel(){
   }
 
   useEffect(()=>{ void load(); },[month]);
+  useEffect(()=>{
+    api.financeRecurringList?.().then((r:any)=>setRecurrings(r||[])).catch(()=>{});
+    api.financeRecurringAutopost?.().then((r:any)=>{ if(r?.posted>0) void load(); }).catch(()=>{});
+  },[]);
 
   async function handleAdd(e:React.FormEvent){
     e.preventDefault();
@@ -177,6 +184,51 @@ export default function FinancePanel(){
             </div>
           </form>
         )}
+
+        {/* Recurring transactions */}
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[10px] uppercase tracking-wider text-henry-text-muted">Recurring ({recurrings.length})</p>
+            <button onClick={()=>setShowRecurring(r=>!r)} className="text-[10px] text-henry-accent hover:underline">
+              {showRecurring ? 'Hide' : 'Manage'}
+            </button>
+          </div>
+          {showRecurring && (
+            <div className="bg-henry-surface/40 border border-henry-border/15 rounded-xl p-3 space-y-2 mb-3">
+              {recurrings.map(r=>(
+                <div key={r.id} className="flex items-center gap-2 text-xs">
+                  <span className={r.type==='income'?'text-green-400':'text-red-400'}>{r.type==='income'?'↑':'↓'}</span>
+                  <span className="text-henry-text flex-1">{r.description||r.category}</span>
+                  <span className="text-henry-text-muted font-mono">{fmt(r.amount)}</span>
+                  <span className="text-henry-text-muted">day {r.day_of_month}</span>
+                  <button onClick={async()=>{await api.financeRecurringDelete?.(r.id);setRecurrings(rs=>rs.filter(x=>x.id!==r.id));}} className="text-henry-text-muted hover:text-red-400 transition-all">✕</button>
+                </div>
+              ))}
+              <div className="flex gap-2 pt-2 border-t border-henry-border/15">
+                <select value={newRecurring.type} onChange={e=>setNewRecurring(r=>({...r,type:e.target.value as any,category:e.target.value==='expense'?EXPENSE_CATS[1]:INCOME_CATS[0]}))}
+                  className="bg-henry-surface2 border border-henry-border/20 rounded-lg px-2 py-1.5 text-xs text-henry-text outline-none">
+                  <option value="expense">Expense</option><option value="income">Income</option>
+                </select>
+                <input type="number" placeholder="Amount" value={newRecurring.amount} onChange={e=>setNewRecurring(r=>({...r,amount:e.target.value}))}
+                  className="bg-henry-surface2 border border-henry-border/20 rounded-lg px-2 py-1.5 text-xs text-henry-text outline-none w-20"/>
+                <select value={newRecurring.category} onChange={e=>setNewRecurring(r=>({...r,category:e.target.value}))}
+                  className="bg-henry-surface2 border border-henry-border/20 rounded-lg px-2 py-1.5 text-xs text-henry-text outline-none flex-1">
+                  {(newRecurring.type==='expense'?EXPENSE_CATS:INCOME_CATS).map(cat=><option key={cat}>{cat}</option>)}
+                </select>
+                <input type="number" min={1} max={28} placeholder="Day" value={newRecurring.day} onChange={e=>setNewRecurring(r=>({...r,day:parseInt(e.target.value)||1}))}
+                  className="bg-henry-surface2 border border-henry-border/20 rounded-lg px-2 py-1.5 text-xs text-henry-text outline-none w-14"/>
+                <button onClick={async()=>{
+                  const amt=parseFloat(newRecurring.amount);
+                  if(!amt) return;
+                  await api.financeRecurringSave?.({type:newRecurring.type,amount:amt,category:newRecurring.category,description:newRecurring.description,day_of_month:newRecurring.day});
+                  const list = await api.financeRecurringList?.();
+                  setRecurrings(list as any||[]);
+                  setNewRecurring(r=>({...r,amount:'',description:''}));
+                }} className="px-3 py-1.5 bg-henry-accent text-white text-xs rounded-lg font-semibold">Add</button>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Transactions list */}
         <div>

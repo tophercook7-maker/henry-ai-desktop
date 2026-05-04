@@ -138,6 +138,12 @@ contextBridge.exposeInMainWorld('henryAPI', {
   // Self-repair / health
   runDiagnostic: () => ipcRenderer.invoke('henry:diagnostic:run'),
   getLastDiagnostic: () => ipcRenderer.invoke('henry:diagnostic:last'),
+  // ── Recurring Transactions ───────────────────────────────────────────────
+  financeRecurringList: () => ipcRenderer.invoke('finance:recurring:list'),
+  financeRecurringSave: (r: Record<string,unknown>) => ipcRenderer.invoke('finance:recurring:save', r),
+  financeRecurringDelete: (id: string) => ipcRenderer.invoke('finance:recurring:delete', id),
+  financeRecurringAutopost: () => ipcRenderer.invoke('finance:recurring:autopost'),
+
   // ── Health & Habits ──────────────────────────────────────────────────────────
   healthLogSave: (log: Record<string,unknown>) => ipcRenderer.invoke('health:logSave', log),
   healthLogsForDate: (date: string) => ipcRenderer.invoke('health:logsForDate', date),
