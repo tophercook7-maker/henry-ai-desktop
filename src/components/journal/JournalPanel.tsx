@@ -136,7 +136,18 @@ export default function JournalPanel(){
                 ))}
               </div>
               <div className="flex gap-2 ml-2">
-                <span className="text-[10px] text-henry-text-muted">{content.split(/\s+/).filter(Boolean).length} words</span>
+                <span className="text-[10px] text-henry-text-muted">
+                {(() => {
+                  const wc = content.split(/\s+/).filter(Boolean).length;
+                  const goal = 200;
+                  const pct = Math.min(100, Math.round((wc/goal)*100));
+                  return (
+                    <span className={wc >= goal ? 'text-green-400' : ''}>
+                      {wc} words {wc < goal ? `(${pct}% of ${goal})` : '✓ goal reached'}
+                    </span>
+                  );
+                })()}
+              </span>
               {dirty && <button onClick={()=>save()} disabled={saving} className="text-[11px] px-3 py-1 rounded-lg bg-henry-accent text-white hover:bg-henry-accent/80 disabled:opacity-40 transition-all">{saving?'Saving…':'Save'}</button>}
                 <button onClick={askHenry} className="text-[11px] px-3 py-1 rounded-lg bg-henry-surface border border-henry-border/30 text-henry-text-muted hover:text-henry-accent transition-all">Reflect</button>
                 <button onClick={handleDelete} className="text-[11px] px-2 py-1 rounded-lg text-henry-text-muted hover:text-red-400 transition-all">✕</button>
@@ -146,7 +157,15 @@ export default function JournalPanel(){
               <p className="text-[10px] text-henry-text-muted">{dateLabel(selected.date)}</p>
             </div>
             <textarea ref={textRef} value={content} onChange={e=>handleChange(e.target.value)}
-              placeholder="Write anything. Henry saves automatically…"
+              placeholder={[
+              'Write anything. Henry saves automatically…',
+              "What's on your mind today?",
+              'What are you grateful for right now?',
+              "What's one thing you want to remember about today?",
+              "What's your biggest challenge today? Write through it.",
+              'What did you learn today?',
+              "What are you looking forward to this week?",
+            ][new Date().getDay() % 7]}
               className="flex-1 bg-transparent text-henry-text text-sm leading-relaxed p-6 outline-none resize-none placeholder:text-henry-text-muted/40" />
           </>
         ) : (

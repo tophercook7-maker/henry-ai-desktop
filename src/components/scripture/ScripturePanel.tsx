@@ -45,15 +45,33 @@ const STUDY_PROMPTS = [
 ];
 
 async function henryStudy(passage: string, text: string, prompt: string, providers: any[], settings: Record<string,string>): Promise<string> {
-  // Pick best available provider: Groq → Ollama → error
+  // Pick best available provider: Groq → Ollama → Cloud Proxy
   const groq = providers?.find((p: any) => p.id === 'groq' && (p.api_key || p.apiKey || '').length > 10);
   const ollama = providers?.find((p: any) => p.id === 'ollama' && p.enabled);
-  const provider = groq ? 'groq' : ollama ? 'ollama' : null;
-  if (!provider) return '⚠️ Add a Groq API key in Settings → AI Providers, or install Ollama, to study with Henry.';
+  const useProxy = !groq && !ollama;
 
+  if (useProxy) {
+    // Use Henry cloud proxy for Bible study — works on free tier
+    return new Promise((resolve) => {
+      const deviceId = (() => { let id = localStorage.getItem('henry:device_id'); if (!id) { id = crypto.randomUUID(); localStorage.setItem('henry:device_id', id); } return id; })();
+      const sys = 'You are a Bible study companion. Give clear, reverent, biblically grounded responses. Respect orthodox Christian tradition. Be concise but thoughtful.';
+      const userMsg = 'Passage: ' + passage + '\n\nText: "' + text + '"\n\nQuestion: ' + prompt;
+      fetch('https://henry-proxy.henryai.workers.dev/v1/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Henry-Device': deviceId },
+        body: JSON.stringify({ model: 'llama-3.1-8b-instant', messages: [{ role: 'system', content: sys }, { role: 'user', content: userMsg }], max_tokens: 600, stream: false }),
+      }).then(r => r.json()).then((d: any) => {
+        const content = d?.choices?.[0]?.message?.content || '';
+        if (d?.error?.type === 'rate_limit') resolve('Daily limit reached. Add your Groq key in Settings → AI Providers for unlimited Bible study.');
+        else resolve(content || 'No response from Henry.');
+      }).catch(() => resolve('Could not reach Henry AI. Check your connection.'));
+    });
+  }
+
+  const provider = groq ? 'groq' : 'ollama';
   const apiKey = provider === 'groq' ? (groq?.api_key || groq?.apiKey || '') : '';
   const model = provider === 'groq'
-    ? (settings?.chat_fast_model || 'llama-3.1-8b-instant')  // use 8b for study (lower token usage)
+    ? (settings?.chat_fast_model || 'llama-3.1-8b-instant')
     : (settings?.companion_model || 'llama3.2:latest');
   const ollamaUrl = settings?.ollama_base_url || 'http://127.0.0.1:11434';
 
@@ -470,6 +488,23 @@ export default function ScripturePanel() {
             <div className="bg-henry-surface rounded-xl border border-henry-accent/20 p-5 space-y-3">
               <p className="text-henry-text text-sm leading-relaxed whitespace-pre-wrap">{studyOutput}</p>
               <div className="flex gap-2 pt-2 border-t border-henry-border/20">
+                <button onClick={async () => {
+                  const api2 = (window as any).henryAPI;
+                  if (!api2?.journalSave) return;
+                  const today = new Date().toISOString().slice(0,10);
+                  await api2.journalSave({
+                    id: crypto.randomUUID(),
+                    date: today,
+                    title: 'Bible Study: ' + (studyRef || query),
+                    content: (studyRef || query) + '\n\n' + studyOutput,
+                    mood: '🙏',
+                    tags: JSON.stringify(['scripture','study']),
+                  });
+                  alert('Saved to Journal ✓');
+                }}
+                  className="text-xs px-2.5 py-1 rounded-lg border border-henry-border/30 text-henry-text-muted hover:text-henry-accent transition-all">
+                  📔 Save to Journal
+                </button>
                 <button onClick={() => navigator.clipboard?.writeText(studyOutput)}
                   className="text-[11px] px-3 py-1 rounded-lg border border-henry-border/30 text-henry-text-muted hover:text-henry-text transition-all">
                   Copy

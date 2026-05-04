@@ -302,6 +302,23 @@ export default function CRMPanel() {
                   { label: '✉ Draft follow-up email', fn: () => askHenryAbout(selected) },
                   { label: '📋 Summarize this client', fn: () => { sendToHenry(`Summarize everything I should know about ${selected.name}${selected.company ? ' at ' + selected.company : ''}. Stage: ${selected.stage}. Project value: ${fmt(selected.project_value)}. Notes: ${selected.notes || 'none'}.`); setCurrentView('chat'); } },
                   { label: '💡 Proposal ideas', fn: () => { sendToHenry(`Generate 3 service proposal ideas for ${selected.name}${selected.company ? ' at ' + selected.company : ''}. Role: ${selected.role || 'unknown'}. Notes: ${selected.notes || 'none'}. What could MixedMakerShop offer them?`); setCurrentView('chat'); } },
+                  { label: '📅 Schedule follow-up', fn: async () => {
+                    const followUpDate = new Date();
+                    followUpDate.setDate(followUpDate.getDate() + 7);
+                    const dateStr = followUpDate.toISOString().slice(0,10);
+                    const api2 = (window as any).henryAPI;
+                    await api2?.remindersCreate?.({
+                      id: crypto.randomUUID(),
+                      title: `Follow up with ${selected.name}${selected.company ? ' at ' + selected.company : ''}`,
+                      notes: `Stage: ${selected.stage}. Last contact: ${daysSince(selected.last_contact || selected.last_contacted_at) ?? '?'} days ago.`,
+                      due_at: dateStr + 'T09:00:00.000Z',
+                      repeat: 'none',
+                      done: 0,
+                      created_at: new Date().toISOString(),
+                      updated_at: new Date().toISOString(),
+                    }).catch(() => {});
+                    alert('✓ Follow-up reminder set for ' + dateStr);
+                  }},
                   { label: '📅 Next steps', fn: () => { sendToHenry(`What should my next steps be with ${selected.name}? They are in the ${selected.stage} stage. Last contacted ${daysSince(selected.last_contact || selected.last_contacted_at) ?? '?'} days ago. Notes: ${selected.notes || 'none'}.`); setCurrentView('chat'); } },
                 ].map(a => (
                   <button key={a.label} onClick={a.fn}

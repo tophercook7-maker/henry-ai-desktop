@@ -50,7 +50,24 @@ export default function ImageGenPanel() {
 
   async function generate() {
     if (!prompt.trim() || generating) return;
-    if (!openaiKey) { setError('OpenAI API key required for image generation. Add it in Settings.'); return; }
+    if (!openaiKey) {
+      // Free fallback: use Pollinations.ai (free, no key needed)
+      setGenerating(true);
+      setError(null);
+      try {
+        const encoded = encodeURIComponent(prompt.trim());
+        const freeUrl = `https://image.pollinations.ai/prompt/${encoded}?width=1024&height=1024&nologo=true&enhance=true`;
+        const newImg: GeneratedImage = { id: crypto.randomUUID(), url: freeUrl, prompt: prompt.trim(), size: '1024x1024', style: 'vivid', revisedPrompt: undefined, createdAt: new Date().toISOString() };
+        const updated = [newImg, ...history.slice(0, 49)];
+        setHistory(updated);
+        setSelectedImage(newImg);
+        localStorage.setItem(HISTORY_KEY, JSON.stringify(updated));
+      } catch (e: any) {
+        setError('Free image generation failed: ' + (e as Error).message);
+      }
+      setGenerating(false);
+      return;
+    }
     setGenerating(true);
     setError(null);
     try {
@@ -105,7 +122,7 @@ export default function ImageGenPanel() {
           <div className="flex items-center justify-between mb-4">
             <div>
               <h1 className="text-xl font-semibold text-henry-text">Image Generation</h1>
-              <p className="text-xs text-henry-text-muted mt-0.5">DALL-E 3 via OpenAI</p>
+              <p className="text-xs text-henry-text-muted mt-0.5">{openaiKey ? 'DALL-E 3 via OpenAI' : 'Free via Pollinations.ai'}</p>
             </div>
             {!openaiKey && (
               <span className="text-xs px-3 py-1.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-lg">
@@ -185,7 +202,7 @@ export default function ImageGenPanel() {
             <div className="flex flex-col items-center justify-center h-40 text-henry-text-dim">
               <span className="text-4xl mb-3">🎨</span>
               <p className="text-sm">Your generated images will appear here</p>
-              <p className="text-xs mt-1">Requires an OpenAI API key with DALL-E access</p>
+              <p className="text-xs mt-1">Add an OpenAI key in Settings for DALL-E 3 quality. Free tier uses Pollinations.ai.</p>
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">

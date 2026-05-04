@@ -24,6 +24,7 @@ export default function TodayPanel() {
   const [quickAsk, setQuickAsk] = useState('');
   const [capture, setCapture] = useState('');
   const [calEvents, setCalEvents] = useState<{id:string;summary:string;start:string;location?:string}[]>([]);
+  const [todayHabits, setTodayHabits] = useState<{habit: any; done: boolean}[]>([]);
   const [henryStatus, setHenryStatus] = useState<'checking'|'ready'|'needs-key'|'ollama'|'proxy'>('checking');
 
   // Check Henry's AI readiness
@@ -94,7 +95,22 @@ export default function TodayPanel() {
       await api.captureSave?.({ id, text, routedTo: route });
       setCapture('');
       // Refresh live data
-      // Load today's Google Calendar events if token exists
+      // Load today's habits
+    const api3 = (window as any).henryAPI;
+    if (api3?.healthHabitList) {
+      const today2 = new Date().toISOString().slice(0, 10);
+      Promise.all([
+        api3.healthHabitList().catch(() => []),
+        api3.healthHabitLogsForDate?.(today2).catch(() => []),
+      ]).then(([habits2, logs2]: any[]) => {
+        setTodayHabits((habits2 || []).map((h: any) => ({
+          habit: h,
+          done: (logs2 || []).some((l: any) => l.habit_id === h.id && l.count >= h.target_per_day),
+        })));
+      }).catch(() => {});
+    }
+
+    // Load today's Google Calendar events if token exists
     const gToken = getGoogleToken();
     if (gToken) {
       const now = new Date().toISOString();
@@ -481,6 +497,25 @@ Write 2-4 short sentences covering: one encouraging opening, what to focus on to
         </form>
 
         {/* Live Data Strip */}
+        {/* Today's habits quick view */}
+        {todayHabits.length > 0 && (
+          <div className="w-full mb-3">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {todayHabits.map(({ habit, done }) => (
+                <div key={habit.id}
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-all ${done ? 'bg-green-400/10 border-green-400/25 text-green-400' : 'bg-henry-surface border-henry-border/25 text-henry-text-muted'}`}>
+                  <span className="text-sm">{done ? '✓' : habit.icon}</span>
+                  <span>{habit.name.split(' ')[0]}</span>
+                </div>
+              ))}
+              <button onClick={() => setCurrentView('health' as any)}
+                className="text-[10px] text-henry-text-muted hover:text-henry-accent transition-all px-1">
+                {todayHabits.filter(h => h.done).length}/{todayHabits.length} →
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Google Calendar Events */}
         {calEvents.length > 0 && (
           <div className="w-full mb-3 space-y-1.5">
