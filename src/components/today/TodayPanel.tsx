@@ -5,6 +5,7 @@ import { getTodayBriefing, getTodayKey, saveBriefing, setGenerating, isGeneratin
 import type { DailyBriefing } from '../../henry/proactiveBriefing';
 import { getDailyIntention, setDailyIntention, clearDailyIntention } from '../../henry/dailyIntention';
 import { PANEL_QUICK_ASK } from '../../henry/henryQuickAsk';
+import { getGoogleToken } from '../../henry/integrations';
 
 const HENRY_LAST_GREETING_KEY = 'henry:last_greeting_date';
 const HENRY_OPERATING_MODE_KEY = 'henry_operating_mode';
@@ -22,6 +23,7 @@ export default function TodayPanel() {
   const { setCurrentView } = useStore();
   const [quickAsk, setQuickAsk] = useState('');
   const [capture, setCapture] = useState('');
+  const [calEvents, setCalEvents] = useState<{id:string;summary:string;start:string;location?:string}[]>([]);
   const [henryStatus, setHenryStatus] = useState<'checking'|'ready'|'needs-key'|'ollama'>('checking');
 
   // Check Henry's AI readiness
@@ -89,7 +91,27 @@ export default function TodayPanel() {
       await api.captureSave?.({ id, text, routedTo: route });
       setCapture('');
       // Refresh live data
-      void api.tasksList?.({ status: 'todo' }).then((t: any[]) => setLiveData(d => ({...d, dueTasks: (t||[]).length}))).catch(() => {});
+      // Load today's Google Calendar events if token exists
+    const gToken = getGoogleToken();
+    if (gToken) {
+      const now = new Date().toISOString();
+      const end = new Date();
+      end.setHours(23, 59, 59);
+      fetch(`/proxy/gcal/calendar/v3/calendars/primary/events?orderBy=startTime&singleEvents=true&timeMin=${encodeURIComponent(now)}&timeMax=${encodeURIComponent(end.toISOString())}&maxResults=5`, {
+        headers: { Authorization: `Bearer ${gToken}` }
+      }).then(r => r.ok ? r.json() : null).then((d: any) => {
+        if (d?.items) {
+          setCalEvents(d.items.map((e: any) => ({
+            id: e.id,
+            summary: e.summary || 'Untitled',
+            start: e.start?.dateTime || e.start?.date || '',
+            location: e.location,
+          })));
+        }
+      }).catch(() => {});
+    }
+
+    void api.tasksList?.({ status: 'todo' }).then((t: any[]) => setLiveData(d => ({...d, dueTasks: (t||[]).length}))).catch(() => {});
     } catch { /* non-critical */ }
     setCaptureSaving(false);
   }
@@ -372,6 +394,23 @@ export default function TodayPanel() {
         </form>
 
         {/* Live Data Strip */}
+        {/* Google Calendar Events */}
+        {calEvents.length > 0 && (
+          <div className="w-full mb-3 space-y-1.5">
+            <p className="text-[10px] uppercase tracking-widest text-henry-text-muted px-1">Today's Schedule</p>
+            {calEvents.map(ev => {
+              const t = ev.start ? new Date(ev.start).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '';
+              return (
+                <div key={ev.id} className="flex items-center gap-2 px-3 py-2 rounded-xl bg-blue-400/5 border border-blue-400/15">
+                  <span className="text-blue-400 text-xs font-mono flex-shrink-0 w-12">{t}</span>
+                  <span className="text-xs text-henry-text truncate">{ev.summary}</span>
+                  {ev.location && <span className="text-[10px] text-henry-text-muted truncate flex-shrink-0">📍 {ev.location.slice(0, 20)}</span>}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         {(liveData.dueTasks > 0 || liveData.dueReminders > 0 || liveData.focusToday > 0) && (
           <div className="w-full mb-3 flex gap-2 flex-wrap">
             {liveData.dueTasks > 0 && (

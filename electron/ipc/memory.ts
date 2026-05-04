@@ -1391,6 +1391,84 @@ export function registerMemoryHandlers(database: Database.Database) {
       return { ok: true };
     } catch (e) { return { ok: false, error: String(e) }; }
   });
+  // ── Health & Habits ────────────────────────────────────────────────────────
+  db.prepare(`CREATE TABLE IF NOT EXISTS health_logs (
+    id TEXT PRIMARY KEY,
+    date TEXT NOT NULL,
+    category TEXT NOT NULL,
+    label TEXT,
+    value REAL,
+    unit TEXT,
+    note TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`).run();
+  db.prepare(`CREATE TABLE IF NOT EXISTS habits (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    icon TEXT DEFAULT '✓',
+    color TEXT DEFAULT '#7c3aed',
+    target_per_day INTEGER DEFAULT 1,
+    active INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`).run();
+  db.prepare(`CREATE TABLE IF NOT EXISTS habit_logs (
+    id TEXT PRIMARY KEY,
+    habit_id TEXT NOT NULL,
+    date TEXT NOT NULL,
+    count INTEGER DEFAULT 1,
+    note TEXT,
+    logged_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(habit_id, date)
+  )`).run();
+
+  ipcMain.handle('health:logSave', (_e, log: { id?:string; date:string; category:string; label?:string; value?:number; unit?:string; note?:string }) => {
+    try {
+      const id = log.id || crypto.randomUUID();
+      db.prepare(`INSERT OR REPLACE INTO health_logs (id, date, category, label, value, unit, note)
+        VALUES (?, ?, ?, ?, ?, ?, ?)`).run(id, log.date, log.category, log.label||null, log.value||null, log.unit||null, log.note||null);
+      return { id };
+    } catch(e) { return { error: String(e) }; }
+  });
+  ipcMain.handle('health:logsForDate', (_e, date: string) => {
+    return db.prepare('SELECT * FROM health_logs WHERE date = ? ORDER BY created_at DESC').all(date);
+  });
+  ipcMain.handle('health:logsRange', (_e, from: string, to: string) => {
+    return db.prepare('SELECT * FROM health_logs WHERE date >= ? AND date <= ? ORDER BY date DESC').all(from, to);
+  });
+  ipcMain.handle('health:logDelete', (_e, id: string) => {
+    db.prepare('DELETE FROM health_logs WHERE id = ?').run(id);
+    return { ok: true };
+  });
+
+  // Habits
+  ipcMain.handle('health:habitList', () => db.prepare('SELECT * FROM habits WHERE active=1 ORDER BY created_at').all());
+  ipcMain.handle('health:habitSave', (_e, h: { id?:string; name:string; icon?:string; color?:string; target_per_day?:number }) => {
+    const id = h.id || crypto.randomUUID();
+    db.prepare(`INSERT OR REPLACE INTO habits (id, name, icon, color, target_per_day)
+      VALUES (?, ?, ?, ?, ?)`).run(id, h.name, h.icon||'✓', h.color||'#7c3aed', h.target_per_day||1);
+    return { id };
+  });
+  ipcMain.handle('health:habitDelete', (_e, id: string) => {
+    db.prepare('UPDATE habits SET active=0 WHERE id=?').run(id);
+    return { ok: true };
+  });
+  ipcMain.handle('health:habitLog', (_e, opts: { habit_id: string; date: string; count?: number }) => {
+    const id = crypto.randomUUID();
+    db.prepare(`INSERT INTO habit_logs (id, habit_id, date, count) VALUES (?, ?, ?, ?)
+      ON CONFLICT(habit_id, date) DO UPDATE SET count=count+excluded.count`).run(id, opts.habit_id, opts.date, opts.count||1);
+    return { ok: true };
+  });
+  ipcMain.handle('health:habitUnlog', (_e, opts: { habit_id: string; date: string }) => {
+    db.prepare('DELETE FROM habit_logs WHERE habit_id=? AND date=?').run(opts.habit_id, opts.date);
+    return { ok: true };
+  });
+  ipcMain.handle('health:habitLogsForDate', (_e, date: string) => {
+    return db.prepare('SELECT * FROM habit_logs WHERE date=?').all(date);
+  });
+  ipcMain.handle('health:habitLogsRange', (_e, from: string, to: string) => {
+    return db.prepare('SELECT * FROM habit_logs WHERE date>=? AND date<=? ORDER BY date DESC').all(from, to);
+  });
+
   ipcMain.handle('capture:list', (_e, limit=20) => {
     try { return db.prepare("SELECT * FROM quick_captures ORDER BY captured_at DESC LIMIT ?").all(limit); }
     catch { return []; }

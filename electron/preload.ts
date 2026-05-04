@@ -138,6 +138,19 @@ contextBridge.exposeInMainWorld('henryAPI', {
   // Self-repair / health
   runDiagnostic: () => ipcRenderer.invoke('henry:diagnostic:run'),
   getLastDiagnostic: () => ipcRenderer.invoke('henry:diagnostic:last'),
+  // ── Health & Habits ──────────────────────────────────────────────────────────
+  healthLogSave: (log: Record<string,unknown>) => ipcRenderer.invoke('health:logSave', log),
+  healthLogsForDate: (date: string) => ipcRenderer.invoke('health:logsForDate', date),
+  healthLogsRange: (from: string, to: string) => ipcRenderer.invoke('health:logsRange', from, to),
+  healthLogDelete: (id: string) => ipcRenderer.invoke('health:logDelete', id),
+  healthHabitList: () => ipcRenderer.invoke('health:habitList'),
+  healthHabitSave: (h: Record<string,unknown>) => ipcRenderer.invoke('health:habitSave', h),
+  healthHabitDelete: (id: string) => ipcRenderer.invoke('health:habitDelete', id),
+  healthHabitLog: (opts: Record<string,unknown>) => ipcRenderer.invoke('health:habitLog', opts),
+  healthHabitUnlog: (opts: Record<string,unknown>) => ipcRenderer.invoke('health:habitUnlog', opts),
+  healthHabitLogsForDate: (date: string) => ipcRenderer.invoke('health:habitLogsForDate', date),
+  healthHabitLogsRange: (from: string, to: string) => ipcRenderer.invoke('health:habitLogsRange', from, to),
+
   // ── Auto-setup & permissions ─────────────────────────────────────────────
   requestAccessibility: () => ipcRenderer.invoke('henry:requestAccessibility'),
   checkAccessibility: () => ipcRenderer.invoke('henry:checkAccessibility'),

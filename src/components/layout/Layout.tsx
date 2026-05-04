@@ -5,7 +5,7 @@ import Sidebar from './Sidebar';
 import MobileNav from './MobileNav';
 import ChatView from '../chat/ChatView';
 import TaskQueueView from '../queue/TaskQueueView';
-import HealthPanel from '../settings/HealthPanel';
+import HealthPanel from '../health/HealthPanel';
 import TasksPanel from '../tasks/TasksPanel';
 import SettingsView from '../settings/SettingsView';
 import FileBrowser from '../files/FileBrowser';
