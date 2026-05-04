@@ -219,13 +219,23 @@ export function registerScriptureHandlers(db: Database.Database, getWindow?: Win
         const insertMany = db.transaction(() => {
           for (let ci = 0; ci < chapters.length; ci++) {
             const chapter = chapters[ci];
-            for (let vi = 0; vi < chapter.length; vi++) {
-              const verseText = chapter[vi];
+            // Handle two formats:
+            // Format A (simple): chapters[i] = string[] (verse texts)
+            // Format B (rich): chapters[i] = { chapter: "N", verses: [{verse:"N", text:"..."}] }
+            const isRich = chapter && typeof chapter === 'object' && !Array.isArray(chapter) && 'verses' in chapter;
+            const chNum = isRich ? parseInt((chapter as any).chapter) || (ci + 1) : ci + 1;
+            const verses: Array<{verse: string|number; text: string} | string> = isRich
+              ? (chapter as any).verses
+              : (Array.isArray(chapter) ? chapter : []);
+
+            for (let vi = 0; vi < verses.length; vi++) {
+              const v = verses[vi];
+              const verseText = typeof v === 'string' ? v : (v as any).text;
+              const vsNum = typeof v === 'object' ? parseInt((v as any).verse) || (vi + 1) : vi + 1;
               if (!verseText) continue;
-              const ch = ci + 1, vs = vi + 1;
-              const ref = `${bookName} ${ch}:${vs}`;
-              const id = `kjv_${bookFile}_${ch}_${vs}`;
-              stmt.run(id, ref, bookName, ch, vs, verseText, ref);
+              const ref = `${bookName} ${chNum}:${vsNum}`;
+              const id = `kjv_${bookFile}_${chNum}_${vsNum}`;
+              stmt.run(id, ref, bookName, chNum, vsNum, verseText, ref);
               imported++;
             }
           }
