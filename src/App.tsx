@@ -159,7 +159,19 @@ export default function App() {
     };
 
     const u0 = api.onCompanionDeviceLinked!((device) => bridge('device-linked', device));
-    const u1 = api.onCompanionCapture!((capture) => bridge('capture', capture));
+    const u1 = api.onCompanionCapture!((capture: any) => {
+      bridge('capture', capture);
+      // Wire capture directly into CapturesStore so Henry Engage → Captures panel works
+      if (capture?.text) {
+        const note = (capture.text || '').trim().slice(0, 2000);
+        if (note) useCapturesStore.getState().addCapture(note, {
+          sourceUrl: capture.source || undefined,
+          pageTitle: capture.pageTitle || undefined,
+          origin: 'extension',
+          category: capture.category as any || undefined,
+        });
+      }
+    });
     const u2 = api.onCompanionPrompt!((data) => bridge('prompt', data));
     const u3 = api.onCompanionActionDecision!((decision) => bridge('action-decision', decision));
 

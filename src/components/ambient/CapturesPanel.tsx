@@ -179,6 +179,12 @@ function CaptureCard({ note }: { note: CapturedNote }) {
             title="Double-click to edit"
           >
             {note.text}
+            {(note as any).sourceUrl && (
+              <a href={(note as any).sourceUrl} target="_blank" rel="noreferrer"
+                className="text-[10px] text-henry-text-muted/60 hover:text-henry-accent truncate block mt-1.5 transition-colors">
+                {'🌐 '}{(note as any).pageTitle || (note as any).sourceUrl}
+              </a>
+            )}
           </p>
         )}
       </div>

@@ -39,6 +39,12 @@ export interface CapturedNote {
   edited: boolean;
   /** True if dismissed / archived by the user. */
   archived: boolean;
+  /** Source URL (from Henry Engage browser extension) */
+  sourceUrl?: string;
+  /** Page title (from Henry Engage browser extension) */
+  pageTitle?: string;
+  /** Where this was captured from: 'voice' | 'extension' | 'manual' */
+  origin?: 'voice' | 'extension' | 'manual';
 }
 
 interface CapturesState {
@@ -48,7 +54,7 @@ interface CapturesState {
 
   // ── Actions ────────────────────────────────────────────────────────────────
   /** Add a raw text capture (classifies automatically). */
-  addCapture: (text: string) => CapturedNote;
+  addCapture: (text: string, meta?: { sourceUrl?: string; pageTitle?: string; origin?: CapturedNote['origin']; category?: NoteCategory }) => CapturedNote;
   /** Reclassify a capture to a different category. */
   reclassify: (id: string, category: NoteCategory) => void;
   /** Route a capture to a destination (saves + marks as routed). */
@@ -100,14 +106,17 @@ export const useCapturesStore = create<CapturesState>((set, get) => ({
   captures: [],
   isPanelOpen: false,
 
-  addCapture: (text: string) => {
+  addCapture: (text: string, meta?: { sourceUrl?: string; pageTitle?: string; origin?: CapturedNote['origin']; category?: NoteCategory }) => {
     const trimmed = text.trim();
     if (!trimmed) return {} as CapturedNote;
 
-    const category = classifyNote(trimmed);
+    const category = meta?.category ?? classifyNote(trimmed);
     const autoRoutedDest = autoRoute(trimmed, category);
 
     const note: CapturedNote = {
+      ...( meta?.sourceUrl ? { sourceUrl: meta.sourceUrl } : {} ),
+      ...( meta?.pageTitle ? { pageTitle: meta.pageTitle } : {} ),
+      ...( meta?.origin ? { origin: meta.origin } : {} ),
       id: `cap_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       text: trimmed,
       category,
