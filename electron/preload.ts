@@ -299,6 +299,8 @@ contextBridge.exposeInMainWorld('henryAPI', {
   scriptureImport: (entries: Array<Record<string, unknown>>) =>
     ipcRenderer.invoke('scripture:import', { entries }),
   scriptureCount: () => ipcRenderer.invoke('scripture:count'),
+  scriptureDownloadKJV: (books?: string[]) => ipcRenderer.invoke('scripture:downloadKJV', books),
+  scriptureSearch: (q: string) => ipcRenderer.invoke('scripture:search', q),
   pickScriptureImportJson: () => ipcRenderer.invoke('scripture:pickImportJson'),
 
   // ── File System ───────────────────────────────────────────

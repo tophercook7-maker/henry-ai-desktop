@@ -1182,6 +1182,8 @@ const henryAPI: Window['henryAPI'] = {
     const scriptureStore = getStore<Record<string, unknown>>('henry:scripture', {});
     return Object.keys(scriptureStore).length;
   },
+  scriptureDownloadKJV: async (_books?: string[]) => ({ imported: 0, errors: [] as string[], books: 0 }),
+  scriptureSearch: async (_q: string) => ([] as unknown[]),
   pickScriptureImportJson: async () => {
     return { canceled: true, content: null };
   },

@@ -587,7 +587,7 @@ async function handleRequest(
 
   if (path === '/sync/health' && req.method === 'GET') {
     // Health is public — allows mobile to check server is up before pairing
-    let appVersion = '0.7.2';
+    let appVersion = '0.8.3'; // updated each release
     try {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const pkg = require('../../package.json') as { version?: string };
