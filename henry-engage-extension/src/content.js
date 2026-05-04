@@ -63,9 +63,10 @@ function handleCapture() {
     source: window.location.href,
     pageTitle: document.title,
     category: 'quote',
+    process: true,  // Use AI extraction
   };
 
-  chrome.runtime.sendMessage({ type: 'CAPTURE', payload }, (resp) => {
+  chrome.runtime.sendMessage({ type: 'CAPTURE_AND_PROCESS', payload }, (resp) => {
     const inner = floatBtn?.querySelector('#henry-engage-inner');
     if (inner) {
       inner.style.background = resp?.ok ? '#16a34a' : '#dc2626';
@@ -77,6 +78,31 @@ function handleCapture() {
     sel?.removeAllRanges();
   });
 }
+
+// Also add keyboard listener for quick capture (backup if extension command fails)
+document.addEventListener('keydown', (e) => {
+  const isMac = navigator.platform.toLowerCase().includes('mac');
+  const modKey = isMac ? e.metaKey : e.ctrlKey;
+  if (modKey && e.shiftKey && e.code === 'Space') {
+    const sel = window.getSelection();
+    const text = sel?.toString().trim();
+    if (text && text.length > 3) {
+      e.preventDefault();
+      chrome.runtime.sendMessage({
+        type: 'CAPTURE_AND_PROCESS',
+        payload: { text, source: window.location.href, pageTitle: document.title, process: true },
+      }, (resp) => {
+        // Brief flash feedback on the page
+        const flash = document.createElement('div');
+        flash.textContent = resp?.ok ? '⚡ Sent to Henry' : '✗ Henry not running';
+        flash.style.cssText = 'position:fixed;top:20px;right:20px;z-index:2147483647;background:' +
+          (resp?.ok ? '#7c3aed' : '#dc2626') + ';color:white;padding:8px 16px;border-radius:20px;font-size:13px;font-weight:600;font-family:-apple-system,sans-serif;pointer-events:none;box-shadow:0 4px 16px rgba(0,0,0,0.3);';
+        document.body.appendChild(flash);
+        setTimeout(() => flash.remove(), 2000);
+      });
+    }
+  }
+});
 
 // Show button on text selection
 document.addEventListener('mouseup', (e) => {

@@ -368,6 +368,7 @@ declare global {
     syncAddPendingAction?: (action: unknown) => Promise<{ ok: boolean }>;
     syncUpdateNotes?: (notes: unknown[]) => Promise<{ ok: boolean }>;
     syncUpdateSettings?: (settings: Record<string, unknown>) => Promise<{ ok: boolean }>;
+    onQuickExtractResult?: (cb: (result: unknown) => void) => () => void;
     onCompanionCapture?: (cb: (capture: unknown) => void) => () => void;
     onCompanionPrompt?: (cb: (data: unknown) => void) => () => void;
     onCompanionActionDecision?: (cb: (decision: unknown) => void) => () => void;

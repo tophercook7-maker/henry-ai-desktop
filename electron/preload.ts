@@ -384,6 +384,11 @@ contextBridge.exposeInMainWorld('henryAPI', {
   syncUpdateSettings: (settings: Record<string, unknown>) => ipcRenderer.invoke('henry:sync:update-settings', settings),
 
   // Companion events from mobile → desktop renderer
+  onQuickExtractResult: (cb: (result: unknown) => void) => {
+    const handler = (_: IpcRendererEvent, result: unknown) => cb(result);
+    ipcRenderer.on('henry:quick-extract:result', handler);
+    return () => ipcRenderer.removeListener('henry:quick-extract:result', handler);
+  },
   onCompanionCapture: (cb: (capture: unknown) => void) => {
     const handler = (_e: IpcRendererEvent, data: unknown) => cb(data);
     ipcRenderer.on('henry:companion:capture', handler);

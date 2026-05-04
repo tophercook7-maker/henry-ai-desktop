@@ -159,7 +159,32 @@ export default function App() {
     };
 
     const u0 = api.onCompanionDeviceLinked!((device) => bridge('device-linked', device));
-    const u1 = api.onCompanionCapture!((capture: any) => {
+    // Wire AI extraction results → expanded capture with insights
+    const uExtract = api.onQuickExtractResult?.((result: any) => {
+      if (!result?.extracted || !result?.originalText) return;
+      const ex = result.extracted;
+      const nl = '\n';
+      const parts: string[] = [];
+      if (ex.summary) parts.push('📋 ' + ex.summary);
+      if (ex.ideas?.length) parts.push('💡 Ideas:' + nl + (ex.ideas as string[]).map((i) => '• ' + i).join(nl));
+      if (ex.prospects?.length) parts.push('🎯 Prospects:' + nl + (ex.prospects as string[]).map((p) => '• ' + p).join(nl));
+      if (ex.tasks?.length) parts.push('✅ Tasks:' + nl + (ex.tasks as string[]).map((t) => '• ' + t).join(nl));
+      if (ex.insights?.length) parts.push('🔍 Insights:' + nl + (ex.insights as string[]).map((i) => '• ' + i).join(nl));
+      if (ex.quotes?.length) parts.push('💬 Quotes:' + nl + (ex.quotes as string[]).map((q) => '"' + q + '"').join(nl));
+      if (ex.questions?.length) parts.push('❓ Questions:' + nl + (ex.questions as string[]).map((q) => '• ' + q).join(nl));
+      if (parts.length > 0) {
+        const preview = result.originalText.slice(0, 120) + (result.originalText.length > 120 ? '…' : '');
+        const enrichedText = '⚡ Henry extracted from:' + nl + '"' + preview + '"' + nl + nl + parts.join(nl + nl);
+        useCapturesStore.getState().addCapture(enrichedText, {
+          sourceUrl: result.source || undefined,
+          pageTitle: result.pageTitle || 'Quick Extract',
+          origin: 'extension',
+          category: (ex.category as any) || 'note',
+        });
+      }
+    });
+
+        const u1 = api.onCompanionCapture!((capture: any) => {
       bridge('capture', capture);
       // Wire capture directly into CapturesStore so Henry Engage → Captures panel works
       if (capture?.text) {
@@ -180,6 +205,7 @@ export default function App() {
       u1();
       u2();
       u3();
+      uExtract?.();
     };
   }, []);
 

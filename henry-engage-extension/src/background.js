@@ -33,6 +33,12 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId === 'henry-capture-selection') {
     text = info.selectionText || '';
     category = 'quote';
+    // Use processing endpoint for right-click captures too
+    if (text) {
+      sendToHenryProcess({ text, source, category })
+        .then(ok => showNotification(ok ? '⚡ Henry is processing…' : '✗ Henry not running', text.slice(0, 60)));
+      return;
+    }
   } else if (info.menuItemId === 'henry-capture-page') {
     text = `Page: ${tab?.title || source}`;
     category = 'web_clip';
@@ -56,6 +62,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       .catch(e => sendResponse({ ok: false, error: e.message }));
     return true; // async
   }
+  if (msg.type === 'CAPTURE_AND_PROCESS') {
+    sendToHenryProcess(msg.payload)
+      .then(ok => sendResponse({ ok }))
+      .catch(() => sendResponse({ ok: false }));
+    return true; // async
+  }
   if (msg.type === 'CHECK_HENRY') {
     fetch(`${HENRY_URL}/sync/health`, { signal: AbortSignal.timeout(2000) })
       .then(r => r.json())
@@ -64,6 +76,54 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true;
   }
 });
+
+// Handle keyboard shortcuts
+chrome.commands.onCommand.addListener(async (command) => {
+  if (command === 'quick-capture') {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id) return;
+
+    // Get current selection from page
+    chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: () => window.getSelection()?.toString().trim() || '',
+    }, async (results) => {
+      const selectedText = results?.[0]?.result || '';
+      if (selectedText && selectedText.length > 3) {
+        // Has selection — capture and process it
+        const ok = await sendToHenryProcess({
+          text: selectedText,
+          source: tab.url || '',
+          pageTitle: tab.title || '',
+        });
+        showNotification(
+          ok ? '⚡ Henry is processing…' : '✗ Henry not running',
+          ok ? selectedText.slice(0, 60) : 'Make sure Henry AI is open'
+        );
+      } else {
+        // No selection — open popup to let user type
+        chrome.action.openPopup().catch(() => {});
+      }
+    });
+  }
+});
+
+async function sendToHenryProcess(payload) {
+  try {
+    const res = await fetch(`${HENRY_URL}/sync/capture-and-process`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: payload.text,
+        source: payload.source || '',
+        pageTitle: payload.pageTitle || '',
+      }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
 
 async function sendToHenry(payload) {
   const { text, source, category } = payload;

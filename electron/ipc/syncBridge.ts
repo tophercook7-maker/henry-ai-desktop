@@ -1360,6 +1360,124 @@ pairBtn.addEventListener('click', submitManualPair);
     return;
   }
 
+  // ── Capture + AI process — Henry Engage hotkey & clipboard capture ─────────
+  // Receives text, runs it through AI extraction, returns ideas/prospects/tasks
+  if (path === '/sync/capture-and-process' && req.method === 'POST') {
+    const body = await readBody<{ text: string; source?: string; pageTitle?: string; context?: string }>(req);
+    if (!body?.text?.trim()) { jsonResponse(res, 400, { error: 'No text' }); return; }
+
+    const text = body.text.trim().slice(0, 8000);
+    const source = body.source || '';
+    const pageTitle = body.pageTitle || '';
+
+    // First: save the raw capture immediately
+    const rawCapture = { text, source, pageTitle, category: 'auto', fromDevice: deviceId, timestamp: Date.now() };
+    notifyRenderer('henry:companion:capture', rawCapture);
+
+    // Then: run AI extraction asynchronously
+    const dbSettings2 = dbGet<{key:string;value:string}>('SELECT key, value FROM settings');
+    const settingsMap2: Record<string,string> = {};
+    for (const {key,value} of dbSettings2) settingsMap2[key] = value;
+    const dbProviders2 = dbGet<{id:string;api_key:string}>('SELECT id, api_key FROM providers WHERE enabled=1');
+    const groq2 = dbProviders2.find(p => p.id === 'groq');
+    const apiKey2 = groq2?.api_key || '';
+    const ollamaModel = settingsMap2['companion_model'] || 'llama3.2:latest';
+    const useOllama = !apiKey2 && (settingsMap2['companion_provider'] === 'ollama');
+
+    const extractionPrompt = 'You are Henry extraction engine. Analyze this text and extract EVERYTHING useful. Leave nothing out.\n\n' +
+      'TEXT TO ANALYZE:\n' + text + (source ? '\nSource: ' + source : '') +
+      '\n\nExtract and return a JSON object with these fields (empty arrays if none found):\n' +
+      '{\n' +
+      '  "summary": "2-3 sentence summary",\n' +
+      '  "ideas": ["actionable ideas from this text"],\n' +
+      '  "prospects": ["clients, partners, leads, opportunities"],\n' +
+      '  "tasks": ["specific action items or next steps"],\n' +
+      '  "insights": ["key facts, patterns, insights worth remembering"],\n' +
+      '  "quotes": ["notable phrases worth saving exactly"],\n' +
+      '  "questions": ["important questions this raises"],\n' +
+      '  "category": "one of: idea|prospect|task|insight|research|quote|web_clip|note"\n' +
+      '}\n\nReturn ONLY valid JSON, no explanation.';
+
+    // Async — don't make client wait for AI
+    (async () => {
+      try {
+        let extractedText = '';
+        if (apiKey2) {
+          const { default: https2 } = await import('https');
+          const postBody2 = JSON.stringify({
+            model: 'llama-3.1-8b-instant',
+            messages: [{ role: 'user', content: extractionPrompt }],
+            temperature: 0.3,
+            max_tokens: 1200,
+          });
+          await new Promise<void>((resolve) => {
+            const opts2 = {
+              hostname: 'api.groq.com',
+              path: '/openai/v1/chat/completions',
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + apiKey2,
+                'Content-Length': Buffer.byteLength(postBody2),
+              },
+            };
+            const req2 = https2.request(opts2, (r2) => {
+              let data = '';
+              r2.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+              r2.on('end', () => {
+                try {
+                  const parsed = JSON.parse(data);
+                  extractedText = parsed.choices?.[0]?.message?.content || '';
+                } catch { /* ignore */ }
+                resolve();
+              });
+            });
+            req2.on('error', () => resolve());
+            req2.write(postBody2);
+            req2.end();
+          });
+        } else if (useOllama) {
+          const ollamaResp = await fetch('http://127.0.0.1:11434/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model: ollamaModel,
+              messages: [{ role: 'user', content: extractionPrompt }],
+              stream: false,
+              options: { temperature: 0.3 },
+            }),
+            signal: AbortSignal.timeout(30000),
+          }).catch(() => null);
+          if (ollamaResp?.ok) {
+            const od = await ollamaResp.json() as { message?: { content?: string } };
+            extractedText = od.message?.content || '';
+          }
+        }
+
+        if (extractedText) {
+          // Parse JSON extraction
+          const jsonMatch = extractedText.match(/\{[\s\S]+\}/);
+          if (jsonMatch) {
+            try {
+              const extracted = JSON.parse(jsonMatch[0]);
+              // Send extracted insights back to renderer
+              notifyRenderer('henry:quick-extract:result', {
+                originalText: text,
+                source,
+                pageTitle,
+                extracted,
+                timestamp: Date.now(),
+              });
+            } catch { /* JSON parse failed — send raw */ }
+          }
+        }
+      } catch { /* extraction failed — raw capture already saved */ }
+    })();
+
+    jsonResponse(res, 200, { accepted: true, processing: true });
+    return;
+  }
+
   // ── Text prompt ───────────────────────────────────────────────────────
   // ── Intent resolver — stateless helper ────────────────────────────────────
   function resolveIntent(text: string, ctx: DeviceContext): string {

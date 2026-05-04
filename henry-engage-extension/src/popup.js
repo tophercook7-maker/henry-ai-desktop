@@ -65,17 +65,19 @@ sendBtn.addEventListener('click', async () => {
   sendBtn.disabled = true;
   sendBtn.textContent = 'Sending…';
 
+  const useProcess = true; // always use AI processing
   chrome.runtime.sendMessage({
-    type: 'CAPTURE',
+    type: useProcess ? 'CAPTURE_AND_PROCESS' : 'CAPTURE',
     payload: {
       text,
       source: tab?.url || '',
       pageTitle: tab?.title || '',
       category: categoryEl.value,
+      process: true,
     },
   }, (resp) => {
     if (resp?.ok) {
-      sendBtn.textContent = '✓ Sent!';
+      sendBtn.textContent = '⚡ Henry processing…';
       sendBtn.className = 'btn success';
       textInput.value = '';
       setTimeout(() => {

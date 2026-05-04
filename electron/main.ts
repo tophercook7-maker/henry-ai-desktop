@@ -293,6 +293,78 @@ app.whenReady().then(() => {
     }
   });
 
+  // ── Global hotkeys ───────────────────────────────────────────────────────────
+  // ⌘+Shift+H — Henry Quick Capture (system-wide)
+  // Flow: user selects text + ⌘C → then ⌘⇧H → Henry grabs clipboard + processes
+  // OR: user just hits ⌘⇧H with any clipboard content
+  globalShortcut.register('CommandOrControl+Shift+H', async () => {
+    try {
+      const { clipboard } = await import('electron');
+      const text = clipboard.readText().trim();
+      if (!text || text.length < 3) {
+        // Nothing useful in clipboard — just focus Henry
+        const win = getMainWindow();
+        if (win) { win.show(); win.focus(); }
+        return;
+      }
+
+      // Show a brief notification
+      if (Notification.isSupported()) {
+        new Notification({
+          title: 'Henry — Captured',
+          body: text.slice(0, 80) + (text.length > 80 ? '…' : ''),
+          silent: true,
+        }).show();
+      }
+
+      // POST to capture-and-process endpoint
+      const http = await import('http');
+      const postBody = JSON.stringify({ text, source: 'clipboard', context: 'hotkey' });
+      const req = http.default.request({
+        hostname: '127.0.0.1',
+        port: 4242,
+        path: '/sync/capture-and-process',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Henry-Internal': 'true',
+          'Content-Length': Buffer.byteLength(postBody),
+        },
+      }, (res) => { res.resume(); });
+      req.on('error', () => {});
+      req.write(postBody);
+      req.end();
+
+      // Focus Henry and navigate to Captures
+      const win = getMainWindow();
+      if (win) {
+        win.show();
+        win.focus();
+        win.webContents.executeJavaScript(`
+          try {
+            window.dispatchEvent(new CustomEvent('henry_open_capture'));
+            if (window.__useStore) window.__useStore.getState().setCurrentView('captures');
+          } catch {}
+        `).catch(() => {});
+      }
+    } catch (e) {
+      console.error('[Henry] Quick capture hotkey error:', e);
+    }
+  });
+
+  // ⌘+Option+H — Open/focus Henry (existing behavior)
+  globalShortcut.register('CommandOrControl+Alt+H', () => {
+    const win = getMainWindow();
+    if (win) {
+      if (win.isVisible()) { win.focus(); } else { win.show(); win.focus(); }
+    }
+  });
+
+  // Unregister on quit
+  app.on('will-quit', () => {
+    globalShortcut.unregisterAll();
+  });
+
   // Auto-start sync server so companion devices can connect immediately
   startSyncServer(4242);
 
