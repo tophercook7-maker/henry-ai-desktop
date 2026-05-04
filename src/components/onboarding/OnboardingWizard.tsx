@@ -37,7 +37,7 @@ export default function OnboardingWizard({ onComplete }: Props) {
       const api = (window as any).henryAPI;
       if (api?.invoke) await api.invoke('provider:save', { id: 'groq', apiKey: key, enabled: true }).catch(() => {});
       const updated = (providers || []).filter((p: any) => p.id !== 'groq');
-      const newEntry = { id: 'groq', name: 'Groq', apiKey: key, api_key: key, enabled: true, models: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'] };
+      const newEntry = { id: 'groq', name: 'Groq', apiKey: key, api_key: key, enabled: true, models: ['llama-3.3-70b-versatile', 'llama-3.3-70b-versatile'] };
       updated.push(newEntry as any);
       setProviders(updated as any);
       // CRITICAL: write to localStorage so chat immediately works

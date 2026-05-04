@@ -102,7 +102,7 @@ function classifyTier(text: string): { tier: 1 | 2 | 3; reason: string } {
 function getModel(tier: 1 | 2 | 3, settings: Record<string, string>): { provider: string; model: string } {
   if (tier === 1) return {
     provider: settings.chat_fast_provider || settings.companion_provider || 'groq',
-    model:    settings.chat_fast_model    || 'llama-3.1-8b-instant',
+    model:    settings.chat_fast_model    || 'llama-3.3-70b-versatile',
   };
   if (tier === 2) return {
     provider: settings.companion_provider || 'groq',
@@ -133,7 +133,7 @@ export function route(text: string, context: GatewayContext = {}): GatewayResult
 
 // ── Cost tracking ──────────────────────────────────────────────────────────
 const PRICING: Record<string, number> = {
-  'llama-3.1-8b-instant':    0.05  / 1_000_000,
+  'llama-3.1-8b-instant':        0.05  / 1_000_000,
   'llama-3.3-70b-versatile': 0.59  / 1_000_000,
   'gemma2-9b-it':            0.20  / 1_000_000,
   'gpt-4o-mini':             0.15  / 1_000_000,

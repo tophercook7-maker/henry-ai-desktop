@@ -88,7 +88,7 @@ Write a brief P&L summary in 3 sentences: how the month went, biggest expense ar
     try {
       const r = await fetch('https://henry-proxy.henryai.workers.dev/v1/chat', {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Henry-Device': deviceId },
-        body: JSON.stringify({ model: 'llama-3.1-8b-instant', messages: [{ role: 'user', content: prompt }], max_tokens: 250, stream: false }),
+        body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], max_tokens: 250, stream: false }),
       });
       const d = await r.json() as any;
       setPlResult(d?.choices?.[0]?.message?.content || 'No response');
@@ -119,7 +119,7 @@ Write a brief P&L summary in 3 sentences: how the month went, biggest expense ar
     const prompt = ownerName + ' spent $' + summary.expenses.toFixed(0) + ' this month with income of $' + summary.income.toFixed(0) + '. Top expenses: ' + (topExp||'none yet') + '. Net: $' + (summary.income-summary.expenses).toFixed(0) + '. In 2-3 sentences give a helpful financial observation and one actionable tip. Be direct and practical.';
     const deviceId = (() => { let id = localStorage.getItem('henry:device_id'); if (!id) { id = crypto.randomUUID(); localStorage.setItem('henry:device_id', id); } return id; })();
     try {
-      const r = await fetch('https://henry-proxy.henryai.workers.dev/v1/chat', { method:'POST', headers:{'Content-Type':'application/json','X-Henry-Device':deviceId}, body:JSON.stringify({model:'llama-3.1-8b-instant',messages:[{role:'user',content:prompt}],max_tokens:150,stream:false}) });
+      const r = await fetch('https://henry-proxy.henryai.workers.dev/v1/chat', { method:'POST', headers:{'Content-Type':'application/json','X-Henry-Device':deviceId}, body:JSON.stringify({model:'llama-3.3-70b-versatile',messages:[{role:'user',content:prompt}],max_tokens:150,stream:false}) });
       const d = await r.json() as any;
       setInsight(d?.choices?.[0]?.message?.content || '');
     } catch { setInsight('Could not reach Henry AI.'); }

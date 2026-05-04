@@ -185,20 +185,20 @@ export default function Layout() {
             <div className="h-full overflow-y-auto px-5 py-5 max-w-lg space-y-5">
               <div>
                 <h2 className="text-lg font-bold text-henry-text">iPad / iPhone Companion</h2>
-                <p className="text-xs text-henry-text-muted mt-1">Open the link below on any device on your WiFi network.</p>
+                <p className="text-xs text-henry-text-muted mt-1">Connect your iPhone or iPad over WiFi. Generate a pairing code or open the URL directly.</p>
               </div>
 
-              {/* Primary: web companion URL */}
-              <CompanionUrlCard />
+              {/* Primary: QR / pairing code */}
+              <DeviceLinkPanel />
 
-              {/* Secondary: full pairing for native app */}
+              {/* Secondary: direct web URL */}
               <details className="group">
-                <summary className="text-xs text-henry-text-muted cursor-pointer hover:text-henry-text transition-all list-none flex items-center gap-1">
+                <summary className="text-xs text-henry-text-muted cursor-pointer hover:text-henry-text transition-all list-none flex items-center gap-1 pt-2">
                   <span className="group-open:rotate-90 transition-transform inline-block">▶</span>
-                  Advanced: pair a native iOS app
+                  Open web companion directly (no pairing)
                 </summary>
                 <div className="mt-3">
-                  <DeviceLinkPanel />
+                  <CompanionUrlCard />
                 </div>
               </details>
             </div>

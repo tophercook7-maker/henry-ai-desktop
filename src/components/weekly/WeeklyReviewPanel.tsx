@@ -721,7 +721,7 @@ Be encouraging and specific. Keep it under 80 words total.`;
       const r = await fetch('https://henry-proxy.henryai.workers.dev/v1/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Henry-Device': deviceId },
-        body: JSON.stringify({ model: 'llama-3.1-8b-instant', messages: [{ role: 'user', content: prompt }], max_tokens: 300, stream: false }),
+        body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], max_tokens: 300, stream: false }),
       });
       const d = await r.json() as any;
       setWeekSummary(d?.choices?.[0]?.message?.content || 'No response');

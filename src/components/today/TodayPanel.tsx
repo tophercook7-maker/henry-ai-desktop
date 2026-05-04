@@ -202,7 +202,7 @@ export default function TodayPanel() {
       const s = useStore.getState().settings;
       const providers = useStore.getState().providers;
       const provider = s.companion_provider || 'groq';
-      const model = s.companion_model || 'llama-3.1-8b-instant';
+      const model = s.companion_model || 'llama-3.3-70b-versatile';
       const prov = providers.find((p: any) => p.id === provider);
       const apiKey = prov?.apiKey || (prov as any)?.api_key || '';
       const ownerName = localStorage.getItem('henry:owner_name') || 'there';
@@ -240,7 +240,7 @@ Write 2-4 short sentences covering: one encouraging opening, what to focus on to
           const r = await fetch(proxyUrl + '/v1/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-Henry-Device': deviceId },
-            body: JSON.stringify({ model: 'llama-3.1-8b-instant', messages: [{ role: 'user', content: prompt }], max_tokens: 300, stream: false }),
+            body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], max_tokens: 300, stream: false }),
           });
           if (r.ok) {
             const data = await r.json() as any;
@@ -290,7 +290,7 @@ Write 2-4 short sentences covering: one encouraging opening, what to focus on to
       const r = await fetch('https://henry-proxy.henryai.workers.dev/v1/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Henry-Device': deviceId },
-        body: JSON.stringify({ model: 'llama-3.1-8b-instant', messages: [{ role: 'user', content: prompt }], max_tokens: 120, stream: false }),
+        body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], max_tokens: 120, stream: false }),
       });
       const d = await r.json() as any;
       setHenryFocusQ(d?.choices?.[0]?.message?.content || '');
@@ -353,7 +353,7 @@ Write 2-4 short sentences covering: one encouraging opening, what to focus on to
       const r = await fetch('https://henry-proxy.henryai.workers.dev/v1/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Henry-Device': deviceId },
-        body: JSON.stringify({ model: 'llama-3.1-8b-instant', messages: [{ role: 'user', content: prompt }], max_tokens: 350, stream: false }),
+        body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], max_tokens: 350, stream: false }),
       });
       const d = await r.json() as any;
       setPlannerResult(d?.choices?.[0]?.message?.content || 'No response');
@@ -410,7 +410,7 @@ Keep it brief and encouraging.`;
       const r = await fetch('https://henry-proxy.henryai.workers.dev/v1/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Henry-Device': deviceId },
-        body: JSON.stringify({ model: 'llama-3.1-8b-instant', messages: [{ role: 'user', content: prompt }], max_tokens: 350, stream: false }),
+        body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], max_tokens: 350, stream: false }),
       });
       const d = await r.json() as any;
       setReportText(d?.choices?.[0]?.message?.content || 'No response');

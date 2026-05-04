@@ -123,7 +123,7 @@ export default function CRMPanel() {
       const r = await fetch('https://henry-proxy.henryai.workers.dev/v1/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Henry-Device': deviceId },
-        body: JSON.stringify({ model: 'llama-3.1-8b-instant', messages: [{ role: 'user', content: prompt }], max_tokens: 600, stream: false }),
+        body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], max_tokens: 600, stream: false }),
       });
       const d = await r.json() as any;
       setBulkResult(d?.choices?.[0]?.message?.content || 'No response');

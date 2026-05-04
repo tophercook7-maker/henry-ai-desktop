@@ -950,7 +950,7 @@ async function handleRequest(
         if (apiKey2) {
           const { default: https2 } = await import('https');
           const postBody2 = JSON.stringify({
-            model: 'llama-3.1-8b-instant',
+            model: 'llama-3.3-70b-versatile',
             messages: [{ role: 'user', content: extractionPrompt }],
             temperature: 0.3,
             max_tokens: 1200,

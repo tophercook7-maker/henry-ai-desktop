@@ -675,7 +675,7 @@ const ACTIONS = [
   { icon: '🔊', label: 'Unmute', cmd: "osascript -e 'set volume output muted false'" },
   { icon: '📸', label: 'Screenshot', cmd: "screencapture ~/Desktop/HenryCapture_$(date +%Y%m%d_%H%M%S).png" },
   { icon: '🔒', label: 'Lock Screen', cmd: "pmset displaysleepnow" },
-  { icon: '🧹', label: 'Empty Trash', cmd: "osascript -e 'tell application \"Finder\" to empty trash'" },
+  { icon: '🧹', label: 'Empty Trash', cmd: "osascript -e 'tell application Finder to empty trash'" },
   { icon: '📋', label: 'Show Clipboard', cmd: "pbpaste | head -5" },
   { icon: '🔄', label: 'Restart Dock', cmd: "killall Dock" },
   { icon: '📡', label: 'Show IP', cmd: "curl -s ifconfig.me" },
@@ -689,7 +689,7 @@ function buildAppGrid() {
 
 function buildActionGrid() {
   document.getElementById('action-grid').innerHTML = ACTIONS.map(a =>
-    \`<div class="act-btn" onclick="runCmd(\\\`\${a.cmd}\\\`)"><span class="ai2">\${a.icon}</span>\${a.label}</div>\`
+    \`<div class="act-btn" onclick="runCmd(this.dataset.cmd)" data-cmd="\${a.cmd.replace(/"/g,'&quot;')}"><span class="ai2">\${a.icon}</span>\${a.label}</div>\`
   ).join('');
 }
 
@@ -708,14 +708,14 @@ async function openApp(name) {
 
 async function runCmd(cmd) {
   const out = document.getElementById('shell-out');
-  out.textContent = '$ ' + cmd.slice(0, 60) + (cmd.length > 60 ? '…' : '') + '\n…';
+  out.textContent = '$ ' + cmd.slice(0, 60) + (cmd.length > 60 ? '...' : '') + '\\n...';
   try {
     const d = await fetch(BASE + '/sync/mac/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ command: cmd }),
     }).then(r => r.json());
-    out.textContent = '$ ' + cmd + '\n' + (d.output || '(done)');
+    out.textContent = '$ ' + cmd + '\\n' + (d.output || '(done)');
   } catch { out.textContent = '⚠ Error'; }
 }
 
@@ -805,7 +805,7 @@ async function lookupVerse(ref) {
   } catch {
     // Fallback: try scripture lookup IPC via sync
     textEl.textContent = r.status === 401
-        ? '⚠ Could not connect to Henry. Open Henry on your Mac and make sure you\'re on the same WiFi, then reload this page.'
+        ? '⚠ Could not connect to Henry. Open Henry on your Mac and make sure you are on the same WiFi, then reload this page.'
         : '⚠ Verse not found. Try downloading the KJV first (✝ Scripture → 📥 Import in the desktop app).';
   }
 }
@@ -831,8 +831,7 @@ async function studyWith(prompt) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        text: 'Study this passage: "' + currentVerseRef + '" — ' + currentVerseText + '\n\nQuestion: ' + prompt,
-        source: 'companion-study',
+   text: 'Study this passage: "' + currentVerseRef + '" ' + currentVerseText + ' Question: ' + prompt,
       }),
     });
     const d = await r.json();

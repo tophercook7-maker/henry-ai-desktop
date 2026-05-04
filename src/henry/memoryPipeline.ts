@@ -103,7 +103,7 @@ Return ONLY valid JSON like: [{"fact":"Name: Topher","category":"person","import
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
       body: JSON.stringify({
-        model: 'llama-3.1-8b-instant',
+        model: 'llama-3.3-70b-versatile',
         messages: [{ role: 'user', content: prompt }],
         max_tokens: 400,
         temperature: 0.1,

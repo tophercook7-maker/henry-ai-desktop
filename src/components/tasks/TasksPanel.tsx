@@ -64,7 +64,7 @@ export default function TasksPanel() {
       const res = await fetch('https://henry-proxy.henryai.workers.dev/v1/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Henry-Device': deviceId },
-        body: JSON.stringify({ model: 'llama-3.1-8b-instant', messages: [{ role: 'user', content: prompt }], max_tokens: 300, stream: false }),
+        body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], max_tokens: 300, stream: false }),
       });
       const data = await res.json() as any;
       setTriageResult(data?.choices?.[0]?.message?.content || 'No response');

@@ -213,7 +213,7 @@ function estimateUsage(
     (params.messages || []).reduce((s, m) => s + (m.content || '').length, 0) / 4
   );
   const MODEL_RATES: Record<string, [number, number]> = {
-    'llama-3.1-8b-instant':      [0.06,  0.08],
+    'llama-3.1-8b-instant':          [0.06,  0.08],
     'llama-3.3-70b-versatile':   [0.59,  0.79],
     'llama-4-scout-17b-16e-instruct': [0.11, 0.34],
     'gpt-4o':                    [2.5,  10.0],

@@ -109,7 +109,7 @@ export const AVAILABLE_MODELS: AIModel[] = [
 
   // ── Groq — ultra-fast inference (LPU) ─────────────
   {
-    id: 'llama-3.1-8b-instant',
+    id: 'llama-3.3-70b-versatile',
     name: 'LLaMA 3.1 8B Instant ⚡',
     provider: 'groq',
     contextWindow: 128000,

@@ -39,7 +39,7 @@ const CLOUD_OPTIONS: CloudOption[] = [
     freeLabel: 'Completely free',
     desc: 'LLaMA 3.1 8B everyday · 70B second brain — no credit card',
     placeholder: 'gsk_…',
-    defaultModel: 'llama-3.1-8b-instant',
+    defaultModel: 'llama-3.3-70b-versatile',
     keyUrl: 'https://console.groq.com/keys',
     recommended: true,
   },
@@ -255,13 +255,13 @@ function DesktopProviderStep({ onNext, onBack }: ProviderStepProps) {
           await window.henryAPI.saveSetting('companion_provider_2', 'groq');
           await window.henryAPI.saveSetting('worker_model', 'llama-3.3-70b-versatile');
           await window.henryAPI.saveSetting('worker_provider', 'groq');
-          await window.henryAPI.saveSetting('chat_fast_model', 'llama-3.1-8b-instant');
+          await window.henryAPI.saveSetting('chat_fast_model', 'llama-3.3-70b-versatile');
           await window.henryAPI.saveSetting('chat_fast_provider', 'groq');
           updateSetting('companion_model_2', 'llama-3.3-70b-versatile');
           updateSetting('companion_provider_2', 'groq');
           updateSetting('worker_model', 'llama-3.3-70b-versatile');
           updateSetting('worker_provider', 'groq');
-          updateSetting('chat_fast_model', 'llama-3.1-8b-instant');
+          updateSetting('chat_fast_model', 'llama-3.3-70b-versatile');
           updateSetting('chat_fast_provider', 'groq');
         } else {
           await window.henryAPI.saveSetting('worker_model', selectedCloud.defaultModel);

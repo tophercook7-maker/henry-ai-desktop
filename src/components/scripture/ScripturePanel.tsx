@@ -59,7 +59,7 @@ async function henryStudy(passage: string, text: string, prompt: string, provide
       fetch('https://henry-proxy.henryai.workers.dev/v1/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Henry-Device': deviceId },
-        body: JSON.stringify({ model: 'llama-3.1-8b-instant', messages: [{ role: 'system', content: sys }, { role: 'user', content: userMsg }], max_tokens: 600, stream: false }),
+        body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'system', content: sys }, { role: 'user', content: userMsg }], max_tokens: 600, stream: false }),
       }).then(r => r.json()).then((d: any) => {
         const content = d?.choices?.[0]?.message?.content || '';
         if (d?.error?.type === 'rate_limit') resolve('Daily limit reached. Add your Groq key in Settings → AI Providers for unlimited Bible study.');
@@ -71,7 +71,7 @@ async function henryStudy(passage: string, text: string, prompt: string, provide
   const provider = groq ? 'groq' : 'ollama';
   const apiKey = provider === 'groq' ? (groq?.api_key || groq?.apiKey || '') : '';
   const model = provider === 'groq'
-    ? (settings?.chat_fast_model || 'llama-3.1-8b-instant')
+    ? (settings?.chat_fast_model || 'llama-3.3-70b-versatile')
     : (settings?.companion_model || 'llama3.2:latest');
   const ollamaUrl = settings?.ollama_base_url || 'http://127.0.0.1:11434';
 

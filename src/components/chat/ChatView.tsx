@@ -1579,7 +1579,7 @@ export default function ChatView() {
                     'X-Henry-License': licenseKey,
                     'X-Henry-Version': '0.7.9',
                   },
-                  body: JSON.stringify({ model: 'llama-3.1-8b-instant', messages: messagesPayloadGroq, max_tokens: 1024, stream: true }),
+                  body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: messagesPayloadGroq, max_tokens: 1024, stream: true }),
                   signal: ctrl.signal,
                 });
                 if (!r.ok) {

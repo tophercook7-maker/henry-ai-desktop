@@ -72,7 +72,7 @@ async function callHenryAI(prompt: string, context: string, settings: Record<str
   const res = await fetch(url, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ model: useProxy ? 'llama-3.1-8b-instant' : model, messages, max_tokens: 1200, temperature: 0.6 })
+    body: JSON.stringify({ model: useProxy ? 'llama-3.3-70b-versatile' : model, messages, max_tokens: 1200, temperature: 0.6 })
   });
 
   if (!res.ok) {

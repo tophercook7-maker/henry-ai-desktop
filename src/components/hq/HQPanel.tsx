@@ -150,7 +150,7 @@ export default function HQPanel() {
     let fullText = '';
     const stream = api.streamMessage({
       provider: s.companion_provider || 'groq',
-      model: s.companion_model || 'llama-3.1-8b-instant',
+      model: s.companion_model || 'llama-3.3-70b-versatile',
       apiKey,
       messages: [
         { role: 'system', content: systemPrompt },
