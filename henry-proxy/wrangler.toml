@@ -1,0 +1,16 @@
+name = "henry-proxy"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+[vars]
+# GROQ_API_KEY set via: wrangler secret put GROQ_API_KEY
+
+[[kv_namespaces]]
+binding = "HENRY_KV"
+id = "REPLACE_WITH_KV_ID"
+
+[env.production]
+name = "henry-proxy"
+
+[env.staging]
+name = "henry-proxy-staging"

@@ -317,6 +317,12 @@ function resumeModeLabel(m: HenryOperatingMode): string {
   return m.charAt(0).toUpperCase() + m.slice(1);
 }
 
+
+// Henry Cloud Proxy — provides AI access without a personal API key
+// Users get 50 free requests/day. Pro users get 2000/day with a license key.
+const HENRY_PROXY_URL = (import.meta as any).env?.VITE_HENRY_PROXY_URL || 'https://henry-proxy.tophercook7-maker.workers.dev';
+const HENRY_PROXY_ENABLED = true; // Enable cloud proxy as fallback
+
 export default function ChatView() {
   const {
     messages,
@@ -1510,7 +1516,19 @@ export default function ChatView() {
 
     // LEAN PROMPT: for Groq free tier AND Ollama — bypass the full 12k-token charter
     // Groq free tier: 12-20k TPM limit. Ollama: no limit but faster with lean prompt.
+    // Henry Cloud Proxy: use when no personal key is configured
     const useLeanPrompt = companionProvider === 'groq' || companionProvider === 'ollama';
+
+    // Use Henry Cloud Proxy if no personal Groq key is set
+    let effectiveApiKey = apiKey;
+    let effectiveProvider = companionProvider;
+    let effectiveModel = companionModel;
+    let useProxy = false;
+    if (companionProvider === 'groq' && (!apiKey || apiKey.length < 10) && HENRY_PROXY_ENABLED) {
+      useProxy = true;
+      effectiveApiKey = 'henry-proxy'; // placeholder, proxy uses its own key
+    }
+
     if (useLeanPrompt) {
       const minimalSys = buildGroqFreeSystemPrompt(effectiveMode);
       const messagesPayloadGroq: HenryAIMessage[] = [
@@ -1533,14 +1551,77 @@ export default function ChatView() {
         }
         messagesPayloadGroq.splice(0, messagesPayloadGroq.length, sys0, ...kept, last);
       }
-      const groqStream = window.henryAPI.streamMessage({
-        provider: companionProvider,
-        model: companionModel,
-        apiKey,
-        messages: messagesPayloadGroq,
-        temperature: 0.7,
-        maxTokens: 1024,
-      });
+      // Route through Henry Cloud Proxy if no personal key
+      const groqStream = useProxy
+        ? (() => {
+            // Direct fetch to Henry proxy (streaming)
+            const ctrl = new AbortController();
+            const deviceId = (() => {
+              try {
+                let id = localStorage.getItem('henry:device_id');
+                if (!id) { id = crypto.randomUUID(); localStorage.setItem('henry:device_id', id); }
+                return id;
+              } catch { return 'unknown'; }
+            })();
+            const licenseKey = localStorage.getItem('henry:license_key') || '';
+            let chunkCb: ((c: string) => void) | undefined;
+            let doneCb: ((t: string) => void) | undefined;
+            let errCb: ((e: string) => void) | undefined;
+            void (async () => {
+              try {
+                const r = await fetch(HENRY_PROXY_URL + '/v1/chat', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'X-Henry-Device': deviceId,
+                    'X-Henry-License': licenseKey,
+                    'X-Henry-Version': '0.7.9',
+                  },
+                  body: JSON.stringify({ model: 'llama-3.1-8b-instant', messages: messagesPayloadGroq, max_tokens: 1024, stream: true }),
+                  signal: ctrl.signal,
+                });
+                if (!r.ok) {
+                  const errData = await r.json().catch(() => ({ error: { message: 'Proxy error ' + r.status } })) as any;
+                  const msg = errData.error?.message || 'Proxy error ' + r.status;
+                  if (r.status === 429) {
+                    errCb?.('**Henry free tier limit reached** (50 requests/day).\n\n→ Add your Groq key in Settings → AI Providers for unlimited use\n→ Or upgrade to Henry Pro at henry.ai');
+                  } else {
+                    errCb?.(msg);
+                  }
+                  return;
+                }
+                const reader = r.body!.getReader(); const dec = new TextDecoder();
+                let full = '';
+                while (true) {
+                  const { done, value } = await reader.read();
+                  if (done) break;
+                  const text = dec.decode(value);
+                  for (const line of text.split('\n').filter(l => l.startsWith('data: '))) {
+                    const d = line.slice(6).trim();
+                    if (d === '[DONE]') { doneCb?.(full); return; }
+                    try { const p = JSON.parse(d); const c = p.choices?.[0]?.delta?.content || ''; if (c) { full += c; chunkCb?.(c); } } catch { }
+                  }
+                }
+                doneCb?.(full);
+              } catch (e: any) {
+                if (e.name !== 'AbortError') errCb?.(e.message || 'Proxy connection failed');
+              }
+            })();
+            return {
+              onChunk: (cb: (c: string) => void) => { chunkCb = cb; },
+              onDone: (cb: (t: string) => void) => { doneCb = cb; },
+              onError: (cb: (e: string) => void) => { errCb = cb; },
+              cancel: () => ctrl.abort(),
+            };
+          })()
+        : window.henryAPI.streamMessage({
+            provider: companionProvider,
+            model: companionModel,
+            apiKey,
+            messages: messagesPayloadGroq,
+            temperature: 0.7,
+            maxTokens: 1024,
+          });
       streamRef.current = groqStream;
       groqStream.onChunk((chunk: string) => { appendStreamingContent(chunk); });
       groqStream.onError((error: string) => {

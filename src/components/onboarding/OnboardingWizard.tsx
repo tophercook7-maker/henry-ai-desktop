@@ -7,8 +7,8 @@ export function shouldShowOnboarding(): boolean {
 }
 
 interface Props { onComplete: () => void }
-type Step = 'welcome' | 'groq' | 'permissions' | 'mobile' | 'done';
-const STEPS: Step[] = ['welcome', 'groq', 'permissions', 'mobile', 'done'];
+type Step = 'welcome' | 'name' | 'ai' | 'permissions' | 'done';
+const STEPS: Step[] = ['welcome', 'name', 'ai', 'permissions', 'done'];
 
 export default function OnboardingWizard({ onComplete }: Props) {
   const { setProviders, providers } = useStore();
@@ -22,7 +22,7 @@ export default function OnboardingWizard({ onComplete }: Props) {
   const stepIdx = STEPS.indexOf(step);
 
   useEffect(() => {
-    if (step !== 'mobile') return;
+    if (step !== 'done') return; // tunnel check on last step
     fetch('http://127.0.0.1:4242/sync/tunnel-url').then(r => r.json()).then(d => { if (d.url) setTunnelUrl(d.url); }).catch(() => {});
     fetch('http://127.0.0.1:4242/sync/state-internal', { headers: { 'X-Henry-Internal': 'true' } }).then(r => r.json()).then(d => {
       const ip = d?.localIp || '192.168.x.x'; setLocalUrl('http://' + ip + ':4242');
@@ -86,30 +86,7 @@ export default function OnboardingWizard({ onComplete }: Props) {
           </div>
         )}
 
-        {step === 'groq' && (
-          <div className="space-y-5">
-            <div className="text-center"><p className="text-4xl mb-3">🔑</p>
-              <h2 className="text-2xl font-bold text-white">Connect Henry's Brain</h2>
-              <p className="text-white/50 text-sm mt-2">Groq gives you the fastest free AI on the market. Get your key in 60 seconds.</p>
-            </div>
-            <div className="bg-henry-accent/10 border border-henry-accent/20 rounded-xl p-4 space-y-1.5">
-              {['Free tier: 30 req/min, plenty for daily use','llama-3.3-70b — GPT-4 quality, free','< 1 second responses','Your key, your data — never proxied'].map(t => (
-                <p key={t} className="text-white/50 text-xs flex gap-2"><span className="text-henry-accent">✓</span>{t}</p>
-              ))}
-            </div>
-            <div>
-              <label className="text-[10px] uppercase tracking-wider text-white/30 mb-1.5 block">Groq API Key</label>
-              <input value={groqKey} onChange={e => { setGroqKey(e.target.value); setKeyError(''); }} placeholder="gsk_..." className={inp} />
-              {keyError && <p className="text-red-400 text-xs mt-1">{keyError}</p>}
-            </div>
-            <button onClick={() => { try { (window as any).open('https://console.groq.com/keys'); } catch { } }}
-              className="w-full py-2.5 rounded-xl border border-henry-accent/30 text-henry-accent text-sm font-medium hover:bg-henry-accent/10 transition-all">
-              Get free key at console.groq.com →
-            </button>
-            <button onClick={saveGroqKey} disabled={saving || !groqKey} className={primary}>{saving ? 'Saving…' : 'Save & Continue →'}</button>
-            <button onClick={next} className="w-full text-center text-white/30 text-xs hover:text-white/50 transition-all mt-2">Skip for now (add in Settings later)</button>
-          </div>
-        )}
+
 
         {step === 'permissions' && (
           <div className="space-y-5">
@@ -133,7 +110,7 @@ export default function OnboardingWizard({ onComplete }: Props) {
           </div>
         )}
 
-        {step === 'mobile' && (
+        {false && step === 'done' && false && (
           <div className="space-y-5">
             <div className="text-center"><p className="text-4xl mb-3">📱</p>
               <h2 className="text-2xl font-bold text-white">Henry on Your Phone</h2>
