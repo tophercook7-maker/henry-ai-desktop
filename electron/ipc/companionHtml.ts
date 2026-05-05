@@ -422,6 +422,10 @@ function showTab(id) {
   document.getElementById('p-' + id).classList.add('on');
   if (id === 'screen') startScreenRefresh();
   else stopScreenRefresh();
+  if (id === 'rem') loadReminders();
+  if (id === 'tasks') loadTasks();
+  if (id === 'goals') loadGoals();
+  if (id === 'fin') loadFinance();
 }
 
 function phoneTo(id) {
@@ -433,8 +437,11 @@ function phoneTo(id) {
     chatCol.classList.add('active'); rightCol.classList.remove('active');
   } else {
     chatCol.classList.remove('active'); rightCol.classList.add('active');
-    const tabMap = { today: 'today', screen: 'screen', ctrl: 'ctrl', cap: 'cap', bible: 'bible' };
+    const tabMap = { today: 'today', screen: 'screen', ctrl: 'ctrl', cap: 'cap', bible: 'bible', rem: 'rem', tasks: 'tasks', goals: 'goals', fin: 'fin', bible: 'bible' };
     if (tabMap[id]) showTab(tabMap[id]);
+    if (id === 'rem') loadReminders();
+    if (id === 'tasks') loadTasks();
+    if (id === 'goals') loadGoals();
   }
 }
 
@@ -814,6 +821,102 @@ async function studyPassage() {
   const prompt = document.getElementById('study-prompt-in').value.trim();
   if (!prompt || !currentVerseText) return;
   studyWith(prompt);
+}
+
+// ── REMINDERS ──────────────────────────────────────────────────────────────────
+async function loadReminders() {
+  try {
+    const d = await fetch(BASE + '/sync/mac/reminders').then(r => r.json());
+    const rems = d.reminders || [];
+    document.getElementById('rem-count').textContent = String(rems.length);
+    const el = document.getElementById('rem-list');
+    if (!rems.length) { el.innerHTML = '<div class="empty-msg">No due reminders</div>'; return; }
+    el.innerHTML = rems.map(r => {
+      const t = r.due_at ? new Date(r.due_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '';
+      const dateStr = r.due_at ? new Date(r.due_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
+      return '<div class="rem-row"><span class="rem-icon">⏰</span><div style="flex:1"><div class="rem-title">' + r.title + '</div>' + (t ? '<div class="rem-time">' + dateStr + ' ' + t + '</div>' : '') + '</div></div>';
+    }).join('');
+  } catch { document.getElementById('rem-list').innerHTML = '<div class="empty-msg">Could not load</div>'; }
+}
+
+// ── TASKS ────────────────────────────────────────────────────────────────────
+async function loadTasks() {
+  try {
+    const d = await fetch(BASE + '/sync/mac/tasks').then(r => r.json());
+    const tasks = d.tasks || [];
+    const el = document.getElementById('task-list');
+    if (!tasks.length) { el.innerHTML = '<div class="empty-msg">No open tasks</div>'; return; }
+    el.innerHTML = tasks.map(t => {
+      const priColor = t.priority >= 3 ? '#ef4444' : t.priority === 2 ? '#f59e0b' : '#6b7280';
+      return '<div class="task-row2"><div class="task-check" onclick="completeTask(' + "'" + t.id + "'" + ')"></div><div class="task-pri-dot" style="background:' + priColor + '"></div><span style="flex:1;font-size:14px;color:var(--text)">' + t.title + '</span></div>';
+    }).join('');
+  } catch { document.getElementById('task-list').innerHTML = '<div class="empty-msg">Could not load</div>'; }
+}
+
+function showAddTask() {
+  const row = document.getElementById('add-task-row');
+  row.style.display = row.style.display === 'none' ? 'flex' : 'none';
+  if (row.style.display === 'flex') document.getElementById('task-in').focus();
+}
+
+async function addTask() {
+  const inp = document.getElementById('task-in');
+  const title = inp.value.trim();
+  if (!title) return;
+  try {
+    await fetch(BASE + '/sync/mac/tasks/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, priority: 2 }),
+    });
+    inp.value = '';
+    document.getElementById('add-task-row').style.display = 'none';
+    await loadTasks();
+  } catch { alert('Could not add task'); }
+}
+
+async function completeTask(id) {
+  try {
+    await fetch(BASE + '/sync/mac/tasks/complete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    });
+    await loadTasks();
+  } catch { /* ignore */ }
+}
+
+// ── GOALS ────────────────────────────────────────────────────────────────────
+async function loadGoals() {
+  try {
+    const d = await fetch(BASE + '/sync/mac/goals').then(r => r.json());
+    const goals = d.goals || [];
+    document.getElementById('goals-count').textContent = String(goals.length);
+    const el = document.getElementById('goals-list');
+    if (!goals.length) { el.innerHTML = '<div class="empty-msg">No active goals</div>'; return; }
+    el.innerHTML = goals.map(g => {
+      const score = Math.round((g.priority_score || 0) * 10);
+      return '<div class="goal-row"><div class="goal-title">' + g.title + '</div>' + (g.summary ? '<div style="font-size:12px;color:var(--muted);margin-bottom:6px">' + g.summary.slice(0,80) + '</div>' : '') + '<div class="goal-bar-wrap"><div class="goal-bar" style="width:' + score + '%"></div></div><div style="font-size:10px;color:var(--muted);margin-top:3px">Priority: ' + score + '/10</div></div>';
+    }).join('');
+  } catch { document.getElementById('goals-list').innerHTML = '<div class="empty-msg">Could not load</div>'; }
+}
+
+// ── FINANCE ──────────────────────────────────────────────────────────────────
+async function loadFinance() {
+  try {
+    const d = await fetch(BASE + '/sync/mac/finance').then(r => r.json());
+    const recent = d.trends || [];
+    const latest = recent[recent.length - 1] || {};
+    const sumEl = document.getElementById('fin-summary');
+    sumEl.innerHTML = [
+      { label: 'Income', amount: latest.income || 0, cls: 'pos' },
+      { label: 'Expenses', amount: latest.expenses || 0, cls: 'neg' },
+      { label: 'Net', amount: (latest.income || 0) - (latest.expenses || 0), cls: ((latest.income||0)-(latest.expenses||0)) >= 0 ? 'pos' : 'neg' },
+    ].map(c => '<div class="fin-card"><div class="fin-card-label">' + c.label + '</div><div class="fin-card-amount ' + c.cls + '">$' + Math.abs(c.amount).toFixed(0) + '</div></div>').join('');
+    document.getElementById('fin-list').innerHTML = recent.slice(-3).reverse().map(m =>
+      '<div style="padding:10px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between"><span style="font-size:13px;color:var(--muted)">' + m.month + '</span><span style="font-size:13px;color:' + (m.net >= 0 ? '#22c55e' : '#ef4444') + ';font-weight:700">' + (m.net >= 0 ? '+' : '') + '$' + m.net.toFixed(0) + '</span></div>'
+    ).join('');
+  } catch { /* ignore */ }
 }
 
 async function studyWith(prompt) {

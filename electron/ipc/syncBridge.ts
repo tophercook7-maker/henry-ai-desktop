@@ -792,6 +792,8 @@ async function handleRequest(
     '/sync/prompt', '/sync/mac/today', '/sync/mac/screen',
     '/sync/mac/habit-toggle', '/sync/mac/run', '/sync/mac/open-app',
     '/sync/capture-and-process', '/sync/capture', '/sync/mac/finance',
+    '/sync/mac/reminders', '/sync/mac/tasks', '/sync/mac/tasks/create',
+    '/sync/mac/goals', '/sync/mac/tasks/complete',
   ];
   if (companionWebPaths.some(p => path === p) && req.method !== undefined) {
     // Allow through — companion web page handles these without a paired token
@@ -1457,6 +1459,56 @@ async function handleRequest(
   }
 
   // Finance summary for companion
+  if (path === '/sync/mac/reminders' && req.method === 'GET') {
+    const rows = dbGet<Record<string,unknown>>(
+      "SELECT * FROM reminders WHERE done=0 ORDER BY due_at ASC LIMIT 20"
+    );
+    jsonResponse(res, 200, { reminders: rows });
+    return;
+  }
+
+  if (path === '/sync/mac/tasks' && req.method === 'GET') {
+    const rows = dbGet<Record<string,unknown>>(
+      "SELECT id,title,priority,status,due_at,created_at FROM tasks WHERE status!='done' ORDER BY priority DESC,created_at DESC LIMIT 20"
+    );
+    jsonResponse(res, 200, { tasks: rows });
+    return;
+  }
+
+  if (path === '/sync/mac/tasks/create' && req.method === 'POST') {
+    const body = await readBody(req);
+    let data: Record<string,unknown> = {};
+    try { data = JSON.parse(String(body)); } catch { jsonResponse(res, 400, { error: 'Invalid JSON' }); return; }
+    const id = String(data.id || crypto.randomUUID());
+    const title = String(data.title || '').trim();
+    if (!title) { jsonResponse(res, 400, { error: 'title required' }); return; }
+    dbRun(
+      "INSERT INTO tasks (id,title,priority,status,created_at,updated_at) VALUES (?,?,?,?,?,?)",
+      id, title, Number(data.priority) || 2, 'todo', new Date().toISOString(), new Date().toISOString()
+    );
+    jsonResponse(res, 200, { id, title });
+    return;
+  }
+
+  if (path === '/sync/mac/tasks/complete' && req.method === 'POST') {
+    const body = await readBody(req);
+    let data: Record<string,unknown> = {};
+    try { data = JSON.parse(String(body)); } catch { jsonResponse(res, 400, { error: 'Invalid JSON' }); return; }
+    const id = String(data.id || '');
+    if (!id) { jsonResponse(res, 400, { error: 'id required' }); return; }
+    dbRun("UPDATE tasks SET status='done',updated_at=? WHERE id=?", new Date().toISOString(), id);
+    jsonResponse(res, 200, { ok: true });
+    return;
+  }
+
+  if (path === '/sync/mac/goals' && req.method === 'GET') {
+    const rows = dbGet<Record<string,unknown>>(
+      "SELECT id,title,status,priority_score,summary FROM goals WHERE status='active' ORDER BY priority_score DESC LIMIT 10"
+    );
+    jsonResponse(res, 200, { goals: rows });
+    return;
+  }
+
   if (path === '/sync/mac/finance' && req.method === 'GET') {
     try {
       const months = Array.from({length: 4}, (_, i) => {
