@@ -40,6 +40,7 @@ jobs:
           hdiutil detach "/Volumes/Henry AI 1" 2>/dev/null || true
 
       - name: Build Mac DMG (unsigned)
+        timeout-minutes: 8
         run: npm run build:mac:unsigned
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

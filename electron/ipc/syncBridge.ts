@@ -592,7 +592,7 @@ async function handleRequest(
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     return (require('../../package.json') as { version: string }).version;
   } catch {
-    return '0.9.3';
+    return '1.0.2';
   }
 })();
     try {

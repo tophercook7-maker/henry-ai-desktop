@@ -113,12 +113,65 @@ Write a brief P&L summary in 3 sentences: how the month went, biggest expense ar
     try { return JSON.parse(localStorage.getItem('henry:budgets') || '{}'); } catch { return {}; }
   });
   const [showBudgets, setShowBudgets] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importMsg, setImportMsg] = useState('');
   const [insightBusy, setInsightBusy] = useState(false);
 
   function saveBudget(category: string, limit: number) {
     const updated = { ...budgets, [category]: limit };
     setBudgets(updated);
     localStorage.setItem('henry:budgets', JSON.stringify(updated));
+  }
+
+  async function importCSV(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    setImportMsg('');
+    const text = await file.text();
+    const lines = text.split('\n').filter(Boolean);
+    const header = lines[0].toLowerCase();
+    // Auto-detect columns: date, description, amount, type
+    const cols = header.split(',').map(h => h.replace(/"/g,'').trim());
+    const dateIdx = cols.findIndex(c => c.includes('date') || c.includes('posted'));
+    const descIdx = cols.findIndex(c => c.includes('desc') || c.includes('memo') || c.includes('payee') || c.includes('detail'));
+    const amtIdx = cols.findIndex(c => c.includes('amount') || c.includes('debit') || c.includes('credit'));
+    if (dateIdx < 0 || amtIdx < 0) {
+      setImportMsg('Could not detect columns. Need Date, Description, Amount columns.');
+      setImporting(false);
+      return;
+    }
+    let imported = 0;
+    const api2 = (window as any).henryAPI;
+    for (let i = 1; i < lines.length; i++) {
+      const parts = lines[i].split(',').map(p => p.replace(/^"|"$/g,'').trim());
+      if (parts.length <= amtIdx) continue;
+      const rawAmt = parseFloat(parts[amtIdx]?.replace(/[$,]/g,'') || '0');
+      if (isNaN(rawAmt) || rawAmt === 0) continue;
+      const amount = Math.abs(rawAmt);
+      const type = rawAmt < 0 ? 'expense' : 'income';
+      const description = descIdx >= 0 ? parts[descIdx] : '';
+      const rawDate = parts[dateIdx] || '';
+      const date = rawDate.includes('/') ?
+        rawDate.split('/').length === 3 ?
+          (rawDate.split('/')[2].length === 4 ?
+            rawDate.split('/')[2] + '-' + rawDate.split('/')[0].padStart(2,'0') + '-' + rawDate.split('/')[1].padStart(2,'0') :
+            '20' + rawDate.split('/')[2] + '-' + rawDate.split('/')[0].padStart(2,'0') + '-' + rawDate.split('/')[1].padStart(2,'0'))
+          : rawDate : rawDate.slice(0,10);
+      await api2.financeCreate?.({
+        id: crypto.randomUUID(),
+        date, description, amount, type,
+        category: type === 'income' ? 'income' : 'other',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }).catch(() => {});
+      imported++;
+    }
+    setImportMsg(`✓ Imported ${imported} transactions`);
+    setImporting(false);
+    if (imported > 0) void load();
+    e.target.value = '';
   }
 
   async function getInsight() {
@@ -158,6 +211,10 @@ Write a brief P&L summary in 3 sentences: how the month went, biggest expense ar
         </div>
         <div className="flex gap-2">
           <button onClick={() => setShowBudgets(b => !b)} className="text-[11px] px-3 py-1.5 rounded-lg bg-henry-surface border border-henry-border/30 text-henry-text-muted hover:text-henry-text transition-all">🎯 Budgets</button>
+          <label className="text-[11px] px-3 py-1.5 rounded-lg bg-henry-surface border border-henry-border/30 text-henry-text-muted hover:text-henry-text transition-all cursor-pointer">
+            {importing ? '⟳' : '↑ Import CSV'}
+            <input type="file" accept=".csv,.txt" onChange={e => void importCSV(e)} className="hidden" />
+          </label>
           <button onClick={exportCSV} disabled={!txns.length} className="text-[11px] px-3 py-1.5 rounded-lg bg-henry-surface border border-henry-border/30 text-henry-text-muted hover:text-henry-text disabled:opacity-30 transition-all">↓ CSV</button>
           <button onClick={() => void generatePLReport()} disabled={plBusy || !txns.length} className="text-[11px] px-3 py-1.5 rounded-lg bg-henry-surface border border-henry-border/30 text-henry-text-muted hover:text-henry-accent disabled:opacity-30 transition-all">⚡ P&L</button>
           <button onClick={() => void getInsight()} disabled={insightBusy || !summary} className="text-[11px] px-3 py-1.5 rounded-lg bg-henry-surface border border-henry-border/30 text-henry-text-muted hover:text-henry-accent disabled:opacity-30 transition-all">{insightBusy ? '⟳' : '💡 Insight'}</button>
@@ -213,6 +270,13 @@ Write a brief P&L summary in 3 sentences: how the month went, biggest expense ar
               })}
             </div>
             <p className="text-[10px] text-henry-text-muted">Set monthly spending limits per category. Turns red when over budget.</p>
+          </div>
+        )}
+
+        {importMsg && (
+          <div className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs ${importMsg.startsWith('✓') ? 'bg-green-400/10 text-green-400' : 'bg-red-400/10 text-red-400'}`}>
+            {importMsg}
+            <button onClick={() => setImportMsg('')} className="ml-auto opacity-60 hover:opacity-100">✕</button>
           </div>
         )}
 

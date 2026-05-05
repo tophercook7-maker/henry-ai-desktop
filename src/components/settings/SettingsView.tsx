@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { getTodayUsage, syncUsageFromProxy, setLicenseKey, getLicenseKey, getDeviceId } from '../../henry/proxyUsage';
 import { useStore } from '../../store';
 import {

@@ -126,6 +126,7 @@ contextBridge.exposeInMainWorld('henryAPI', {
   remindersDelete: (id: string) => ipcRenderer.invoke('reminders:delete', id),
   remindersDue: () => ipcRenderer.invoke('reminders:due'),
   // Finance
+  financeCreate: (t: Record<string,unknown>) => ipcRenderer.invoke('finance:create', t),
   financeList: (month?: string) => ipcRenderer.invoke('finance:list', month),
   financeAdd: (t: Record<string,unknown>) => ipcRenderer.invoke('finance:add', t),
   financeDelete: (id: string) => ipcRenderer.invoke('finance:delete', id),
@@ -208,6 +209,7 @@ contextBridge.exposeInMainWorld('henryAPI', {
   recordingsDelete: (id: string) => ipcRenderer.invoke('recordings:delete', id),
   // Quick captures
   captureSave: (c: Record<string,unknown>) => ipcRenderer.invoke('capture:save', c),
+  exportBackup: () => ipcRenderer.invoke('data:export-backup'),
   captureList: (limit?: number) => ipcRenderer.invoke('capture:list', limit),
   // Scripture / DeepWellAudio
   scriptureSavedList: () => ipcRenderer.invoke('scripture:saved-list'),

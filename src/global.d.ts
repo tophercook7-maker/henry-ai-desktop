@@ -299,6 +299,7 @@ declare global {
     recordingsGet: (id: string) => Promise<unknown>;
     recordingsSave: (r: Record<string,unknown>) => Promise<unknown>;
     recordingsDelete: (id: string) => Promise<unknown>;
+    exportBackup: () => Promise<{ok: boolean; path?: string; error?: string}>;
     captureList: (limit?: number) => Promise<unknown[]>;
     captureSave: (c: Record<string,unknown>) => Promise<{ id: string }>;
     scriptureCount: () => Promise<number>;

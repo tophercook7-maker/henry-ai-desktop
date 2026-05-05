@@ -13,6 +13,7 @@ interface Goal {
   id: string; title: string; summary?: string; status: string;
   priority_score: number; strategic_significance_score: number;
   emotional_significance_score: number;
+  target_date?: string; why?: string;
   created_at: string; updated_at: string;
 }
 

@@ -527,6 +527,26 @@ app.whenReady().then(() => {
     // Show HUD immediately
     showHUD(text, text.length);
 
+    // ── LOCAL pattern matching (FREE, no AI quota) ──────────────────────────
+    const bibleRef = /^(1|2|3)?\s?[A-Z][a-z]+\s+\d+:\d+/.test(text);
+    const looksLikeTask = /^(todo|task|remember to|don't forget|fix|build|write|call|email|send|create|update|check|review|finish|complete|buy|get)/i.test(text);
+    const hasTime = /(at|by|before|tomorrow|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\d+:\d+\s?(am|pm)|\d+(am|pm))/i.test(text);
+
+    if (bibleRef && text.length < 30) {
+      // Looks like a Bible reference — route to scripture lookup
+      getMainWindow()?.webContents.send('henry:smart-route', {
+        type: 'bible', text, message: '✝ Opening in Scripture…'
+      });
+      return; // skip AI
+    }
+
+    if (looksLikeTask && !hasTime && text.length < 120) {
+      // Looks like a task — send to renderer to create via IPC (no AI needed)
+      showHUD('✓ Task: ' + text.slice(0, 50) + (text.length > 50 ? '…' : ''), 0);
+      getMainWindow()?.webContents.send('henry:quick-task', { title: text.slice(0, 200) });
+      return;
+    }
+
     // POST to capture-and-process endpoint (non-blocking)
     const http = await import('http');
     const postBody = JSON.stringify({ text, source, context: 'hotkey' });

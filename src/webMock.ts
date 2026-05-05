@@ -1190,6 +1190,7 @@ const henryAPI: Window['henryAPI'] = {
   recordingsGet: async (_id: string) => null,
   recordingsSave: async (_r: unknown) => {},
   recordingsDelete: async (_id: string) => {},
+  exportBackup: async () => ({ ok: false, error: 'Not available in browser' }),
   captureList: async (_limit?: number) => [],
   captureSave: async (_c: unknown) => ({ id: '' }),
   scriptureDownloadKJV: async (_books?: string[]) => ({ imported: 0, errors: [] as string[], books: 0 }),

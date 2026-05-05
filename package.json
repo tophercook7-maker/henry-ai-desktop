@@ -1,6 +1,6 @@
 {
   "name": "henry-ai-desktop",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Henry AI \u2014 Local-first desktop AI operating system with dual-engine architecture",
   "main": "dist-electron/main.js",
   "author": {
@@ -20,7 +20,7 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
     "smoke": "npm run typecheck && vite build",
     "rebuild": "npx @electron/rebuild",
-    "build:mac:unsigned": "vite build && electron-builder --mac --config.mac.identity=null",
+    "build:mac:unsigned": "vite build && electron-builder --mac --config.mac.identity=null --config.compression=normal",
     "push": "git push \"https://${GITHUB_PERSONAL_ACCESS_TOKEN}@github.com/tophercook7-maker/henry-ai-desktop.git\" main",
     "cap:build": "npm run build:web && npx cap sync",
     "cap:sync": "npx cap sync",

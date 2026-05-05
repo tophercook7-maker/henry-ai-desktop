@@ -1124,6 +1124,20 @@ export function registerMemoryHandlers(database: Database.Database) {
     created_at TEXT NOT NULL
   )`).run();
 
+  ipcMain.handle('finance:create', (_e, t: Record<string,unknown>) => {
+    try {
+      db.prepare(
+        'INSERT INTO transactions (id,date,description,category,amount,type,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)'
+      ).run(
+        String(t.id || ''), String(t.date || ''), String(t.description || ''),
+        String(t.category || 'other'), Number(t.amount) || 0, String(t.type || 'expense'),
+        String(t.created_at || new Date().toISOString()),
+        String(t.updated_at || new Date().toISOString())
+      );
+      return { ok: true, id: t.id };
+    } catch (e) { return { ok: false, error: String(e) }; }
+  });
+
   ipcMain.handle('finance:list', (_e, month?: string) => {
     try {
       if (month) return db.prepare("SELECT * FROM transactions WHERE date LIKE ? ORDER BY date DESC").all(month + '%');
