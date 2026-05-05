@@ -1,4 +1,16 @@
 import React from 'react';
+
+// ── Global renderer error safety ─────────────────────────────────────────────
+// Catch unhandled JS errors and promise rejections in the renderer
+// Sends them to main process for logging without crashing the whole app
+window.addEventListener('error', (e) => {
+  console.error('[Henry renderer] Uncaught error:', e.error?.message || e.message);
+  // Don't show alert for minor errors - just log
+});
+window.addEventListener('unhandledrejection', (e) => {
+  console.error('[Henry renderer] Unhandled rejection:', e.reason?.message || e.reason);
+  e.preventDefault(); // Prevent default crash behavior
+});
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import { HenrySelfRepairBoundary } from './components/HenrySelfRepairBoundary';

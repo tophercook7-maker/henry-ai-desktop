@@ -115,12 +115,14 @@ export default function TodayPanel() {
       // Refresh live data
       // Load today's habits
     const api3 = (window as any).henryAPI;
+    let mounted = true;
     if (api3?.healthHabitList) {
       const today2 = new Date().toISOString().slice(0, 10);
       Promise.all([
         api3.healthHabitList().catch(() => []),
         api3.healthHabitLogsForDate?.(today2).catch(() => []),
       ]).then(([habits2, logs2]: any[]) => {
+        if (!mounted) return;
         setTodayHabits((habits2 || []).map((h: any) => ({
           habit: h,
           done: (logs2 || []).some((l: any) => l.habit_id === h.id && l.count >= h.target_per_day),

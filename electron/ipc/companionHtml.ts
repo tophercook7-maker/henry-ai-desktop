@@ -987,7 +987,9 @@ async function loadReminders() {
       const dateStr = r.due_at ? new Date(r.due_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
       return '<div class="rem-row"><span class="rem-icon">⏰</span><div style="flex:1"><div class="rem-title">' + r.title + '</div>' + (t ? '<div class="rem-time">' + dateStr + ' ' + t + '</div>' : '') + '</div><button onclick="doneReminder(' + "'" + r.id + "'" + ')" style="background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;padding:4px;flex-shrink:0" title="Mark done">✓</button></div>';
     }).join('');
-  } catch { document.getElementById('rem-list').innerHTML = '<div class="empty-msg">Could not load</div>'; }
+  } catch (e) { 
+    document.getElementById('rem-list').innerHTML = '<div class="empty-msg">Could not reach Henry. Is it running?</div>';
+  }
 }
 
 // ── TASKS ────────────────────────────────────────────────────────────────────
@@ -1001,7 +1003,9 @@ async function loadTasks() {
       const priColor = t.priority >= 3 ? '#ef4444' : t.priority === 2 ? '#f59e0b' : '#6b7280';
       return '<div class="task-row2"><div class="task-check" onclick="completeTask(' + "'" + t.id + "'" + ')"></div><div class="task-pri-dot" style="background:' + priColor + '"></div><span style="flex:1;font-size:14px;color:var(--text)">' + t.title + '</span></div>';
     }).join('');
-  } catch { document.getElementById('task-list').innerHTML = '<div class="empty-msg">Could not load</div>'; }
+  } catch (e) {
+    document.getElementById('task-list').innerHTML = '<div class="empty-msg">Could not reach Henry. Is it running?</div>';
+  }
 }
 
 function showAddTask() {
@@ -1049,7 +1053,9 @@ async function loadGoals() {
       const score = Math.round((g.priority_score || 0) * 10);
       return '<div class="goal-row"><div class="goal-title">' + g.title + '</div>' + (g.summary ? '<div style="font-size:12px;color:var(--muted);margin-bottom:6px">' + g.summary.slice(0,80) + '</div>' : '') + '<div class="goal-bar-wrap"><div class="goal-bar" style="width:' + score + '%"></div></div><div style="font-size:10px;color:var(--muted);margin-top:3px">Priority: ' + score + '/10</div></div>';
     }).join('');
-  } catch { document.getElementById('goals-list').innerHTML = '<div class="empty-msg">Could not load</div>'; }
+  } catch (e) {
+    document.getElementById('goals-list').innerHTML = '<div class="empty-msg">Could not reach Henry. Is it running?</div>';
+  }
 }
 
 // ── FINANCE ──────────────────────────────────────────────────────────────────

@@ -1537,6 +1537,53 @@ export function registerMemoryHandlers(database: Database.Database) {
     return { posted };
   });
 
+
+  // ── Data Export/Backup ─────────────────────────────────────────────────────
+  ipcMain.handle('data:export-backup', async () => {
+    try {
+      const nodeos = require('os') as typeof import('os');
+      const nodefs = require('fs') as typeof import('fs');
+      const nodepath = require('path') as typeof import('path');
+      const { execSync } = require('child_process') as typeof import('child_process');
+      const { randomUUID } = require('crypto') as typeof import('crypto');
+
+      const ts = new Date().toISOString().slice(0, 10);
+      const desktopDir = nodepath.join(nodeos.homedir(), 'Desktop');
+      const backupDir = nodepath.join(desktopDir, `henry-backup-${ts}`);
+      nodefs.mkdirSync(backupDir, { recursive: true });
+
+      // 1. Copy the SQLite database
+      const dbPath = (db as any).name as string;
+      nodefs.copyFileSync(dbPath, nodepath.join(backupDir, 'henry.db'));
+
+      // 2. Export all tables as JSON
+      const tables = [
+        'journal_entries', 'tasks', 'reminders', 'contacts', 'goals',
+        'habits', 'habit_logs', 'health_logs', 'transactions',
+        'memory_facts', 'recordings', 'lists', 'list_items', 'saved_verses',
+      ];
+      const exportData: Record<string, unknown[]> = { _exported_at: [new Date().toISOString() as unknown] };
+      for (const table of tables) {
+        try {
+          exportData[table] = db.prepare(`SELECT * FROM "${table}"`).all();
+        } catch { exportData[table] = []; }
+      }
+      nodefs.writeFileSync(
+        nodepath.join(backupDir, 'henry-data.json'),
+        JSON.stringify(exportData, null, 2)
+      );
+
+      // 3. Create zip and clean up temp dir
+      const zipPath = nodepath.join(desktopDir, `henry-backup-${ts}.zip`);
+      execSync(`cd "${desktopDir}" && zip -r "${zipPath}" "${nodepath.basename(backupDir)}"`, { stdio: 'ignore' });
+      nodefs.rmSync(backupDir, { recursive: true, force: true });
+
+      return { ok: true, path: zipPath };
+    } catch (e) {
+      return { ok: false, error: String(e) };
+    }
+  });
+
   ipcMain.handle('capture:list', (_e, limit=20) => {
     try { return db.prepare("SELECT * FROM quick_captures ORDER BY captured_at DESC LIMIT ?").all(limit); }
     catch { return []; }

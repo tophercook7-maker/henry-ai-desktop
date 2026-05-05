@@ -152,21 +152,33 @@ Write a brief P&L summary in 3 sentences: how the month went, biggest expense ar
       const amount = Math.abs(rawAmt);
       const type = rawAmt < 0 ? 'expense' : 'income';
       const description = descIdx >= 0 ? parts[descIdx] : '';
-      const rawDate = parts[dateIdx] || '';
-      const date = rawDate.includes('/') ?
-        rawDate.split('/').length === 3 ?
-          (rawDate.split('/')[2].length === 4 ?
-            rawDate.split('/')[2] + '-' + rawDate.split('/')[0].padStart(2,'0') + '-' + rawDate.split('/')[1].padStart(2,'0') :
-            '20' + rawDate.split('/')[2] + '-' + rawDate.split('/')[0].padStart(2,'0') + '-' + rawDate.split('/')[1].padStart(2,'0'))
-          : rawDate : rawDate.slice(0,10);
-      await api2.financeCreate?.({
-        id: crypto.randomUUID(),
-        date, description, amount, type,
-        category: type === 'income' ? 'income' : 'other',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }).catch(() => {});
-      imported++;
+      const rawDate = (parts[dateIdx] || '').trim().replace(/"/g, '');
+      let date = '';
+      try {
+        if (rawDate.includes('/')) {
+          const pts = rawDate.split('/');
+          if (pts.length === 3) {
+            const yr = pts[2].length === 2 ? '20' + pts[2] : pts[2];
+            date = yr + '-' + pts[0].padStart(2,'0') + '-' + pts[1].padStart(2,'0');
+          }
+        } else if (rawDate.includes('-')) {
+          date = rawDate.slice(0, 10);
+        }
+        // Validate the resulting date
+        if (!date || isNaN(new Date(date).getTime())) {
+          date = new Date().toISOString().slice(0, 10); // fallback to today
+        }
+      } catch { date = new Date().toISOString().slice(0, 10); }
+      try {
+        await api2.financeCreate?.({
+          id: crypto.randomUUID(),
+          date, description: description.slice(0, 200), amount, type,
+          category: type === 'income' ? 'income' : 'other',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+        imported++;
+      } catch { /* skip bad rows */ }
     }
     setImportMsg(`✓ Imported ${imported} transactions`);
     setImporting(false);
