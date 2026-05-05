@@ -91,6 +91,7 @@ export default function ListsPanel() {
     const deviceId = (() => { let id = localStorage.getItem('henry:device_id'); if (!id) { id = crypto.randomUUID(); localStorage.setItem('henry:device_id', id); } return id; })();
     try {
       const r = await fetch('https://henry-proxy.henryai.workers.dev/v1/chat', {
+        signal: AbortSignal.timeout(25000),
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Henry-Device': deviceId },
         body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: 'For a list called "' + selected.name + '" that already has: ' + (existing || 'nothing yet') + ' — suggest 5 more useful items. Reply with ONLY the items, one per line, no numbers or bullets.' }], max_tokens: 150, stream: false }),

@@ -57,6 +57,7 @@ async function henryStudy(passage: string, text: string, prompt: string, provide
       const sys = 'You are a Bible study companion. Give clear, reverent, biblically grounded responses. Respect orthodox Christian tradition. Be concise but thoughtful.';
       const userMsg = 'Passage: ' + passage + '\n\nText: "' + text + '"\n\nQuestion: ' + prompt;
       fetch('https://henry-proxy.henryai.workers.dev/v1/chat', {
+        signal: AbortSignal.timeout(25000),
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Henry-Device': deviceId },
         body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'system', content: sys }, { role: 'user', content: userMsg }], max_tokens: 600, stream: false }),

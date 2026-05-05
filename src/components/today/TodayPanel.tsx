@@ -173,6 +173,7 @@ export default function TodayPanel() {
       const prompt = `Give ${ownerName} one short, genuine, encouraging word or thought for this ${greeting}. 1-2 sentences. No fluff — make it specific, real, worth reading. Can be practical wisdom, a challenge, or quiet encouragement.`;
       const deviceId5 = (() => { let id = localStorage.getItem('henry:device_id'); if (!id) { id = crypto.randomUUID(); localStorage.setItem('henry:device_id', id); } return id; })();
       fetch('https://henry-proxy.henryai.workers.dev/v1/chat', {
+        signal: AbortSignal.timeout(25000),
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Henry-Device': deviceId5 },
         body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], max_tokens: 80, stream: false }),
@@ -339,6 +340,7 @@ Write 2-4 short sentences covering: one encouraging opening, what to focus on to
     const deviceId = (() => { let id = localStorage.getItem('henry:device_id'); if (!id) { id = crypto.randomUUID(); localStorage.setItem('henry:device_id', id); } return id; })();
     try {
       const r = await fetch('https://henry-proxy.henryai.workers.dev/v1/chat', {
+        signal: AbortSignal.timeout(25000),
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Henry-Device': deviceId },
         body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], max_tokens: 120, stream: false }),
@@ -405,6 +407,7 @@ Write 2-4 short sentences covering: one encouraging opening, what to focus on to
     const deviceId = (() => { let id = localStorage.getItem('henry:device_id'); if (!id) { id = crypto.randomUUID(); localStorage.setItem('henry:device_id', id); } return id; })();
     try {
       const r = await fetch('https://henry-proxy.henryai.workers.dev/v1/chat', {
+        signal: AbortSignal.timeout(25000),
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Henry-Device': deviceId },
         body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], max_tokens: 350, stream: false }),
@@ -464,6 +467,7 @@ Keep it brief and encouraging.`;
     const deviceId = (() => { let id = localStorage.getItem('henry:device_id'); if (!id) { id = crypto.randomUUID(); localStorage.setItem('henry:device_id', id); } return id; })();
     try {
       const r = await fetch('https://henry-proxy.henryai.workers.dev/v1/chat', {
+        signal: AbortSignal.timeout(25000),
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Henry-Device': deviceId },
         body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], max_tokens: 350, stream: false }),

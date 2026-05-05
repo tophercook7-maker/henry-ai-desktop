@@ -478,6 +478,7 @@ async function sendMsg() {
   const bubble = addMsg('h', '…');
   try {
     const r = await fetch(BASE + '/sync/prompt', {
+      signal: AbortSignal.timeout(25000),
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text, source: 'companion' }),
@@ -802,6 +803,7 @@ async function lookupVerse(ref) {
 
   try {
     const r = await fetch(BASE + '/sync/prompt', {
+      signal: AbortSignal.timeout(25000),
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text: 'BIBLE_LOOKUP:' + ref.trim(), source: 'companion-bible' }),
@@ -1088,6 +1090,7 @@ async function studyWith(prompt) {
 
   try {
     const r = await fetch(BASE + '/sync/prompt', {
+      signal: AbortSignal.timeout(25000),
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

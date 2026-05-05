@@ -87,6 +87,7 @@ Write a brief P&L summary in 3 sentences: how the month went, biggest expense ar
     const deviceId = (() => { let id = localStorage.getItem('henry:device_id'); if (!id) { id = crypto.randomUUID(); localStorage.setItem('henry:device_id', id); } return id; })();
     try {
       const r = await fetch('https://henry-proxy.henryai.workers.dev/v1/chat', {
+        signal: AbortSignal.timeout(25000),
         method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Henry-Device': deviceId },
         body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], max_tokens: 250, stream: false }),
       });
@@ -170,6 +171,12 @@ Write a brief P&L summary in 3 sentences: how the month went, biggest expense ar
         }
       } catch { date = new Date().toISOString().slice(0, 10); }
       try {
+        // Duplicate check: skip if same date+amount+description already exists
+        const existing = txns.find(t =>
+          t.date === date && Math.abs(t.amount - amount) < 0.01 &&
+          t.description?.slice(0,40) === description.slice(0,40)
+        );
+        if (existing) continue;
         await api2.financeCreate?.({
           id: crypto.randomUUID(),
           date, description: description.slice(0, 200), amount, type,
@@ -194,7 +201,8 @@ Write a brief P&L summary in 3 sentences: how the month went, biggest expense ar
     const prompt = ownerName + ' spent $' + summary.expenses.toFixed(0) + ' this month with income of $' + summary.income.toFixed(0) + '. Top expenses: ' + (topExp||'none yet') + '. Net: $' + (summary.income-summary.expenses).toFixed(0) + '. In 2-3 sentences give a helpful financial observation and one actionable tip. Be direct and practical.';
     const deviceId = (() => { let id = localStorage.getItem('henry:device_id'); if (!id) { id = crypto.randomUUID(); localStorage.setItem('henry:device_id', id); } return id; })();
     try {
-      const r = await fetch('https://henry-proxy.henryai.workers.dev/v1/chat', { method:'POST', headers:{'Content-Type':'application/json','X-Henry-Device':deviceId}, body:JSON.stringify({model:'llama-3.3-70b-versatile',messages:[{role:'user',content:prompt}],max_tokens:150,stream:false}) });
+      const r = await fetch('https://henry-proxy.henryai.workers.dev/v1/chat', {
+        signal: AbortSignal.timeout(25000), method:'POST', headers:{'Content-Type':'application/json','X-Henry-Device':deviceId}, body:JSON.stringify({model:'llama-3.3-70b-versatile',messages:[{role:'user',content:prompt}],max_tokens:150,stream:false}) });
       const d = await r.json() as any;
       setInsight(d?.choices?.[0]?.message?.content || '');
     } catch { setInsight('Could not reach Henry AI.'); }

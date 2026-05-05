@@ -38,6 +38,7 @@ As a thoughtful, encouraging friend, offer a 2-3 sentence reflection. Notice som
     const deviceId = (() => { let id = localStorage.getItem('henry:device_id'); if (!id) { id = crypto.randomUUID(); localStorage.setItem('henry:device_id', id); } return id; })();
     try {
       const r = await fetch('https://henry-proxy.henryai.workers.dev/v1/chat', {
+        signal: AbortSignal.timeout(25000),
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Henry-Device': deviceId },
         body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], max_tokens: 200, stream: false }),

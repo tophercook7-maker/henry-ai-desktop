@@ -589,10 +589,16 @@ async function handleRequest(
     // Health is public — allows mobile to check server is up before pairing
     let appVersion = (() => {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    return (require('../../package.json') as { version: string }).version;
+    const { app } = require('electron') as typeof import('electron');
+    const v = app.getVersion();
+    return v || '1.0.7';
   } catch {
-    return '1.0.2';
+    // Fallback: read from embedded package.json
+    try {
+      const path2 = require('path');
+      const pkg = require(path2.join(process.resourcesPath || __dirname, '../package.json')) as {version:string};
+      return pkg.version || '1.0.7';
+    } catch { return '1.0.7'; }
   }
 })();
     try {
@@ -1478,9 +1484,8 @@ async function handleRequest(
   }
 
   if (path === '/sync/mac/tasks/create' && req.method === 'POST') {
-    const body = await readBody(req);
-    let data: Record<string,unknown> = {};
-    try { data = JSON.parse(String(body)); } catch { jsonResponse(res, 400, { error: 'Invalid JSON' }); return; }
+    const body = await readBody<Record<string,unknown>>(req);
+    const data: Record<string,unknown> = body || {};
     const id = String(data.id || crypto.randomUUID());
     const title = String(data.title || '').trim();
     if (!title) { jsonResponse(res, 400, { error: 'title required' }); return; }
@@ -1493,9 +1498,8 @@ async function handleRequest(
   }
 
   if (path === '/sync/mac/tasks/complete' && req.method === 'POST') {
-    const body = await readBody(req);
-    let data: Record<string,unknown> = {};
-    try { data = JSON.parse(String(body)); } catch { jsonResponse(res, 400, { error: 'Invalid JSON' }); return; }
+    const body = await readBody<Record<string,unknown>>(req);
+    const data: Record<string,unknown> = body || {};
     const id = String(data.id || '');
     if (!id) { jsonResponse(res, 400, { error: 'id required' }); return; }
     dbRun("UPDATE tasks SET status='done',updated_at=? WHERE id=?", new Date().toISOString(), id);
@@ -1512,9 +1516,8 @@ async function handleRequest(
   }
 
   if (path === '/sync/mac/reminders/create' && req.method === 'POST') {
-    const body = await readBody(req);
-    let data: Record<string,unknown> = {};
-    try { data = JSON.parse(String(body)); } catch { jsonResponse(res, 400, { error: 'Invalid JSON' }); return; }
+    const body = await readBody<Record<string,unknown>>(req);
+    const data: Record<string,unknown> = body || {};
     const title = String(data.title || '').trim();
     if (!title) { jsonResponse(res, 400, { error: 'title required' }); return; }
     const id = String(data.id || crypto.randomUUID());
@@ -1528,9 +1531,8 @@ async function handleRequest(
   }
 
   if (path === '/sync/mac/reminders/done' && req.method === 'POST') {
-    const body = await readBody(req);
-    let data: Record<string,unknown> = {};
-    try { data = JSON.parse(String(body)); } catch { jsonResponse(res, 400, { error: 'Invalid JSON' }); return; }
+    const body = await readBody<Record<string,unknown>>(req);
+    const data: Record<string,unknown> = body || {};
     const id = String(data.id || '');
     if (!id) { jsonResponse(res, 400, { error: 'id required' }); return; }
     dbRun("UPDATE reminders SET done=1,updated_at=? WHERE id=?", new Date().toISOString(), id);
@@ -1539,9 +1541,8 @@ async function handleRequest(
   }
 
   if (path === '/sync/mac/journal/create' && req.method === 'POST') {
-    const body = await readBody(req);
-    let data: Record<string,unknown> = {};
-    try { data = JSON.parse(String(body)); } catch { jsonResponse(res, 400, { error: 'Invalid JSON' }); return; }
+    const body = await readBody<Record<string,unknown>>(req);
+    const data: Record<string,unknown> = body || {};
     const content = String(data.content || '').trim();
     if (!content) { jsonResponse(res, 400, { error: 'content required' }); return; }
     const id = String(data.id || crypto.randomUUID());
@@ -1556,9 +1557,8 @@ async function handleRequest(
   }
 
   if (path === '/sync/mac/health/log' && req.method === 'POST') {
-    const body = await readBody(req);
-    let data: Record<string,unknown> = {};
-    try { data = JSON.parse(String(body)); } catch { jsonResponse(res, 400, { error: 'Invalid JSON' }); return; }
+    const body = await readBody<Record<string,unknown>>(req);
+    const data: Record<string,unknown> = body || {};
     const category = String(data.category || '').trim();
     if (!category) { jsonResponse(res, 400, { error: 'category required' }); return; }
     const id = String(data.id || crypto.randomUUID());
@@ -1617,7 +1617,17 @@ function readBody<T>(req: http.IncomingMessage, timeoutMs = 30_000): Promise<T |
       done(null);
     }, timeoutMs);
 
-    req.on('data', (c: Buffer) => chunks.push(c));
+    let totalSize = 0;
+    const MAX_BODY = 50 * 1024; // 50KB limit
+    req.on('data', (chunk: Buffer) => {
+      totalSize += chunk.length;
+      if (totalSize > MAX_BODY) {
+        req.destroy(new Error('Request body too large'));
+        done(null);
+        return;
+      }
+      chunks.push(chunk);
+    });
     req.on('end', () => {
       try {
         done(JSON.parse(Buffer.concat(chunks).toString()) as T);
@@ -1747,6 +1757,20 @@ export function updateRoamingSettings(settings: SyncSnapshot['settings']): void 
 }
 
 // ── IPC handler registration ───────────────────────────────────────────────
+
+// ── Rate limiter (module-level, persists across requests) ──────────────────────
+const _rateCounts = new Map<string, {count:number; resetAt:number}>();
+function checkRate(ip: string): boolean {
+  const now = Date.now();
+  const entry = _rateCounts.get(ip);
+  if (!entry || now > entry.resetAt) {
+    _rateCounts.set(ip, { count: 1, resetAt: now + 60000 });
+    return true;
+  }
+  if (entry.count >= 120) return false; // 120 req/min max per IP
+  entry.count++;
+  return true;
+}
 
 export function registerSyncBridgeIpc(): void {
   ipcMain.handle('henry:sync:start', (_e, port?: number) => {
