@@ -22,6 +22,8 @@ const LOG_CATEGORIES = [
   { id: 'sleep',    icon: '😴', label: 'Sleep',    unit: 'hrs', placeholder: '8' },
   { id: 'weight',   icon: '⚖',  label: 'Weight',   unit: 'lbs', placeholder: '170' },
   { id: 'mood',     icon: '😊', label: 'Mood',     unit: '/10', placeholder: '7' },
+  { id: 'calories', icon: '🍽', label: 'Calories', unit: 'cal', placeholder: '500' },
+  { id: 'steps',    icon: '👟', label: 'Steps',    unit: 'steps', placeholder: '3000' },
   { id: 'note',     icon: '📝', label: 'Note',     unit: '',    placeholder: 'How are you feeling?' },
 ];
 

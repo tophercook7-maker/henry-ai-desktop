@@ -109,7 +109,17 @@ Write a brief P&L summary in 3 sentences: how the month went, biggest expense ar
   }
 
   const [insight, setInsight] = useState('');
+  const [budgets, setBudgets] = useState<Record<string,number>>(() => {
+    try { return JSON.parse(localStorage.getItem('henry:budgets') || '{}'); } catch { return {}; }
+  });
+  const [showBudgets, setShowBudgets] = useState(false);
   const [insightBusy, setInsightBusy] = useState(false);
+
+  function saveBudget(category: string, limit: number) {
+    const updated = { ...budgets, [category]: limit };
+    setBudgets(updated);
+    localStorage.setItem('henry:budgets', JSON.stringify(updated));
+  }
 
   async function getInsight() {
     if (insightBusy || !summary) return;
@@ -147,6 +157,7 @@ Write a brief P&L summary in 3 sentences: how the month went, biggest expense ar
           </select>
         </div>
         <div className="flex gap-2">
+          <button onClick={() => setShowBudgets(b => !b)} className="text-[11px] px-3 py-1.5 rounded-lg bg-henry-surface border border-henry-border/30 text-henry-text-muted hover:text-henry-text transition-all">🎯 Budgets</button>
           <button onClick={exportCSV} disabled={!txns.length} className="text-[11px] px-3 py-1.5 rounded-lg bg-henry-surface border border-henry-border/30 text-henry-text-muted hover:text-henry-text disabled:opacity-30 transition-all">↓ CSV</button>
           <button onClick={() => void generatePLReport()} disabled={plBusy || !txns.length} className="text-[11px] px-3 py-1.5 rounded-lg bg-henry-surface border border-henry-border/30 text-henry-text-muted hover:text-henry-accent disabled:opacity-30 transition-all">⚡ P&L</button>
           <button onClick={() => void getInsight()} disabled={insightBusy || !summary} className="text-[11px] px-3 py-1.5 rounded-lg bg-henry-surface border border-henry-border/30 text-henry-text-muted hover:text-henry-accent disabled:opacity-30 transition-all">{insightBusy ? '⟳' : '💡 Insight'}</button>
@@ -169,6 +180,41 @@ Write a brief P&L summary in 3 sentences: how the month went, biggest expense ar
             </div>
           ))}
         </div>
+
+        {/* Budget goals panel */}
+        {showBudgets && expenseCats.length > 0 && (
+          <div className="bg-henry-surface/40 border border-henry-border/15 rounded-2xl p-4 space-y-3">
+            <p className="text-xs font-semibold text-henry-text">🎯 Monthly Budget Goals</p>
+            <div className="space-y-2">
+              {expenseCats.slice(0,6).map(cat => {
+                const budget = budgets[cat.category] || 0;
+                const pct = budget > 0 ? Math.min(100, Math.round((cat.total / budget) * 100)) : 0;
+                return (
+                  <div key={cat.category} className="space-y-1">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-henry-text capitalize">{cat.category}</span>
+                      <div className="flex items-center gap-2">
+                        <span className={pct >= 100 ? 'text-red-400 font-bold' : pct >= 80 ? 'text-yellow-400' : 'text-henry-text-muted'}>
+                          ${cat.total.toFixed(0)} {budget > 0 ? `/ $${budget}` : ''}
+                        </span>
+                        <input type="number" value={budget || ''} placeholder="limit"
+                          onChange={e => saveBudget(cat.category, Number(e.target.value))}
+                          className="w-16 bg-henry-bg border border-henry-border/30 rounded px-1.5 py-0.5 text-xs text-henry-text outline-none focus:border-henry-accent/40" />
+                      </div>
+                    </div>
+                    {budget > 0 && (
+                      <div className="w-full bg-henry-surface rounded-full h-1.5">
+                        <div className="h-1.5 rounded-full transition-all"
+                          style={{ width: pct + '%', backgroundColor: pct >= 100 ? '#ef4444' : pct >= 80 ? '#f59e0b' : '#7c3aed' }} />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <p className="text-[10px] text-henry-text-muted">Set monthly spending limits per category. Turns red when over budget.</p>
+          </div>
+        )}
 
         {insight && (
           <div className="bg-henry-accent/8 border border-henry-accent/20 rounded-xl p-3 flex items-start gap-2">

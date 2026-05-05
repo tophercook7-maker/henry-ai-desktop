@@ -77,9 +77,22 @@ export default function FocusPanel() {
   const [checkIn, setCheckIn] = useState('');
   const [loadingCheckIn, setLoadingCheckIn] = useState(false);
   const [sessionCount, setSessionCount] = useState(0);
+  const [weekStats, setWeekStats] = useState<{day:string;mins:number}[]>([]);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTimeRef = useRef<number>(0);
   const currentTaskRef = useRef('');
+
+  useEffect(() => {
+    // Load weekly focus stats (runs once on mount)
+    const api2 = (window as any).henryAPI;
+    api2?.focusStats?.().then((data: any) => {
+      if (data?.weeklyMins) {
+        const days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+        setWeekStats(days.map((day: string, i: number) => ({ day, mins: (data.weeklyMins as number[])[i] || 0 })));
+      }
+    }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     setSessions(loadSessions());
@@ -319,6 +332,33 @@ export default function FocusPanel() {
             </div>
           )}
         </div>
+
+        {/* Weekly focus chart */}
+        {weekStats.some((d: {day:string;mins:number}) => d.mins > 0) && (
+          <div className="px-0 mb-2">
+            <p className="text-[11px] font-medium text-henry-text-muted uppercase tracking-wider mb-3">This week</p>
+            <div className="flex items-end gap-1.5 h-16">
+              {weekStats.map(({ day, mins }: {day:string;mins:number}) => {
+                const maxMins = Math.max(...weekStats.map(d => d.mins), 60);
+                const pct = Math.round((mins / maxMins) * 100);
+                const isToday = new Date().toLocaleDateString('en-US', { weekday: 'short' }) === day;
+                return (
+                  <div key={day} className="flex-1 flex flex-col items-center gap-1">
+                    <span className="text-[9px] text-henry-text-muted">{mins > 0 ? mins + 'm' : ''}</span>
+                    <div className="w-full rounded-t-md transition-all" style={{
+                      height: pct + '%', minHeight: mins > 0 ? 4 : 2,
+                      backgroundColor: isToday ? 'var(--color-accent,#7c3aed)' : mins > 0 ? 'rgba(124,58,237,0.35)' : 'rgba(255,255,255,0.05)',
+                    }} />
+                    <span className={`text-[9px] font-medium ${isToday ? 'text-henry-accent' : 'text-henry-text-muted'}`}>{day}</span>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="text-[10px] text-henry-text-muted mt-2">
+              {weekStats.reduce((a,d) => a+d.mins, 0)} minutes focused this week
+            </p>
+          </div>
+        )}
 
         {/* Session history */}
         {todaySessions.length > 0 && (

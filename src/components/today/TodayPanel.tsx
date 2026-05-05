@@ -61,6 +61,7 @@ export default function TodayPanel() {
   const [reportBusy, setReportBusy] = useState(false);
   const [reportText, setReportText] = useState('');
   const [verseOfDay, setVerseOfDay] = useState<{ref: string; text: string} | null>(null);
+  const [nudge, setNudge] = useState<string | null>(null);
   const [plannerResult, setPlannerResult] = useState('');
   const [plannerBusy, setPlannerBusy] = useState(false);
   const [briefingExpanded, setBriefingExpanded] = useState(true);
@@ -129,6 +130,23 @@ export default function TodayPanel() {
       api4.scriptureLookup?.(todayVerse).then((r: any) => {
         if (r?.text) setVerseOfDay({ ref: r.normalizedReference || todayVerse, text: r.text });
       }).catch(() => {});
+    }
+
+    // Proactive nudge — check for streaks and suggestions
+    const api5 = (window as any).henryAPI;
+    if (api5?.journalList && api5?.healthHabitList) {
+      const [jEntries, habits5] = await Promise.all([
+        api5.journalList?.().catch(() => []),
+        api5.healthHabitList?.().catch(() => []),
+      ]);
+      const today5 = new Date().toISOString().slice(0,10);
+      const yesterday5 = new Date(Date.now() - 86400000).toISOString().slice(0,10);
+      const hasJournalToday = (jEntries||[]).some((e:any) => e.date === today5);
+      const hasJournalYesterday = (jEntries||[]).some((e:any) => e.date === yesterday5);
+      const hour5 = new Date().getHours();
+      if (!hasJournalToday && !hasJournalYesterday && (jEntries||[]).length > 5 && hour5 >= 18) {
+        setNudge("You haven't journaled in a few days. Even 2-3 sentences helps. ✍");
+      }
     }
 
     // Load today's Google Calendar events if token exists
@@ -658,6 +676,15 @@ Keep it brief and encouraging.`;
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {/* Proactive nudge */}
+        {nudge && (
+          <div className="w-full mb-2 flex items-start gap-2 p-2.5 bg-henry-surface/40 border border-henry-border/20 rounded-xl">
+            <span className="text-henry-accent text-xs mt-0.5 flex-shrink-0">◉</span>
+            <p className="text-xs text-henry-text-muted flex-1 leading-snug">{nudge}</p>
+            <button onClick={() => setNudge(null)} className="text-henry-text-muted hover:text-henry-text text-xs flex-shrink-0">✕</button>
           </div>
         )}
 
