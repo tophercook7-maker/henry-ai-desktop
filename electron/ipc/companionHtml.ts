@@ -426,6 +426,7 @@ function showTab(id) {
   if (id === 'tasks') loadTasks();
   if (id === 'goals') loadGoals();
   if (id === 'fin') loadFinance();
+  if (id === 'jnl') initJournal();
 }
 
 function phoneTo(id) {
@@ -437,11 +438,12 @@ function phoneTo(id) {
     chatCol.classList.add('active'); rightCol.classList.remove('active');
   } else {
     chatCol.classList.remove('active'); rightCol.classList.add('active');
-    const tabMap = { today: 'today', screen: 'screen', ctrl: 'ctrl', cap: 'cap', bible: 'bible', rem: 'rem', tasks: 'tasks', goals: 'goals', fin: 'fin', bible: 'bible' };
+    const tabMap = { today: 'today', screen: 'screen', ctrl: 'ctrl', cap: 'cap', bible: 'bible', rem: 'rem', tasks: 'tasks', goals: 'goals', fin: 'fin', jnl: 'jnl', health: 'health', bible: 'bible' };
     if (tabMap[id]) showTab(tabMap[id]);
     if (id === 'rem') loadReminders();
     if (id === 'tasks') loadTasks();
     if (id === 'goals') loadGoals();
+    if (id === 'jnl') initJournal();
   }
 }
 
@@ -823,6 +825,155 @@ async function studyPassage() {
   studyWith(prompt);
 }
 
+// ── SWIPE NAV (free — CSS touch events) ──────────────────────────────────────
+let touchStartX = 0;
+let touchStartY = 0;
+const phoneOrder = ['chat','today','tasks','rem','jnl','health','bible'];
+
+document.addEventListener('touchstart', e => {
+  touchStartX = e.touches[0].clientX;
+  touchStartY = e.touches[0].clientY;
+}, { passive: true });
+
+document.addEventListener('touchend', e => {
+  if (!document.getElementById('chat-col').classList.contains('active') && 
+      !document.getElementById('right-col').classList.contains('active')) return; // iPad: no swipe
+  const dx = e.changedTouches[0].clientX - touchStartX;
+  const dy = e.changedTouches[0].clientY - touchStartY;
+  if (Math.abs(dx) < 60 || Math.abs(dy) > Math.abs(dx) * 0.8) return; // too short or too vertical
+  const active = document.querySelector('#bottom-nav button.on');
+  if (!active) return;
+  const currentId = active.id.replace('bn-','');
+  const idx = phoneOrder.indexOf(currentId);
+  if (dx < 0 && idx < phoneOrder.length - 1) phoneTo(phoneOrder[idx + 1]); // swipe left = next
+  if (dx > 0 && idx > 0) phoneTo(phoneOrder[idx - 1]); // swipe right = prev
+}, { passive: true });
+
+// ── PULL TO REFRESH (free) ────────────────────────────────────────────────────
+let pullStartY = 0;
+let pulling = false;
+const pullEl = (() => {
+  const d = document.createElement('div');
+  d.style.cssText = 'position:fixed;top:0;left:0;right:0;height:40px;background:var(--accent);color:#fff;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;transform:translateY(-100%);transition:transform .2s;z-index:999';
+  d.textContent = '↓ Pull to refresh';
+  document.body.appendChild(d);
+  return d;
+})();
+
+document.addEventListener('touchstart', e => { pullStartY = e.touches[0].clientY; }, { passive: true });
+document.addEventListener('touchmove', e => {
+  const dy = e.touches[0].clientY - pullStartY;
+  if (dy > 60 && window.scrollY === 0) {
+    pullEl.style.transform = 'translateY(0)';
+    pullEl.textContent = '↑ Release to refresh';
+    pulling = true;
+  }
+}, { passive: true });
+document.addEventListener('touchend', () => {
+  if (pulling) {
+    pulling = false;
+    pullEl.style.transform = 'translateY(-100%)';
+    pullEl.textContent = '↓ Pull to refresh';
+    loadToday();
+    const active = document.querySelector('#bottom-nav button.on');
+    if (active) {
+      const id = active.id.replace('bn-','');
+      if (id === 'tasks') loadTasks();
+      if (id === 'rem') loadReminders();
+      if (id === 'goals') loadGoals();
+    }
+  }
+}, { passive: true });
+
+// ── JOURNAL ──────────────────────────────────────────────────────────────────
+function initJournal() {
+  const d = document.getElementById('jnl-date');
+  if (d) d.textContent = new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+async function saveJournal() {
+  const content = document.getElementById('jnl-in').value.trim();
+  if (!content) return;
+  const mood = document.getElementById('jnl-mood').value;
+  const status = document.getElementById('jnl-status');
+  status.textContent = 'Saving…';
+  try {
+    const r = await fetch(BASE + '/sync/mac/journal/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content, mood, title: 'From companion' }),
+    });
+    if (r.ok) {
+      document.getElementById('jnl-in').value = '';
+      document.getElementById('jnl-mood').value = '';
+      status.textContent = '✓ Saved to journal';
+      setTimeout(() => { status.textContent = ''; }, 3000);
+    } else {
+      status.textContent = 'Save failed';
+    }
+  } catch { status.textContent = 'Could not reach Henry'; }
+}
+
+// ── REMINDER QUICK-ADD ───────────────────────────────────────────────────────
+function showAddReminder() {
+  const row = document.getElementById('add-rem-row');
+  row.style.display = row.style.display === 'none' ? 'flex' : 'none';
+  if (row.style.display === 'flex') document.getElementById('rem-in').focus();
+}
+
+async function addReminder() {
+  const inp = document.getElementById('rem-in');
+  const title = inp.value.trim();
+  if (!title) return;
+  try {
+    await fetch(BASE + '/sync/mac/reminders/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title }),
+    });
+    inp.value = '';
+    document.getElementById('add-rem-row').style.display = 'none';
+    await loadReminders();
+  } catch { alert('Could not add reminder'); }
+}
+
+async function doneReminder(id) {
+  try {
+    await fetch(BASE + '/sync/mac/reminders/done', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    });
+    await loadReminders();
+  } catch { /* ignore */ }
+}
+
+// ── HEALTH LOGGING ───────────────────────────────────────────────────────────
+async function logHealth(category, value, unit) {
+  const status = document.getElementById('health-status');
+  status.textContent = 'Logging…';
+  try {
+    const r = await fetch(BASE + '/sync/mac/health/log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ category, value }),
+    });
+    if (r.ok) {
+      status.textContent = '✓ Logged ' + value + ' ' + unit + ' ' + category;
+      setTimeout(() => { status.textContent = ''; }, 3000);
+    }
+  } catch { status.textContent = 'Could not reach Henry'; }
+}
+
+async function promptHealthLog() {
+  const cats = ['water','exercise','sleep','weight','mood','calories','steps'];
+  const cat = prompt('Category: ' + cats.join(', '));
+  if (!cat) return;
+  const val = prompt('Value:');
+  if (val === null) return;
+  await logHealth(cat.trim(), parseFloat(val) || 0, '');
+}
+
 // ── REMINDERS ──────────────────────────────────────────────────────────────────
 async function loadReminders() {
   try {
@@ -834,7 +985,7 @@ async function loadReminders() {
     el.innerHTML = rems.map(r => {
       const t = r.due_at ? new Date(r.due_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '';
       const dateStr = r.due_at ? new Date(r.due_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
-      return '<div class="rem-row"><span class="rem-icon">⏰</span><div style="flex:1"><div class="rem-title">' + r.title + '</div>' + (t ? '<div class="rem-time">' + dateStr + ' ' + t + '</div>' : '') + '</div></div>';
+      return '<div class="rem-row"><span class="rem-icon">⏰</span><div style="flex:1"><div class="rem-title">' + r.title + '</div>' + (t ? '<div class="rem-time">' + dateStr + ' ' + t + '</div>' : '') + '</div><button onclick="doneReminder(' + "'" + r.id + "'" + ')" style="background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;padding:4px;flex-shrink:0" title="Mark done">✓</button></div>';
     }).join('');
   } catch { document.getElementById('rem-list').innerHTML = '<div class="empty-msg">Could not load</div>'; }
 }

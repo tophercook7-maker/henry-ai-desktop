@@ -827,6 +827,19 @@ export function buildGroqFreeSystemPrompt(mode: HenryOperatingMode): string {
     lines.push('Writer mode: help draft, edit, and improve documents.');
   }
 
+  // Inject memory facts — free, no extra API calls, makes Henry actually remember you
+  // Facts are stored in localStorage from the Memory panel or chat extraction
+  try {
+    const facts = JSON.parse(localStorage.getItem('henry:memory_facts_cache') || '[]') as {fact:string;category:string;importance:number}[];
+    if (facts.length > 0) {
+      // Sort by importance, take top 8 to keep prompt short
+      const topFacts = facts.sort((a,b) => b.importance - a.importance).slice(0, 8);
+      lines.push('');
+      lines.push('What I know about ' + ownerName + ':');
+      topFacts.forEach(f => lines.push('• ' + f.fact));
+    }
+  } catch { /* ignore if localStorage unavailable */ }
+
   return lines.join('\n');
 }
 

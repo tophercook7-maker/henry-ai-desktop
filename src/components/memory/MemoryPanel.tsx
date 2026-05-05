@@ -33,6 +33,10 @@ export default function MemoryPanel() {
       ]);
       setFacts(f || []);
       setPersonal(p || []);
+      // Cache facts in localStorage so the AI system prompt can inject them
+      if (f?.length) {
+        try { localStorage.setItem('henry:memory_facts_cache', JSON.stringify(f)); } catch { /* ignore */ }
+      }
     } catch { /* ignore */ }
     setLoading(false);
   }, []);
@@ -44,7 +48,7 @@ export default function MemoryPanel() {
     await api.memorySaveFact?.({ id: crypto.randomUUID(), ...newFact, created_at: new Date().toISOString() });
     setNewFact({ fact: '', category: 'identity', importance: 5 });
     setTab('facts');
-    void load();
+    void load(); // load() will update the cache automatically
   }
 
   async function deleteFact(id: string) {

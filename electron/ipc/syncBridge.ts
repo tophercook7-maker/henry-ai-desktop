@@ -794,6 +794,8 @@ async function handleRequest(
     '/sync/capture-and-process', '/sync/capture', '/sync/mac/finance',
     '/sync/mac/reminders', '/sync/mac/tasks', '/sync/mac/tasks/create',
     '/sync/mac/goals', '/sync/mac/tasks/complete',
+    '/sync/mac/reminders/create', '/sync/mac/reminders/done',
+    '/sync/mac/journal/create', '/sync/mac/health/log',
   ];
   if (companionWebPaths.some(p => path === p) && req.method !== undefined) {
     // Allow through — companion web page handles these without a paired token
@@ -1506,6 +1508,67 @@ async function handleRequest(
       "SELECT id,title,status,priority_score,summary FROM goals WHERE status='active' ORDER BY priority_score DESC LIMIT 10"
     );
     jsonResponse(res, 200, { goals: rows });
+    return;
+  }
+
+  if (path === '/sync/mac/reminders/create' && req.method === 'POST') {
+    const body = await readBody(req);
+    let data: Record<string,unknown> = {};
+    try { data = JSON.parse(String(body)); } catch { jsonResponse(res, 400, { error: 'Invalid JSON' }); return; }
+    const title = String(data.title || '').trim();
+    if (!title) { jsonResponse(res, 400, { error: 'title required' }); return; }
+    const id = String(data.id || crypto.randomUUID());
+    dbRun(
+      "INSERT INTO reminders (id,title,notes,due_at,repeat,done,created_at,updated_at) VALUES (?,?,?,?,?,0,?,?)",
+      id, title, String(data.notes || ''), data.due_at ? String(data.due_at) : null, 'none',
+      new Date().toISOString(), new Date().toISOString()
+    );
+    jsonResponse(res, 200, { id, title });
+    return;
+  }
+
+  if (path === '/sync/mac/reminders/done' && req.method === 'POST') {
+    const body = await readBody(req);
+    let data: Record<string,unknown> = {};
+    try { data = JSON.parse(String(body)); } catch { jsonResponse(res, 400, { error: 'Invalid JSON' }); return; }
+    const id = String(data.id || '');
+    if (!id) { jsonResponse(res, 400, { error: 'id required' }); return; }
+    dbRun("UPDATE reminders SET done=1,updated_at=? WHERE id=?", new Date().toISOString(), id);
+    jsonResponse(res, 200, { ok: true });
+    return;
+  }
+
+  if (path === '/sync/mac/journal/create' && req.method === 'POST') {
+    const body = await readBody(req);
+    let data: Record<string,unknown> = {};
+    try { data = JSON.parse(String(body)); } catch { jsonResponse(res, 400, { error: 'Invalid JSON' }); return; }
+    const content = String(data.content || '').trim();
+    if (!content) { jsonResponse(res, 400, { error: 'content required' }); return; }
+    const id = String(data.id || crypto.randomUUID());
+    const today = new Date().toISOString().slice(0, 10);
+    dbRun(
+      "INSERT OR REPLACE INTO journal_entries (id,date,title,content,mood,created_at,updated_at) VALUES (?,?,?,?,?,?,?)",
+      id, today, String(data.title || 'From companion'), content,
+      String(data.mood || ''), new Date().toISOString(), new Date().toISOString()
+    );
+    jsonResponse(res, 200, { id, date: today });
+    return;
+  }
+
+  if (path === '/sync/mac/health/log' && req.method === 'POST') {
+    const body = await readBody(req);
+    let data: Record<string,unknown> = {};
+    try { data = JSON.parse(String(body)); } catch { jsonResponse(res, 400, { error: 'Invalid JSON' }); return; }
+    const category = String(data.category || '').trim();
+    if (!category) { jsonResponse(res, 400, { error: 'category required' }); return; }
+    const id = String(data.id || crypto.randomUUID());
+    const today = new Date().toISOString().slice(0, 10);
+    dbRun(
+      "INSERT INTO health_logs (id,category,value,note,date,created_at) VALUES (?,?,?,?,?,?)",
+      id, category, data.value !== undefined ? Number(data.value) : null,
+      String(data.note || ''), today, new Date().toISOString()
+    );
+    jsonResponse(res, 200, { id, category, date: today });
     return;
   }
 

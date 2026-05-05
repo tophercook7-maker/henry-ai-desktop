@@ -63,6 +63,15 @@ export default function TodayPanel() {
   const [verseOfDay, setVerseOfDay] = useState<{ref: string; text: string} | null>(null);
   const [nudge, setNudge] = useState<string | null>(null);
   const [plannerResult, setPlannerResult] = useState('');
+
+  // Cache helpers - saves AI quota (generate once per day, serve all day)
+  const cacheKey = (key: string) => 'henry:cache:' + key + ':' + new Date().toISOString().slice(0,10);
+  const getCached = (key: string): string | null => {
+    try { return localStorage.getItem(cacheKey(key)); } catch { return null; }
+  };
+  const setCached = (key: string, val: string) => {
+    try { localStorage.setItem(cacheKey(key), val); } catch { /* ignore */ }
+  };
   const [plannerBusy, setPlannerBusy] = useState(false);
   const [briefingExpanded, setBriefingExpanded] = useState(true);
   const [dailyCost] = useState(() => getDailyCost());
@@ -336,6 +345,9 @@ Write 2-4 short sentences covering: one encouraging opening, what to focus on to
 
   async function generateDailyPlan() {
     if (plannerBusy) return;
+    // Check cache first (same plan all day = 1 quota/day not per-click)
+    const cached = getCached('daily-plan');
+    if (cached) { setPlannerResult(cached); setShowPlanner(true); return; }
     setPlannerBusy(true);
     setPlannerResult('');
     setShowPlanner(true);
@@ -374,7 +386,9 @@ Write 2-4 short sentences covering: one encouraging opening, what to focus on to
         body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], max_tokens: 350, stream: false }),
       });
       const d = await r.json() as any;
-      setPlannerResult(d?.choices?.[0]?.message?.content || 'No response');
+      const planText = d?.choices?.[0]?.message?.content || 'No response';
+      setPlannerResult(planText);
+      if (planText && planText !== 'No response') setCached('daily-plan', planText);
     } catch { setPlannerResult('Could not reach Henry AI.'); }
     setPlannerBusy(false);
   }
