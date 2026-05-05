@@ -62,6 +62,7 @@ export default function TodayPanel() {
   const [reportText, setReportText] = useState('');
   const [verseOfDay, setVerseOfDay] = useState<{ref: string; text: string} | null>(null);
   const [nudge, setNudge] = useState<string | null>(null);
+  const [henryWord, setHenryWord] = useState<string | null>(null);
   const [plannerResult, setPlannerResult] = useState('');
 
   // Cache helpers - saves AI quota (generate once per day, serve all day)
@@ -158,6 +159,27 @@ export default function TodayPanel() {
       if (!hasJournalToday && !hasJournalYesterday && (jEntries||[]).length > 5 && hour5 >= 18) {
         setNudge("You haven't journaled in a few days. Even 2-3 sentences helps. ✍");
       }
+    }
+
+    // Henry's word for today — generate once, cache all day
+    const cachedWord = getCached('henry-word');
+    if (cachedWord) {
+      setHenryWord(cachedWord);
+    } else {
+      // Generate in background (non-blocking)
+      const ownerName = localStorage.getItem('henry:owner_name') || 'friend';
+      const hour5 = new Date().getHours();
+      const greeting = hour5 < 12 ? 'morning' : hour5 < 17 ? 'afternoon' : 'evening';
+      const prompt = `Give ${ownerName} one short, genuine, encouraging word or thought for this ${greeting}. 1-2 sentences. No fluff — make it specific, real, worth reading. Can be practical wisdom, a challenge, or quiet encouragement.`;
+      const deviceId5 = (() => { let id = localStorage.getItem('henry:device_id'); if (!id) { id = crypto.randomUUID(); localStorage.setItem('henry:device_id', id); } return id; })();
+      fetch('https://henry-proxy.henryai.workers.dev/v1/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Henry-Device': deviceId5 },
+        body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], max_tokens: 80, stream: false }),
+      }).then(r => r.json()).then((d: any) => {
+        const word = d?.choices?.[0]?.message?.content?.trim() || '';
+        if (word) { setHenryWord(word); setCached('henry-word', word); }
+      }).catch(() => {});
     }
 
     // Load today's Google Calendar events if token exists
@@ -701,6 +723,14 @@ Keep it brief and encouraging.`;
             <span className="text-henry-accent text-xs mt-0.5 flex-shrink-0">◉</span>
             <p className="text-xs text-henry-text-muted flex-1 leading-snug">{nudge}</p>
             <button onClick={() => setNudge(null)} className="text-henry-text-muted hover:text-henry-text text-xs flex-shrink-0">✕</button>
+          </div>
+        )}
+
+        {/* Henry's word for today */}
+        {henryWord && (
+          <div className="w-full mb-2 flex items-start gap-2">
+            <span className="text-henry-accent text-sm flex-shrink-0 mt-0.5">◉</span>
+            <p className="text-xs text-henry-text leading-snug italic flex-1">{henryWord}</p>
           </div>
         )}
 

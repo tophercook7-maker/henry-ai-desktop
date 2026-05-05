@@ -3,6 +3,15 @@ import React from 'react';
 // ── Global renderer error safety ─────────────────────────────────────────────
 // Catch unhandled JS errors and promise rejections in the renderer
 // Sends them to main process for logging without crashing the whole app
+// Restore saved accent color on startup
+try {
+  const savedAccent = localStorage.getItem('henry:accent');
+  if (savedAccent) {
+    document.documentElement.style.setProperty('--color-accent', savedAccent);
+    document.documentElement.style.setProperty('--henry-accent', savedAccent);
+  }
+} catch { /* ignore */ }
+
 window.addEventListener('error', (e) => {
   console.error('[Henry renderer] Uncaught error:', e.error?.message || e.message);
   // Don't show alert for minor errors - just log

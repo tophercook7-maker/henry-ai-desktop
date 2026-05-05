@@ -19,9 +19,34 @@ export default function JournalPanel(){
   const [search, setSearch]       = useState('');
   const [dirty, setDirty]         = useState(false);
   const [saving, setSaving]       = useState(false);
+  const [reflecting, setReflecting] = useState(false);
+  const [reflection, setReflection] = useState('');
   const [search_q, setSearchQ]    = useState('');
   const textRef = useRef<HTMLTextAreaElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout>|null>(null);
+
+  async function reflectOnEntry() {
+    if (!content.trim() || reflecting) return;
+    setReflecting(true);
+    setReflection('');
+    const ownerName = localStorage.getItem('henry:owner_name') || 'you';
+    const prompt = `${ownerName} wrote this journal entry on ${selected?.date || new Date().toISOString().slice(0,10)}:
+
+"${content.slice(0,800)}"
+
+As a thoughtful, encouraging friend, offer a 2-3 sentence reflection. Notice something meaningful. Ask one gentle follow-up question.`;
+    const deviceId = (() => { let id = localStorage.getItem('henry:device_id'); if (!id) { id = crypto.randomUUID(); localStorage.setItem('henry:device_id', id); } return id; })();
+    try {
+      const r = await fetch('https://henry-proxy.henryai.workers.dev/v1/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Henry-Device': deviceId },
+        body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], max_tokens: 200, stream: false }),
+      });
+      const d = await r.json() as any;
+      setReflection(d?.choices?.[0]?.message?.content || '');
+    } catch { setReflection('Could not reach Henry.'); }
+    setReflecting(false);
+  }
 
   async function loadList(q?:string){
     const data = await api.journalList(q||undefined) as JournalEntry[];
@@ -161,6 +186,12 @@ export default function JournalPanel(){
                   );
                 })()}
               </span>
+              {content.trim().length > 50 && (
+                <button onClick={() => void reflectOnEntry()} disabled={reflecting}
+                  className="text-[11px] px-2.5 py-1 rounded-lg bg-henry-accent/15 border border-henry-accent/30 text-henry-accent hover:bg-henry-accent/25 disabled:opacity-40 transition-all">
+                  {reflecting ? '⟳' : '⚡ Reflect'}
+                </button>
+              )}
               {dirty && <button onClick={()=>save()} disabled={saving} className="text-[11px] px-3 py-1 rounded-lg bg-henry-accent text-white hover:bg-henry-accent/80 disabled:opacity-40 transition-all">{saving?'Saving…':'Save'}</button>}
                 <button onClick={askHenry} className="text-[11px] px-3 py-1 rounded-lg bg-henry-surface border border-henry-border/30 text-henry-text-muted hover:text-henry-accent transition-all">Reflect</button>
                 <button onClick={handleDelete} className="text-[11px] px-2 py-1 rounded-lg text-henry-text-muted hover:text-red-400 transition-all">✕</button>
@@ -190,6 +221,15 @@ export default function JournalPanel(){
             </div>
           </div>
         )}
+          {reflection && (
+            <div className="mx-4 mb-3 p-3 bg-henry-accent/8 border border-henry-accent/20 rounded-xl">
+              <div className="flex items-center justify-between mb-1.5">
+                <p className="text-[10px] font-semibold text-henry-accent uppercase tracking-wider">⚡ Henry's reflection</p>
+                <button onClick={() => setReflection('')} className="text-henry-text-muted hover:text-henry-text text-xs">✕</button>
+              </div>
+              <p className="text-xs text-henry-text leading-relaxed">{reflection}</p>
+            </div>
+          )}
       </div>
     </div>
   );

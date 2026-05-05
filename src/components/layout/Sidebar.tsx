@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useStore } from '../../store';
 
 type ViewType = 'today' | 'chat' | 'companion' | 'secretary' | 'contacts' | 'tasks' | 'files' | 'workspace' | 'terminal' | 'computer' | 'printer' | 'costs' | 'settings' | 'journal' | 'focus' | 'recorder' | 'modes' | 'reminders' | 'crm' | 'finance' | 'lists' | 'printstudio' | 'imagegen' | 'videogen' | 'integrations' | 'github' | 'linear' | 'notion' | 'slack' | 'captures' | 'weekly' | 'health' | 'goals' | 'hq' | 'setup' | 'memory' | 'recorder'
@@ -87,6 +87,17 @@ function Divider() {
 export default function Sidebar() {
   const { currentView, setCurrentView } = useStore();
   const [showMore, setShowMore] = useState(false);
+  const [dueCount, setDueCount] = useState(0);
+
+  useEffect(() => {
+    const check = () => {
+      const api2 = (window as any).henryAPI;
+      api2?.remindersDue?.().then((r: any[]) => setDueCount((r||[]).length)).catch(() => {});
+    };
+    check();
+    const t = setInterval(check, 60000);
+    return () => clearInterval(t);
+  }, []);
 
   const go = (id: ViewType) => setCurrentView(id as any);
 
@@ -96,12 +107,18 @@ export default function Sidebar() {
       {/* Core navigation */}
       <div className="flex flex-col items-center gap-1">
         {CORE_NAV.map(item => (
-          <NavIcon
-            key={item.id}
-            item={item}
-            active={currentView === item.id}
-            onClick={() => go(item.id)}
-          />
+          <div key={item.id} className="relative">
+            <NavIcon
+              item={item}
+              active={currentView === item.id}
+              onClick={() => go(item.id)}
+            />
+            {item.id === 'reminders' && dueCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-3.5 px-0.5 flex items-center justify-center rounded-full bg-red-500 text-white text-[9px] font-bold leading-none pointer-events-none">
+                {dueCount > 9 ? '9+' : dueCount}
+              </span>
+            )}
+          </div>
         ))}
       </div>
 
