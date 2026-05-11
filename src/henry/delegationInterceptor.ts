@@ -47,6 +47,16 @@ const OPEN_AND_RE = /^(?:open|go to|launch)\s+([\w\s]+?)\s+and\s+(.+)$/i;
 const TYPE_IN_RE = /^(?:type|write|send|say|put)\s+(.+?)\s+in(?:\s+the)?\s+([\w\s]+)$/i;
 
 export function parseDelegation(message: string): DelegationTarget | null {
+  // Never fire on questions — if it starts with a question word, bail immediately
+  const QUESTION_RE = /^(what|which|how|who|where|when|is|are|do|does|did|can|could|would|will|should|why|tell me about|show me)/i;
+  if (QUESTION_RE.test(message.trim())) return null;
+
+  // Must contain a known app name to be a delegation — prevents false positives
+  const hasKnownApp = Object.keys(DELEGATION_MAP).some(key =>
+    message.toLowerCase().includes(key)
+  );
+  if (!hasKnownApp) return null;
+
   let targetName = '';
   let task = '';
 
