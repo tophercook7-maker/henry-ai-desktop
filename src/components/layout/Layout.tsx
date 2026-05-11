@@ -39,6 +39,8 @@ import ProductionRunsPanel from '../maker/ProductionRunsPanel';
 import WastePanel from '../maker/WastePanel';
 import MaintenancePanel from '../maker/MaintenancePanel';
 import ScripturePanel from '../scripture/ScripturePanel';
+import PrayerPanel from '../prayer/PrayerPanel';
+import QuotingPanel from '../quoting/QuotingPanel';
 import ImageGenPanel from '../imagegen/ImageGenPanel';
 import VideoGenPanel from '../videogen/VideoGenPanel';
 import IntegrationsPanel from '../integrations/IntegrationsPanel';
@@ -256,6 +258,8 @@ export default function Layout() {
           {currentView === 'waste' && <WastePanel />}
           {currentView === 'maintenance' && <MaintenancePanel />}
           {currentView === 'scripture' && <ScripturePanel />}
+          {currentView === 'prayer' && <PrayerPanel />}
+          {currentView === 'quoting' && <QuotingPanel />}
           {currentView === 'imagegen' && <ImageGenPanel />}
       {currentView === 'videogen' && <VideoGenPanel />}
           {currentView === 'integrations' && <IntegrationsPanel />}

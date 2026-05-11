@@ -9,6 +9,8 @@ import { registerAIHandlers } from './ipc/ai';
 import { registerFilesystemHandlers } from './ipc/filesystem';
 import { registerTaskBrokerHandlers } from './ipc/taskBroker';
 import { registerMemoryHandlers } from './ipc/memory';
+import { registerPrayerHandlers } from './ipc/prayer';
+import { registerQuotingHandlers } from './ipc/quoting';
 import { registerMakerStudioHandlers } from './ipc/makerStudio';
 import { registerScriptureHandlers } from './ipc/scripture';
 import { registerOllamaHandlers } from './ipc/ollama';
@@ -396,6 +398,8 @@ app.whenReady().then(() => {
   registerFilesystemHandlers(henryDir);
   registerTaskBrokerHandlers(db, getMainWindow, henryDir);
   registerMemoryHandlers(db);
+  registerPrayerHandlers(db);
+  registerQuotingHandlers(db);
   registerMakerStudioHandlers(db);
   registerScriptureHandlers(db, getMainWindow);
   registerOllamaHandlers(getMainWindow);
