@@ -172,10 +172,10 @@ export default function WastePanel() {
     const summary = patterns.slice(0, 5).map(p =>
       `${reasonMeta(p.reason).label}: ${p.count}x (${fmtMoney(p.total_cost)} lost)`
     ).join(', ');
-    sendToHenry({
-      content: `Looking at my waste log for the last ${windowDays} days. Patterns: ${summary || 'no waste recorded'}. ` +
-        `What does this tell you, and what would you check or change to reduce waste?`,
-    });
+    sendToHenry(
+      `Looking at my waste log for the last ${windowDays} days. Patterns: ${summary || 'no waste recorded'}. ` +
+        `What does this tell you, and what would you check or change to reduce waste?`
+    );
     setCurrentView('chat');
   };
 

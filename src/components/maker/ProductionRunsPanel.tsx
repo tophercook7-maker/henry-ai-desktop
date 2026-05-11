@@ -185,11 +185,11 @@ export default function ProductionRunsPanel() {
     const profit = r.profit;
     const dur = fmtDuration(r.duration_minutes);
     const status = r.success ? 'succeeded' : `failed (${r.failure_reason || 'unknown'})`;
-    sendToHenry({
-      content: `Tell me about this production run: "${r.name}" on ${m}, ${date}, ${dur}, ${status}. ` +
+    sendToHenry(
+      `Tell me about this production run: "${r.name}" on ${m}, ${date}, ${dur}, ${status}. ` +
         `Cost $${r.total_cost.toFixed(2)}, charged $${r.charged_amount.toFixed(2)}, profit ${fmtMoney(profit)}. ` +
-        `Notes: ${r.notes || 'none'}. What can I learn from this and what should I do next?`,
-    });
+        `Notes: ${r.notes || 'none'}. What can I learn from this and what should I do next?`
+    );
     setCurrentView('chat');
   };
 

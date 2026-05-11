@@ -180,10 +180,10 @@ export default function MaintenancePanel() {
     if (!m) return;
     const machineEntries = entries.filter(e => e.machine_id === machineId).slice(0, 10);
     const summary = machineEntries.map(e => `${fmtDate(e.created_at)}: ${typeMeta(e.type).label} — ${e.description}`).join('\n');
-    sendToHenry({
-      content: `Tell me about the maintenance pattern on my ${m.name} (${m.machine_type}). ` +
-        `Recent entries:\n${summary || 'no entries yet'}\n\nWhat patterns do you see, and what should I do next?`,
-    });
+    sendToHenry(
+      `Tell me about the maintenance pattern on my ${m.name} (${m.machine_type}). ` +
+        `Recent entries:\n${summary || 'no entries yet'}\n\nWhat patterns do you see, and what should I do next?`
+    );
     setCurrentView('chat');
   };
 

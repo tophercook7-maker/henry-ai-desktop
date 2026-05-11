@@ -166,7 +166,7 @@ const INTENTS: Handler[] = [
       try {
         // Most direct path — the preload lacks a typed alias for finance:summary, so route via invoke
         if ((window as any).electronAPI?.invoke) {
-          s = await (window as any).electronAPI.invoke('finance:summary', thisMonthStr()) as typeof s;
+          s = await (window as any).electronAPI.invoke('finance:summary', thisMonthStr()) as {income:number; expenses:number; net:number; breakdown:unknown[]};
         }
       } catch { /* ignore */ }
       if (!s) return null;
