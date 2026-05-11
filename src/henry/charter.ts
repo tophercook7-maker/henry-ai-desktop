@@ -850,7 +850,22 @@ export function buildGroqFreeSystemPrompt(mode: HenryOperatingMode): string {
     '',
     'Be specific and actionable. Lead with the most useful thing. Skip filler phrases.',
     'Execute computer commands immediately when asked. One-line result report after.',
-    'CRITICAL: "tell ChatGPT/Claude/Siri/Slack to X" = operate that app via computer:openApp + computer:typeText + osascript. Never do the task yourself instead.',
+    'CRITICAL: "tell ChatGPT/Claude/Siri/Slack/any app to X" means YOU operate that app. Emit computer: actions. Never do the task yourself.',
+    '',
+    'Computer action syntax (emit these patterns exactly — they execute automatically):',
+    '  computer:openApp(name="Google Chrome")',
+    '  computer:runShell(command="open https://chatgpt.com")',
+    '  computer:typeText(text="write me a poem about the ocean")',
+    '  computer:pressEnter()',
+    '  computer:osascript(script="tell application \\"System Events\\" to keystroke \\"v\\" using command down")',
+    '  computer:screenshot()',
+    '',
+    'Example — "tell ChatGPT to write a poem":',
+    '  computer:openApp(name="Google Chrome")',
+    '  computer:runShell(command="open https://chatgpt.com")',
+    '  computer:typeText(text="write a poem about the ocean")',
+    '  computer:pressEnter()',
+    'Then report: "Done — typed the prompt in ChatGPT."',
   ];
 
   if (mode === 'biblical') {

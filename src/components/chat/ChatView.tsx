@@ -1127,7 +1127,12 @@ export default function ChatView() {
   }
 
   async function handleCompanionStream(content: string, convId: string, modeOverride?: HenryOperatingMode) {
-    const effectiveMode = modeOverride ?? operatingMode;
+    // Auto-detect "tell X to do Y" / "open X and do Y" — force computer mode
+    const delegationPattern = /\b(tell|ask|have|get|make|instruct)\s+(chatgpt|claude|gpt|siri|chrome|safari|slack|notion|messages|mail|gmail|cursor|vscode|vs code|spotify|zoom|teams|discord|whatsapp|finder|terminal|iterm|any app|the browser)\s+(to|and)\b/i;
+    const operatePattern = /\b(open|go to|navigate to|type|click|press)\s+\w.*\b(in|on|at)\s+(chrome|safari|chatgpt|claude|slack|notion|messages|mail|gmail|cursor|spotify|zoom|discord)\b/i;
+    const forcedMode: HenryOperatingMode | undefined =
+      (delegationPattern.test(content) || operatePattern.test(content)) ? 'computer' : undefined;
+    const effectiveMode = forcedMode ?? modeOverride ?? operatingMode;
     setIsStreaming(true);
     setStreamingContent('');
 
@@ -1582,9 +1587,8 @@ export default function ChatView() {
     const apiKey = provider.api_key || provider.apiKey || '';
 
     // LEAN PROMPT: for Groq free tier AND Ollama — bypass the full 12k-token charter
-    // Groq free tier: 12-20k TPM limit. Ollama: no limit but faster with lean prompt.
-    // Henry Cloud Proxy: use when no personal key is configured
-    const useLeanPrompt = companionProvider === 'groq' || companionProvider === 'ollama';
+    // Exception: computer mode always gets the full prompt so action patterns are clear
+    const useLeanPrompt = (companionProvider === 'groq' || companionProvider === 'ollama') && effectiveMode !== 'computer';
 
     // Use Henry Cloud Proxy if no personal Groq key is set
     let effectiveApiKey = apiKey;
