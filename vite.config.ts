@@ -16,7 +16,11 @@ export default defineConfig({
             rollupOptions: {
               external: ['better-sqlite3'],
               output: {
-                banner: `import { fileURLToPath } from 'url'; import { dirname } from 'path'; const __filename = fileURLToPath(import.meta.url); const __dirname = dirname(__filename);`,
+                // ESM banner: shim __filename, __dirname, AND require() so bundled
+                // CommonJS-style code (require('fs'), etc) keeps working in the
+                // ESM Node context Electron uses when package.json has type:module.
+                banner: `import { fileURLToPath } from 'url'; import { dirname } from 'path'; import { createRequire } from 'module'; const __filename = fileURLToPath(import.meta.url); const __dirname = dirname(__filename); const require = createRequire(import.meta.url);`,
+                inlineDynamicImports: true,
               },
             },
           },
@@ -32,6 +36,9 @@ export default defineConfig({
             outDir: 'dist-electron',
             rollupOptions: {
               external: ['better-sqlite3'],
+              output: {
+                inlineDynamicImports: true,
+              },
             },
           },
         },

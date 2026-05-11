@@ -1,3 +1,6 @@
+import { classifyIntent, DEFAULT_CODER_MODEL } from './coderModels';
+import { buildCoderSystemPrompt } from './buildCoderSystemPrompt';
+
 /**
  * Henry Iron Gateway — Cost-Optimized Request Router
  *
@@ -22,6 +25,7 @@ export interface AIResult {
   model: string;
   reason: string;
   estimatedTokens: number;
+  coderSystem?: string; // set when intent=code, used by ChatView to override system prompt
 }
 
 export type GatewayResult = LocalResult | AIResult;
@@ -127,6 +131,22 @@ export function route(text: string, context: GatewayContext = {}): GatewayResult
   // Tier 1-3: AI routing
   const { tier, reason } = classifyTier(trimmed);
   const settings = context.settings || {};
+
+  // ── Smart coder routing — Qwen 2.5 Coder 32B for code questions ──────────
+  const smartCodeRouting = settings.smart_code_routing !== 'false'; // default ON
+  const intent = classifyIntent(trimmed);
+  if (intent === 'code' && smartCodeRouting) {
+    return {
+      handled: false,
+      tier: 1,
+      provider: 'groq',
+      model: DEFAULT_CODER_MODEL,
+      reason: 'code intent → Qwen Coder 32B',
+      estimatedTokens: Math.ceil(trimmed.length / 4) + 600,
+      coderSystem: buildCoderSystemPrompt({ userName: settings.user_name }),
+    };
+  }
+
   const { provider, model } = getModel(tier, settings);
   return { handled: false, tier, provider, model, reason, estimatedTokens: Math.ceil(trimmed.length / 4) + 600 };
 }

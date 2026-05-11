@@ -6,6 +6,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { sendToHenry } from '../../actions/store/chatBridgeStore';
 import { useStore } from '../../store';
+import { getCrossRefs } from '../../henry/crossReferences';
+import { callHenryAI, NoBackendAvailableError } from '../../henry/henryAI';
 
 const api = (window as any).henryAPI;
 
@@ -44,55 +46,47 @@ const STUDY_PROMPTS = [
   'Walk me through this verse word by word',
 ];
 
-async function henryStudy(passage: string, text: string, prompt: string, providers: any[], settings: Record<string,string>): Promise<string> {
-  // Pick best available provider: Groq → Ollama → Cloud Proxy
-  const groq = providers?.find((p: any) => p.id === 'groq' && (p.api_key || p.apiKey || '').length > 10);
-  const ollama = providers?.find((p: any) => p.id === 'ollama' && p.enabled);
-  const useProxy = !groq && !ollama;
+const SERMON_PROMPTS = [
+  'Build a full sermon outline (hook, big idea, 3 points, application, closing)',
+  'Give me three preaching points grounded in the text',
+  'Suggest an opening illustration or hook',
+  'How do I connect this to the Gospel?',
+  'What is the clearest application for ordinary believers?',
+  'Suggest a closing prayer for the sermon',
+];
 
-  if (useProxy) {
-    // Use Henry cloud proxy for Bible study — works on free tier
-    return new Promise((resolve) => {
-      const deviceId = (() => { let id = localStorage.getItem('henry:device_id'); if (!id) { id = crypto.randomUUID(); localStorage.setItem('henry:device_id', id); } return id; })();
-      const sys = 'You are a Bible study companion. Give clear, reverent, biblically grounded responses. Respect orthodox Christian tradition. Be concise but thoughtful.';
-      const userMsg = 'Passage: ' + passage + '\n\nText: "' + text + '"\n\nQuestion: ' + prompt;
-      fetch('https://henry-proxy.henryai.workers.dev/v1/chat', {
-        signal: AbortSignal.timeout(25000),
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Henry-Device': deviceId },
-        body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'system', content: sys }, { role: 'user', content: userMsg }], max_tokens: 600, stream: false }),
-      }).then(r => r.json()).then((d: any) => {
-        const content = d?.choices?.[0]?.message?.content || '';
-        if (d?.error?.type === 'rate_limit') resolve('Daily limit reached. Add your Groq key in Settings → AI Providers for unlimited Bible study.');
-        else resolve(content || 'No response from Henry.');
-      }).catch(() => resolve('Could not reach Henry AI. Check your connection.'));
-    });
-  }
+type StudyMode = 'study' | 'sermon';
 
-  const provider = groq ? 'groq' : 'ollama';
-  const apiKey = provider === 'groq' ? (groq?.api_key || groq?.apiKey || '') : '';
-  const model = provider === 'groq'
-    ? (settings?.chat_fast_model || 'llama-3.3-70b-versatile')
-    : (settings?.companion_model || 'llama3.2:latest');
-  const ollamaUrl = settings?.ollama_base_url || 'http://127.0.0.1:11434';
+const STUDY_SYS_PROMPT = 'You are a Bible study companion. Give clear, reverent, biblically grounded responses. Respect orthodox Christian tradition. Be concise but thoughtful.';
 
-  const sys = 'You are a Bible study companion. Give clear, reverent, biblically grounded responses. Respect orthodox Christian tradition. Be concise but thoughtful.';
+const SERMON_SYS_PROMPT = `You are an expository preacher helping prepare a sermon. Build outputs that are reverent, direct, and biblically faithful. When asked for a full outline, follow this structure:
 
-  return new Promise((resolve, reject) => {
-    const stream = (window as any).henryAPI.streamMessage({
-      provider, model, apiKey,
+  HOOK — one sentence opener that connects to a felt need or universal experience.
+  BIG IDEA — the central truth of the passage in a single sentence.
+  THREE POINTS — each grounded in a specific phrase or movement of the text, with brief exegesis (a sentence or two of context, then the timeless truth).
+  APPLICATION — two or three concrete steps an ordinary believer can take this week.
+  CLOSING — a clear gospel call, a short prayer, or both.
+
+For shorter requests (one point, just the hook, just the closing), give just that piece in the same spirit. Tone: warm, plain, scripture-first. Length: enough to teach, short enough to preach in 20-25 minutes when expanded.`;
+
+async function henryStudy(passage: string, text: string, prompt: string, mode: StudyMode): Promise<string> {
+  const systemPrompt = mode === 'sermon' ? SERMON_SYS_PROMPT : STUDY_SYS_PROMPT;
+  const userMsg = `Passage: ${passage}\n\nText: "${text}"\n\nQuestion: ${prompt}`;
+  try {
+    const reply = await callHenryAI({
       messages: [
-        { role: 'system', content: sys },
-        { role: 'user', content: 'Passage: ' + passage + '\n\nText: "' + text + '"\n\nQuestion: ' + prompt },
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userMsg },
       ],
-      temperature: 0.5, maxTokens: 600,
-      apiUrl: provider === 'ollama' ? ollamaUrl : undefined,
+      maxTokens: mode === 'sermon' ? 900 : 600,
+      temperature: 0.5,
+      preferredModel: 'llama-3.3-70b-versatile',
     });
-    let full = '';
-    stream.onChunk((c: string) => { full += c; });
-    stream.onDone(() => resolve(full || '(no response)'));
-    stream.onError((e: string) => reject(new Error(e)));
-  });
+    return reply || 'No response from Henry.';
+  } catch (e) {
+    if (e instanceof NoBackendAvailableError) return e.userFacingMessage;
+    return 'Could not reach an AI provider. ' + (e instanceof Error ? e.message : '');
+  }
 }
 
 export default function ScripturePanel() {
@@ -116,6 +110,9 @@ export default function ScripturePanel() {
   const [studyRef, setStudyRef]   = useState('');
   const [studyOutput, setStudyOutput] = useState('');
   const [studyLoading, setStudyLoading] = useState(false);
+  const [studyMode, setStudyMode] = useState<StudyMode>(() => {
+    return (localStorage.getItem('henry:scripture:study_mode') as StudyMode) || 'study';
+  });
   const [customPrompt, setCustomPrompt] = useState('');
   const [showReadingPlan, setShowReadingPlan] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -185,11 +182,15 @@ export default function ScripturePanel() {
     if (!text) return;
     setStudyLoading(true); setStudyOutput('');
     try {
-      const s = useStore.getState().settings;
-      const out = await henryStudy(ref, text, prompt, providers || [], s as Record<string,string>);
+      const out = await henryStudy(ref, text, prompt, studyMode);
       setStudyOutput(out);
     } catch (e) { setStudyOutput('Error: ' + String(e)); }
     setStudyLoading(false);
+  }
+
+  function setStudyModePersisted(m: StudyMode) {
+    setStudyMode(m);
+    try { localStorage.setItem('henry:scripture:study_mode', m); } catch { /* ignore */ }
   }
 
   function studyInChat() {
@@ -346,6 +347,27 @@ export default function ScripturePanel() {
                   {result.notes && (
                     <p className="text-henry-text-muted text-xs border-t border-henry-border/20 pt-3">{result.notes}</p>
                   )}
+                  {/* Cross-references — free, instant, no AI tokens */}
+                  {(() => {
+                    const refs = getCrossRefs(result.normalizedReference || '');
+                    if (refs.length === 0) return null;
+                    return (
+                      <div className="border-t border-henry-border/20 pt-3">
+                        <p className="text-[10px] uppercase tracking-wider text-henry-text-muted mb-2 font-semibold">
+                          See also
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {refs.map(r => (
+                            <button key={r}
+                              onClick={() => { setQuery(r); void lookup(r); }}
+                              className="text-[11px] px-2.5 py-1 rounded-full bg-henry-accent/10 border border-henry-accent/30 text-henry-accent hover:bg-henry-accent/20 transition-all">
+                              {r}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
                   {/* Actions */}
                   <div className="space-y-2 pt-1">
                     <textarea value={note} onChange={e => setNote(e.target.value)} rows={2}
@@ -434,6 +456,22 @@ export default function ScripturePanel() {
                   + Add note
                 </button>
               )}
+              {/* Cross-references on saved verse */}
+              {(() => {
+                const refs = getCrossRefs(v.ref);
+                if (refs.length === 0) return null;
+                return (
+                  <div className="flex flex-wrap gap-1 pt-1">
+                    {refs.slice(0, 5).map(r => (
+                      <button key={r}
+                        onClick={() => { setTab('lookup'); setQuery(r); void lookup(r); }}
+                        className="text-[10px] px-2 py-0.5 rounded-full bg-henry-accent/8 border border-henry-accent/20 text-henry-accent/80 hover:bg-henry-accent/15 transition-all">
+                        {r}
+                      </button>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
           ))}
         </div>
@@ -442,6 +480,34 @@ export default function ScripturePanel() {
       {/* ── STUDY TAB ── */}
       {tab === 'study' && (
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4 max-w-2xl">
+          {/* Mode toggle: Study vs Sermon */}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] uppercase tracking-wider text-henry-text-muted">Mode:</span>
+            <div className="inline-flex rounded-xl border border-henry-border/30 bg-henry-surface p-0.5">
+              <button onClick={() => setStudyModePersisted('study')}
+                className={`text-[11px] px-3 py-1 rounded-lg font-medium transition-all ${
+                  studyMode === 'study'
+                    ? 'bg-henry-accent text-white'
+                    : 'text-henry-text-muted hover:text-henry-text'
+                }`}>
+                📖 Study
+              </button>
+              <button onClick={() => setStudyModePersisted('sermon')}
+                className={`text-[11px] px-3 py-1 rounded-lg font-medium transition-all ${
+                  studyMode === 'sermon'
+                    ? 'bg-henry-accent text-white'
+                    : 'text-henry-text-muted hover:text-henry-text'
+                }`}>
+                ✝ Sermon
+              </button>
+            </div>
+            <span className="text-[10px] text-henry-text-muted">
+              {studyMode === 'sermon'
+                ? 'Henry builds outlines: hook, big idea, 3 points, application, closing.'
+                : 'Henry explores context, meaning, and application.'}
+            </span>
+          </div>
+
           <div className="space-y-2">
             <label className="text-[10px] uppercase tracking-wider text-henry-text-muted block">Passage reference</label>
             <input value={studyRef} onChange={e => setStudyRef(e.target.value)} placeholder="e.g. Romans 8:28"
@@ -454,11 +520,13 @@ export default function ScripturePanel() {
               className={inp + ' w-full resize-none'} />
           </div>
 
-          {/* Study prompts */}
+          {/* Mode-specific prompts */}
           <div>
-            <p className="text-[10px] uppercase tracking-wider text-henry-text-muted mb-2">Study questions</p>
+            <p className="text-[10px] uppercase tracking-wider text-henry-text-muted mb-2">
+              {studyMode === 'sermon' ? 'Sermon prompts' : 'Study questions'}
+            </p>
             <div className="grid grid-cols-2 gap-2">
-              {STUDY_PROMPTS.map(p => (
+              {(studyMode === 'sermon' ? SERMON_PROMPTS : STUDY_PROMPTS).map(p => (
                 <button key={p} onClick={() => void studyPassage(p)} disabled={!studyText.trim() || studyLoading}
                   className="text-left text-[11px] px-3 py-2 rounded-xl bg-henry-surface border border-henry-border/30 text-henry-text-muted hover:text-henry-text hover:border-henry-accent/30 disabled:opacity-40 transition-all leading-snug">
                   {p}

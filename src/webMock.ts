@@ -31,6 +31,8 @@ function on<T>(event: string, cb: Listener<T>): () => void {
 
 const now = () => new Date().toISOString();
 
+import { tryCerebrasFallback, isGroqRateLimit } from './henry/providers/cerebras';
+
 // ── Direct API endpoints (bypass the Vite dev-server proxy) ───────────────
 // Groq supports browser-side CORS requests natively — calling api.groq.com
 // directly is simpler and more reliable than routing through the local proxy.
@@ -460,6 +462,13 @@ const henryAPI: Window['henryAPI'] = {
             const errBody = await res.text().catch(() => '');
             let errMsg = `Groq ${res.status}: ${res.statusText}`;
             try { const j = JSON.parse(errBody) as { error?: { message?: string } }; if (j.error?.message) errMsg = `Groq error: ${j.error.message}`; } catch { /* */ }
+            // Silent Cerebras fallback on 429 rate-limit
+            if (isGroqRateLimit(res.status)) {
+              const cerebrasKey = (params as any).cerebrasApiKey as string | undefined
+                ?? localStorage.getItem('henry:cerebras_api_key') ?? undefined;
+              const fallback = await tryCerebrasFallback({ cerebrasApiKey: cerebrasKey, model, messages, signal: controller.signal });
+              if (fallback?.ok) { chunkCb?.(fallback.text); doneCb?.(fallback.text, estimateUsage(fallback.text, params)); return; }
+            }
             throw new Error(errMsg);
           }
           await readOpenAIStream(res);

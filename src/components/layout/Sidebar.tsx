@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useStore } from '../../store';
 
-type ViewType = 'today' | 'chat' | 'companion' | 'secretary' | 'contacts' | 'tasks' | 'files' | 'workspace' | 'terminal' | 'computer' | 'printer' | 'costs' | 'settings' | 'journal' | 'focus' | 'recorder' | 'modes' | 'reminders' | 'crm' | 'finance' | 'lists' | 'printstudio' | 'imagegen' | 'videogen' | 'integrations' | 'github' | 'linear' | 'notion' | 'slack' | 'captures' | 'weekly' | 'health' | 'goals' | 'hq' | 'setup' | 'memory' | 'recorder'
+type ViewType = 'today' | 'chat' | 'companion' | 'secretary' | 'contacts' | 'tasks' | 'files' | 'workspace' | 'terminal' | 'computer' | 'printer' | 'costs' | 'settings' | 'journal' | 'focus' | 'recorder' | 'modes' | 'reminders' | 'crm' | 'finance' | 'lists' | 'printstudio' | 'machines' | 'materials' | 'production' | 'waste' | 'maintenance' | 'imagegen' | 'videogen' | 'integrations' | 'github' | 'linear' | 'notion' | 'slack' | 'captures' | 'weekly' | 'health' | 'goals' | 'hq' | 'setup' | 'memory' | 'recorder'
   | 'scripture';
 
 // Core nav — the things you actually use daily
@@ -31,6 +31,11 @@ const MORE_NAV: { id: ViewType; icon: string; label: string }[] = [
   { id: 'goals',      icon: '◎',  label: 'Goals' },
   { id: 'weekly',     icon: '▦',  label: 'Weekly' },
   { id: 'lists',      icon: '≡',  label: 'Lists' },
+  { id: 'machines',   icon: '⚙',  label: 'Machines' },
+  { id: 'materials',  icon: '⬢',  label: 'Materials' },
+  { id: 'production', icon: '▶',  label: 'Runs' },
+  { id: 'waste',      icon: '◌',  label: 'Waste' },
+  { id: 'maintenance',icon: '⚒',  label: 'Service' },
   { id: 'printstudio',icon: '▣',  label: 'Print Studio' },
   { id: 'imagegen',   icon: '◐',  label: 'Image Gen' },
   { id: 'videogen',   icon: '▶',  label: 'Video Gen' },

@@ -40,24 +40,30 @@ export default function AutoSetupPanel() {
       patch('accessibility', { status: r?.granted ? 'ok' : 'missing' });
     } catch { patch('accessibility', { status:'missing' }); }
 
-    // Screen Recording
+    // Screen Recording — use OS-level check, NOT shell screencapture
+    // (shell runs as you, not as Henry, so it always succeeds even when Henry has no permission)
     try {
-      const r = await api.computerRunShell?.({
-        command: 'screencapture -x /tmp/htest.png && rm -f /tmp/htest.png',
-        timeout: 3000,
-      });
-      patch('screen', { status: r?.error ? 'missing' : 'ok' });
-    } catch { patch('screen', { status:'missing' }); }
+      const r = await (api as any).checkScreenRecording?.();
+      patch('screen', { status: r?.granted ? 'ok' : 'missing' });
+    } catch { patch('screen', { status: 'missing' }); }
 
-    // AI provider — proxy is always available (50 req/day free)
+    // AI provider — must have BYOK key, Ollama, or a paid license (no freebies)
     const hasGroq = (providers||[]).some((p:any) => p.id==='groq' && (p.apiKey||p.api_key||'').length > 10);
     const isOllama = settings?.companion_provider === 'ollama';
-    const hasProxy = true; // henry-proxy.henryai.workers.dev always available
+    const hasOpenAI = (providers||[]).some((p:any) => p.id==='openai' && (p.apiKey||p.api_key||'').length > 10);
+    const hasAnthropic = (providers||[]).some((p:any) => p.id==='anthropic' && (p.apiKey||p.api_key||'').length > 10);
+    const hasGoogle = (providers||[]).some((p:any) => p.id==='google' && (p.apiKey||p.api_key||'').length > 10);
+    const hasLicense = ((localStorage.getItem('henry:license_key') || '').trim()).length > 0;
+    const hasAnyBackend = hasGroq || isOllama || hasOpenAI || hasAnthropic || hasGoogle || hasLicense;
     patch('ai', {
-      status: 'ok', // always ok — proxy is the fallback
-      description: hasGroq ? 'Groq key connected — unlimited ✓' :
-                   isOllama ? 'Ollama connected — local AI ✓' :
-                   'Free tier active — 50 requests/day via Henry proxy ✓',
+      status: hasAnyBackend ? 'ok' : 'missing',
+      description: hasGroq ? 'Groq key connected — fast, free tier 14,400/day ✓' :
+                   isOllama ? 'Ollama connected — local, private, free ✓' :
+                   hasAnthropic ? 'Anthropic key connected ✓' :
+                   hasOpenAI ? 'OpenAI key connected ✓' :
+                   hasGoogle ? 'Google key connected ✓' :
+                   hasLicense ? 'Henry license active ✓' :
+                   'Add a free Groq key (60 sec) or install Ollama — Settings → AI Providers',
     });
 
     // Ollama
@@ -101,22 +107,37 @@ export default function AutoSetupPanel() {
   async function fix(id: string) {
     patch(id, { status:'fixing' });
     if (id === 'accessibility') {
+      // Honest reality: ad-hoc-signed Henry can't trigger TCC dialogs reliably
+      // on macOS 26+. Best we can do is open Finder + System Settings and tell
+      // the user exactly what to do.
       try {
+        // Try the API anyway in case it does work (signed builds, older macOS)
         const r = await api.requestAccessibility?.();
-        if (r?.granted) { patch('accessibility',{status:'ok'}); }
-        else { setPollingAccess(true); patch('accessibility',{ status:'fixing', description:'Click OK in the macOS dialog ↑' }); }
-      } catch {
-        await api.openPermissions?.();
-        setPollingAccess(true);
-        patch('accessibility',{ status:'fixing', description:'Enable in System Settings — Henry detects it automatically' });
-      }
+        if (r?.granted) { patch('accessibility', { status: 'ok' }); return; }
+      } catch { /* */ }
+      // Open Finder showing Henry, plus System Settings to the right pane
+      try { await api.computerRunShell?.({ command: 'open -R "/Applications/Henry AI.app" && open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"', timeout: 3000 }); } catch { /* */ }
+      patch('accessibility', { status: 'fixing', description: 'In System Settings: click + → choose Henry AI → toggle ON. Click Recheck when done.' });
+      setPollingAccess(true);
     } else if (id === 'screen') {
-      await api.openScreenRecording?.();
-      patch('screen',{ status:'fixing', description:'Enable Screen Recording for Henry in System Settings' });
-      setTimeout(async () => {
-        const r = await api.computerRunShell?.({ command:'screencapture -x /tmp/hp.png && rm -f /tmp/hp.png', timeout:3000 });
-        patch('screen',{ status: r?.error?'missing':'ok' });
-      }, 6000);
+      // Same reality as accessibility — ad-hoc Henry can't trigger the dialog.
+      // Open Finder + System Settings, walk user through manual add.
+      try { await api.openScreenRecording?.(); } catch { /* */ }
+      try { await api.computerRunShell?.({ command: 'open -R "/Applications/Henry AI.app"', timeout: 2000 }); } catch { /* */ }
+      patch('screen', { status: 'fixing', description: 'In System Settings: click + → choose Henry AI → toggle ON. Click Recheck when done.' });
+      let attempts = 0;
+      const maxAttempts = 30;
+      const poll = setInterval(async () => {
+        attempts++;
+        const r = await (api as any).checkScreenRecording?.().catch(() => null);
+        if (r?.granted) {
+          clearInterval(poll);
+          patch('screen', { status: 'ok', description: 'Granted' });
+        } else if (attempts >= maxAttempts) {
+          clearInterval(poll);
+          patch('screen', { status: 'missing', description: 'Click + in System Settings, choose Henry AI, toggle on, then Recheck.' });
+        }
+      }, 2000);
     } else if (id === 'ai') {
       // AI is already working via proxy — direct to settings to upgrade
       setCurrentView('settings' as any);
@@ -154,16 +175,31 @@ export default function AutoSetupPanel() {
         <div>
           <h1 className="text-xl font-black text-henry-text">Henry Setup</h1>
           <p className="text-henry-text-muted text-sm mt-1">
-            {allOk ? '✓ Fully operational.' : missing > 0 ? `${missing} item${missing===1?'':'s'} need${missing===1?'s':''} attention — Henry fixes them automatically.` : 'Checking…'}
+            {allOk ? '✓ Fully operational.' : missing > 0 ? `${missing} item${missing===1?'':'s'} need${missing===1?'s':''} attention.` : 'Checking…'}
           </p>
         </div>
 
-        {missing > 0 && (
-          <button onClick={() => void fixAll()}
-            className="w-full py-3 rounded-2xl bg-henry-accent text-white font-bold text-sm hover:bg-henry-accent/80 transition-all">
-            ⚡ Auto-fix everything ({missing} item{missing===1?'':'s'})
-          </button>
-        )}
+        {/* Big primary CTA: launch the guided wizard */}
+        <button
+          onClick={() => window.dispatchEvent(new CustomEvent('henry_open_setup_wizard'))}
+          className="w-full p-5 rounded-2xl bg-gradient-to-br from-henry-accent to-henry-accent/70 text-white text-left hover:opacity-90 transition-all shadow-lg shadow-henry-accent/20">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center text-2xl flex-shrink-0">
+              {allOk ? '✓' : '🗭'}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-bold text-base">
+                {allOk ? 'Re-run guided setup' : 'Open guided setup wizard'}
+              </p>
+              <p className="text-white/80 text-xs mt-0.5">
+                {allOk
+                  ? 'Everything works — wizard available anytime'
+                  : 'Step-by-step instructions, opens the right windows for you, auto-detects when each is done'}
+              </p>
+            </div>
+            <span className="text-2xl flex-shrink-0">→</span>
+          </div>
+        </button>
 
         <div className="space-y-2.5">
           {items.map(item => (

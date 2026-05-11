@@ -33,6 +33,11 @@ import CRMPanel from '../crm/CRMPanel';
 import FinancePanel from '../finance/FinancePanel';
 import ListsPanel from '../lists/ListsPanel';
 import PrintStudioPanel from '../printstudio/PrintStudioPanel';
+import MachinesPanel from '../maker/MachinesPanel';
+import MaterialsPanel from '../maker/MaterialsPanel';
+import ProductionRunsPanel from '../maker/ProductionRunsPanel';
+import WastePanel from '../maker/WastePanel';
+import MaintenancePanel from '../maker/MaintenancePanel';
 import ScripturePanel from '../scripture/ScripturePanel';
 import ImageGenPanel from '../imagegen/ImageGenPanel';
 import VideoGenPanel from '../videogen/VideoGenPanel';
@@ -184,23 +189,57 @@ export default function Layout() {
           {currentView === 'companion' && (
             <div className="h-full overflow-y-auto px-5 py-5 max-w-lg space-y-5">
               <div>
-                <h2 className="text-lg font-bold text-henry-text">iPad / iPhone Companion</h2>
-                <p className="text-xs text-henry-text-muted mt-1">Connect your iPhone or iPad over WiFi. Generate a pairing code or open the URL directly.</p>
+                <h2 className="text-lg font-bold text-henry-text">Henry AI — Phone &amp; Tablet</h2>
+                <p className="text-xs text-henry-text-muted mt-1">Henry AI works as a standalone app on your iPhone and iPad. No App Store needed.</p>
               </div>
 
-              {/* Primary: QR / pairing code */}
-              <DeviceLinkPanel />
+              {/* Step 1: Open on phone */}
+              <div className="bg-henry-surface/40 border border-henry-border/15 rounded-2xl p-4 space-y-3">
+                <p className="text-xs font-semibold text-henry-text uppercase tracking-wider">Step 1 — Open on your iPhone or iPad</p>
+                <CompanionUrlCard />
+                <p className="text-[11px] text-henry-text-muted leading-relaxed">
+                  Both devices must be on the same WiFi. Open the URL above in Safari (not Chrome).
+                </p>
+              </div>
 
-              {/* Secondary: direct web URL */}
+              {/* Step 2: Install as app */}
+              <div className="bg-henry-accent/8 border border-henry-accent/20 rounded-2xl p-4 space-y-3">
+                <p className="text-xs font-semibold text-henry-accent uppercase tracking-wider">Step 2 — Install as an App</p>
+                <div className="space-y-2.5">
+                  {[
+                    { icon: '1', text: 'Tap the Share button (□↑) at the bottom of Safari' },
+                    { icon: '2', text: 'Scroll down and tap "Add to Home Screen"' },
+                    { icon: '3', text: 'Tap "Add" — Henry AI appears on your home screen' },
+                    { icon: '4', text: 'Open it from your home screen — runs full-screen like a native app' },
+                  ].map(step => (
+                    <div key={step.icon} className="flex items-start gap-3">
+                      <span className="w-5 h-5 rounded-full bg-henry-accent text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{step.icon}</span>
+                      <p className="text-xs text-henry-text leading-relaxed">{step.text}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* QR code */}
               <details className="group">
-                <summary className="text-xs text-henry-text-muted cursor-pointer hover:text-henry-text transition-all list-none flex items-center gap-1 pt-2">
+                <summary className="text-xs text-henry-text-muted cursor-pointer hover:text-henry-text transition-all list-none flex items-center gap-1">
                   <span className="group-open:rotate-90 transition-transform inline-block">▶</span>
-                  Open web companion directly (no pairing)
+                  Scan QR code instead of typing the URL
                 </summary>
                 <div className="mt-3">
-                  <CompanionUrlCard />
+                  <DeviceLinkPanel />
                 </div>
               </details>
+
+              {/* What's available */}
+              <div className="bg-henry-surface/30 border border-henry-border/10 rounded-2xl p-4">
+                <p className="text-xs font-semibold text-henry-text mb-2">What's in the app</p>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {['💬 Chat with Henry','☀️ Today & Habits','✓ Tasks (add/complete)','⏰ Reminders','📔 Journal entries','❤️ Health logging','◎ Goals','💰 Finance','✝ Bible study','⊕ Smart capture'].map(f => (
+                    <p key={f} className="text-[11px] text-henry-text-muted">{f}</p>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
           {currentView === 'reminders' && <RemindersPanel />}
@@ -211,6 +250,11 @@ export default function Layout() {
           {currentView === 'hq' && <HQPanel />}
           {currentView === 'setup' && <AutoSetupPanel />}
           {currentView === 'printstudio' && <PrintStudioPanel />}
+          {currentView === 'machines' && <MachinesPanel />}
+          {currentView === 'materials' && <MaterialsPanel />}
+          {currentView === 'production' && <ProductionRunsPanel />}
+          {currentView === 'waste' && <WastePanel />}
+          {currentView === 'maintenance' && <MaintenancePanel />}
           {currentView === 'scripture' && <ScripturePanel />}
           {currentView === 'imagegen' && <ImageGenPanel />}
       {currentView === 'videogen' && <VideoGenPanel />}

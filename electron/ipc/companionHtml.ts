@@ -15,14 +15,26 @@ export function buildCompanionHtml(macName: string): string {
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover,interactive-widget=resizes-content">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Henry">
-<title>Henry — ${macName}</title>
+<meta name="apple-mobile-web-app-title" content="Henry AI">
+<meta name="application-name" content="Henry AI">
+<meta name="theme-color" content="#07070f">
+<meta name="description" content="Your personal AI assistant — Henry AI companion">
+<meta name="msapplication-TileColor" content="#7c3aed">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+<title>Henry AI</title>
 <style>
 :root{
   --bg:#07070f;--s1:#0f0f1a;--s2:#16162a;--s3:#1e1e32;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
   --border:rgba(255,255,255,.08);--accent:#7c3aed;--accent2:#6d28d9;
   --green:#22c55e;--red:#ef4444;--blue:#3b82f6;--yellow:#f59e0b;
   --text:#e8e8f0;--muted:rgba(232,232,240,.45);--muted2:rgba(232,232,240,.25);
@@ -31,12 +43,12 @@ export function buildCompanionHtml(macName: string): string {
   --font:-apple-system,BlinkMacSystemFont,'SF Pro Display',sans-serif;
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--font);overflow:hidden}
+html,body{height:100%;height:100dvh;min-height:100dvh;background:var(--bg);color:var(--text);font-family:var(--font);overflow:hidden}
 
 /* ── LAYOUT ─────────────────────────────────────────────────── */
-#app{display:flex;height:100%;padding-top:var(--safe-top)}
-#chat-col{display:flex;flex-direction:column;width:360px;flex-shrink:0;border-right:1px solid var(--border)}
-#right-col{flex:1;display:flex;flex-direction:column;overflow:hidden}
+#app{display:flex;height:100%;height:100dvh;padding-top:var(--safe-top);min-height:0}
+#chat-col{display:flex;flex-direction:column;width:360px;flex-shrink:0;min-height:0;border-right:1px solid var(--border)}
+#right-col{flex:1;display:flex;flex-direction:column;min-height:0;overflow:hidden}
 
 /* Phone: single column */
 @media(max-width:767px){
@@ -66,7 +78,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 #conn-dot.ok{background:var(--green);box-shadow:0 0 6px var(--green)}
 #conn-dot.err{background:var(--red)}
 
-#msgs{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;-webkit-overflow-scrolling:touch}
+#msgs{flex:1;min-height:0;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;-webkit-overflow-scrolling:touch}
 #msgs::-webkit-scrollbar{display:none}
 
 .msg{max-width:88%;display:flex;flex-direction:column;gap:2px}
@@ -204,13 +216,18 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 </head>
 <body>
 
-<div id="pair-screen">
+<div id="pair-screen" style="padding-top: max(44px, env(safe-area-inset-top, 44px))">
   <div style="font-size:48px">◉</div>
   <h1>Henry AI</h1>
   <p>Connected to <strong style="color:var(--text)">${macName}</strong></p>
   <div id="ps-ip" class="pair-ip"></div>
   <p style="font-size:13px">Open this address on your iPad or iPhone</p>
   <button class="pair-btn" onclick="hidePair()">Open Companion →</button>
+</div>
+
+<!-- Offline indicator (shown when Mac unreachable) -->
+<div id="offline-bar" style="display:none;position:fixed;top:0;left:0;right:0;z-index:1000;background:#ef4444;color:#fff;text-align:center;padding:8px 16px;font-size:12px;font-weight:600;padding-top:max(8px,env(safe-area-inset-top,8px))">
+  ⚡ Reconnecting to Henry on your Mac…
 </div>
 
 <div id="app" style="display:none">
@@ -468,6 +485,29 @@ function addMsg(role, text) {
   return bubble;
 }
 
+// Build conversation history from the DOM — last 16 messages —
+// so Henry remembers what we just talked about.
+function buildHistory() {
+  const out = [];
+  const nodes = document.querySelectorAll('#msgs .msg');
+  for (const n of nodes) {
+    const isUser = n.classList.contains('u');
+    const isHenry = n.classList.contains('h');
+    if (!isUser && !isHenry) continue;
+    const bubble = n.querySelector('.bubble');
+    if (!bubble) continue;
+    const txt = (bubble.textContent || '').trim();
+    // Skip the placeholder “…” bubble that's currently waiting for a response
+    if (!txt || txt === '…') continue;
+    // Skip error placeholders so Henry doesn't try to respond to them
+    if (txt.startsWith('⚠')) continue;
+    out.push({ role: isUser ? 'user' : 'assistant', content: txt });
+  }
+  // Drop the very last user message (we send it as text separately) and trim to 16
+  if (out.length && out[out.length - 1].role === 'user') out.pop();
+  return out.slice(-16);
+}
+
 async function sendMsg() {
   const inp = document.getElementById('msg-in');
   const text = inp.value.trim();
@@ -477,12 +517,12 @@ async function sendMsg() {
   busy = true;
   const bubble = addMsg('h', '…');
   try {
+    const history = buildHistory();
     const r = await fetch(BASE + '/sync/prompt', {
-      signal: AbortSignal.timeout(25000),
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, source: 'companion' }),
-      signal: AbortSignal.timeout(30000),
+      body: JSON.stringify({ text, source: 'companion', history }),
+      signal: AbortSignal.timeout(45000),
     });
     if (!r.ok) {
       bubble.textContent = r.status === 401

@@ -168,6 +168,7 @@ contextBridge.exposeInMainWorld('henryAPI', {
   // ── Auto-setup & permissions ─────────────────────────────────────────────
   requestAccessibility: () => ipcRenderer.invoke('henry:requestAccessibility'),
   checkAccessibility: () => ipcRenderer.invoke('henry:checkAccessibility'),
+  checkScreenRecording: () => ipcRenderer.invoke('henry:checkScreenRecording'),
   openPermissions: () => ipcRenderer.invoke('henry:openPermissions'),
   openScreenRecording: () => ipcRenderer.invoke('henry:openScreenRecording'),
   onPermissionsStatus: (cb: (status: { accessibility: boolean; screenRecording: boolean }) => void) => {
@@ -244,6 +245,30 @@ contextBridge.exposeInMainWorld('henryAPI', {
   tasksCreate: (task: Record<string, unknown>) => ipcRenderer.invoke('tasks:create', task),
   tasksUpdate: (id: string, patch: Record<string, unknown>) => ipcRenderer.invoke('tasks:update', id, patch),
   tasksDelete: (id: string) => ipcRenderer.invoke('tasks:delete', id),
+  // Maker Studio — machines, materials, production runs, waste, maintenance
+  // Generalized: 3D printers, lasers, CNC, embroidery, vinyl, sewing, kilns, etc.
+  makerMachinesList: (opts?: { type?: string; activeOnly?: boolean }) => ipcRenderer.invoke('maker:machines:list', opts),
+  makerMachinesSave: (m: Record<string, unknown>) => ipcRenderer.invoke('maker:machines:save', m),
+  makerMachinesDelete: (id: string) => ipcRenderer.invoke('maker:machines:delete', id),
+  makerMaterialsList: (opts?: { category?: string; lowStock?: boolean; activeOnly?: boolean }) => ipcRenderer.invoke('maker:materials:list', opts),
+  makerMaterialsSave: (m: Record<string, unknown>) => ipcRenderer.invoke('maker:materials:save', m),
+  makerMaterialsDelete: (id: string) => ipcRenderer.invoke('maker:materials:delete', id),
+  makerMaterialsColors: () => ipcRenderer.invoke('maker:materials:colors'),
+  makerRunsList: (opts?: { machineId?: string; project?: string; limit?: number }) => ipcRenderer.invoke('maker:runs:list', opts),
+  makerRunsSave: (r: Record<string, unknown>) => ipcRenderer.invoke('maker:runs:save', r),
+  makerRunsDelete: (id: string) => ipcRenderer.invoke('maker:runs:delete', id),
+  makerRunsSummary: (opts?: { month?: string; machineId?: string }) => ipcRenderer.invoke('maker:runs:summary', opts),
+  makerWasteList: (limit?: number) => ipcRenderer.invoke('maker:waste:list', limit),
+  makerWasteSave: (w: Record<string, unknown>) => ipcRenderer.invoke('maker:waste:save', w),
+  makerWasteDelete: (id: string) => ipcRenderer.invoke('maker:waste:delete', id),
+  makerWastePatterns: (opts?: { sinceDays?: number }) => ipcRenderer.invoke('maker:waste:patterns', opts),
+  makerMaintenanceList: (machineId?: string) => ipcRenderer.invoke('maker:maintenance:list', machineId),
+  makerMaintenanceSave: (m: Record<string, unknown>) => ipcRenderer.invoke('maker:maintenance:save', m),
+  makerMaintenanceDelete: (id: string) => ipcRenderer.invoke('maker:maintenance:delete', id),
+  makerBomList: (projectName?: string) => ipcRenderer.invoke('maker:bom:list', projectName),
+  makerBomSave: (b: Record<string, unknown>) => ipcRenderer.invoke('maker:bom:save', b),
+  makerBomDelete: (id: string) => ipcRenderer.invoke('maker:bom:delete', id),
+  makerMigrateFromLocalStorage: (data: Record<string, unknown>) => ipcRenderer.invoke('maker:migrate:from-localStorage', data),
   // Native notification
   showNotification: (opts: { title: string; body?: string }) => ipcRenderer.invoke('notification:show', opts),
   searchFacts: (query: Record<string, unknown>) => ipcRenderer.invoke('memory:searchFacts', query),

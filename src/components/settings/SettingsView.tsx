@@ -649,6 +649,62 @@ function CompanionTab() {
   );
 }
 
+function SmartRoutingSection() {
+  const { settings } = useStore();
+  const [cerebrasKey, setCerebrasKey] = React.useState(
+    () => localStorage.getItem('henry:cerebras_api_key') || ''
+  );
+  const smartOn = settings.smart_code_routing !== 'false';
+
+  async function saveSetting(key: string, value: string) {
+    await window.henryAPI.saveSetting(key, value);
+    if (key === 'cerebras_api_key') localStorage.setItem('henry:cerebras_api_key', value);
+  }
+
+  return (
+    <div className="bg-henry-surface/40 border border-henry-border/15 rounded-2xl p-4 space-y-4">
+      <p className="text-xs font-semibold text-henry-text uppercase tracking-wider">Smart Routing</p>
+
+      {/* Smart code routing toggle */}
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-sm text-henry-text font-medium">Smart code routing</p>
+          <p className="text-[11px] text-henry-text-muted mt-0.5">
+            Automatically use Qwen 2.5 Coder 32B for code questions, regular model for everything else. Free on Groq.
+          </p>
+        </div>
+        <button
+          onClick={() => void saveSetting('smart_code_routing', smartOn ? 'false' : 'true')}
+          className={`w-10 h-5 rounded-full transition-all flex-shrink-0 mt-0.5 ${smartOn ? 'bg-henry-accent' : 'bg-henry-border/40'}`}
+          role="switch" aria-checked={smartOn}
+        >
+          <span className={`block w-4 h-4 rounded-full bg-white shadow transition-transform m-0.5 ${smartOn ? 'translate-x-5' : 'translate-x-0'}`} />
+        </button>
+      </div>
+
+      {/* Cerebras fallback key */}
+      <div className="space-y-1.5 pt-1 border-t border-henry-border/10">
+        <p className="text-sm text-henry-text font-medium">Cerebras API key <span className="text-[10px] text-henry-text-muted font-normal">(optional — fallback when Groq rate-limits)</span></p>
+        <div className="flex gap-2">
+          <input
+            type="password"
+            placeholder="csk-... (get free key at cloud.cerebras.ai)"
+            value={cerebrasKey}
+            onChange={e => setCerebrasKey(e.target.value)}
+            onBlur={() => void saveSetting('cerebras_api_key', cerebrasKey)}
+            className="flex-1 bg-henry-bg border border-henry-border/30 rounded-xl px-3 py-2 text-sm text-henry-text placeholder:text-henry-text-muted outline-none focus:border-henry-accent/50 font-mono"
+          />
+          {cerebrasKey && (
+            <button onClick={() => { setCerebrasKey(''); void saveSetting('cerebras_api_key', ''); }}
+              className="text-xs text-henry-text-muted hover:text-red-400 px-2 transition-all">✕</button>
+          )}
+        </div>
+        <p className="text-[10px] text-henry-text-muted">When Groq returns a 429 rate-limit error, Henry silently retries on Cerebras instead of showing an error. Both use the same Qwen Coder model.</p>
+      </div>
+    </div>
+  );
+}
+
 function ProvidersTab() {
   const { providers } = useStore();
   const [usage, setUsage] = useState(() => getTodayUsage());
@@ -739,6 +795,9 @@ function ProvidersTab() {
             className="text-xs text-henry-text-muted hover:text-red-400 transition-all">Remove</button>
         </div>
       )}
+
+      {/* ── Smart Coder Routing ─────────────────────────────────────────── */}
+      <SmartRoutingSection />
 
       {(Object.keys(PROVIDERS) as ProviderId[]).map((id) => {
         const provider = PROVIDERS[id];

@@ -585,6 +585,115 @@ async function handleRequest(
     return;
   }
 
+  // ── PWA Static Assets ─────────────────────────────────────────────────────
+  if (path === '/manifest.json' && req.method === 'GET') {
+    const manifest = {
+      name: "Henry AI",
+      short_name: "Henry",
+      description: "Your personal AI assistant",
+      start_url: "/",
+      display: "standalone",
+      background_color: "#07070f",
+      theme_color: "#07070f",
+      orientation: "portrait-primary",
+      icons: [
+        { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any maskable" },
+        { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any maskable" },
+      ],
+      categories: ["productivity", "utilities"],
+      shortcuts: [
+        { name: "Chat", short_name: "Chat", url: "/#chat", description: "Open Henry chat" },
+        { name: "Today", short_name: "Today", url: "/#today", description: "View today" },
+        { name: "Tasks", short_name: "Tasks", url: "/#tasks", description: "View tasks" },
+      ],
+    };
+    res.writeHead(200, {
+      'Content-Type': 'application/manifest+json',
+      'Cache-Control': 'max-age=3600',
+      'Access-Control-Allow-Origin': '*',
+    });
+    res.end(JSON.stringify(manifest));
+    return;
+  }
+
+  if (path === '/sw.js' && req.method === 'GET') {
+    const swCode = `
+const CACHE_NAME = 'henry-ai-v1';
+const OFFLINE_CACHE = ['/'];
+
+self.addEventListener('install', (event) => {
+  self.skipWaiting();
+  event.waitUntil(
+    caches.open(CACHE_NAME).then(cache => cache.addAll(OFFLINE_CACHE))
+  );
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys().then(keys =>
+      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
+    )
+  );
+  self.clients.claim();
+});
+
+self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+  // Don't cache API calls — always go network
+  if (url.pathname.startsWith('/sync/')) {
+    event.respondWith(fetch(event.request).catch(() =>
+      new Response(JSON.stringify({error:'offline'}), {headers:{'Content-Type':'application/json'}})
+    ));
+    return;
+  }
+  // For the app shell, try network first, fall back to cache
+  event.respondWith(
+    fetch(event.request).then(response => {
+      const clone = response.clone();
+      caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+      return response;
+    }).catch(() => caches.match(event.request))
+  );
+});
+`;
+    res.writeHead(200, {
+      'Content-Type': 'application/javascript',
+      'Cache-Control': 'no-cache',
+      'Service-Worker-Allowed': '/',
+    });
+    res.end(swCode);
+    return;
+  }
+
+  if ((path === '/icon-192.png' || path === '/icon-512.png') && req.method === 'GET') {
+    const size = path.includes('512') ? 512 : 192;
+    // Generate a simple SVG icon and serve it as PNG via SVG data
+    // We serve an SVG that Safari will render as the icon
+    const svgIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+      <rect width="${size}" height="${size}" rx="${size * 0.2}" fill="#07070f"/>
+      <rect width="${size}" height="${size}" rx="${size * 0.2}" fill="url(#g)"/>
+      <defs>
+        <radialGradient id="g" cx="35%" cy="25%" r="70%">
+          <stop offset="0%" stop-color="#9f5cff"/>
+          <stop offset="100%" stop-color="#07070f"/>
+        </radialGradient>
+      </defs>
+      <text x="${size/2}" y="${size * 0.62}" font-family="system-ui,-apple-system,sans-serif" 
+            font-size="${size * 0.42}" font-weight="900" text-anchor="middle" 
+            fill="white" letter-spacing="-2">H</text>
+      <text x="${size/2}" y="${size * 0.82}" font-family="system-ui,-apple-system,sans-serif" 
+            font-size="${size * 0.1}" font-weight="600" text-anchor="middle" 
+            fill="rgba(255,255,255,0.5)" letter-spacing="3">AI</text>
+    </svg>`;
+    res.writeHead(200, {
+      'Content-Type': 'image/svg+xml',
+      'Cache-Control': 'max-age=86400',
+      'X-Content-Type-Options': 'nosniff',
+    });
+    res.end(svgIcon);
+    return;
+  }
+
   if (path === '/sync/health' && req.method === 'GET') {
     // Health is public — allows mobile to check server is up before pairing
     let appVersion = (() => {
@@ -1100,8 +1209,16 @@ async function handleRequest(
     }>(req);
     if (!body) { jsonResponse(res, 400, { error: 'Bad request' }); return; }
 
-    // Acknowledge immediately
-    jsonResponse(res, 200, { ok: true });
+    // Helper: send the reply both as HTTP response (for companion HTML which
+    // expects inline reply) AND push via SSE (for paired devices listening to /sync/stream).
+    let httpResponseSent = false;
+    const sendReply = (text: string) => {
+      if (!httpResponseSent) {
+        httpResponseSent = true;
+        try { jsonResponse(res, 200, { reply: text }); } catch { /* connection closed */ }
+      }
+      try { pushToDevice(deviceId, { type: 'companion_response', payload: { text, done: true } }); } catch { /* */ }
+    };
 
     const userText = (body.text || '').trim();
     const macHome = os.homedir();
@@ -1187,7 +1304,7 @@ async function handleRequest(
     try {
       const cmdResult = await tryComputerCommand(resolvedText);
       if (cmdResult !== null) {
-        pushToDevice(deviceId, { type: 'companion_response', payload: { text: cmdResult, done: true } });
+        sendReply(cmdResult);
         return;
       }
     } catch { /* fall through to AI */ }
@@ -1203,20 +1320,94 @@ async function handleRequest(
       const model = settingsMap['companion_model'] || 'llama-3.3-70b-versatile';
 
       if (!apiKey) {
-        pushToDevice(deviceId, { type: 'companion_response', payload: { text: 'No Groq API key set.', done: true } });
+        sendReply('No Groq API key set.');
         return;
       }
 
       const history = body.history || [];
+
+      // ── Build a warm, human system prompt with persistent memory ──────────
+      // Pull recent facts from memory_facts so Henry recalls past conversations.
+      let factsBlock = '';
+      let userName = '';
+      try {
+        const facts = dbGet<{ fact: string; importance: number }>(
+          'SELECT fact, importance FROM memory_facts ORDER BY importance DESC, created_at DESC LIMIT 25'
+        ) as { fact: string; importance: number }[];
+        if (facts && facts.length) {
+          factsBlock = facts.map(f => '- ' + f.fact).join('\n');
+          // Pull a name out of the facts if we have one
+          for (const f of facts) {
+            const m = f.fact.match(/^User name:\s*(.+)$/i);
+            if (m) { userName = m[1].trim(); break; }
+          }
+        }
+      } catch { /* memory_facts table may not exist on first run */ }
+
+      // Pull recent conversation summaries from the SAME paired-device state
+      // so Henry has context across separate /sync/prompt sessions, not just
+      // within a single phone session.
+      let recentSummary = '';
+      try {
+        const recentMsgs = dbGet<{ role: string; content: string }>(
+          "SELECT role, content FROM messages WHERE role IN ('user','assistant') ORDER BY created_at DESC LIMIT 8"
+        ) as { role: string; content: string }[];
+        if (recentMsgs && recentMsgs.length) {
+          recentSummary = recentMsgs.reverse()
+            .map(m => (m.role === 'user' ? 'You earlier' : 'Henry earlier') + ': ' + (m.content || '').slice(0, 200))
+            .join('\n');
+        }
+      } catch { /* */ }
+
+      const greeting = userName ? `You are Henry, talking with ${userName}.` : `You are Henry.`;
+      const systemPrompt = [
+        greeting,
+        "Henry is a warm, thoughtful, conversational AI — the user's personal companion who runs on their Mac and is reachable from their phone. Down-to-earth, curious, and genuinely interested in the person you're talking with. Like a smart friend, not a help desk.",
+        "",
+        "── ABSOLUTE RULES ──────────────────────────────────────────────",
+        "1. NEVER invent facts about the user, their work, projects, clients, products, social media, or anything personal. If they didn't tell you, you don't know.",
+        "2. The ONLY things you actually know about this user are listed in 'What you remember' below. If a fact isn't there and isn't in this conversation, you DON'T know it. Don't guess. Don't elaborate. Don't fabricate examples.",
+        "3. If you don't know something, say so plainly: 'I don't know yet — tell me about it' or 'You haven't mentioned that to me'. This is the right answer most of the time.",
+        "4. NEVER say things like 'I've noticed you've been working on...', 'I've seen your...', 'You've got some great work on Instagram', etc. unless those specific facts appear verbatim in 'What you remember' below.",
+        "5. NEVER claim to access apps, accounts, social media, websites, files, or anything outside what the user just typed unless you actually used a tool in this turn that returned that data.",
+        "6. When the user asks for advice, give general advice based on what they just told you. Don't pretend to have done research on their specific situation when you haven't.",
+        "",
+        "── HOW YOU TALK ────────────────────────────────────────────────",
+        "• Like a real person. Use contractions. Vary sentence length. Sometimes one line is right; sometimes a paragraph is.",
+        "• Match their energy. Casual when they're casual, focused when they're focused, gentle when they're upset.",
+        "• Brief but never curt. Three thoughtful sentences beats one blunt one.",
+        "• Ask one good follow-up question only when it actually helps. Don't pepper them.",
+        "• Use facts from 'What you remember' naturally when they're directly relevant — don't force-fit them, don't announce them.",
+        "",
+        "── WHAT YOU CAN ACTUALLY DO ON THIS MAC ───────────────────────",
+        "You ARE connected to this Mac. When the user asks for any of these, just say yes and tell them you're doing it — the bridge will execute it automatically:",
+        "• Take a screenshot — say 'Taking a screenshot now.'",
+        "• Create a folder on Desktop / Documents / Downloads — say 'Creating that folder for you.' (use words like 'create folder named X on my desktop')",
+        "• Open an app (Safari, Mail, Calendar, Notes, etc.) — say 'Opening X.'",
+        "• Open a URL or website — say 'Opening that link.'",
+        "• Check disk space / storage — say 'Let me check.'",
+        "• List files on Desktop / Documents / Downloads — say 'Here's what's on your desktop.'",
+        "• List running apps — say 'Here are the apps running.'",
+        "• Look up Bible verses — say 'Here it is.'",
+        "",
+        "What you CANNOT do: browse arbitrary websites, read email/messages, post to social media, see Instagram, search Google, access bank accounts, access any cloud service, or read documents you weren't shown. If asked, say so plainly and offer something you CAN do.",
+        "",
+        "When the user asks you to do one of the things you CAN do, do NOT refuse, do NOT say 'I can't access your computer', do NOT explain that you're a language model. Just confirm in one short friendly line and the system will execute. Example user requests that you SHOULD accept enthusiastically: 'take a screenshot', 'open Safari', 'make a folder called Project X on my desktop', 'show me my desktop files', 'how much disk space do I have', 'what apps are running'.",
+        "",
+        factsBlock
+          ? `── WHAT YOU REMEMBER ABOUT ${userName ? userName.toUpperCase() : 'THIS USER'} ──\nThese are the ONLY facts you know about them. Anything not on this list you do NOT know.\n${factsBlock}`
+          : `── WHAT YOU REMEMBER ──\nNothing yet — this is an early conversation. Don't make things up; ask them about themselves naturally if relevant.`,
+      ].filter(Boolean).join('\n');
+
       const messages = [
-        { role: 'system', content: 'You are Henry, a helpful AI assistant. The user is on their phone. Be concise.' },
-        ...history.slice(-10),
+        { role: 'system', content: systemPrompt },
+        ...history.slice(-16),
         { role: 'user', content: userText }
       ];
 
       // Stream from Groq
       const { default: https } = await import('https');
-      const postBody = JSON.stringify({ model, messages, temperature: 0.7, max_tokens: 1500, stream: true });
+      const postBody = JSON.stringify({ model, messages, temperature: 0.3, max_tokens: 1500, stream: true });
       const opts = {
         hostname: 'api.groq.com',
         path: '/openai/v1/chat/completions',
@@ -1259,7 +1450,7 @@ async function handleRequest(
                 if (hasCannotPhrase) {
                   cleanText = 'I had trouble with that. Try asking differently, or use the quick buttons at the bottom.';
                 }
-                pushToDevice(deviceId, { type: 'companion_response', payload: { text: cleanText, done: true } });
+                sendReply(cleanText);
               }
               return;
             }
@@ -1330,16 +1521,16 @@ async function handleRequest(
             } catch(e) { /* ignore */ }
           }
 
-          pushToDevice(deviceId, { type: 'companion_response', payload: { text: finalText, done: true } });
+          sendReply(finalText);
         });
       });
       req2.on('error', (e: Error) => {
-        pushToDevice(deviceId, { type: 'companion_response', payload: { text: 'Error: ' + e.message, done: true } });
+        sendReply('Error: ' + e.message);
       });
       req2.write(postBody);
       req2.end();
     } catch (e) {
-      pushToDevice(deviceId, { type: 'companion_response', payload: { text: 'Error: ' + (e instanceof Error ? e.message : String(e)), done: true } });
+      sendReply('Error: ' + (e instanceof Error ? e.message : String(e)));
     }
     return;
   }
@@ -1602,6 +1793,17 @@ async function handleRequest(
 
 function readBody<T>(req: http.IncomingMessage, timeoutMs = 30_000): Promise<T | null> {
   return new Promise((resolve) => {
+    // If a previous handler already consumed the body and stashed it on the
+    // request, use that instead of re-reading the (already-drained) stream.
+    const cached = (req as unknown as { _rawBody?: string })._rawBody;
+    if (typeof cached === 'string') {
+      try {
+        if (!cached.trim()) { resolve(null); return; }
+        resolve(JSON.parse(cached) as T);
+      } catch { resolve(null); }
+      return;
+    }
+
     const chunks: Buffer[] = [];
     let settled = false;
 

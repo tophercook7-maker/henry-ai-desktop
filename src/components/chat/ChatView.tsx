@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useLayoutEffect } from 'react';
-import { incrementUsage, getTodayUsage, getRemainingRequests, isNearLimit } from '../../henry/proxyUsage';
+import { incrementUsage, getTodayUsage, getRemainingRequests, isNearLimit, canUseHenryProxy } from '../../henry/proxyUsage';
+import { hasUsableBackend } from '../../henry/backendStatus';
 import { useStore } from '../../store';
 import { useAmbientStore } from '../../henry/ambientStateStore';
 import type { HenryLeanMemoryParts, Message } from '../../types';
@@ -37,6 +38,7 @@ import {
   type MessageIntent,
 } from '@/henry/contextTier';
 import { routeRequest } from '@/core/router/brainRouter';
+import { routeLocally } from '@/henry/localRouter';
 import { useDebugStore } from '@/henry/debugStore';
 import FocusCard from '@/components/focus/FocusCard';
 import { getWeather, type WeatherSnapshot } from '@/henry/weatherContext';
@@ -319,11 +321,13 @@ function resumeModeLabel(m: HenryOperatingMode): string {
 }
 
 
-// Henry Cloud Proxy — provides AI access without a personal API key
-// Users get 50 free requests/day. Pro users get 2000/day with a license key.
+// Henry Cloud Proxy — license-gated only. The developer pays the bill behind it,
+// so it is NEVER a fallback for free users. The hard gate `canUseHenryProxy()`
+// (in proxyUsage.ts) ensures only users with a valid license key can reach it.
+// Free users must BYOK (Groq, Ollama, OpenAI, etc.) or install Ollama.
 const HENRY_PROXY_URL = (import.meta as any).env?.VITE_HENRY_PROXY_URL || 'https://henry-proxy.henryai.workers.dev';
-const HENRY_PROXY_ENABLED = true; // Enable cloud proxy as fallback
-const HENRY_PROXY_MAX_RETRIES = 1; // Never retry more than once — prevents retry loops
+const HENRY_PROXY_ENABLED = true; // proxy code path is enabled — but every call is still gated by canUseHenryProxy()
+const HENRY_PROXY_MAX_RETRIES = 1;
 
 export default function ChatView() {
   const {
@@ -1127,6 +1131,67 @@ export default function ChatView() {
     setIsStreaming(true);
     setStreamingContent('');
 
+    // ── Local-first router (cost-efficiency) ─────────────────────────────
+    // Before spending any AI tokens, see if Henry can answer this from his
+    // own SQLite. Patterns like "what colors do I have", "show my machines",
+    // "what's running low", "verse for today" are all answered instantly,
+    // offline, with zero token cost. Falls through to AI on no match.
+    try {
+      const local = await routeLocally(content);
+      if (local.handled && local.reply) {
+        addMessage({
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: local.reply,
+          conversation_id: convId,
+          created_at: new Date().toISOString(),
+          model: `local:${local.intentName || 'router'}`,
+          provider: 'henry',
+        });
+        setIsStreaming(false);
+        setStreamingContent('');
+        setCompanionStatus({ status: 'idle' });
+        return;
+      }
+    } catch (e) {
+      // Never block the AI path on a local-router failure
+      console.warn('[Henry] localRouter error, falling through to AI:', e);
+    }
+
+    // ── Backend gate (cost protection) ────────────────────────────────────
+    // If the user has NO Groq key, NO Ollama, NO other BYOK key, and NO
+    // license, do not attempt any AI call. Render an inline setup card
+    // instead. This is THE wall that protects the developer from paying
+    // for free-tier usage — never bypass it.
+    if (!hasUsableBackend()) {
+      const setupMessage = [
+        '**Henry needs an AI provider to answer.**',
+        '',
+        'You have three options:',
+        '',
+        '1. **Free Groq key (60 seconds, recommended)** — Get one at [console.groq.com/keys](https://console.groq.com/keys), then paste it in **Settings → AI Providers → Groq**. The free tier is 14,400 requests/day — plenty for normal use.',
+        '',
+        '2. **Local Ollama (fully private, fully free)** — Install from [ollama.com](https://ollama.com/download), then Henry connects automatically.',
+        '',
+        '3. **Henry license** — If you bought one, paste it in **Settings → License**.',
+        '',
+        '_Henry will never charge you for AI use. Your key, your costs — Groq\'s free tier is generous enough that most people never pay anything._',
+      ].join('\n');
+      addMessage({
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: setupMessage,
+        conversation_id: convId,
+        created_at: new Date().toISOString(),
+        model: 'setup-required',
+        provider: 'henry',
+      });
+      setIsStreaming(false);
+      setStreamingContent('');
+      setCompanionStatus({ status: 'idle' });
+      return;
+    }
+
     // Detect tier before resolving model (for presence phrase and status label)
     const presenceTier = detectPresenceTier(content, settings);
     const tierLabel = presenceTier === 'quality' ? '70B' : presenceTier === 'fast' ? '8B' : '';
@@ -1526,7 +1591,7 @@ export default function ChatView() {
     let effectiveProvider = companionProvider;
     let effectiveModel = companionModel;
     let useProxy = false;
-    if (companionProvider === 'groq' && (!apiKey || apiKey.length < 10) && HENRY_PROXY_ENABLED) {
+    if (companionProvider === 'groq' && (!apiKey || apiKey.length < 10) && HENRY_PROXY_ENABLED && canUseHenryProxy()) {
       useProxy = true;
       effectiveApiKey = 'henry-proxy'; // placeholder, proxy uses its own key
     }

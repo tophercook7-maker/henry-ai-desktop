@@ -9,6 +9,7 @@ import { registerAIHandlers } from './ipc/ai';
 import { registerFilesystemHandlers } from './ipc/filesystem';
 import { registerTaskBrokerHandlers } from './ipc/taskBroker';
 import { registerMemoryHandlers } from './ipc/memory';
+import { registerMakerStudioHandlers } from './ipc/makerStudio';
 import { registerScriptureHandlers } from './ipc/scripture';
 import { registerOllamaHandlers } from './ipc/ollama';
 import { registerOllamaCleanup } from './ipc/ollamaManager';
@@ -243,16 +244,64 @@ app.whenReady().then(() => {
   }, 2000);
 
   // IPC: renderer can request permission grants
-  ipcMain.handle('henry:requestAccessibility', () => {
+  // Reset stale TCC entries first so macOS will re-prompt cleanly
+  ipcMain.handle('henry:requestAccessibility', async () => {
     try {
-      // This triggers the macOS "Henry AI wants Accessibility access" dialog
+      // First check — if already granted, no need to do anything
+      if (systemPreferences.isTrustedAccessibilityClient(false)) {
+        return { granted: true };
+      }
+      // Reset any stale TCC entry so the prompt CAN appear
+      try {
+        const { execSync } = await import('child_process');
+        execSync('tccutil reset Accessibility ai.henry.desktop', { stdio: 'ignore' });
+      } catch { /* tccutil may fail silently — not fatal */ }
+      // Trigger the prompt
       const trusted = systemPreferences.isTrustedAccessibilityClient(true);
+      // ALSO open System Settings as a fallback so user can grant manually if dialog didn't appear
+      if (!trusted) {
+        await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility');
+      }
       return { granted: trusted };
     } catch { return { granted: false }; }
   });
   ipcMain.handle('henry:checkAccessibility', () => {
     try {
-      return { granted: systemPreferences.isTrustedAccessibilityClient(false) };
+      // First try Electron's API
+      const electronSays = systemPreferences.isTrustedAccessibilityClient(false);
+      if (electronSays) return { granted: true };
+      // Fallback: macOS sometimes reports false for adhoc-signed apps even when
+      // the toggle is ON. Try a functional check via osascript — if we can
+      // dispatch a System Events query without an error, AX is granted.
+      try {
+        const out = require('child_process').execSync(
+          'osascript -e \'tell application "System Events" to count processes\'',
+          { encoding: 'utf8', timeout: 2500 }
+        ) as string;
+        const granted = /^[0-9]+\s*$/.test((out || '').trim());
+        return { granted };
+      } catch { return { granted: false }; }
+    } catch { return { granted: false }; }
+  });
+  ipcMain.handle('henry:checkScreenRecording', async () => {
+    try {
+      // Electron's check first
+      const status = systemPreferences.getMediaAccessStatus('screen');
+      if (status === 'granted') return { granted: true };
+      // Fallback: try an actual screen capture. If it produces a non-empty
+      // file with reasonable size, screen recording is granted regardless
+      // of what getMediaAccessStatus claims.
+      try {
+        const cp = require('child_process');
+        const fs = require('fs');
+        const os = require('os');
+        const tmp = `${os.tmpdir()}/henry_perm_check_${Date.now()}.png`;
+        cp.execSync(`screencapture -x -t png "${tmp}"`, { timeout: 3000, stdio: 'ignore' });
+        const stat = fs.statSync(tmp);
+        try { fs.unlinkSync(tmp); } catch { /* */ }
+        // A real screen capture is hundreds of KB; a denied/empty one is < 5KB
+        return { granted: stat.size > 5000 };
+      } catch { return { granted: false }; }
     } catch { return { granted: false }; }
   });
   ipcMain.handle('henry:openPermissions', async () => {
@@ -260,8 +309,27 @@ app.whenReady().then(() => {
     return { ok: true };
   });
   ipcMain.handle('henry:openScreenRecording', async () => {
-    await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');
-    return { ok: true };
+    try {
+      // Reset any stale TCC entry first — forces a fresh prompt
+      try {
+        const { execSync } = await import('child_process');
+        execSync('tccutil reset ScreenCapture ai.henry.desktop', { stdio: 'ignore' });
+      } catch { /* */ }
+      // Trigger Electron's desktopCapturer which causes macOS to fire the
+      // "Henry AI would like to record this computer's screen" prompt.
+      try {
+        const { desktopCapturer } = await import('electron');
+        await desktopCapturer.getSources({
+          types: ['screen'],
+          thumbnailSize: { width: 1, height: 1 },
+        }).catch(() => {});
+      } catch { /* */ }
+      // Open System Settings to the Screen Recording pane so user can toggle Henry on
+      await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
   });
 
   registerSettingsHandlers(db, getMainWindow);
@@ -328,6 +396,7 @@ app.whenReady().then(() => {
   registerFilesystemHandlers(henryDir);
   registerTaskBrokerHandlers(db, getMainWindow, henryDir);
   registerMemoryHandlers(db);
+  registerMakerStudioHandlers(db);
   registerScriptureHandlers(db, getMainWindow);
   registerOllamaHandlers(getMainWindow);
   registerOllamaCleanup();

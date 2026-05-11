@@ -48,6 +48,16 @@ export default function App() {
   const [repair, setRepair] = useState<HenryRepairEvent | null>(null);
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(() => shouldShowOnboarding());
+
+  // Global event for re-launching the wizard from anywhere (Setup panel, etc.)
+  useEffect(() => {
+    const onOpenWizard = () => {
+      try { localStorage.removeItem('henry:onboarding_v1_complete'); } catch { /* */ }
+      setShowOnboarding(true);
+    };
+    window.addEventListener('henry_open_setup_wizard', onOpenWizard);
+    return () => window.removeEventListener('henry_open_setup_wizard', onOpenWizard);
+  }, []);
   const [greetingDismissed, setGroqDismissed] = useState(() => !!sessionStorage.getItem('henry:groq_warn_dismissed'));
   const [showSplash, setShowSplash] = useState(() => {
     // Only show splash on first launch of a session (not every time)
@@ -704,6 +714,11 @@ export default function App() {
       <div className="flex-1 min-h-0">
         <Layout />
       </div>
+
+      {/* Onboarding wizard — first launch + manual relaunch */}
+      {showOnboarding && (
+        <OnboardingWizard onComplete={() => setShowOnboarding(false)} />
+      )}
 
       {/* Proactive nudge banner */}
       {nudge && (

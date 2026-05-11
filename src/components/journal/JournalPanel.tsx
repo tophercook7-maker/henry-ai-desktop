@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { sendToHenry } from '../../actions/store/chatBridgeStore';
 import { useStore } from '../../store';
+import { callHenryAI, NoBackendAvailableError } from '../../henry/henryAI';
 
 interface JournalEntry { id:string; date:string; title?:string; content:string; mood?:string; tags:string[]; created_at:string; updated_at:string }
 
@@ -35,17 +36,17 @@ export default function JournalPanel(){
 "${content.slice(0,800)}"
 
 As a thoughtful, encouraging friend, offer a 2-3 sentence reflection. Notice something meaningful. Ask one gentle follow-up question.`;
-    const deviceId = (() => { let id = localStorage.getItem('henry:device_id'); if (!id) { id = crypto.randomUUID(); localStorage.setItem('henry:device_id', id); } return id; })();
     try {
-      const r = await fetch('https://henry-proxy.henryai.workers.dev/v1/chat', {
-        signal: AbortSignal.timeout(25000),
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Henry-Device': deviceId },
-        body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], max_tokens: 200, stream: false }),
+      const reply = await callHenryAI({
+        messages: [{ role: 'user', content: prompt }],
+        maxTokens: 220,
+        temperature: 0.8,
       });
-      const d = await r.json() as any;
-      setReflection(d?.choices?.[0]?.message?.content || '');
-    } catch { setReflection('Could not reach Henry.'); }
+      setReflection(reply || 'No response.');
+    } catch (e) {
+      if (e instanceof NoBackendAvailableError) setReflection(e.userFacingMessage);
+      else setReflection('Could not reach Henry. Check your AI provider in Settings.');
+    }
     setReflecting(false);
   }
 
