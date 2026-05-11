@@ -77,37 +77,51 @@ function GoogleTab() {
 
   return (
     <div className="space-y-5">
-      <div className="bg-henry-accent/5 border border-henry-accent/20 rounded-xl p-4 space-y-3">
-        <p className="text-sm font-semibold text-henry-text">Connect Google Account</p>
-        <p className="text-[12px] text-henry-text-muted leading-relaxed">
-          Connect once to unlock Gmail, Google Calendar, and Google Drive in Henry.
-          Uses secure PKCE OAuth — your credentials never leave your Mac.
+
+      {/* What this tab is actually for */}
+      <div className="bg-blue-500/8 border border-blue-500/20 rounded-xl p-4 space-y-2">
+        <p className="text-sm font-bold text-henry-text">📬 Connect your Google account</p>
+        <p className="text-xs text-henry-text-muted leading-relaxed">
+          This lets Henry read your <b className="text-henry-text">Gmail</b>, <b className="text-henry-text">Google Calendar</b>, and <b className="text-henry-text">Google Drive</b> — so he can summarize emails, check your schedule, and find files when you ask.
         </p>
-        <div className="space-y-1">
-          {['Enable Gmail API, Google Calendar API, Google Drive API', 'Create OAuth 2.0 credentials → Desktop app', 'Copy Client ID and Client Secret below'].map((s,i) => (
-            <p key={i} className="text-[11px] text-henry-text-muted flex gap-2">
-              <span className="text-henry-accent">{i+1}.</span>{s}
-            </p>
-          ))}
-          <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer"
-            className="text-[11px] text-henry-accent underline hover:opacity-80 block mt-1">
-            Open Google Cloud Console →
-          </a>
-        </div>
+        <p className="text-xs text-henry-text-muted leading-relaxed">
+          <b className="text-henry-text">This is NOT for Gemini AI.</b> If you want Gemini as Henry's brain, go to the <b className="text-henry-text">AI Providers tab</b> and add your Google AI key there.
+        </p>
       </div>
 
       {connected ? (
         <div className="bg-green-400/5 border border-green-400/20 rounded-xl p-4 flex items-center justify-between">
           <div>
             <p className="text-sm font-semibold text-green-400">✓ Google Connected</p>
-            <p className="text-[11px] text-henry-text-muted mt-0.5">Gmail, Calendar, and Drive are active</p>
+            <p className="text-[11px] text-henry-text-muted mt-0.5">Henry can read your Gmail, Calendar, and Drive</p>
           </div>
           <button onClick={handleDisconnect} className="text-[11px] px-3 py-1.5 rounded-lg bg-henry-surface border border-henry-border/30 text-henry-text-muted hover:text-red-400 transition-all">Disconnect</button>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-4">
+          {/* Step by step */}
+          <div className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-3">
+            <p className="text-[10px] uppercase tracking-wider text-henry-text-muted">Setup — takes about 5 minutes</p>
+            <ol className="space-y-2.5">
+              {[
+                ['Go to Google Cloud Console', 'console.cloud.google.com', 'https://console.cloud.google.com/apis/dashboard'],
+                ['Enable 3 APIs: Gmail API, Google Calendar API, Google Drive API', null, null],
+                ['Go to Credentials → Create OAuth 2.0 Client ID → Desktop app', null, null],
+                ['Copy the Client ID and Client Secret — paste them below', null, null],
+              ].map(([text, linkText, url], i) => (
+                <div key={i} className="flex gap-3 items-start">
+                  <span className="w-5 h-5 rounded-full bg-henry-accent/20 text-henry-accent text-[10px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{i+1}</span>
+                  <div className="text-xs text-henry-text-muted leading-relaxed">
+                    {text as string}
+                    {url && <a href={url as string} target="_blank" rel="noreferrer" className="ml-1 text-henry-accent underline">{linkText as string} ↗</a>}
+                  </div>
+                </div>
+              ))}
+            </ol>
+          </div>
+
           <div>
-            <label className="text-[10px] uppercase tracking-wider text-henry-text-muted mb-1.5 block">Google Client ID</label>
+            <label className="text-[10px] uppercase tracking-wider text-henry-text-muted mb-1.5 block">Client ID</label>
             <input value={clientId} onChange={e => setClientIdState(e.target.value)} placeholder="123456789-abc...apps.googleusercontent.com" className={inp} />
           </div>
           <div>
@@ -116,12 +130,12 @@ function GoogleTab() {
           </div>
           <button onClick={handleConnect} disabled={connecting || !clientId.trim() || !secret.trim()}
             className="w-full py-3 rounded-xl bg-henry-accent text-white font-bold text-sm hover:bg-henry-accent/80 disabled:opacity-40 transition-all">
-            {connecting ? 'Opening browser…' : 'Connect Google Account →'}
+            {connecting ? 'Opening browser for Google sign-in…' : 'Connect Google Account →'}
           </button>
         </div>
       )}
 
-      {status && <p className={`text-[12px] ${status.startsWith('✓') ? 'text-green-400' : 'text-henry-text-muted'}`}>{status}</p>}
+      {status && <p className={`text-xs ${status.startsWith('✓') ? 'text-green-400' : 'text-henry-text-muted'}`}>{status}</p>}
     </div>
   );
 }
@@ -133,8 +147,8 @@ export default function SettingsView() {
 
   const tabs = [
     { id: 'providers' as const, label: 'AI Providers' },
-    { id: 'engines' as const, label: 'Engines' },
-    { id: 'google' as const, label: 'Google' },
+    { id: 'engines' as const, label: 'AI Brains' },
+    { id: 'google' as const, label: 'Google Account' },
     { id: 'voice' as const, label: 'Voice & Model' },
     { id: 'general' as const, label: 'General' },
     { id: 'memory' as const, label: 'Memory' },
@@ -746,7 +760,7 @@ function ProvidersTab() {
   return (
     <div className="space-y-3">
       <p className="text-xs text-henry-text-dim pb-1">
-        Connect AI providers to give Henry intelligence. Each has a step-by-step setup guide — click <strong className="text-henry-text">Set up</strong> to get started.
+        Add your free AI keys here. Henry uses them automatically — no extra config needed. Click any provider below to get started. <strong className="text-henry-text">Set up</strong> to get started.
       </p>
 
       {/* Free tier usage bar */}
@@ -1040,14 +1054,34 @@ function EnginesTab() {
   return (
     <div className="space-y-5">
 
-      {/* ── Brain Status Now ── */}
+      {/* Plain language explainer */}
+      <div className="bg-henry-accent/5 border border-henry-accent/15 rounded-xl p-4 space-y-3">
+        <p className="text-sm font-bold text-henry-text">How Henry's brains work</p>
+        <div className="space-y-2.5">
+          {([
+            ['🧠', 'Brain 1 — used for every conversation', 'Every message you send goes through Brain 1. This should be your fastest model. Recommended: Groq (fastest) or Gemini (most free requests per day).'],
+            ['💪', 'Brain 2 — used for big, slow tasks', 'Research, long documents, agents, weekly reviews. Henry switches to this automatically when needed. Can be the same model as Brain 1.'],
+            ['💻', 'Coder brain — activates automatically for code', 'When you ask a coding question, Henry switches to Qwen 2.5 Coder on Groq. Already working if you have a Groq key — no extra setup.'],
+          ] as [string,string,string][]).map(([icon, title, desc]) => (
+            <div key={title} className="flex gap-3 items-start">
+              <span className="text-base flex-shrink-0">{icon}</span>
+              <div>
+                <p className="text-xs font-semibold text-henry-text">{title}</p>
+                <p className="text-xs text-henry-text-muted mt-0.5 leading-relaxed">{desc}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Your AI Setup Right Now ── */}
       <div className="rounded-xl border border-henry-border bg-henry-surface/40 p-4 space-y-3">
-        <div className="text-xs font-semibold text-henry-text uppercase tracking-wider">Brain Status Now</div>
+        <div className="text-xs font-semibold text-henry-text uppercase tracking-wider">Your current setup</div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          {/* Advisor Brain */}
+          {/* Brain 1 — Conversations */}
           <div className="rounded-lg bg-henry-bg/60 border border-henry-border/50 px-3 py-2.5">
-            <div className="text-[10px] uppercase tracking-wider text-henry-text-muted mb-1">Advisor Brain</div>
+            <div className="text-[10px] uppercase tracking-wider text-henry-text-muted mb-1">Brain 1 — Conversations</div>
             {companionProvider && companionModel ? (
               <>
                 <div className="text-xs font-medium text-henry-text truncate">{companionModel}</div>
@@ -1065,7 +1099,7 @@ function EnginesTab() {
             )}
           </div>
 
-          {/* Advisor Fallback */}
+          {/* Brain 1 — Backup */}
           <div className="rounded-lg bg-henry-bg/60 border border-henry-border/50 px-3 py-2.5">
             <div className="text-[10px] uppercase tracking-wider text-henry-text-muted mb-1">Advisor Fallback</div>
             {fallbackProvider && fallbackModel ? (
@@ -1080,9 +1114,9 @@ function EnginesTab() {
             )}
           </div>
 
-          {/* Worker Brain */}
+          {/* Brain 2 Status */}
           <div className="rounded-lg bg-henry-bg/60 border border-henry-border/50 px-3 py-2.5">
-            <div className="text-[10px] uppercase tracking-wider text-henry-text-muted mb-1">Worker Brain</div>
+            <div className="text-[10px] uppercase tracking-wider text-henry-text-muted mb-1">Brain 2 — Heavy Tasks</div>
             {workerProvider && workerModel ? (
               <>
                 <div className="text-xs font-medium text-henry-text truncate">{workerModel}</div>
@@ -1163,11 +1197,11 @@ function EnginesTab() {
       <div className="rounded-xl border border-henry-border/50 bg-henry-surface/30 p-5">
         <div className="flex items-center gap-2 mb-1">
           <span className="text-lg">🧠</span>
-          <div className="font-medium text-henry-text">Companion Brain</div>
+          <div className="font-medium text-henry-text">Brain 1 — Conversations</div>
           <span className="text-[10px] bg-henry-companion/10 text-henry-companion px-2 py-0.5 rounded-full font-medium">Primary</span>
         </div>
         <div className="text-xs text-henry-text-dim mb-4">
-          Always-on — streams every conversation in real time. Delegates heavy tasks to Worker automatically.
+          This is the brain Henry uses for every chat message. Use your fastest free model here — Groq or Gemini.
           Set a <strong className="text-henry-text">Primary</strong> and a <strong className="text-henry-text">Fallback</strong> — Henry uses both and falls back automatically if the primary fails.
         </div>
 
@@ -1236,11 +1270,11 @@ function EnginesTab() {
         </div>
       </div>
 
-      {/* ── Worker Brain ── */}
+      {/* ── Brain 2 — Heavy Tasks ── */}
       <div className="rounded-xl border border-henry-border/50 bg-henry-surface/30 p-5">
         <div className="flex items-center gap-2 mb-1">
           <span className="text-lg">⚡</span>
-          <div className="font-medium text-henry-text">Worker Brain</div>
+          <div className="font-medium text-henry-text">Brain 2 — Heavy Tasks</div>
           <span className="text-[10px] bg-henry-worker/10 text-henry-worker px-2 py-0.5 rounded-full font-medium">Background</span>
         </div>
         <div className="text-xs text-henry-text-dim mb-4">
