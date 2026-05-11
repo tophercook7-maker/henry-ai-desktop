@@ -369,7 +369,7 @@ Write 2-4 short sentences covering: one encouraging opening, what to focus on to
     ).catch(() => {});
   }
 
-  async function generateDailyPlan() {
+async function generateDailyPlan() {
     if (plannerBusy) return;
     // Check cache first (same plan all day = 1 quota/day not per-click)
     const cached = getCached('daily-plan');

@@ -401,6 +401,14 @@ html,body{height:100%;height:100dvh;min-height:100dvh;background:var(--bg);color
       <div id="health-status" style="padding:12px 16px;font-size:13px;color:var(--muted);text-align:center"></div>
     </div>
 
+<!-- Goals pane -->
+    <div id="p-goals" style="display:none;flex-direction:column;height:100%;overflow:hidden">
+      <div style="padding:14px 16px;border-bottom:1px solid var(--border);font-weight:700;font-size:15px">◎ Goals</div>
+      <div id="goals-list-pane" style="flex:1;overflow-y:auto;padding:8px 0">
+        <div style="padding:24px;color:var(--muted);text-align:center;font-size:14px">Loading…</div>
+      </div>
+    </div>
+
 <!-- PHONE: bottom nav -->
 <div id="bottom-nav">
   <button class="on" onclick="phoneTo('chat')" id="bn-chat"><span class="bi">◉</span>Chat</button>
@@ -409,6 +417,7 @@ html,body{height:100%;height:100dvh;min-height:100dvh;background:var(--bg);color
   <button onclick="phoneTo('rem')" id="bn-rem"><span class="bi">⏰</span>Remind</button>
   <button onclick="phoneTo('jnl')" id="bn-jnl"><span class="bi">📔</span>Journal</button>
   <button onclick="phoneTo('health')" id="bn-health"><span class="bi">❤️</span>Health</button>
+  <button onclick="phoneTo('goals')" id="bn-goals"><span class="bi">◎</span>Goals</button>
   <button onclick="phoneTo('bible')" id="bn-bible"><span class="bi">✝</span>Bible</button>
 </div>
 
@@ -519,7 +528,7 @@ function phoneTo(id) {
   const chatCol = document.getElementById('chat-col');
   const rightCol = document.getElementById('right-col');
   // Phone-only panes (tasks/rem/jnl/health) — toggle display directly
-  const phoneOnlyPanes = ['tasks','rem','jnl','health'];
+  const phoneOnlyPanes = ['tasks','rem','jnl','health','goals'];
   if (phoneOnlyPanes.includes(id)) {
     chatCol.classList.remove('active'); rightCol.classList.remove('active');
     phoneOnlyPanes.forEach(pid => {
@@ -531,6 +540,7 @@ function phoneTo(id) {
     stopScreenRefresh();
     if (id === 'rem') loadReminders();
     if (id === 'tasks') loadTasks();
+    if (id === 'goals') loadGoalsPaneFn();
     if (id === 'jnl') initJournal();
   } else if (id === 'chat') {
     phoneOnlyPanes.forEach(pid => { const el = document.getElementById('p-' + pid); if (el) el.style.display = 'none'; });
@@ -1182,6 +1192,26 @@ async function completeTask(id) {
 }
 
 // ── GOALS ────────────────────────────────────────────────────────────────────
+async function loadGoalsPaneFn() {
+  const pane = document.getElementById('goals-list-pane');
+  if (!pane) return;
+  try {
+    const d = await fetch(BASE + '/sync/mac/goals').then(r => r.json());
+    const goals = d.goals || [];
+    if (!goals.length) { pane.innerHTML = '<div style="padding:24px;color:var(--muted);text-align:center;font-size:14px">No active goals</div>'; return; }
+    pane.innerHTML = goals.map(g => {
+      const score = Math.round((g.priority_score || 0) * 10);
+      const pct = Math.min(100, score);
+      return '<div style="padding:14px 16px;border-bottom:1px solid var(--border)">' +
+        '<div style="font-size:14px;color:var(--text);font-weight:500;margin-bottom:6px">' + g.title + '</div>' +
+        (g.summary ? '<div style="font-size:12px;color:var(--muted);margin-bottom:6px">' + g.summary.slice(0,80) + '</div>' : '') +
+        '<div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden"><div style="height:4px;background:var(--accent);border-radius:2px;width:' + pct + '%"></div></div>' +
+        '<div style="font-size:10px;color:var(--muted);margin-top:3px">Priority: ' + score + '/10</div>' +
+        '</div>';
+    }).join('');
+  } catch { if (pane) pane.innerHTML = '<div style="padding:24px;color:var(--muted);text-align:center;font-size:14px">Could not reach Henry</div>'; }
+}
+
 async function loadGoals() {
   try {
     const d = await fetch(BASE + '/sync/mac/goals').then(r => r.json());

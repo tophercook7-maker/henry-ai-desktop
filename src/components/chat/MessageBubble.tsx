@@ -173,6 +173,22 @@ export default function MessageBubble({
 
   const isUser = message.role === 'user';
   const isStreaming = isStreamingProp || message.isStreaming;
+  const [savedMem, setSavedMem] = useState(false);
+
+  async function saveToMemory() {
+    if (savedMem || !message.content) return;
+    const api2 = (window as any).henryAPI;
+    try {
+      await api2?.saveFact?.({
+        fact: message.content.slice(0, 500),
+        category: 'conversation',
+        importance: 5,
+        source: 'chat',
+      });
+      setSavedMem(true);
+      setTimeout(() => setSavedMem(false), 3000);
+    } catch { /* ignore */ }
+  }
   const content = isStreaming
     ? (streamingContent || message.content || '')
     : message.content;
@@ -305,6 +321,19 @@ export default function MessageBubble({
                   </>
                 )}
               </button>
+              {!isUser && (
+                <button
+                  onClick={() => void saveToMemory()}
+                  title="Save to Henry's memory"
+                  className="henry-btn flex items-center gap-1 text-[10px] text-henry-text-muted hover:text-henry-accent transition-colors"
+                >
+                  {savedMem ? (
+                    <span className="text-henry-accent">📌 Saved</span>
+                  ) : (
+                    <span>📌</span>
+                  )}
+                </button>
+              )}
               {message.created_at && (
                 <span className="text-[10px] text-henry-text-muted/60">
                   {formatTime(message.created_at)}

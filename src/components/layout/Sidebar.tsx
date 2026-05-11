@@ -93,14 +93,23 @@ export default function Sidebar() {
   const { currentView, setCurrentView } = useStore();
   const [showMore, setShowMore] = useState(false);
   const [dueCount, setDueCount] = useState(0);
+  const [overdueGoals, setOverdueGoals] = useState(0);
 
   useEffect(() => {
     const check = () => {
       const api2 = (window as any).henryAPI;
       api2?.remindersDue?.().then((r: any[]) => setDueCount((r||[]).length)).catch(() => {});
+      // Count overdue goals (target_date in the past)
+      api2?.goalsList?.().then((goals: any[]) => {
+        const now = new Date();
+        const overdue = (goals||[]).filter((g: any) =>
+          g.status === 'active' && g.target_date && new Date(g.target_date) < now
+        ).length;
+        setOverdueGoals(overdue);
+      }).catch(() => {});
     };
     check();
-    const t = setInterval(check, 60000);
+    const t = setInterval(check, 120000);
     return () => clearInterval(t);
   }, []);
 
@@ -121,6 +130,11 @@ export default function Sidebar() {
             {item.id === 'reminders' && dueCount > 0 && (
               <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-3.5 px-0.5 flex items-center justify-center rounded-full bg-red-500 text-white text-[9px] font-bold leading-none pointer-events-none">
                 {dueCount > 9 ? '9+' : dueCount}
+              </span>
+            )}
+            {item.id === 'goals' && overdueGoals > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-3.5 px-0.5 flex items-center justify-center rounded-full bg-orange-500 text-white text-[9px] font-bold leading-none pointer-events-none">
+                {overdueGoals}
               </span>
             )}
           </div>
