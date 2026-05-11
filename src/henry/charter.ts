@@ -17,6 +17,7 @@ import { buildWriterSystemAddition } from './writerPrompts';
 import { buildRichMemoryBlock, buildContactsContextBlock } from './richMemory';
 import { formatWeatherBlock, type WeatherSnapshot } from './weatherContext';
 import { buildCapabilityBlock } from './capabilityContext';
+import { PANELS, SHORTCUTS, POWER_TIPS } from './henrySelfKnowledge';
 import { buildCapabilityRegistryBlock } from './capabilityRegistry';
 import { buildWorkingMemoryBlock, buildNarrativeBlock } from './workingMemory';
 import { buildPersonalityBlock } from './personality';
@@ -867,6 +868,15 @@ export function buildGroqFreeSystemPrompt(mode: HenryOperatingMode): string {
     '  computer:pressEnter()',
     'Then report: "Done — typed the prompt in ChatGPT."',
   ];
+
+  // Self-knowledge — Henry knows what he can do so he can help users use him
+  lines.push('');
+  lines.push('Your panels (mention them when relevant to what the user is doing):');
+  PANELS.slice(0, 12).forEach(p => lines.push(`• ${p.icon} ${p.name}: ${p.shortDesc}`));
+  lines.push(`...and ${PANELS.length - 12} more. Ask "what can you do" to see all.`);
+  lines.push('');
+  lines.push('Key shortcuts: ⌥Space opens Henry from anywhere (selected text auto-pastes). ⌘⇧H opens full window.');
+  lines.push('When users seem stuck or ask how to do something, proactively mention the relevant panel or shortcut.');
 
   if (mode === 'biblical') {
     lines.push('Biblical study mode: support scripture study, theology, and spiritual reflection.');

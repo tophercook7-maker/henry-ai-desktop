@@ -15,6 +15,8 @@
  * and (if matched) returns a formatted string. Order matters — first match wins.
  */
 
+import { PANELS, SHORTCUTS, POWER_TIPS, findPanelsByKeyword } from './henrySelfKnowledge';
+
 type Handler = {
   name: string;
   match: (q: string) => boolean;
@@ -23,8 +25,7 @@ type Handler = {
 
 export interface LocalRouteResult {
   handled: boolean;
-  reply?: string;
-  intentName?: string;
+  reply?: string;  intentName?: string;
 }
 
 function api(): Record<string, (...args: unknown[]) => Promise<unknown>> | null {
@@ -101,6 +102,151 @@ const INTENTS: Handler[] = [
       }
 
       return lines.join('\n');
+    },
+  },
+
+
+  // ── Self-knowledge intents ─────────────────────────────────────────────
+
+  // "what can you do" / "help" / "how do I use you"
+  {
+    name: 'what_can_you_do',
+    match: re(
+      /^help$/i, /^what can you do/i, /how do i use (henry|you)/i,
+      /what (do you|can you|are you able to) do/i,
+      /show me (what|how|your) (you can|features|capabilities)/i,
+      /what (features|panels|sections) (do you have|are there)/i,
+      /give me a tour/i, /overview of henry/i,
+    ),
+    run: async () => {
+      const lines = [
+        `Here's everything I can do:
+`,
+        ...PANELS.slice(0, 10).map(p => `**${p.icon} ${p.name}** — ${p.shortDesc}`),
+        `
+...and ${PANELS.length - 10} more panels in the sidebar.
+`,
+        `**Shortcuts:**`,
+        ...SHORTCUTS.slice(0, 3).map(s => `• **${s.keys}** — ${s.what}`),
+        `\nAsk me "how do I use [panel name]" for details on any of these, or "give me tips" for power-user tricks.`,
+
+      ];
+      return lines.join('\n');
+    },
+  },
+
+  // "give me tips" / "how do I get the most out of henry"
+  {
+    name: 'henry_tips',
+    match: re(
+      /give me tips/i, /power.?user/i, /get the most (out of|from) (henry|you)/i,
+      /how do i use (henry|you) better/i, /tricks? for henry/i,
+      /best way to use (henry|you)/i,
+    ),
+    run: async () => {
+      const lines = [`Here are the best ways to get more out of me:\n`];
+
+      POWER_TIPS.forEach((t, i) => {
+        lines.push(`**${i+1}. ${t.tip}**`);
+        lines.push(t.detail);
+        lines.push('');
+      });
+      return lines.join('\n');
+    },
+  },
+
+  // "how do I use [panel]" / "tell me about [panel]" / "what is [panel]"
+  {
+    name: 'panel_help',
+    match: (q: string) => {
+      const panelRe = /^(how do i use|tell me about|what is|what does|explain|help me with|how does)\s+(.+)/i;
+      const m = q.match(panelRe);
+      if (!m) return false;
+      return findPanelsByKeyword(m[2]).length > 0;
+    },
+    run: async () => {
+      const q = (window as any).__lastLocalQuery__ || '';
+      const panelRe = /^(?:how do i use|tell me about|what is|what does|explain|help me with|how does)\s+(.+)/i;
+      const m = q.match(panelRe);
+      const panels = m ? findPanelsByKeyword(m[1]) : [];
+      if (!panels.length) return null;
+      const p = panels[0];
+      const lines = [
+        `## ${p.icon} ${p.name}
+`,
+        p.whatItDoes,
+        `
+**How to use it:**`,
+        ...p.howToUse.map(s => `• ${s}`),
+        `
+**Tips:**`,
+        ...p.tips.map(s => `• ${s}`),
+      ];
+      if (p.phoneAvailable) lines.push(`\n✓ Available on your phone companion too.`);
+      return lines.join('\n');
+    },
+  },
+
+  // "what shortcuts does henry have" / "keyboard shortcuts"
+  {
+    name: 'shortcuts',
+    match: re(
+      /shortcut/i, /keyboard/i, /hotkey/i, /⌥.?space/i,
+      /how do i open henry/i, /how do i (launch|start) henry/i,
+    ),
+    run: async () => {
+      const lines = [`**Henry shortcuts:**\n`];
+      SHORTCUTS.forEach(s => lines.push(`• **${s.keys}** — ${s.what}`));
+      lines.push(`\nThe fastest one is **⌥Space** — it works from any app, any time. If you have text selected first, it's already in the chat when Henry opens.`);
+      return lines.join('\n');
+    },
+  },
+
+  // "what panels are on my phone" / "what works on mobile"
+  {
+    name: 'phone_panels',
+    match: re(
+      /what.*(phone|mobile|companion).*(panel|tab|work|use)/i,
+      /what can i do (on|from) (my )?(phone|mobile)/i,
+      /(phone|companion).*(feature|available|support)/i,
+    ),
+    run: async () => {
+      const phonePanels = PANELS.filter(p => p.phoneAvailable);
+      const lines = [
+        `These panels are available on the Henry companion app on your phone:\n`,
+        ...phonePanels.map(p => `• **${p.icon} ${p.name}** — ${p.shortDesc}`),
+        `\nTo install: open your companion URL in **Safari** on iPhone → tap Share (□↑) → Add to Home Screen.`,
+      ];
+      return lines.join('\n');
+    },
+  },
+
+  // "how do I teach you about me" / "how do you learn about me" / "memory"
+  {
+    name: 'memory_help',
+    match: re(
+      /how do (i|you) (teach|tell|train|add|save|give) (you|henry) (about|facts|info|memory)/i,
+      /how does (your |henry.?s )?memory work/i,
+      /how do i (use|add to|update) (the )?memory/i,
+      /how do you (learn|remember|know) about me/i,
+    ),
+    run: async () => {
+      return `**Three ways to add to my memory:**
+
+1. **Say it in chat** — "Remember that I work from home" or "Remember I prefer bullet points." I save it automatically.
+
+2. **Pin a response** — tap the 📌 button on any of my responses to save what I said to memory.
+
+3. **Memory panel directly** — open 🧠 Memory in the sidebar, click +, and type any fact.
+
+**What's worth adding:**
+• Your name, job, and what you're building
+• Your schedule and preferences
+• Family names and details
+• Your goals
+• How you like answers formatted
+
+The more you tell me, the more personal every response gets. I use your top facts in every single conversation.`;
     },
   },
 
@@ -332,6 +478,26 @@ const INTENTS: Handler[] = [
 export async function routeLocally(query: string): Promise<LocalRouteResult> {
   const q = (query || '').trim();
   if (!q || q.length < 2) return { handled: false };
+
+  // ── Panel help — handled here so the query is in scope ──────────────────
+  const PANEL_QUERY_RE = /^(?:how do i use|tell me about|what is|what does|explain|how does|help me with|how do i)\s+(.+)/i;
+  const pm = q.match(PANEL_QUERY_RE);
+  if (pm) {
+    const panels = findPanelsByKeyword(pm[1]);
+    if (panels.length > 0) {
+      const p = panels[0];
+      const lines = [
+        `## ${p.icon} ${p.name}\n`,
+        p.whatItDoes,
+        `\n**How to use it:**`,
+        ...p.howToUse.map(s => `• ${s}`),
+        `\n**Tips:**`,
+        ...p.tips.map(s => `• ${s}`),
+      ];
+      if (p.phoneAvailable) lines.push(`\n✓ Also available on your phone.`);
+      return { handled: true, reply: lines.join('\n'), intentName: 'panel_help' };
+    }
+  }
 
   for (const intent of INTENTS) {
     if (intent.match(q)) {
