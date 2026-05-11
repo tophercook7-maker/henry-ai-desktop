@@ -163,6 +163,8 @@ html,body{height:100%;height:100dvh;min-height:100dvh;background:var(--bg);color
 #shell-out{background:var(--s2);border:1px solid var(--border);border-radius:12px;padding:12px 14px;font-size:12px;font-family:'SF Mono',monospace;color:var(--green);min-height:60px;white-space:pre-wrap;word-break:break-all;max-height:180px;overflow-y:auto}
 
 /* ── BIBLE ──────────────────────────────────────────────────── */
+.health-btn{background:var(--s2);border:1px solid var(--border);border-radius:14px;padding:16px 10px;color:var(--text);font-size:15px;cursor:pointer;font-family:inherit;line-height:1.4;text-align:center;transition:background .15s;-webkit-tap-highlight-color:transparent}
+.health-btn:active{background:var(--accent);color:#fff;border-color:var(--accent)}
 #bible-pane{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px;gap:12px;display:flex;flex-direction:column}
 #bible-search-bar{display:flex;gap:8px}
 #bible-ref-in{flex:1;background:var(--s2);border:1px solid var(--border);border-radius:12px;padding:11px 14px;font-size:15px;color:var(--text);outline:none;font-family:var(--font)}
@@ -338,13 +340,75 @@ html,body{height:100%;height:100dvh;min-height:100dvh;background:var(--bg);color
   </div>
 </div>
 
+    <!-- Tasks pane -->
+    <div id="p-tasks" style="display:none;flex-direction:column;height:100%;overflow:hidden">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--border);font-weight:700;font-size:15px">
+        <span>✓ Tasks</span>
+        <button onclick="showAddTask()" style="background:var(--accent);border:none;color:#fff;border-radius:99px;padding:4px 14px;font-size:12px;font-weight:700;cursor:pointer">+ Add</button>
+      </div>
+      <div id="add-task-row" style="display:none;padding:12px 16px;gap:8px;flex-wrap:wrap">
+        <input id="task-in" placeholder="New task…" onkeydown="if(event.key==='Enter')addTask()" style="flex:1;min-width:0;background:var(--s2);border:1px solid var(--border);border-radius:12px;padding:10px 14px;color:var(--text);font-size:14px;outline:none"/>
+        <button onclick="addTask()" style="background:var(--accent);border:none;color:#fff;border-radius:12px;padding:10px 18px;font-size:13px;font-weight:700;cursor:pointer;flex-shrink:0">Add</button>
+      </div>
+      <div id="task-list-pane" style="flex:1;overflow-y:auto;padding:8px 0"></div>
+    </div>
+
+    <!-- Reminders pane -->
+    <div id="p-rem" style="display:none;flex-direction:column;height:100%;overflow:hidden">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--border);font-weight:700;font-size:15px">
+        <span>⏰ Reminders</span>
+        <button onclick="showAddReminder()" style="background:var(--accent);border:none;color:#fff;border-radius:99px;padding:4px 14px;font-size:12px;font-weight:700;cursor:pointer">+ Add</button>
+      </div>
+      <div id="add-rem-row" style="display:none;padding:12px 16px;gap:8px;flex-wrap:wrap">
+        <input id="rem-in" placeholder="Remind me to…" onkeydown="if(event.key==='Enter')addReminder()" style="flex:1;min-width:0;background:var(--s2);border:1px solid var(--border);border-radius:12px;padding:10px 14px;color:var(--text);font-size:14px;outline:none"/>
+        <button onclick="addReminder()" style="background:var(--accent);border:none;color:#fff;border-radius:12px;padding:10px 18px;font-size:13px;font-weight:700;cursor:pointer;flex-shrink:0">Add</button>
+      </div>
+      <div id="rem-list-pane" style="flex:1;overflow-y:auto;padding:8px 0"></div>
+    </div>
+
+    <!-- Journal pane -->
+    <div id="p-jnl" style="display:none;flex-direction:column;height:100%;overflow:hidden">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--border);font-weight:700;font-size:15px">
+        <span>📔 Journal</span>
+        <span id="jnl-date" style="font-size:12px;font-weight:400;color:var(--muted)"></span>
+      </div>
+      <div style="padding:16px;flex:1;display:flex;flex-direction:column;gap:10px">
+        <textarea id="jnl-in" placeholder="Write anything…" style="flex:1;min-height:140px;background:var(--s2);border:1px solid var(--border);border-radius:14px;padding:14px;color:var(--text);font-size:15px;line-height:1.6;resize:none;outline:none;font-family:inherit"></textarea>
+        <div style="display:flex;gap:8px">
+          <select id="jnl-mood" style="background:var(--s2);border:1px solid var(--border);border-radius:10px;padding:8px 12px;color:var(--text);font-size:14px;outline:none">
+            <option value="">Mood…</option>
+            <option value="😊">😊 Good</option><option value="🙏">🙏 Grateful</option>
+            <option value="💪">💪 Motivated</option><option value="😴">😴 Tired</option>
+            <option value="😤">😤 Frustrated</option><option value="😌">😌 Peaceful</option>
+          </select>
+          <button onclick="saveJournal()" style="flex:1;background:var(--accent);border:none;color:#fff;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer">Save entry</button>
+        </div>
+        <div id="jnl-status" style="font-size:12px;color:var(--muted);text-align:center"></div>
+      </div>
+    </div>
+
+    <!-- Health pane -->
+    <div id="p-health" style="display:none;flex-direction:column;height:100%;overflow:hidden">
+      <div style="padding:14px 16px;border-bottom:1px solid var(--border);font-weight:700;font-size:15px">❤️ Health Log</div>
+      <div style="padding:16px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <button class="health-btn" onclick="logHealth('water',8,'oz')">💧 Water<br/><span style="font-size:11px;opacity:.6">+8 oz</span></button>
+        <button class="health-btn" onclick="logHealth('steps',1000,'steps')">👟 Steps<br/><span style="font-size:11px;opacity:.6">+1,000</span></button>
+        <button class="health-btn" onclick="logHealth('exercise',30,'min')">🏃 Exercise<br/><span style="font-size:11px;opacity:.6">30 min</span></button>
+        <button class="health-btn" onclick="logHealth('sleep',7,'hrs')">😴 Sleep<br/><span style="font-size:11px;opacity:.6">7 hrs</span></button>
+        <button class="health-btn" onclick="logHealth('calories',500,'cal')">🍽 Calories<br/><span style="font-size:11px;opacity:.6">+500</span></button>
+        <button class="health-btn" onclick="promptHealthLog()">📝 Custom<br/><span style="font-size:11px;opacity:.6">any value</span></button>
+      </div>
+      <div id="health-status" style="padding:12px 16px;font-size:13px;color:var(--muted);text-align:center"></div>
+    </div>
+
 <!-- PHONE: bottom nav -->
 <div id="bottom-nav">
   <button class="on" onclick="phoneTo('chat')" id="bn-chat"><span class="bi">◉</span>Chat</button>
   <button onclick="phoneTo('today')" id="bn-today"><span class="bi">⌂</span>Today</button>
-  <button onclick="phoneTo('screen')" id="bn-screen"><span class="bi">📺</span>Screen</button>
-  <button onclick="phoneTo('ctrl')" id="bn-ctrl"><span class="bi">⌘</span>Control</button>
-  <button onclick="phoneTo('cap')" id="bn-cap"><span class="bi">⊕</span>Capture</button>
+  <button onclick="phoneTo('tasks')" id="bn-tasks"><span class="bi">✓</span>Tasks</button>
+  <button onclick="phoneTo('rem')" id="bn-rem"><span class="bi">⏰</span>Remind</button>
+  <button onclick="phoneTo('jnl')" id="bn-jnl"><span class="bi">📔</span>Journal</button>
+  <button onclick="phoneTo('health')" id="bn-health"><span class="bi">❤️</span>Health</button>
   <button onclick="phoneTo('bible')" id="bn-bible"><span class="bi">✝</span>Bible</button>
 </div>
 
@@ -435,8 +499,10 @@ async function checkConn() {
 function showTab(id) {
   document.querySelectorAll('#tabs button').forEach(b => b.classList.remove('on'));
   document.querySelectorAll('#right-col .pane').forEach(p => p.classList.remove('on'));
-  document.getElementById('t-' + id).classList.add('on');
-  document.getElementById('p-' + id).classList.add('on');
+  const tabBtn = document.getElementById('t-' + id);
+  const pane = document.getElementById('p-' + id);
+  if (tabBtn) tabBtn.classList.add('on');
+  if (pane) pane.classList.add('on');
   if (id === 'screen') startScreenRefresh();
   else stopScreenRefresh();
   if (id === 'rem') loadReminders();
@@ -448,19 +514,31 @@ function showTab(id) {
 
 function phoneTo(id) {
   document.querySelectorAll('#bottom-nav button').forEach(b => b.classList.remove('on'));
-  document.getElementById('bn-' + id).classList.add('on');
+  const bnBtn = document.getElementById('bn-' + id);
+  if (bnBtn) bnBtn.classList.add('on');
   const chatCol = document.getElementById('chat-col');
   const rightCol = document.getElementById('right-col');
-  if (id === 'chat') {
-    chatCol.classList.add('active'); rightCol.classList.remove('active');
-  } else {
-    chatCol.classList.remove('active'); rightCol.classList.add('active');
-    const tabMap = { today: 'today', screen: 'screen', ctrl: 'ctrl', cap: 'cap', bible: 'bible', rem: 'rem', tasks: 'tasks', goals: 'goals', fin: 'fin', jnl: 'jnl', health: 'health', bible: 'bible' };
-    if (tabMap[id]) showTab(tabMap[id]);
+  // Phone-only panes (tasks/rem/jnl/health) — toggle display directly
+  const phoneOnlyPanes = ['tasks','rem','jnl','health'];
+  if (phoneOnlyPanes.includes(id)) {
+    chatCol.classList.remove('active'); rightCol.classList.remove('active');
+    phoneOnlyPanes.forEach(pid => {
+      const el = document.getElementById('p-' + pid);
+      if (el) el.style.display = 'none';
+    });
+    const pane = document.getElementById('p-' + id);
+    if (pane) pane.style.display = 'flex';
+    stopScreenRefresh();
     if (id === 'rem') loadReminders();
     if (id === 'tasks') loadTasks();
-    if (id === 'goals') loadGoals();
     if (id === 'jnl') initJournal();
+  } else if (id === 'chat') {
+    phoneOnlyPanes.forEach(pid => { const el = document.getElementById('p-' + pid); if (el) el.style.display = 'none'; });
+    chatCol.classList.add('active'); rightCol.classList.remove('active');
+  } else {
+    phoneOnlyPanes.forEach(pid => { const el = document.getElementById('p-' + pid); if (el) el.style.display = 'none'; });
+    chatCol.classList.remove('active'); rightCol.classList.add('active');
+    showTab(id);
   }
 }
 
@@ -1021,8 +1099,11 @@ async function loadReminders() {
   try {
     const d = await fetch(BASE + '/sync/mac/reminders').then(r => r.json());
     const rems = d.reminders || [];
-    document.getElementById('rem-count').textContent = String(rems.length);
-    const el = document.getElementById('rem-list');
+    const remCount = document.getElementById('rem-count');
+    if (remCount) remCount.textContent = String(rems.length);
+    const elRem = document.getElementById('rem-list');
+    const elRemPane = document.getElementById('rem-list-pane');
+    const el = elRem || elRemPane;
     if (!rems.length) { el.innerHTML = '<div class="empty-msg">No due reminders</div>'; return; }
     el.innerHTML = rems.map(r => {
       const t = r.due_at ? new Date(r.due_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '';
@@ -1039,12 +1120,22 @@ async function loadTasks() {
   try {
     const d = await fetch(BASE + '/sync/mac/tasks').then(r => r.json());
     const tasks = d.tasks || [];
-    const el = document.getElementById('task-list');
-    if (!tasks.length) { el.innerHTML = '<div class="empty-msg">No open tasks</div>'; return; }
-    el.innerHTML = tasks.map(t => {
+    // Update today card list AND dedicated pane
+    const elToday = document.getElementById('task-list');
+    const elPane = document.getElementById('task-list-pane');
+    if (!tasks.length) {
+      if (elToday) elToday.innerHTML = '<div class="empty-msg">No open tasks</div>';
+      if (elPane) elPane.innerHTML = '<div style="padding:24px;color:var(--muted);text-align:center;font-size:14px">No open tasks</div>';
+      return;
+    }
+    const el = elToday || elPane;
+    if (!el) return;
+    const html = tasks.map(t => {
       const priColor = t.priority >= 3 ? '#ef4444' : t.priority === 2 ? '#f59e0b' : '#6b7280';
-      return '<div class="task-row2"><div class="task-check" onclick="completeTask(' + "'" + t.id + "'" + ')"></div><div class="task-pri-dot" style="background:' + priColor + '"></div><span style="flex:1;font-size:14px;color:var(--text)">' + t.title + '</span></div>';
+      return '<div class="task-row2"><div class="task-check" title="Mark done" data-tid="' + t.id + '" onclick="completeTaskEl(this)"></div><div class="task-pri-dot" style="background:' + priColor + '"></div><span style="flex:1;font-size:14px;color:var(--text)">' + t.title + '</span></div>';
     }).join('');
+    if (elToday) elToday.innerHTML = html;
+    if (elPane) elPane.innerHTML = html;
   } catch (e) {
     document.getElementById('task-list').innerHTML = '<div class="empty-msg">Could not reach Henry. Is it running?</div>';
   }
@@ -1070,6 +1161,13 @@ async function addTask() {
     document.getElementById('add-task-row').style.display = 'none';
     await loadTasks();
   } catch { alert('Could not add task'); }
+}
+
+function completeTaskEl(el) {
+  el.textContent = '✓';
+  el.style.background = 'var(--accent)';
+  el.style.borderColor = 'var(--accent)';
+  completeTask(el.dataset.tid);
 }
 
 async function completeTask(id) {
