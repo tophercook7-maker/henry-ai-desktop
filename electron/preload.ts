@@ -494,6 +494,11 @@ contextBridge.exposeInMainWorld('henryAPI', {
     ipcRenderer.on('henry:diagnostic:complete', handler);
     return () => ipcRenderer.removeListener('henry:diagnostic:complete', handler);
   },
+  onCompanionChatUpdate: (cb: (data: unknown) => void) => {
+    const handler = (_: unknown, data: unknown) => cb(data);
+    ipcRenderer.on('henry:companion:chat-update', handler);
+    return () => ipcRenderer.removeListener('henry:companion:chat-update', handler);
+  },
   onCompanionDeviceLinked: (cb: (device: unknown) => void) => {
     const handler = (_e: IpcRendererEvent, data: unknown) => cb(data);
     ipcRenderer.on('henry:companion:device-linked', handler);

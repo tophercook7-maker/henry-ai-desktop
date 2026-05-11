@@ -970,6 +970,27 @@ export default function ChatView() {
     }
   }
 
+  // ── Companion chat sync — show phone messages live on desktop ─────────
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const data = (e as CustomEvent<{conversation_id: string; messages: Array<{id:string;role:string;content:string;model?:string;provider?:string}>}>).detail;
+      if (!data?.messages?.length) return;
+      data.messages.forEach(msg => {
+        addMessage({
+          id: msg.id,
+          role: msg.role as 'user' | 'assistant',
+          content: (msg.role === 'user' ? '📱 ' : '') + msg.content,
+          conversation_id: data.conversation_id,
+          created_at: new Date().toISOString(),
+          model: msg.model || 'companion',
+          provider: msg.provider || 'companion',
+        });
+      });
+    };
+    window.addEventListener('henry_companion_chat_update', handler);
+    return () => window.removeEventListener('henry_companion_chat_update', handler);
+  }, [addMessage]);
+
   async function handleSend(content: string) {
     if (!content.trim() || isStreaming) return;
     cancelTTS();

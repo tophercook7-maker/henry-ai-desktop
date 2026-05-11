@@ -169,6 +169,9 @@ export default function App() {
     };
 
     const u0 = api.onCompanionDeviceLinked!((device) => bridge('device-linked', device));
+    const uChat = (api as any).onCompanionChatUpdate?.((data: unknown) => {
+      window.dispatchEvent(new CustomEvent('henry_companion_chat_update', { detail: data }));
+    });
     // Wire AI extraction results → expanded capture with insights
     const uExtract = api.onQuickExtractResult?.((result: any) => {
       if (!result?.extracted || !result?.originalText) return;

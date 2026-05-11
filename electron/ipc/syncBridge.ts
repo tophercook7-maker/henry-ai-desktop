@@ -261,6 +261,7 @@ function pushToDevice(targetDeviceId: string, event: Omit<SyncEvent,'id'|'timest
   }
 }
 
+
 function pushToAll(event: SyncEvent): void {
   const data = `data: ${JSON.stringify(event)}\n\n`;
   for (const client of [...sseClients]) {
@@ -694,6 +695,74 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // ── Shared chat history (phone ↔ desktop sync) ─────────────────────────
+  if (path === '/sync/chat/history' && req.method === 'GET') {
+    try {
+      const url = new URL('http://x' + req.url!);
+      const limit = Math.min(100, parseInt(url.searchParams.get('limit') || '50'));
+      // Get or create the shared companion conversation
+      let conv = dbGetOne<{id:string}>(
+        "SELECT id FROM conversations WHERE title = 'Henry — Companion' LIMIT 1"
+      );
+      if (!conv) {
+        const convId = require('crypto').randomUUID();
+        dbRun("INSERT INTO conversations (id, title) VALUES (?, 'Henry — Companion')", convId);
+        conv = { id: convId };
+      }
+      const messages = dbGet<any>(
+        `SELECT id, role, content, model, provider, created_at FROM messages
+         WHERE conversation_id = ? ORDER BY created_at DESC LIMIT ?`,
+        conv.id, limit
+      ) as any[] || [];
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      res.end(JSON.stringify({ conversation_id: conv.id, messages: messages.reverse() }));
+    } catch (e) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: String(e) }));
+    }
+    return;
+  }
+
+  if (path === '/sync/chat/save' && req.method === 'POST') {
+    const body = await readBody<{ conversation_id: string; messages: Array<{id:string;role:string;content:string;model?:string;provider?:string}> }>(req);
+    if (!body) { jsonResponse(res, 400, { error: 'bad body' }); return; }
+    try {
+      for (const msg of (body.messages || [])) {
+        // Upsert — ignore if already exists
+        try {
+          dbRun(
+            `INSERT OR IGNORE INTO messages (id, conversation_id, role, content, model, provider, engine)
+             VALUES (?, ?, ?, ?, ?, ?, 'companion')`,
+            msg.id, body.conversation_id, msg.role, msg.content,
+            msg.model || null, msg.provider || null
+          );
+        } catch { /* already exists, skip */ }
+      }
+      dbRun("UPDATE conversations SET updated_at = datetime('now') WHERE id = ?", body.conversation_id);
+      // Push to desktop via SSE so ChatView can show companion messages live
+      const chatUpdateEvent: SyncEvent = { id: require('crypto').randomUUID(), type: 'companion_chat_update', payload: { conversation_id: body.conversation_id, messages: body.messages }, timestamp: Date.now(), fromDevice: '' };
+      pushToAll(chatUpdateEvent);
+      jsonResponse(res, 200, { ok: true });
+    } catch (e) { jsonResponse(res, 500, { error: String(e) }); }
+    return;
+  }
+
+  if (path === '/sync/chat/conversation_id' && req.method === 'GET') {
+    try {
+      let conv = dbGetOne<{id:string}>(
+        "SELECT id FROM conversations WHERE title = 'Henry — Companion' LIMIT 1"
+      );
+      if (!conv) {
+        const convId = require('crypto').randomUUID();
+        dbRun("INSERT INTO conversations (id, title) VALUES (?, 'Henry — Companion')", convId);
+        conv = { id: convId };
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      res.end(JSON.stringify({ conversation_id: conv.id }));
+    } catch (e) { jsonResponse(res, 500, { error: String(e) }); }
+    return;
+  }
+
   if (path === '/sync/health' && req.method === 'GET') {
     // Health is public — allows mobile to check server is up before pairing
     let appVersion = (() => {
@@ -904,7 +973,7 @@ self.addEventListener('fetch', (event) => {
   // The companion HTML served at http://MAC-IP:4242 makes these calls.
   // They only work on the local network (same WiFi) — not internet-exposed.
   const companionWebPaths = [
-    '/sync/prompt', '/sync/mac/today', '/sync/mac/screen',
+    '/sync/prompt', '/sync/chat/history', '/sync/chat/save', '/sync/chat/conversation_id', '/sync/mac/today', '/sync/mac/screen',
     '/sync/mac/habit-toggle', '/sync/mac/run', '/sync/mac/open-app',
     '/sync/capture-and-process', '/sync/capture', '/sync/mac/finance',
     '/sync/mac/reminders', '/sync/mac/tasks', '/sync/mac/tasks/create',

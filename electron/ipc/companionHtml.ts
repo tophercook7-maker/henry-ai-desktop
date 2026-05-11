@@ -424,6 +424,8 @@ html,body{height:100%;height:100dvh;min-height:100dvh;background:var(--bg);color
 <script>
 // ── State ─────────────────────────────────────────────────────────────────────
 const BASE = location.origin;
+let companionConvId = localStorage.getItem('henry:companion_conv_id') || '';
+let lastHistoryTs = 0; // debounce history saves
 let isIpad = window.innerWidth >= 768;
 let screenTimer = null;
 let busy = false;
@@ -464,12 +466,65 @@ window.addEventListener('load', async () => {
   refreshScreen();
   checkConn();
   setInterval(checkConn, 8000);
+  initConversation();
 });
 
 function hidePair() {
   document.getElementById('pair-screen').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
   updateLayout();
+}
+
+async function initConversation() {
+  try {
+    if (!companionConvId) {
+      const d = await fetch(BASE + '/sync/chat/conversation_id').then(r => r.json());
+      companionConvId = d.conversation_id || '';
+      if (companionConvId) localStorage.setItem('henry:companion_conv_id', companionConvId);
+    }
+    if (companionConvId) await loadChatHistory();
+  } catch { /* offline */ }
+}
+
+async function loadChatHistory() {
+  if (!companionConvId) return;
+  try {
+    const d = await fetch(BASE + '/sync/chat/history?limit=40').then(r => r.json());
+    if (!d.messages || !d.messages.length) return;
+    companionConvId = d.conversation_id || companionConvId;
+    const chat = document.getElementById('chat-msgs');
+    if (!chat) return;
+    // Only load if chat is empty (first load)
+    const existing = chat.querySelectorAll('.bubble-u, .bubble-h');
+    if (existing.length > 0) return;
+    d.messages.forEach((msg) => {
+      addMsg(msg.role === 'user' ? 'u' : 'h', msg.content, false);
+    });
+    chat.scrollTop = chat.scrollHeight;
+  } catch { /* offline */ }
+}
+
+async function saveMsgToHistory(role, content, model) {
+  if (!companionConvId || !content) return;
+  const now = Date.now();
+  if (now - lastHistoryTs < 300) return; // debounce
+  lastHistoryTs = now;
+  try {
+    await fetch(BASE + '/sync/chat/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        conversation_id: companionConvId,
+        messages: [{
+          id: crypto.randomUUID(),
+          role,
+          content,
+          model: model || 'companion',
+          provider: 'companion',
+        }],
+      }),
+    });
+  } catch { /* offline — message still shows locally */ }
 }
 
 function updateDate() {
@@ -602,6 +657,7 @@ async function sendMsg() {
   if (!text || busy) return;
   inp.value = ''; inp.style.height = '';
   addMsg('u', text);
+  saveMsgToHistory('user', text, null);
   busy = true;
   const bubble = addMsg('h', '…');
   try {
@@ -618,7 +674,9 @@ async function sendMsg() {
         : '⚠ Error ' + r.status + '. Is Henry running on your Mac?';
     } else {
       const d = await r.json();
-      bubble.textContent = d.reply || d.response || d.text || d.content || JSON.stringify(d);
+      const replyText = d.reply || d.response || d.text || d.content || JSON.stringify(d);
+    bubble.textContent = replyText;
+    saveMsgToHistory('assistant', replyText, d.model || null);
     }
   } catch (e) {
     bubble.textContent = '⚠ Connection error — is Henry running?';
