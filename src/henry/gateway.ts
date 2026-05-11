@@ -110,7 +110,7 @@ function getModel(tier: 1 | 2 | 3, settings: Record<string, string>): { provider
   };
   if (tier === 2) return {
     provider: settings.companion_provider || 'groq',
-    model:    settings.companion_model    || 'llama-3.3-70b-versatile',
+    model:    settings.companion_model    || 'gemini-2.0-flash',
   };
   return { provider: 'openai', model: 'dall-e-3' };
 }

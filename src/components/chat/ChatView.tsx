@@ -173,6 +173,7 @@ import { formatDeepContext } from '@/henry/memoryRetrieval';
 import BuilderPreviewPanel from './BuilderPreviewPanel';
 import { useSharedBrainState } from '../../brain/sharedState';
 import { hasAnythingToSurface, evaluateInitiative } from '../../core/initiative/initiativeEngine';
+import { parseDelegation, executeDelegation } from '@/henry/delegationInterceptor';
 
 const HENRY_OPERATING_MODE_KEY = 'henry_operating_mode';
 const HENRY_BIBLICAL_PROFILE_KEY = 'henry_biblical_source_profile';
@@ -1127,7 +1128,27 @@ export default function ChatView() {
   }
 
   async function handleCompanionStream(content: string, convId: string, modeOverride?: HenryOperatingMode) {
-    // Auto-detect "tell X to do Y" / "open X and do Y" — force computer mode
+    // ── Pre-AI delegation interceptor ─────────────────────────────────────
+    // "tell ChatGPT to X" / "ask Claude to Y" — execute DIRECTLY, no AI needed
+    const delegation = parseDelegation(content);
+    if (delegation) {
+      setIsStreaming(true);
+      setStreamingContent('');
+      const result = await executeDelegation(delegation);
+      addMessage({
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: result,
+        conversation_id: convId,
+        created_at: new Date().toISOString(),
+        model: 'computer:delegation',
+        provider: 'henry',
+      });
+      setIsStreaming(false);
+      return;
+    }
+
+    // Auto-detect other computer operation phrases — force computer mode
     const delegationPattern = /\b(tell|ask|have|get|make|instruct)\s+(chatgpt|claude|gpt|siri|chrome|safari|slack|notion|messages|mail|gmail|cursor|vscode|vs code|spotify|zoom|teams|discord|whatsapp|finder|terminal|iterm|any app|the browser)\s+(to|and)\b/i;
     const operatePattern = /\b(open|go to|navigate to|type|click|press)\s+\w.*\b(in|on|at)\s+(chrome|safari|chatgpt|claude|slack|notion|messages|mail|gmail|cursor|spotify|zoom|discord)\b/i;
     const forcedMode: HenryOperatingMode | undefined =
