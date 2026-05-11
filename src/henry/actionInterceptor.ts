@@ -85,6 +85,51 @@ const ACTION_PATTERNS: Array<{
     type: 'applescript',
     extract: (m) => ({ script: m[1].trim() }),
   },
+  // computer:typeText(text="...")
+  {
+    regex: /computer:typeText\s*\([^)]*text=["']([^"']+)["']/i,
+    type: 'shell' as const,
+    extract: (m: RegExpMatchArray) => ({
+      command: `osascript -e 'tell application "System Events" to keystroke "${m[1].trim().replace(/"/g, '\\"')}"'`
+    }),
+  },
+  // computer:typeText("...") or computer:typeText('...')
+  {
+    regex: /computer:typeText\s*\(\s*["']([^"']+)["']\s*\)/i,
+    type: 'shell' as const,
+    extract: (m: RegExpMatchArray) => ({
+      command: `osascript -e 'tell application "System Events" to keystroke "${m[1].trim().replace(/"/g, '\\"')}"'`
+    }),
+  },
+  // computer:pressEnter() or computer:pressReturn()
+  {
+    regex: /computer:press(?:Enter|Return)\s*\(\s*\)/i,
+    type: 'shell' as const,
+    extract: () => ({
+      command: `osascript -e 'tell application "System Events" to key code 36'`
+    }),
+  },
+  // computer:activateApp("Safari") or computer:switchTo("Chrome")
+  {
+    regex: /computer:(?:activateApp|switchTo|focusApp)\s*\(\s*["']?([^"',)]+)["']?\s*\)/i,
+    type: 'app' as const,
+    extract: (m: RegExpMatchArray) => ({ name: m[1].trim() }),
+  },
+  // computer:keyPress(key="return") or computer:keyPress("escape")
+  {
+    regex: /computer:keyPress\s*\([^)]*["']?([^"',)]+)["']?\)/i,
+    type: 'shell' as const,
+    extract: (m: RegExpMatchArray) => {
+      const key = m[1].trim().toLowerCase();
+      const keyCodes: Record<string, number> = {
+        'return': 36, 'enter': 36, 'escape': 53, 'tab': 48,
+        'space': 49, 'delete': 51, 'backspace': 51,
+      };
+      const code = keyCodes[key];
+      if (code) return { command: `osascript -e 'tell application "System Events" to key code ${code}'` };
+      return { command: `osascript -e 'tell application "System Events" to keystroke "${key}"'` };
+    },
+  },
   // Bare shell patterns: mkdir ~/Desktop/foo or open -a Safari
   {
     regex: /`(mkdir\s+[^`\n]+)`/,
