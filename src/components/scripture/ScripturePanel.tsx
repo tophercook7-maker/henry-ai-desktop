@@ -312,6 +312,21 @@ export default function ScripturePanel() {
       {/* ── LOOKUP TAB ── */}
       {tab === 'lookup' && (
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+          {count === 0 && !downloading && (
+            <div className="bg-henry-accent/8 border border-henry-accent/25 rounded-xl p-4 space-y-2">
+              <p className="text-henry-text text-sm font-semibold">Bible not downloaded yet</p>
+              <p className="text-henry-text-muted text-xs leading-relaxed">Download the KJV once and every verse lookup works instantly, offline, forever.</p>
+              <button onClick={() => void downloadKJV()}
+                className="w-full py-2.5 rounded-xl bg-henry-accent text-white text-sm font-bold hover:bg-henry-accent/80 transition-all">
+                ⬇ Download KJV Free — 31,000 verses
+              </button>
+            </div>
+          )}
+          {downloading && (
+            <div className="bg-henry-accent/8 border border-henry-accent/25 rounded-xl p-3 text-center">
+              <p className="text-henry-accent text-xs font-semibold">{downloadProgress || 'Downloading…'}</p>
+            </div>
+          )}
           <form onSubmit={e => { e.preventDefault(); void lookup(); }} className="flex gap-2">
             <input ref={inputRef} value={query} onChange={e => setQuery(e.target.value)}
               placeholder="John 3:16, Psalm 23, Romans 8:28-39…"
@@ -393,10 +408,26 @@ export default function ScripturePanel() {
                   </div>
                 </div>
               ) : (
-                <div className="bg-henry-surface rounded-xl border border-henry-border/20 p-4">
-                  <p className="text-henry-text-muted text-sm">
-                    {result.guidance || 'Not found. Try importing a Bible translation in the Import tab.'}
-                  </p>
+                <div className="bg-henry-surface rounded-xl border border-henry-border/20 p-4 space-y-3">
+                  {count === 0 ? (
+                    <>
+                      <p className="text-henry-text text-sm font-semibold">Bible not downloaded yet</p>
+                      <p className="text-henry-text-muted text-xs leading-relaxed">
+                        Henry stores the Bible locally on your Mac for instant offline lookup. Download the King James Version free — 31,000 verses, takes about 30 seconds.
+                      </p>
+                      <button
+                        onClick={() => { setTab('import'); setTimeout(() => void downloadKJV(), 100); }}
+                        disabled={downloading}
+                        className="w-full py-2.5 rounded-xl bg-henry-accent text-white text-sm font-bold hover:bg-henry-accent/80 transition-all disabled:opacity-40">
+                        {downloading ? downloadProgress || 'Downloading…' : '⬇ Download KJV — Free'}
+                      </button>
+                      {downloadProgress && <p className="text-xs text-henry-text-muted">{downloadProgress}</p>}
+                    </>
+                  ) : (
+                    <p className="text-henry-text-muted text-sm">
+                      {result.guidance || 'Verse not found. Check the reference format — try "John 3:16" or "Psalm 23:1".'}
+                    </p>
+                  )}
                 </div>
               )}
             </div>
