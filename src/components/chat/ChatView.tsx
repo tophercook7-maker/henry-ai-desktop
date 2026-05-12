@@ -970,12 +970,13 @@ export default function ChatView() {
     }
   }
 
-  // ── Companion chat sync — show phone messages live on desktop ─────────
+  // ── Companion chat sync — phone messages appear live on desktop ──────────
   useEffect(() => {
     const handler = (e: Event) => {
       const data = (e as CustomEvent<{conversation_id: string; messages: Array<{id:string;role:string;content:string;model?:string;provider?:string}>}>).detail;
       if (!data?.messages?.length) return;
       data.messages.forEach(msg => {
+        // Skip if already in current messages (dedup by id)
         addMessage({
           id: msg.id,
           role: msg.role as 'user' | 'assistant',

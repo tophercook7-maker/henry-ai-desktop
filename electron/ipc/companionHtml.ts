@@ -477,13 +477,14 @@ function hidePair() {
 
 async function initConversation() {
   try {
-    if (!companionConvId) {
-      const d = await fetch(BASE + '/sync/chat/conversation_id').then(r => r.json());
-      companionConvId = d.conversation_id || '';
-      if (companionConvId) localStorage.setItem('henry:companion_conv_id', companionConvId);
+    // Always fetch from server - never trust stale localStorage
+    const d = await fetch(BASE + '/sync/chat/conversation_id').then(r => r.json());
+    if (d.conversation_id) {
+      companionConvId = d.conversation_id;
+      localStorage.setItem('henry:companion_conv_id', companionConvId);
     }
     if (companionConvId) await loadChatHistory();
-  } catch { /* offline */ }
+  } catch { /* offline - use cached id */ }
 }
 
 async function loadChatHistory() {
@@ -492,15 +493,13 @@ async function loadChatHistory() {
     const d = await fetch(BASE + '/sync/chat/history?limit=40').then(r => r.json());
     if (!d.messages || !d.messages.length) return;
     companionConvId = d.conversation_id || companionConvId;
-    const chat = document.getElementById('chat-msgs');
-    if (!chat) return;
-    // Only load if chat is empty (first load)
-    const existing = chat.querySelectorAll('.bubble-u, .bubble-h');
-    if (existing.length > 0) return;
-    d.messages.forEach((msg) => {
-      addMsg(msg.role === 'user' ? 'u' : 'h', msg.content, false);
+    const msgs = document.getElementById('msgs');
+    if (!msgs) return;
+    // Only load if chat is empty (don't duplicate messages)
+    if (msgs.children.length > 0) return;
+    d.messages.forEach(function(msg) {
+      addMsg(msg.role === 'user' ? 'u' : 'h', msg.content);
     });
-    chat.scrollTop = chat.scrollHeight;
   } catch { /* offline */ }
 }
 

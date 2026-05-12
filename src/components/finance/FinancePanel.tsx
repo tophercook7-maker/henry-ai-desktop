@@ -33,10 +33,11 @@ export default function FinancePanel(){
   async function load(){
     setLoading(true);
     const months6 = Array.from({length:6},(_,i)=>{ const d=new Date(); d.setMonth(d.getMonth()-i); return monthKey(d); }).reverse();
+    if (!api) { setLoading(false); return; }
     const [list, sum, ...trendData] = await Promise.all([
-      api.financeList(month), 
-      api.financeSummary(month),
-      ...months6.map(m => api.financeSummary(m)),
+      api.financeList?.(month) ?? [],
+      api.financeSummary?.(month) ?? {income:0,expenses:0,net:0,breakdown:[]},
+      ...months6.map(m => api.financeSummary?.(m) ?? {income:0,expenses:0,net:0,breakdown:[]}),
     ]);
     setTrends(months6.map((m,i) => ({month:m,...(trendData[i] as any)})));
     setTxns(list as Transaction[]);

@@ -27,7 +27,7 @@ async function persistRecording(r: Recording) {
   try {
     const api = (window as any).henryAPI;
     if (api?.recordingsSave) {
-      await api.recordingsSave({
+      await api.recordingsSave?.({
         id: r.id, title: r.title, durationSecs: r.duration,
         transcript: r.transcript, summary: r.summary,
         actionItems: [], recordedAt: r.date,

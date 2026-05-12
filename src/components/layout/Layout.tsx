@@ -16,6 +16,7 @@ import ComputerPanel from '../computer/ComputerPanel';
 import DeviceLinkPanel from '../settings/DeviceLinkPanel';
 import MemoryPanel from '../memory/MemoryPanel';
 import RecorderPanel from '../recorder/RecorderPanel';
+import { HenrySelfRepairBoundary as PanelBoundary } from '../HenrySelfRepairBoundary';
 import PrinterPanel from '../computer/PrinterPanel';
 import SecretaryPanel from '../secretary/SecretaryPanel';
 import GoalsPanel from '../goals/GoalsPanel';
@@ -171,11 +172,11 @@ export default function Layout() {
 
         {/* Content — panel transition on view change */}
         <main key={currentView} className="flex-1 overflow-hidden min-h-0 henry-panel-enter">
-          {currentView === 'today' && <TodayPanel />}
+          {currentView === 'today' && <PanelBoundary><TodayPanel /></PanelBoundary>}
           {currentView === 'chat' && <ChatView />}
           {currentView === 'journal' && <JournalPanel />}
           {currentView === 'focus' && <FocusPanel />}
-          {currentView === 'recorder' && <MeetingRecorderPanel />}
+          {currentView === 'recorder' && <PanelBoundary><MeetingRecorderPanel /></PanelBoundary>}
           {currentView === 'modes' && <ModesPanel />}
           {currentView === 'secretary' && <SecretaryPanel />}
           {currentView === 'contacts' && <ContactsPanel />}
@@ -246,7 +247,7 @@ export default function Layout() {
           )}
           {currentView === 'reminders' && <RemindersPanel />}
           {currentView === 'crm' && <CRMPanel />}
-          {currentView === 'finance' && <FinancePanel />}
+          {currentView === 'finance' && <PanelBoundary><FinancePanel /></PanelBoundary>}
           {currentView === 'lists' && <ListsPanel />}
           {currentView === 'goals' && <GoalsPanel />}
           {currentView === 'hq' && <HQPanel />}
@@ -269,7 +270,7 @@ export default function Layout() {
           {currentView === 'slack' && <SlackPanel />}
           {currentView === 'captures' && <CapturesPanel />}
           {currentView === 'memory' && <MemoryPanel />}
-          {currentView === 'recorder' && <RecorderPanel />}
+          {currentView === 'recorder' && <PanelBoundary><RecorderPanel /></PanelBoundary>}
           {currentView === 'weekly' && <WeeklyReviewPanel />}
           {currentView === 'stripe' && <StripePanel />}
           {currentView === 'gcal' && <GCalPanel />}
