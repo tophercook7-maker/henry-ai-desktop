@@ -1737,7 +1737,7 @@ self.addEventListener('fetch', (event) => {
 
   if (path === '/sync/mac/tasks' && req.method === 'GET') {
     const rows = dbGet<Record<string,unknown>>(
-      "SELECT id,title,priority,status,due_at,created_at FROM tasks WHERE status!='done' ORDER BY priority DESC,created_at DESC LIMIT 20"
+      "SELECT id,title,notes,priority,status,due_at,created_at FROM personal_tasks WHERE status!='done' ORDER BY created_at DESC LIMIT 30"
     );
     jsonResponse(res, 200, { tasks: rows });
     return;
@@ -1750,8 +1750,9 @@ self.addEventListener('fetch', (event) => {
     const title = String(data.title || '').trim();
     if (!title) { jsonResponse(res, 400, { error: 'title required' }); return; }
     dbRun(
-      "INSERT INTO tasks (id,title,priority,status,created_at,updated_at) VALUES (?,?,?,?,?,?)",
-      id, title, Number(data.priority) || 2, 'todo', new Date().toISOString(), new Date().toISOString()
+      "INSERT INTO personal_tasks (id,title,notes,priority,status,due_at,created_at) VALUES (?,?,?,?,?,?,?)",
+      id, title, String(data.notes || ''), Number(data.priority) || 2, 'todo',
+      data.due_at ? String(data.due_at) : null, new Date().toISOString()
     );
     jsonResponse(res, 200, { id, title });
     return;
@@ -1762,7 +1763,7 @@ self.addEventListener('fetch', (event) => {
     const data: Record<string,unknown> = body || {};
     const id = String(data.id || '');
     if (!id) { jsonResponse(res, 400, { error: 'id required' }); return; }
-    dbRun("UPDATE tasks SET status='done',updated_at=? WHERE id=?", new Date().toISOString(), id);
+    dbRun("UPDATE personal_tasks SET status='done',completed_at=? WHERE id=?", new Date().toISOString(), id);
     jsonResponse(res, 200, { ok: true });
     return;
   }
@@ -1886,7 +1887,7 @@ self.addEventListener('fetch', (event) => {
       id, category, data.value !== undefined ? Number(data.value) : null,
       String(data.note || ''), today, new Date().toISOString()
     );
-    jsonResponse(res, 200, { id, category, date: today });
+    jsonResponse(res, 200, { ok: true, id, category, date: today });
     return;
   }
 

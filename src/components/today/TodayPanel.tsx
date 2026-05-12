@@ -404,15 +404,25 @@ Write 2-4 short sentences covering: one encouraging opening, what to focus on to
     if (context) planParts.push('Context:\n' + context);
     planParts.push(`Create a focused daily plan for ${ownerName}. Format:\n**Morning** (1-2 things)\n**Afternoon** (1-2 things)\n**This evening** (1 thing)\n\nBe specific to their actual tasks/reminders. Keep each line short. End with one sentence of encouragement.`);
     const prompt = planParts.join('\n\n');
-    const deviceId = (() => { let id = localStorage.getItem('henry:device_id'); if (!id) { id = crypto.randomUUID(); localStorage.setItem('henry:device_id', id); } return id; })();
     try {
-      const r = await fetch('https://henry-proxy.henryai.workers.dev/v1/chat', {
-        signal: AbortSignal.timeout(25000),
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Henry-Device': deviceId },
-        body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], max_tokens: 350, stream: false }),
-      });
-      const d = await r.json() as any;
+      let d: any = null;
+      try {
+        const r = await fetch('http://127.0.0.1:4242/sync/prompt', {
+          method: 'POST', signal: AbortSignal.timeout(30000),
+          headers: { 'Content-Type': 'application/json', 'X-Henry-Internal': 'true' },
+          body: JSON.stringify({ text: prompt }),
+        });
+        const rd = await r.json() as any;
+        d = { choices: [{ message: { content: rd?.reply || rd?.response || '' } }] };
+      } catch {
+        const deviceId = (() => { let id = localStorage.getItem('henry:device_id'); if (!id) { id = crypto.randomUUID(); localStorage.setItem('henry:device_id', id); } return id; })();
+        const r = await fetch('https://henry-proxy.henryai.workers.dev/v1/chat', {
+          signal: AbortSignal.timeout(25000), method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Henry-Device': deviceId },
+          body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], max_tokens: 350, stream: false }),
+        });
+        d = await r.json() as any;
+      }
       const planText = d?.choices?.[0]?.message?.content || 'No response';
       setPlannerResult(planText);
       if (planText && planText !== 'No response') setCached('daily-plan', planText);
@@ -464,17 +474,22 @@ Format:
 [1 sentence reflection]
 
 Keep it brief and encouraging.`;
-    const deviceId = (() => { let id = localStorage.getItem('henry:device_id'); if (!id) { id = crypto.randomUUID(); localStorage.setItem('henry:device_id', id); } return id; })();
     try {
-      const r = await fetch('https://henry-proxy.henryai.workers.dev/v1/chat', {
-        signal: AbortSignal.timeout(25000),
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Henry-Device': deviceId },
-        body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], max_tokens: 350, stream: false }),
-      });
-      const d = await r.json() as any;
-      setReportText(d?.choices?.[0]?.message?.content || 'No response');
-    } catch { setReportText('Could not reach Henry AI.'); }
+      const api2 = (window as any).henryAPI;
+      const result = await api2?.henryChat?.({ prompt, mode: 'companion' });
+      setReportText(result?.reply || result?.text || result?.content || 'No response');
+    } catch {
+      // Fallback to sync bridge
+      try {
+        const r = await fetch('http://127.0.0.1:4242/sync/prompt', {
+          method: 'POST', signal: AbortSignal.timeout(30000),
+          headers: { 'Content-Type': 'application/json', 'X-Henry-Internal': 'true' },
+          body: JSON.stringify({ text: prompt }),
+        });
+        const d = await r.json() as any;
+        setReportText(d?.reply || d?.response || 'Could not generate report');
+      } catch { setReportText('Could not reach Henry AI. Make sure you have an AI key set up in Settings.'); }
+    }
     setReportBusy(false);
   }
 
