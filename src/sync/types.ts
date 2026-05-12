@@ -107,6 +107,7 @@ export type SyncEventType =
   | 'companion_response'
   | 'companion_chunk'
   | 'companion_screenshot'
+  | 'companion_chat_update'
   | 'tunnel_active';
 
 export interface SyncEvent {
