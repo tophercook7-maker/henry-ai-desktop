@@ -9,6 +9,8 @@ import { sendToHenry } from '../../actions/store/chatBridgeStore';
 import { addCommitment as addToStore } from '../../henry/commitmentStore';
 import { useStore } from '../../store';
 
+const getApi = () => (window as any).henryAPI as any;
+
 interface Goal {
   id: string; title: string; summary?: string; status: string;
   priority_score: number; strategic_significance_score: number;
@@ -23,7 +25,6 @@ interface Commitment {
   source_conversation_id?: string; created_at: string;
 }
 
-const api = (window as any).henryAPI;
 
 type Tab = 'goals' | 'commitments';
 
@@ -56,14 +57,14 @@ export default function GoalsPanel() {
   const [selected, setSelected]   = useState<Goal | null>(null);
   const [showAll, setShowAll]     = useState(false);
   const [adding, setAdding]       = useState(false);
-  const [newGoal, setNewGoal]     = useState({ title: '', summary: '', priority: '0.7' });
+  const [newGoal, setNewGoal]     = useState({ title: '', summary: '', priority: '0.7', target_date: '' });
   const [newCommit, setNewCommit] = useState({ description: '', dueDate: '' });
   const [addingCommit, setAddingCommit] = useState(false);
   const [saving, setSaving]       = useState(false);
 
   async function loadGoals() {
-    const active = await api.getGoals({ status: 'active', limit: 30 }) as Goal[] || [];
-    const all = await api.getGoals({ status: 'all', limit: 50 }) as Goal[] || [];
+    const active = await getApi()?.getGoals({ status: 'active', limit: 30 }) as Goal[] || [];
+    const all = await getApi()?.getGoals({ status: 'all', limit: 50 }) as Goal[] || [];
     setGoals(active);
     setAllGoals(all);
   }
@@ -90,7 +91,7 @@ export default function GoalsPanel() {
 
 
   async function loadCommitments() {
-    const data = await api.getCommitments({ limit: 40 }) as Commitment[] || [];
+    const data = await getApi()?.getCommitments({ limit: 40 }) as Commitment[] || [];
     setCommitments(data);
   }
 
@@ -103,14 +104,15 @@ export default function GoalsPanel() {
     e.preventDefault();
     if (!newGoal.title.trim()) return;
     setSaving(true);
-    await api.saveGoal({
+    await getApi()?.saveGoal({
       title: newGoal.title.trim(),
       summary: newGoal.summary.trim() || undefined,
+      target_date: newGoal.target_date || undefined,
       priorityScore: parseFloat(newGoal.priority) || 0.7,
       strategicSignificanceScore: parseFloat(newGoal.priority) || 0.7,
       emotionalSignificanceScore: 0.5,
     });
-    setNewGoal({ title: '', summary: '', priority: '0.7' });
+    setNewGoal({ title: '', summary: '', priority: '0.7', target_date: '' });
     setAdding(false);
     setSaving(false);
     await loadGoals();
@@ -121,7 +123,7 @@ export default function GoalsPanel() {
     if (!newCommit.description.trim()) return;
     setSaving(true);
     const desc = newCommit.description.trim();
-    await api.saveCommitment({
+    await getApi()?.saveCommitment({
       description: desc,
       dueDate: newCommit.dueDate || undefined,
       importanceScore: 0.7,
@@ -137,13 +139,13 @@ export default function GoalsPanel() {
   }
 
   async function setGoalStatus(id: string, status: string) {
-    await api.updateGoal(id, { status });
+    await getApi()?.updateGoal(id, { status });
     await loadGoals();
     setSelected(null);
   }
 
   async function resolveCommitment(id: string) {
-    await api.resolveCommitment(id);
+    await getApi()?.resolveCommitment(id);
     await loadCommitments();
   }
 
@@ -295,7 +297,7 @@ export default function GoalsPanel() {
                     </button>
                     {g.status !== 'done' && (
                       <button
-                        onClick={e => { e.stopPropagation(); void api.goalsUpdate?.(g.id, { status: 'done' }); void loadGoals(); }}
+                        onClick={e => { e.stopPropagation(); void getApi()?.goalsUpdate?.(g.id, { status: 'done' }); void loadGoals(); }}
                         className="text-[10px] px-2 py-1 rounded-lg border border-henry-border/20 text-henry-text-muted hover:text-green-400 hover:border-green-400/30 transition-all">
                         ✓ Done
                       </button>

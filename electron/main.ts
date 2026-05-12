@@ -412,6 +412,17 @@ app.whenReady().then(() => {
   setSyncDb(db);
   registerSyncBridgeIpc();
 
+  // ── First-launch detection ────────────────────────────────────────────────
+  ipcMain.handle('henry:isFirstLaunch', () => {
+    try {
+      const count = (db.prepare('SELECT COUNT(*) as n FROM habits').get() as {n:number}).n
+                  + (db.prepare('SELECT COUNT(*) as n FROM personal_tasks').get() as {n:number}).n;
+      return { isFirst: count === 0 };
+    } catch { return { isFirst: false }; }
+  });
+
+
+
   // Self-diagnostic — runs on every launch, auto-fixes problems
   setTimeout(async () => {
     try {

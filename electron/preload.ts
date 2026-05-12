@@ -494,6 +494,7 @@ contextBridge.exposeInMainWorld('henryAPI', {
     ipcRenderer.on('henry:diagnostic:complete', handler);
     return () => ipcRenderer.removeListener('henry:diagnostic:complete', handler);
   },
+  isFirstLaunch: () => ipcRenderer.invoke('henry:isFirstLaunch'),
   onCompanionChatUpdate: (cb: (data: unknown) => void) => {
     const handler = (_: unknown, data: unknown) => cb(data);
     ipcRenderer.on('henry:companion:chat-update', handler);

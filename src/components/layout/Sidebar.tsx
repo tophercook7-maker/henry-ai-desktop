@@ -100,9 +100,10 @@ export default function Sidebar() {
       const api2 = (window as any).henryAPI;
       api2?.remindersDue?.().then((r: any[]) => setDueCount((r||[]).length)).catch(() => {});
       // Count overdue goals (target_date in the past)
-      api2?.goalsList?.().then((goals: any[]) => {
+      api2?.getGoals?.({status:'active'}).then((res: any) => {
+        const goals = Array.isArray(res) ? res : (res?.goals || []);
         const now = new Date();
-        const overdue = (goals||[]).filter((g: any) =>
+        const overdue = goals.filter((g: any) =>
           g.status === 'active' && g.target_date && new Date(g.target_date) < now
         ).length;
         setOverdueGoals(overdue);
