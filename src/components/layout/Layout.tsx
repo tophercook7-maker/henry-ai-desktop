@@ -174,21 +174,21 @@ export default function Layout() {
         <main key={currentView} className="flex-1 overflow-hidden min-h-0 henry-panel-enter">
           {currentView === 'today' && <PanelBoundary><TodayPanel /></PanelBoundary>}
           {currentView === 'chat' && <ChatView />}
-          {currentView === 'journal' && <JournalPanel />}
-          {currentView === 'focus' && <FocusPanel />}
+          {currentView === 'journal' && <PanelBoundary><JournalPanel /></PanelBoundary>}
+          {currentView === 'focus' && <PanelBoundary><FocusPanel /></PanelBoundary>}
           {currentView === 'recorder' && <PanelBoundary><MeetingRecorderPanel /></PanelBoundary>}
-          {currentView === 'modes' && <ModesPanel />}
-          {currentView === 'secretary' && <SecretaryPanel />}
-          {currentView === 'contacts' && <ContactsPanel />}
-          {currentView === 'tasks' && <TasksPanel />}
-          {currentView === 'files' && <FileBrowser />}
-          {currentView === 'workspace' && <WorkspaceView />}
-          {currentView === 'terminal' && <TerminalView />}
-          {currentView === 'computer' && <ComputerPanel />}
-          {currentView === 'printer' && <PrinterPanel />}
-          {currentView === 'costs' && <CostDashboard />}
-          {currentView === 'settings' && <SettingsView />}
-          {currentView === 'health' && <HealthPanel />}
+          {currentView === 'modes' && <PanelBoundary><ModesPanel /></PanelBoundary>}
+          {currentView === 'secretary' && <PanelBoundary><SecretaryPanel /></PanelBoundary>}
+          {currentView === 'contacts' && <PanelBoundary><ContactsPanel /></PanelBoundary>}
+          {currentView === 'tasks' && <PanelBoundary><TasksPanel /></PanelBoundary>}
+          {currentView === 'files' && <PanelBoundary><FileBrowser /></PanelBoundary>}
+          {currentView === 'workspace' && <PanelBoundary><WorkspaceView /></PanelBoundary>}
+          {currentView === 'terminal' && <PanelBoundary><TerminalView /></PanelBoundary>}
+          {currentView === 'computer' && <PanelBoundary><ComputerPanel /></PanelBoundary>}
+          {currentView === 'printer' && <PanelBoundary><PrinterPanel /></PanelBoundary>}
+          {currentView === 'costs' && <PanelBoundary><CostDashboard /></PanelBoundary>}
+          {currentView === 'settings' && <PanelBoundary><SettingsView /></PanelBoundary>}
+          {currentView === 'health' && <PanelBoundary><HealthPanel /></PanelBoundary>}
           {currentView === 'companion' && (
             <div className="h-full overflow-y-auto px-5 py-5 max-w-lg space-y-5">
               <div>
@@ -245,37 +245,37 @@ export default function Layout() {
               </div>
             </div>
           )}
-          {currentView === 'reminders' && <RemindersPanel />}
-          {currentView === 'crm' && <CRMPanel />}
+          {currentView === 'reminders' && <PanelBoundary><RemindersPanel /></PanelBoundary>}
+          {currentView === 'crm' && <PanelBoundary><CRMPanel /></PanelBoundary>}
           {currentView === 'finance' && <PanelBoundary><FinancePanel /></PanelBoundary>}
-          {currentView === 'lists' && <ListsPanel />}
-          {currentView === 'goals' && <GoalsPanel />}
-          {currentView === 'hq' && <HQPanel />}
-          {currentView === 'setup' && <AutoSetupPanel />}
-          {currentView === 'printstudio' && <PrintStudioPanel />}
-          {currentView === 'machines' && <MachinesPanel />}
-          {currentView === 'materials' && <MaterialsPanel />}
-          {currentView === 'production' && <ProductionRunsPanel />}
-          {currentView === 'waste' && <WastePanel />}
-          {currentView === 'maintenance' && <MaintenancePanel />}
-          {currentView === 'scripture' && <ScripturePanel />}
-          {currentView === 'prayer' && <PrayerPanel />}
-          {currentView === 'quoting' && <QuotingPanel />}
-          {currentView === 'imagegen' && <ImageGenPanel />}
-      {currentView === 'videogen' && <VideoGenPanel />}
-          {currentView === 'integrations' && <IntegrationsPanel />}
-          {currentView === 'github' && <GitHubPanel />}
-          {currentView === 'linear' && <LinearPanel />}
-          {currentView === 'notion' && <NotionPanel />}
-          {currentView === 'slack' && <SlackPanel />}
-          {currentView === 'captures' && <CapturesPanel />}
-          {currentView === 'memory' && <MemoryPanel />}
+          {currentView === 'lists' && <PanelBoundary><ListsPanel /></PanelBoundary>}
+          {currentView === 'goals' && <PanelBoundary><GoalsPanel /></PanelBoundary>}
+          {currentView === 'hq' && <PanelBoundary><HQPanel /></PanelBoundary>}
+          {currentView === 'setup' && <PanelBoundary><AutoSetupPanel /></PanelBoundary>}
+          {currentView === 'printstudio' && <PanelBoundary><PrintStudioPanel /></PanelBoundary>}
+          {currentView === 'machines' && <PanelBoundary><MachinesPanel /></PanelBoundary>}
+          {currentView === 'materials' && <PanelBoundary><MaterialsPanel /></PanelBoundary>}
+          {currentView === 'production' && <PanelBoundary><ProductionRunsPanel /></PanelBoundary>}
+          {currentView === 'waste' && <PanelBoundary><WastePanel /></PanelBoundary>}
+          {currentView === 'maintenance' && <PanelBoundary><MaintenancePanel /></PanelBoundary>}
+          {currentView === 'scripture' && <PanelBoundary><ScripturePanel /></PanelBoundary>}
+          {currentView === 'prayer' && <PanelBoundary><PrayerPanel /></PanelBoundary>}
+          {currentView === 'quoting' && <PanelBoundary><QuotingPanel /></PanelBoundary>}
+          {currentView === 'imagegen' && <PanelBoundary><ImageGenPanel /></PanelBoundary>}
+      {currentView === 'videogen' && <PanelBoundary><VideoGenPanel /></PanelBoundary>}
+          {currentView === 'integrations' && <PanelBoundary><IntegrationsPanel /></PanelBoundary>}
+          {currentView === 'github' && <PanelBoundary><GitHubPanel /></PanelBoundary>}
+          {currentView === 'linear' && <PanelBoundary><LinearPanel /></PanelBoundary>}
+          {currentView === 'notion' && <PanelBoundary><NotionPanel /></PanelBoundary>}
+          {currentView === 'slack' && <PanelBoundary><SlackPanel /></PanelBoundary>}
+          {currentView === 'captures' && <PanelBoundary><CapturesPanel /></PanelBoundary>}
+          {currentView === 'memory' && <PanelBoundary><MemoryPanel /></PanelBoundary>}
           {currentView === 'recorder' && <PanelBoundary><RecorderPanel /></PanelBoundary>}
-          {currentView === 'weekly' && <WeeklyReviewPanel />}
-          {currentView === 'stripe' && <StripePanel />}
-          {currentView === 'gcal' && <GCalPanel />}
-          {currentView === 'gmail' && <GmailPanel />}
-          {currentView === 'gdrive' && <GDrivePanel />}
+          {currentView === 'weekly' && <PanelBoundary><WeeklyReviewPanel /></PanelBoundary>}
+          {currentView === 'stripe' && <PanelBoundary><StripePanel /></PanelBoundary>}
+          {currentView === 'gcal' && <PanelBoundary><GCalPanel /></PanelBoundary>}
+          {currentView === 'gmail' && <PanelBoundary><GmailPanel /></PanelBoundary>}
+          {currentView === 'gdrive' && <PanelBoundary><GDrivePanel /></PanelBoundary>}
         </main>
       </div>
 

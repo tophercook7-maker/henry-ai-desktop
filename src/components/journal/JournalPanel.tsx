@@ -51,7 +51,8 @@ As a thoughtful, encouraging friend, offer a 2-3 sentence reflection. Notice som
   }
 
   async function loadList(q?:string){
-    const data = await api.journalList(q||undefined) as JournalEntry[];
+    if (!api) { return; }
+    const data = await api.journalList?.(q||undefined) as JournalEntry[] || [];
     setEntries(data.map(e=>({...e, tags: JSON.parse(e.tags as any||'[]')})));
   }
 

@@ -49,10 +49,10 @@ export default function HealthPanel() {
 
   const load = useCallback(async () => {
     const [h, hl, dl, wl] = await Promise.all([
-      api.healthHabitList().catch(() => []),
-      api.healthHabitLogsForDate(today()).catch(() => []),
-      api.healthLogsForDate(today()).catch(() => []),
-      api.healthHabitLogsRange(last7(), today()).catch(() => []),
+      api?.healthHabitList().catch(() => []),
+      api?.healthHabitLogsForDate(today()).catch(() => []),
+      api?.healthLogsForDate(today()).catch(() => []),
+      api?.healthHabitLogsRange(last7(), today()).catch(() => []),
     ]);
     setHabits(h); setHabitLogs(hl); setLogs(dl); setWeekLogs(wl);
   }, []);

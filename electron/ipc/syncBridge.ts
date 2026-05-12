@@ -974,7 +974,7 @@ self.addEventListener('fetch', (event) => {
   // They only work on the local network (same WiFi) — not internet-exposed.
   const companionWebPaths = [
     '/sync/prompt', '/sync/chat/history', '/sync/chat/save', '/sync/chat/conversation_id', '/sync/mac/today', '/sync/mac/screen',
-    '/sync/mac/habit-toggle', '/sync/mac/run', '/sync/mac/open-app',
+    '/sync/mac/habit-toggle', '/sync/mac/run', '/sync/mac/open-app', '/sync/mac/health',
     '/sync/capture-and-process', '/sync/capture', '/sync/mac/finance',
     '/sync/mac/reminders', '/sync/mac/tasks', '/sync/mac/tasks/create',
     '/sync/mac/goals', '/sync/mac/tasks/complete',
@@ -1813,6 +1813,27 @@ self.addEventListener('fetch', (event) => {
       String(data.mood || ''), new Date().toISOString(), new Date().toISOString()
     );
     jsonResponse(res, 200, { id, date: today });
+    return;
+  }
+
+  if (path === '/sync/mac/health' && req.method === 'GET') {
+    try {
+      const today = new Date().toISOString().slice(0,10);
+      const logs = dbGet<{id:string;category:string;label:string;value:number;unit:string;date:string;created_at:string}>(
+        "SELECT * FROM health_logs WHERE date = ? ORDER BY created_at DESC", today
+      );
+      const habits = dbGet<{id:string;name:string;icon:string;active:number}>(
+        "SELECT * FROM habits WHERE active=1 ORDER BY created_at"
+      );
+      const habitLogs = dbGet<{habit_id:string;date:string;count:number}>(
+        "SELECT * FROM habit_logs WHERE date=?", today
+      );
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      res.end(JSON.stringify({ logs, habits, habitLogs, date: today }));
+    } catch (e) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: String(e) }));
+    }
     return;
   }
 
