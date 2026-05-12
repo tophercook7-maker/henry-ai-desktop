@@ -1299,6 +1299,81 @@ self.addEventListener('fetch', (event) => {
     // Save last user text regardless
     deviceContext.set(deviceId, { ...ctx, lastUserText: userText });
 
+    // ── Knowledge router — instant answers, no AI needed ─────────────────────
+    const lowerText = resolvedText.toLowerCase().trim();
+    const knowledgeAnswer = (() => {
+      if (/^(what can you do|help|give me a tour|show me what you can do|overview|what do you do)/.test(lowerText)) {
+        return `Here's everything I can do:\n\n` +
+          `💬 **Chat** — Talk to me, ask anything, give commands\n` +
+          `☀️ **Today** — Daily habits, tasks, day plan, word of the day\n` +
+          `✓ **Tasks** — Your to-do list, AI triage\n` +
+          `⏰ **Reminders** — Time-based alerts with badge\n` +
+          `◎ **Goals** — Long-term goals with target dates, AI coaching\n` +
+          `📔 **Journal** — Daily writing with mood + AI reflection\n` +
+          `❤️ **Health** — Log water, steps, sleep, calories, exercise\n` +
+          `💰 **Finance** — Income, expenses, budgets, CSV import\n` +
+          `🧠 **Memory** — Everything I know about you — view, edit, add\n` +
+          `✝ **Scripture** — Bible verse lookup, reading plan\n` +
+          `🙏 **Prayer** — Prayer requests and answers\n` +
+          `🎯 **Focus** — Pomodoro timer with weekly chart\n` +
+          `📄 **Quoting** — Quotes and invoices with PDF export\n` +
+          `⚙️ **Settings** — AI keys, appearance, backup\n` +
+          `\nAsk me "how do I use [panel name]" for details on any of these.`;
+      }
+      if (/^(give me tips|power.?user|how do i use (you|henry) better|best way to use|how to get (more|most) out)/.test(lowerText)) {
+        return `Here are the best ways to get more out of me:\n\n` +
+          `**1. Use ⌥Space constantly** — Select any text anywhere on your Mac first, then press ⌥Space. Henry opens with that text already loaded.\n\n` +
+          `**2. Teach me about yourself** — Say "remember that I [fact]" and I store it permanently. The more you tell me, the more personal every response gets.\n\n` +
+          `**3. Talk naturally** — "Remind me to call John at 3pm Friday" works. "Add a task: finish the report" works. No special syntax needed.\n\n` +
+          `**4. Install me on your phone** — Open your companion URL in Safari, tap Share → Add to Home Screen. Free real app.\n\n` +
+          `**5. Get unlimited free AI** — Go to aistudio.google.com for a free Gemini key (no card), and groq.com for a free Groq key. Paste both in Settings → AI Providers.`;
+      }
+      if (/^(what (keyboard )?shortcuts|hotkey|how do i open henry|⌥.?space)/.test(lowerText)) {
+        return `**Henry shortcuts:**\n\n` +
+          `• **⌥Space** — Open Henry from anywhere on your Mac. Select text first and it's already pasted in.\n` +
+          `• **⌘⇧H** — Open Henry's full window\n` +
+          `• **📌 pin button** — Save any response to Memory\n` +
+          `• **Pull down** — Refresh data in the phone companion`;
+      }
+      if (/how do i use (journal|today|tasks|reminders|goals|health|finance|scripture|prayer|focus|memory|settings|recorder|crm|quoting)/.test(lowerText)) {
+        const m = lowerText.match(/how do i use (\w+)/);
+        const panel = m ? m[1] : '';
+        const help: Record<string,(()=>string)> = {
+          journal: () => `**📔 Journal**\n\nWrite daily entries with a mood. After 50+ characters a reflection button appears — I ask a thoughtful follow-up. Your streak is tracked.\n\n**How to use it:**\n• Just start typing\n• Pick a mood emoji\n• Tap AI Reflection for a follow-up prompt\n\n**Tips:**\n• Write from your phone — same entry saves to your Mac\n• Ask me "what did I journal about last week?" and I'll tell you`,
+          today: () => `**☀️ Today**\n\nYour morning dashboard — habits to check in, tasks, verse of the day, and day planning.\n\n**How to use it:**\n• Tap habit circles to mark them done\n• Hit "Day plan" for an AI-generated priority list\n• Hit "📊 Daily report" at the end of the day\n\n**Tips:**\n• Day plan is cached — one AI call per day\n• Habits link to the Health panel`,
+          finance: () => `**💰 Finance**\n\nTrack money in and out, set category budgets, import bank statements.\n\n**How to use it:**\n• Import a bank statement CSV\n• Set a budget per category\n• Ask me "what did I spend on food this month?"\n\n**Tips:**\n• I flag when you're over budget\n• Export data as CSV from Finance settings`,
+          health: () => `**❤️ Health**\n\nSix quick-log buttons: water, steps, exercise, sleep, calories, custom.\n\n**How to use it:**\n• Tap 💧 Water to log 8oz, 👟 Steps for 1,000, etc.\n• Log from your phone too — all 6 buttons are there\n• Say "log 7 hours of sleep" in chat`,
+          goals: () => `**◎ Goals**\n\nTrack long-term goals with target dates and priority scores.\n\n**How to use it:**\n• Add a goal with a title, why it matters, and a target date\n• Ask me "coach me on my goals" for a push\n• Mark done when you achieve it\n\n**Tips:**\n• Orange badge in sidebar = overdue goal\n• Mark goals done from your phone`,
+          memory: () => `**🧠 Memory**\n\nEverything I know about you — view, add, delete.\n\n**Three ways to add:**\n• Say "remember that I [fact]" in chat\n• Tap 📌 on any response to pin it to memory\n• Open Memory panel and tap +\n\n**What's worth adding:** your name, job, location, family, preferences, goals`,
+        };
+        if (panel && help[panel]) return help[panel]();
+        return null;
+      }
+      return null;
+    })();
+
+    if (knowledgeAnswer) {
+      sendReply(knowledgeAnswer);
+      return;
+    }
+
+    // ── "Remember that..." — instant memory save, no AI needed ────────────────
+    const rememberMatch = lowerText.match(/^(?:please )?remember(?: that)? (.+)/i);
+    if (rememberMatch) {
+      const fact = resolvedText.replace(/^(?:please )?remember(?: that)? /i, '').trim();
+      if (fact.length > 3) {
+        try {
+          const id = require('crypto').randomUUID();
+          dbRun(
+            "INSERT OR IGNORE INTO memory_facts (id, fact, category, importance, created_at) VALUES (?,?,?,?,?)",
+            id, fact, 'user', 2, new Date().toISOString()
+          );
+          sendReply(`Got it — I've saved that to my memory: "${fact}"`);
+        } catch { sendReply(`I noted that, though I had trouble saving it permanently.`); }
+        return;
+      }
+    }
+
     // Direct computer command detection — no AI, just execute
     async function tryComputerCommand(text: string): Promise<string | null> {
       const t = text.toLowerCase().trim();
@@ -1466,6 +1541,35 @@ self.addEventListener('fetch', (event) => {
         factsBlock
           ? `── WHAT YOU REMEMBER ABOUT ${userName ? userName.toUpperCase() : 'THIS USER'} ──\nThese are the ONLY facts you know about them. Anything not on this list you do NOT know.\n${factsBlock}`
           : `── WHAT YOU REMEMBER ──\nNothing yet — this is an early conversation. Don't make things up; ask them about themselves naturally if relevant.`,
+
+        // Live context — real data from their Mac right now
+        (() => {
+          const lines: string[] = ['── LIVE CONTEXT (from their Mac right now) ──'];
+          try {
+            const today = new Date().toISOString().slice(0, 10);
+            const tasks = dbGet<{title:string;priority:number}>(
+              "SELECT title, priority FROM personal_tasks WHERE status='todo' ORDER BY priority DESC, created_at DESC LIMIT 5"
+            ) as {title:string;priority:number}[];
+            if (tasks.length) lines.push('Open tasks: ' + tasks.map(t => t.title).join(', '));
+            
+            const habits = dbGet<{name:string}>(
+              "SELECT h.name FROM habits h WHERE h.active=1 AND h.id NOT IN (SELECT habit_id FROM habit_logs WHERE date=?) ORDER BY h.created_at LIMIT 5",
+              today
+            ) as {name:string}[];
+            if (habits.length) lines.push('Habits not yet done today: ' + habits.map(h => h.name).join(', '));
+            
+            const goals = dbGet<{title:string;target_date:string}>(
+              "SELECT title, target_date FROM goals WHERE status='active' ORDER BY priority_score DESC LIMIT 3"
+            ) as {title:string;target_date:string}[];
+            if (goals.length) lines.push('Active goals: ' + goals.map(g => g.title + (g.target_date ? ' (due '+g.target_date+')' : '')).join(', '));
+            
+            const rems = dbGet<{title:string;due_at:string}>(
+              "SELECT title, due_at FROM reminders WHERE done=0 AND due_at <= datetime('now','+24 hours') ORDER BY due_at LIMIT 3"
+            ) as {title:string;due_at:string}[];
+            if (rems.length) lines.push('Due reminders: ' + rems.map(r => r.title).join(', '));
+          } catch { /* best effort */ }
+          return lines.length > 1 ? lines.join('\n') : null;
+        })(),
       ].filter(Boolean).join('\n');
 
       const messages = [
