@@ -41,6 +41,14 @@ async function syncFetch<T = any>(path: string, body?: object): Promise<T | null
   } catch { return null; }
 }
 
+function AutoAdvance({ onAdvance }: { onAdvance: () => void }) {
+  useEffect(() => {
+    const t = setTimeout(onAdvance, 1200);
+    return () => clearTimeout(t);
+  }, [onAdvance]);
+  return null;
+}
+
 export default function OnboardingWizard({ onComplete }: Props) {
   const { setProviders, providers } = useStore();
   const [step, setStep] = useState<StepId>('welcome');
@@ -363,8 +371,8 @@ export default function OnboardingWizard({ onComplete }: Props) {
               <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-5 text-center space-y-3">
                 <p className="text-4xl">✓</p>
                 <p className="text-green-400 font-semibold text-lg">Accessibility enabled</p>
-                <p className="text-white/50 text-xs">Henry detected it. Moving on.</p>
-                <button onClick={next} className={primary}>Continue →</button>
+                <p className="text-white/50 text-xs">Detected. Moving on automatically…</p>
+                <AutoAdvance onAdvance={next} />
               </div>
             ) : (
               <>
@@ -421,7 +429,8 @@ export default function OnboardingWizard({ onComplete }: Props) {
               <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-5 text-center space-y-3">
                 <p className="text-4xl">✓</p>
                 <p className="text-green-400 font-semibold text-lg">Screen Recording enabled</p>
-                <button onClick={next} className={primary}>Continue →</button>
+                <p className="text-white/50 text-xs">Detected. Moving on automatically…</p>
+                <AutoAdvance onAdvance={next} />
               </div>
             ) : (
               <>

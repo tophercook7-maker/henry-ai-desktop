@@ -5,7 +5,7 @@ import { useStore } from '../../store';
 interface Transaction { id:string; type:'income'|'expense'; amount:number; category:string; description?:string; date:string; created_at:string }
 interface Summary { income:number; expenses:number; net:number; breakdown:{type:string;total:number;category:string}[] }
 
-const api = (window as any).henryAPI;
+const getApi = () => (window as any).henryAPI as any;
 
 const EXPENSE_CATS = ['Housing','Food','Transport','Health','Business','Marketing','Software','Entertainment','Utilities','Shopping','Other'];
 const INCOME_CATS  = ['Client Work','Product Sales','Freelance','Investments','Grants','Affiliate','Other'];
@@ -33,7 +33,7 @@ export default function FinancePanel(){
   async function load(){
     setLoading(true);
     const months6 = Array.from({length:6},(_,i)=>{ const d=new Date(); d.setMonth(d.getMonth()-i); return monthKey(d); }).reverse();
-    if (!api) { setLoading(false); return; }
+    const api = getApi(); if (!api) { setLoading(false); return; }
     const [list, sum, ...trendData] = await Promise.all([
       api.financeList?.(month) ?? [],
       api.financeSummary?.(month) ?? {income:0,expenses:0,net:0,breakdown:[]},
@@ -47,22 +47,23 @@ export default function FinancePanel(){
 
   useEffect(()=>{ void load(); },[month]);
   useEffect(()=>{
-    api.financeRecurringList?.().then((r:any)=>setRecurrings(r||[])).catch(()=>{});
-    api.financeRecurringAutopost?.().then((r:any)=>{ if(r?.posted>0) void load(); }).catch(()=>{});
+    const a = getApi(); if (!a) return;
+    a.financeRecurringList?.().then((r:any)=>setRecurrings(r||[])).catch(()=>{});
+    a.financeRecurringAutopost?.().then((r:any)=>{ if(r?.posted>0) void load(); }).catch(()=>{});
   },[]);
 
   async function handleAdd(e:React.FormEvent){
     e.preventDefault();
     const amt = parseFloat(form.amount);
     if(!amt || amt<=0) return;
-    await api.financeAdd({ id:crypto.randomUUID(), type:form.type, amount:amt, category:form.category, description:form.description||null, date:form.date });
+    await getApi()?.financeAdd({ id:crypto.randomUUID(), type:form.type, amount:amt, category:form.category, description:form.description||null, date:form.date });
     setForm(f=>({...f, amount:'', description:''}));
     setAdding(false);
     await load();
   }
 
   async function handleDelete(id:string){
-    await api.financeDelete(id);
+    await getApi()?.financeDelete(id);
     await load();
   }
 
@@ -409,7 +410,7 @@ Write a brief P&L summary in 3 sentences: how the month went, biggest expense ar
                   <span className="text-henry-text flex-1">{r.description||r.category}</span>
                   <span className="text-henry-text-muted font-mono">{fmt(r.amount)}</span>
                   <span className="text-henry-text-muted">day {r.day_of_month}</span>
-                  <button onClick={async()=>{await api.financeRecurringDelete?.(r.id);setRecurrings(rs=>rs.filter(x=>x.id!==r.id));}} className="text-henry-text-muted hover:text-red-400 transition-all">✕</button>
+                  <button onClick={async()=>{await getApi()?.financeRecurringDelete?.(r.id);setRecurrings(rs=>rs.filter(x=>x.id!==r.id));}} className="text-henry-text-muted hover:text-red-400 transition-all">✕</button>
                 </div>
               ))}
               <div className="flex gap-2 pt-2 border-t border-henry-border/15">
@@ -428,8 +429,8 @@ Write a brief P&L summary in 3 sentences: how the month went, biggest expense ar
                 <button onClick={async()=>{
                   const amt=parseFloat(newRecurring.amount);
                   if(!amt) return;
-                  await api.financeRecurringSave?.({type:newRecurring.type,amount:amt,category:newRecurring.category,description:newRecurring.description,day_of_month:newRecurring.day});
-                  const list = await api.financeRecurringList?.();
+                  await getApi()?.financeRecurringSave?.({type:newRecurring.type,amount:amt,category:newRecurring.category,description:newRecurring.description,day_of_month:newRecurring.day});
+                  const list = await getApi()?.financeRecurringList?.();
                   setRecurrings(list as any||[]);
                   setNewRecurring(r=>({...r,amount:'',description:''}));
                 }} className="px-3 py-1.5 bg-henry-accent text-white text-xs rounded-lg font-semibold">Add</button>
