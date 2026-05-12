@@ -5,7 +5,7 @@ import { useStore } from '../../store';
 interface ListItem { id:string; list_id:string; text:string; done:number; position:number; created_at:string }
 interface HenryList { id:string; name:string; icon:string; color?:string; created_at:string; updated_at:string; items:ListItem[] }
 
-const api = (window as any).henryAPI;
+const getApi = () => (window as any).henryAPI as any;
 const ICONS = ['📝','🛒','🔩','🏠','💡','🧹','🍕','🎯','📦','🌱','🔧','❤️','💼','🏋️','🎵','📚'];
 
 export default function ListsPanel() {
@@ -23,7 +23,7 @@ export default function ListsPanel() {
   const selected = lists.find(l => l.id === selId) || null;
 
   async function load() {
-    const data = await api.listsAll() as HenryList[];
+    const data = await getApi()?.listsAll() as HenryList[];
     setLists(data);
     if (data.length && !selId) setSelId(data[0].id);
   }
@@ -33,7 +33,7 @@ export default function ListsPanel() {
   async function createList(name: string, icon='📝') {
     if (!name.trim()) return;
     const id = crypto.randomUUID();
-    await api.listsSave({ id, name: name.trim(), icon });
+    await getApi()?.listsSave({ id, name: name.trim(), icon });
     await load();
     setSelId(id);
     setNewName('');
@@ -41,30 +41,30 @@ export default function ListsPanel() {
 
   async function addItem() {
     if (!newItem.trim() || !selId) return;
-    await api.listsAddItem(selId, { id: crypto.randomUUID(), text: newItem.trim() });
+    await getApi()?.listsAddItem(selId, { id: crypto.randomUUID(), text: newItem.trim() });
     setNewItem('');
     await load();
     itemRef.current?.focus();
   }
 
   async function toggleItem(itemId: string) {
-    await api.listsToggleItem(itemId);
+    await getApi()?.listsToggleItem(itemId);
     await load();
   }
 
   async function deleteItem(itemId: string) {
-    await api.listsDeleteItem(itemId);
+    await getApi()?.listsDeleteItem(itemId);
     await load();
   }
 
   async function clearDone() {
     if (!selId) return;
-    await api.listsClearDone(selId);
+    await getApi()?.listsClearDone(selId);
     await load();
   }
 
   async function deleteList(id: string) {
-    await api.listsDelete(id);
+    await getApi()?.listsDelete(id);
     const remaining = lists.filter(l => l.id !== id);
     setLists(remaining);
     setSelId(remaining[0]?.id || null);
@@ -72,14 +72,14 @@ export default function ListsPanel() {
 
   async function updateIcon(icon: string) {
     if (!selected) return;
-    await api.listsSave({ id: selected.id, name: selected.name, icon });
+    await getApi()?.listsSave({ id: selected.id, name: selected.name, icon });
     setPickIcon(false);
     await load();
   }
 
   async function saveEditName() {
     if (!selected || !editVal.trim()) return;
-    await api.listsSave({ id: selected.id, name: editVal.trim(), icon: selected.icon });
+    await getApi()?.listsSave({ id: selected.id, name: editVal.trim(), icon: selected.icon });
     setEditName(false);
     await load();
   }
@@ -99,7 +99,7 @@ export default function ListsPanel() {
       const d = await r.json() as any;
       const suggestions = (d?.choices?.[0]?.message?.content || '').split('\n').map((s: string) => s.trim()).filter(Boolean).slice(0, 5);
       for (const sug of suggestions) {
-        await api.listsAddItem(selected.id, { id: crypto.randomUUID(), text: sug });
+        await getApi()?.listsAddItem(selected.id, { id: crypto.randomUUID(), text: sug });
       }
       await load();
     } catch { /* ignore */ }

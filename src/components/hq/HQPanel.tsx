@@ -6,7 +6,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useStore } from '../../store';
 
-const api = (window as any).henryAPI;
+const getApi = () => (window as any).henryAPI as any;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -103,8 +103,8 @@ export default function HQPanel() {
 
   // System stats polling
   const loadStats = useCallback(async () => {
-    if (!api?.computerSystemStats) return;
-    const s = await api.computerSystemStats().catch(() => null);
+    if (!getApi()?.computerSystemStats) return;
+    const s = await getApi()?.computerSystemStats().catch(() => null);
     if (s && !s.error) setStats(s);
   }, []);
 
@@ -116,7 +116,7 @@ export default function HQPanel() {
 
   // Volume
   useEffect(() => {
-    api?.computerGetVolume?.().then((r: any) => { if (r?.volume !== undefined) setVolume(r.volume); }).catch(() => {});
+    getApi()?.computerGetVolume?.().then((r: any) => { if (r?.volume !== undefined) setVolume(r.volume); }).catch(() => {});
   }, []);
 
   // Scroll chat
@@ -148,7 +148,7 @@ export default function HQPanel() {
     }
 
     let fullText = '';
-    const stream = api.streamMessage({
+    const stream = getApi()?.streamMessage({
       provider: s.companion_provider || 'groq',
       model: s.companion_model || 'llama-3.3-70b-versatile',
       apiKey,
@@ -169,8 +169,8 @@ export default function HQPanel() {
     stream.onDone(() => {
       // Auto-execute any shell commands Henry suggests
       const cmdMatch = fullText.match(/```(?:bash|sh|shell|zsh)?\s*\n([\s\S]+?)```/);
-      if (cmdMatch && api?.computerRunShell) {
-        api.computerRunShell({ command: cmdMatch[1].trim(), timeout: 15000 }).then((r: any) => {
+      if (cmdMatch && getApi()?.computerRunShell) {
+        getApi()?.computerRunShell({ command: cmdMatch[1].trim(), timeout: 15000 }).then((r: any) => {
           if (r?.stdout) {
             setChatLog(l => [...l, { role: 'system', text: '⚙️ Result: ' + r.stdout.trim().slice(0, 500) }]);
           }
@@ -190,7 +190,7 @@ export default function HQPanel() {
     setShellInput('');
     setShellLog(l => [...l, { cmd, out: '…' }]);
     try {
-      const r = await api.computerRunShell({ command: cmd, timeout: 30000 });
+      const r = await getApi()?.computerRunShell({ command: cmd, timeout: 30000 });
       setShellLog(l => [...l.slice(0,-1), { cmd, out: (r.stdout || r.output || '').trim() || r.error || 'done' }]);
     } catch (e) {
       setShellLog(l => [...l.slice(0,-1), { cmd, out: String(e), err: true }]);
@@ -198,13 +198,13 @@ export default function HQPanel() {
   }
 
   async function launchApp(cmd: string) {
-    await api.computerRunShell({ command: cmd, timeout: 5000 }).catch(() => {});
+    await getApi()?.computerRunShell({ command: cmd, timeout: 5000 }).catch(() => {});
   }
 
   async function toggleDesktopMode() {
     const next = !desktopMode;
     setDesktopMode(next);
-    await api.computerDesktopMode?.({ enable: next, fullscreen: next }).catch(() => {});
+    await getApi()?.computerDesktopMode?.({ enable: next, fullscreen: next }).catch(() => {});
   }
 
   async function scheduleTask() {
@@ -215,13 +215,13 @@ export default function HQPanel() {
       command: newTask.command,
       intervalMs: parseInt(newTask.interval) * 1000,
     };
-    await api.computerScheduleTask(task).catch(() => {});
+    await getApi()?.computerScheduleTask(task).catch(() => {});
     setScheduledTasks(t => [...t, task]);
     setNewTask({ label: '', command: '', interval: '60' });
   }
 
   async function unscheduleTask(id: string) {
-    await api.computerUnscheduleTask(id).catch(() => {});
+    await getApi()?.computerUnscheduleTask(id).catch(() => {});
     setScheduledTasks(t => t.filter(x => x.id !== id));
   }
 
@@ -257,7 +257,7 @@ export default function HQPanel() {
           <div className="flex items-center gap-2">
             <span className="text-xs text-white/30">🔊</span>
             <input type="range" min={0} max={100} value={volume}
-              onChange={e => { setVolume(Number(e.target.value)); api?.computerSetVolume?.(Number(e.target.value)); }}
+              onChange={e => { setVolume(Number(e.target.value)); getApi()?.computerSetVolume?.(Number(e.target.value)); }}
               className="w-20 accent-purple-500 cursor-pointer" />
             <span className="text-xs text-white/30 w-7">{volume}%</span>
           </div>
@@ -414,7 +414,7 @@ export default function HQPanel() {
                 {(stats?.runningApps || []).map(app => (
                   <div key={app} className="flex items-center justify-between p-2.5 rounded-xl bg-white/3 border border-white/5 hover:border-white/10 group">
                     <span className="text-sm text-white/70">{app}</span>
-                    <button onClick={() => api?.computerRunShell?.({ command: `osascript -e 'quit application "${app}"'`, timeout: 3000 })}
+                    <button onClick={() => getApi()?.computerRunShell?.({ command: `osascript -e 'quit application "${app}"'`, timeout: 3000 })}
                       className="text-[10px] text-red-400/40 group-hover:text-red-400/80 transition-all">✕</button>
                   </div>
                 ))}
@@ -495,7 +495,7 @@ export default function HQPanel() {
                     { label: '🌐 Network info', cmd: "networksetup -getinfo Wi-Fi" },
                   ].map(a => (
                     <button key={a.label} onClick={async () => {
-                      const r = await api.computerRunShell({ command: a.cmd, timeout: 10000 }).catch(() => null);
+                      const r = await getApi()?.computerRunShell({ command: a.cmd, timeout: 10000 }).catch(() => null);
                       if (r?.stdout?.trim()) setChatLog(l => [...l, { role: 'system', text: a.label + ': ' + r.stdout.trim() }]);
                     }} className="flex items-center gap-2 p-2.5 rounded-xl bg-black/20 border border-white/5 hover:bg-purple-500/10 hover:border-purple-500/30 transition-all text-sm text-white/60 hover:text-white text-left">
                       {a.label}

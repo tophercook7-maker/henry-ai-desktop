@@ -16,7 +16,7 @@ interface DiagnosticReport {
   summary: { ok: number; fixed: number; failed: number; warnings: number };
 }
 
-const api = (window as any).henryAPI;
+const getApi = () => (window as any).henryAPI as any;
 
 const STATUS_ICON: Record<string, string> = {
   ok: '✓',
@@ -47,7 +47,7 @@ export default function HealthPanel() {
     // Load last report on mount
     void (async () => {
       try {
-        const last = await api.invoke('henry:diagnostic:last');
+        const last = await getApi()?.invoke('henry:diagnostic:last');
         if (last) { setReport(last); setLastRun(last.timestamp); }
       } catch { /* no report yet */ }
     })();
@@ -61,7 +61,7 @@ export default function HealthPanel() {
   async function runNow() {
     setRunning(true);
     try {
-      const r = await api.invoke('henry:diagnostic:run');
+      const r = await getApi()?.invoke('henry:diagnostic:run');
       setReport(r); setLastRun(r.timestamp);
     } catch { /* ignore */ }
     setRunning(false);

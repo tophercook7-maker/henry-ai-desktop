@@ -5,7 +5,7 @@ import { useState, useEffect, useRef } from 'react';
 import { sendToHenry } from '../../actions/store/chatBridgeStore';
 import { useStore } from '../../store';
 
-const api = (window as any).henryAPI;
+const getApi = () => (window as any).henryAPI as any;
 interface Recording { id: string; title: string; duration_secs: number; recorded_at: string; transcript?: string; }
 
 function fmtDur(secs: number) {
@@ -25,7 +25,7 @@ export default function RecorderPanel() {
   const timerRef = useRef<ReturnType<typeof setInterval>|null>(null);
 
   useEffect(() => {
-    api.recordingsList?.().then((r: Recording[]) => setRecordings(r||[])).catch(() => {});
+    getApi()?.recordingsList?.().then((r: Recording[]) => setRecordings(r||[])).catch(() => {});
   }, []);
 
   async function startRec() {
@@ -45,7 +45,7 @@ export default function RecorderPanel() {
             id, title: title.trim() || `Voice memo ${new Date().toLocaleTimeString()}`,
             duration_secs: elapsed, recorded_at: new Date().toISOString(),
           };
-          await api.recordingsSave?.({ ...rec, audio_data: base64 }).catch(() => {});
+          await getApi()?.recordingsSave?.({ ...rec, audio_data: base64 }).catch(() => {});
           setRecordings(prev => [rec, ...prev]);
           setSelected(rec);
           setTitle('');
@@ -67,7 +67,7 @@ export default function RecorderPanel() {
   }
 
   async function deleteRec(id: string) {
-    await api.recordingsDelete?.(id).catch(() => {});
+    await getApi()?.recordingsDelete?.(id).catch(() => {});
     setRecordings(r => r.filter(x => x.id !== id));
     if (selected?.id === id) setSelected(null);
   }

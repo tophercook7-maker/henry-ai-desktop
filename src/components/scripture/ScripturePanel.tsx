@@ -9,7 +9,7 @@ import { useStore } from '../../store';
 import { getCrossRefs } from '../../henry/crossReferences';
 import { callHenryAI, NoBackendAvailableError } from '../../henry/henryAI';
 
-const api = (window as any).henryAPI;
+const getApi = () => (window as any).henryAPI as any;
 
 type Tab = 'lookup' | 'saved' | 'study' | 'import';
 
@@ -121,15 +121,15 @@ export default function ScripturePanel() {
   const [importSource, setImportSource] = useState('KJV');
 
   useEffect(() => {
-    api?.scriptureCount?.().then((n: number) => setCount(n)).catch(() => {});
+    getApi()?.scriptureCount?.().then((n: number) => setCount(n)).catch(() => {});
     loadSaved();
   }, []);
 
   async function loadSaved(q?: string) {
     try {
       const data = q
-        ? await api.scriptureSearchSaved(q)
-        : await api.scriptureSavedList();
+        ? await getApi()?.scriptureSearchSaved(q)
+        : await getApi()?.scriptureSavedList();
       setSaved((data || []).map((v: any) => ({ ...v, tags: JSON.parse(v.tags || '[]') })));
     } catch { setSaved([]); }
   }
@@ -144,7 +144,7 @@ export default function ScripturePanel() {
     if (!q) return;
     setLoading(true); setResult(null);
     try {
-      const r = await api.scriptureLookup(q) as VerseResult;
+      const r = await getApi()?.scriptureLookup(q) as VerseResult;
       setResult(r);
       if (r.found) setQuery(r.normalizedReference || q);
     } catch { setResult({ found: false, guidance: 'Lookup failed.' }); }
@@ -160,18 +160,18 @@ export default function ScripturePanel() {
       note: note || undefined,
       tags: [],
     };
-    await api.scriptureSaveVerse(v);
+    await getApi()?.scriptureSaveVerse(v);
     setNote('');
     await loadSaved();
   }
 
   async function deleteVerse(ref: string) {
-    await api.scriptureDeleteVerse(ref);
+    await getApi()?.scriptureDeleteVerse(ref);
     await loadSaved();
   }
 
   async function saveNote(ref: string, n: string) {
-    await api.scriptureUpdateNote(ref, n);
+    await getApi()?.scriptureUpdateNote(ref, n);
     setEditNoteRef(null);
     await loadSaved();
   }
@@ -204,8 +204,8 @@ export default function ScripturePanel() {
   async function handlePickImport() {
     setImporting(true); setImportResult(null);
     try {
-      const result = await api.pickScriptureImportJson?.();
-      if (result) { setImportResult(result); await api?.scriptureCount?.().then((n:number) => setCount(n)).catch(() => {}); }
+      const result = await getApi()?.pickScriptureImportJson?.();
+      if (result) { setImportResult(result); await getApi()?.scriptureCount?.().then((n:number) => setCount(n)).catch(() => {}); }
     } catch(e) { setImportResult({ imported:0, skipped:0, errors: [String(e)] }); }
     setImporting(false);
   }
@@ -615,7 +615,7 @@ export default function ScripturePanel() {
                   Copy
                 </button>
                 <button onClick={() => {
-                  if (studyRef) void api.scriptureUpdateNote(studyRef, studyOutput.slice(0, 500));
+                  if (studyRef) void getApi()?.scriptureUpdateNote(studyRef, studyOutput.slice(0, 500));
                 }} className="text-[11px] px-3 py-1 rounded-lg border border-henry-border/30 text-henry-text-muted hover:text-henry-text transition-all">
                   Save as note
                 </button>
@@ -699,11 +699,11 @@ export default function ScripturePanel() {
             </div>
             <div className="flex gap-2">
               <p className="text-xs text-henry-text-muted">Free translations: KJV, ASV, WEB, Darby — available at ebible.org</p>
-              <button onClick={() => api.computerRunShell?.({ command: 'open https://ebible.org/find/', timeout: 3000 })}
+              <button onClick={() => getApi()?.computerRunShell?.({ command: 'open https://ebible.org/find/', timeout: 3000 })}
                 className="text-xs text-henry-accent hover:underline flex-shrink-0">Open ↗</button>
             </div>
             <button onClick={async () => {
-              const result = await api.scripturePickImportJson?.();
+              const result = await getApi()?.scripturePickImportJson?.();
               if (result?.imported) setDownloadProgress('✓ Imported ' + result.imported + ' verses from file');
             }} className="w-full py-2.5 rounded-xl border border-henry-border/30 text-sm text-henry-text-muted hover:text-henry-text hover:border-henry-accent/30 transition-all">
               📁 Choose JSON file…

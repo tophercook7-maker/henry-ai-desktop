@@ -5,7 +5,7 @@ import { callHenryAI, NoBackendAvailableError } from '../../henry/henryAI';
 
 interface JournalEntry { id:string; date:string; title?:string; content:string; mood?:string; tags:string[]; created_at:string; updated_at:string }
 
-const api = (window as any).henryAPI;
+const getApi = () => (window as any).henryAPI as any;
 const MOODS = ['😊','😐','😔','🔥','🙏','💡','😤','😴'];
 
 function todayKey(){ return new Date().toISOString().slice(0,10); }
@@ -51,13 +51,12 @@ As a thoughtful, encouraging friend, offer a 2-3 sentence reflection. Notice som
   }
 
   async function loadList(q?:string){
-    if (!api) { return; }
-    const data = await api.journalList?.(q||undefined) as JournalEntry[] || [];
+    const data = await getApi()?.journalList?.(q||undefined) as JournalEntry[] || [];
     setEntries(data.map(e=>({...e, tags: JSON.parse(e.tags as any||'[]')})));
   }
 
   async function openEntry(e:JournalEntry){
-    const full = await api.journalGet(e.id) as JournalEntry|null;
+    const full = await getApi()?.journalGet(e.id) as JournalEntry|null;
     const entry = full || e;
     setSelected({...entry, tags: JSON.parse((entry.tags as any) || '[]')});
     setContent(entry.content||'');
@@ -78,7 +77,7 @@ As a thoughtful, encouraging friend, offer a 2-3 sentence reflection. Notice som
   async function save(s?:JournalEntry, c?:string, ti?:string, mo?:string){
     const entry = s||selected; if(!entry) return;
     setSaving(true);
-    await api.journalSave({ id:entry.id, date:entry.date, title:(ti??title)||null, content:(c??content), mood:(mo??mood)||null, tags:entry.tags });
+    await getApi()?.journalSave({ id:entry.id, date:entry.date, title:(ti??title)||null, content:(c??content), mood:(mo??mood)||null, tags:entry.tags });
     setSaving(false); setDirty(false);
     await loadList(search_q);
   }
@@ -87,7 +86,7 @@ As a thoughtful, encouraging friend, offer a 2-3 sentence reflection. Notice som
 
   async function handleDelete(){
     if(!selected) return;
-    await api.journalDelete(selected.id);
+    await getApi()?.journalDelete(selected.id);
     setSelected(null); setContent(''); setTitle(''); setMood('');
     await loadList(search_q);
   }

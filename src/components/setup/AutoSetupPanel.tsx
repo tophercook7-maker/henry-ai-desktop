@@ -5,7 +5,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useStore } from '../../store';
 
-const api = (window as any).henryAPI;
+const getApi = () => (window as any).henryAPI as any;
 
 interface SetupItem {
   id: string; label: string; description: string; icon: string;
@@ -36,14 +36,14 @@ export default function AutoSetupPanel() {
     const settings = storeState.settings as Record<string,string>;
     // Accessibility
     try {
-      const r = await api.checkAccessibility?.();
+      const r = await getApi()?.checkAccessibility?.();
       patch('accessibility', { status: r?.granted ? 'ok' : 'missing' });
     } catch { patch('accessibility', { status:'missing' }); }
 
     // Screen Recording — use OS-level check, NOT shell screencapture
     // (shell runs as you, not as Henry, so it always succeeds even when Henry has no permission)
     try {
-      const r = await (api as any).checkScreenRecording?.();
+      const r = await getApi()?.checkScreenRecording?.();
       patch('screen', { status: r?.granted ? 'ok' : 'missing' });
     } catch { patch('screen', { status: 'missing' }); }
 
@@ -98,7 +98,7 @@ export default function AutoSetupPanel() {
   useEffect(() => {
     if (!pollingAccess) return;
     const t = setInterval(async () => {
-      const r = await api.checkAccessibility?.().catch(()=>null);
+      const r = await getApi()?.checkAccessibility?.().catch(()=>null);
       if (r?.granted) { patch('accessibility',{status:'ok'}); setPollingAccess(false); }
     }, 1500);
     return () => clearInterval(t);
@@ -112,24 +112,24 @@ export default function AutoSetupPanel() {
       // the user exactly what to do.
       try {
         // Try the API anyway in case it does work (signed builds, older macOS)
-        const r = await api.requestAccessibility?.();
+        const r = await getApi()?.requestAccessibility?.();
         if (r?.granted) { patch('accessibility', { status: 'ok' }); return; }
       } catch { /* */ }
       // Open Finder showing Henry, plus System Settings to the right pane
-      try { await api.computerRunShell?.({ command: 'open -R "/Applications/Henry AI.app" && open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"', timeout: 3000 }); } catch { /* */ }
+      try { await getApi()?.computerRunShell?.({ command: 'open -R "/Applications/Henry AI.app" && open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"', timeout: 3000 }); } catch { /* */ }
       patch('accessibility', { status: 'fixing', description: 'In System Settings: click + → choose Henry AI → toggle ON. Click Recheck when done.' });
       setPollingAccess(true);
     } else if (id === 'screen') {
       // Same reality as accessibility — ad-hoc Henry can't trigger the dialog.
       // Open Finder + System Settings, walk user through manual add.
-      try { await api.openScreenRecording?.(); } catch { /* */ }
-      try { await api.computerRunShell?.({ command: 'open -R "/Applications/Henry AI.app"', timeout: 2000 }); } catch { /* */ }
+      try { await getApi()?.openScreenRecording?.(); } catch { /* */ }
+      try { await getApi()?.computerRunShell?.({ command: 'open -R "/Applications/Henry AI.app"', timeout: 2000 }); } catch { /* */ }
       patch('screen', { status: 'fixing', description: 'In System Settings: click + → choose Henry AI → toggle ON. Click Recheck when done.' });
       let attempts = 0;
       const maxAttempts = 30;
       const poll = setInterval(async () => {
         attempts++;
-        const r = await (api as any).checkScreenRecording?.().catch(() => null);
+        const r = await getApi()?.checkScreenRecording?.().catch(() => null);
         if (r?.granted) {
           clearInterval(poll);
           patch('screen', { status: 'ok', description: 'Granted' });
@@ -143,7 +143,7 @@ export default function AutoSetupPanel() {
       setCurrentView('settings' as any);
       patch('ai', { status: 'ok', description: 'Add Groq key for unlimited requests' });
     } else if (id === 'ollama') {
-      await api.computerRunShell?.({ command:'open https://ollama.com', timeout:3000 });
+      await getApi()?.computerRunShell?.({ command:'open https://ollama.com', timeout:3000 });
       patch('ollama',{ status:'missing', description:'Installing Ollama — visit ollama.com' });
     }
   }

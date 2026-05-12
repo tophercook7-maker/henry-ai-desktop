@@ -6,7 +6,7 @@
 import { useState, useRef } from 'react';
 import { useStore } from '../../store';
 
-const api = (window as any).henryAPI;
+const getApi = () => (window as any).henryAPI as any;
 
 type SecTab = 'draft' | 'brief' | 'followup' | 'summary';
 
@@ -59,7 +59,7 @@ async function callHenryAI(prompt: string, context: string, settings: Record<str
 
   // Use personal key if available, else fall back to proxy
   const useProxy = !apiKey || apiKey.length < 10;
-  const url = useProxy ? PROXY_URL + '/v1/chat' : 'https://api.groq.com/openai/v1/chat/completions';
+  const url = useProxy ? PROXY_URL + '/v1/chat' : 'https://getApi()?.groq.com/openai/v1/chat/completions';
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
 
   if (useProxy) {

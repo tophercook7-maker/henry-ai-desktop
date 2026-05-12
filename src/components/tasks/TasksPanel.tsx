@@ -13,19 +13,19 @@ interface PersonalTask {
   completed_at?: string;
 }
 
-const api = (window as any).henryAPI;
+const getApi = () => (window as any).henryAPI as any;
 
 async function listTasks(filter?: { status?: string }): Promise<PersonalTask[]> {
-  try { return await api.tasksList(filter) || []; } catch { return []; }
+  try { return await getApi()?.tasksList(filter) || []; } catch { return []; }
 }
 async function createTask(task: Omit<PersonalTask, 'created_at' | 'status'>): Promise<void> {
-  await api.tasksCreate(task);
+  await getApi()?.tasksCreate(task);
 }
 async function updateTask(id: string, patch: Partial<PersonalTask>): Promise<void> {
-  await api.tasksUpdate(id, patch);
+  await getApi()?.tasksUpdate(id, patch);
 }
 async function deleteTask(id: string): Promise<void> {
-  await api.tasksDelete(id);
+  await getApi()?.tasksDelete(id);
 }
 
 const PRIORITY_LABELS: Record<number, { label: string; color: string }> = {

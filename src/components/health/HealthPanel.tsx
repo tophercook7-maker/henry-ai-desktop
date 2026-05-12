@@ -7,7 +7,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { sendToHenry } from '../../actions/store/chatBridgeStore';
 import { useStore } from '../../store';
 
-const api = (window as any).henryAPI;
+const getApi = () => (window as any).henryAPI as any;
 
 interface Habit { id: string; name: string; icon: string; color: string; target_per_day: number; }
 interface HabitLog { habit_id: string; date: string; count: number; }
@@ -49,10 +49,10 @@ export default function HealthPanel() {
 
   const load = useCallback(async () => {
     const [h, hl, dl, wl] = await Promise.all([
-      api?.healthHabitList().catch(() => []),
-      api?.healthHabitLogsForDate(today()).catch(() => []),
-      api?.healthLogsForDate(today()).catch(() => []),
-      api?.healthHabitLogsRange(last7(), today()).catch(() => []),
+      getApi()?.healthHabitList().catch(() => []),
+      getApi()?.healthHabitLogsForDate(today()).catch(() => []),
+      getApi()?.healthLogsForDate(today()).catch(() => []),
+      getApi()?.healthHabitLogsRange(last7(), today()).catch(() => []),
     ]);
     setHabits(h); setHabitLogs(hl); setLogs(dl); setWeekLogs(wl);
   }, []);
@@ -61,7 +61,7 @@ export default function HealthPanel() {
 
   async function setupDefaults() {
     for (const h of DEFAULT_HABITS) {
-      await api.healthHabitSave(h).catch(() => {});
+      await getApi()?.healthHabitSave(h).catch(() => {});
     }
     await load();
   }
@@ -69,16 +69,16 @@ export default function HealthPanel() {
   async function toggleHabit(habit: Habit) {
     const logged = habitLogs.find(l => l.habit_id === habit.id);
     if (logged && logged.count >= habit.target_per_day) {
-      await api.healthHabitUnlog({ habit_id: habit.id, date: today() });
+      await getApi()?.healthHabitUnlog({ habit_id: habit.id, date: today() });
     } else {
-      await api.healthHabitLog({ habit_id: habit.id, date: today() });
+      await getApi()?.healthHabitLog({ habit_id: habit.id, date: today() });
     }
     await load();
   }
 
   async function addHabit() {
     if (!newHabit.name.trim()) return;
-    await api.healthHabitSave({ name: newHabit.name, icon: newHabit.icon, color: newHabit.color, target_per_day: parseInt(newHabit.target) || 1 });
+    await getApi()?.healthHabitSave({ name: newHabit.name, icon: newHabit.icon, color: newHabit.color, target_per_day: parseInt(newHabit.target) || 1 });
     setNewHabit({ name: '', icon: '✓', color: '#7c3aed', target: '1' });
     setAdding(false);
     await load();
@@ -88,7 +88,7 @@ export default function HealthPanel() {
     if (!logEntry.value && logEntry.category !== 'note') return;
     if (logEntry.category === 'note' && !logEntry.note) return;
     const cat = LOG_CATEGORIES.find(c => c.id === logEntry.category)!;
-    await api.healthLogSave({
+    await getApi()?.healthLogSave({
       date: today(),
       category: logEntry.category,
       label: cat.label,
@@ -102,7 +102,7 @@ export default function HealthPanel() {
   }
 
   async function deleteLog(id: string) {
-    await api.healthLogDelete(id);
+    await getApi()?.healthLogDelete(id);
     await load();
   }
 
@@ -351,7 +351,7 @@ Give me a brief health reflection and any suggestions.`);
                     <p className="text-xs text-henry-text-muted">Target: {h.target_per_day}x per day</p>
                   </div>
                 </div>
-                <button onClick={async () => { await api.healthHabitDelete(h.id); await load(); }}
+                <button onClick={async () => { await getApi()?.healthHabitDelete(h.id); await load(); }}
                   className="text-henry-text-muted hover:text-red-400 transition-all text-xs px-2">Remove</button>
               </div>
             ))}
