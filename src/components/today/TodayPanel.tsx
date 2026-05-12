@@ -686,6 +686,14 @@ Keep it brief and encouraging.`;
 
         {/* Live Data Strip */}
         {/* Today's habits quick view */}
+        {todayHabits.length === 0 && (
+          <div className="w-full mb-3 px-1">
+            <button onClick={() => setCurrentView('health' as any)}
+              className="w-full py-2 rounded-xl border border-dashed border-henry-border/30 text-henry-text-muted text-xs hover:border-henry-accent/30 hover:text-henry-accent transition-all">
+              + Add habits to track daily — prayer, water, exercise, reading…
+            </button>
+          </div>
+        )}
         {todayHabits.length > 0 && (
           <div className="w-full mb-3">
             <div className="flex items-center gap-1.5 flex-wrap">

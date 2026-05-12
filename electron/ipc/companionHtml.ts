@@ -985,24 +985,19 @@ async function lookupVerse(ref) {
   resultEl.className = 'show';
   refLabel.textContent = ref.trim().toUpperCase();
   textEl.textContent = 'Looking up…';
-
   try {
-    const r = await fetch(BASE + '/sync/prompt', {
-      signal: AbortSignal.timeout(25000),
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: 'BIBLE_LOOKUP:' + ref.trim(), source: 'companion-bible' }),
-    });
+    const r = await fetch(BASE + '/sync/mac/bible?ref=' + encodeURIComponent(ref.trim()));
     const d = await r.json();
-    const text = d.reply || d.response || d.text || '';
-    textEl.textContent = text;
-    currentVerseText = text;
-    currentVerseRef = ref.trim();
+    if (d.found && d.text) {
+      textEl.textContent = d.text;
+      refLabel.textContent = (d.reference || ref.trim()).toUpperCase();
+      currentVerseText = d.text;
+      currentVerseRef = d.reference || ref.trim();
+    } else {
+      textEl.textContent = d.error || '⚠ Verse not found. Try "John 3:16" or "Psalm 23:1".';
+    }
   } catch {
-    // Fallback: try scripture lookup IPC via sync
-    textEl.textContent = r.status === 401
-        ? '⚠ Could not connect to Henry. Open Henry on your Mac and make sure you are on the same WiFi, then reload this page.'
-        : '⚠ Verse not found. Try downloading the KJV first (✝ Scripture → 📥 Import in the desktop app).';
+    textEl.textContent = '⚠ Could not reach Henry. Make sure Henry is open on your Mac and you are on the same WiFi.';
   }
 }
 
@@ -1255,18 +1250,46 @@ async function loadGoalsPaneFn() {
   try {
     const d = await fetch(BASE + '/sync/mac/goals').then(r => r.json());
     const goals = d.goals || [];
-    if (!goals.length) { pane.innerHTML = '<div style="padding:24px;color:var(--muted);text-align:center;font-size:14px">No active goals</div>'; return; }
+    if (!goals.length) {
+      pane.innerHTML = '<div style="padding:32px 16px;color:var(--muted);text-align:center;font-size:14px">No active goals yet.<br><br><span style="font-size:12px">Open Henry on your Mac and add your first goal in the Goals panel.</span></div>';
+      return;
+    }
+    const now = new Date();
     pane.innerHTML = goals.map(g => {
       const score = Math.round((g.priority_score || 0) * 10);
       const pct = Math.min(100, score);
+      let dateHtml = '';
+      if (g.target_date) {
+        const td = new Date(g.target_date);
+        const overdue = td < now && g.status !== 'done';
+        const fmt = td.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+        dateHtml = '<div style="font-size:10px;margin-top:4px;color:' + (overdue ? '#f97316' : 'var(--muted)') + '">' + (overdue ? '⚠ Overdue · ' : '📅 ') + fmt + '</div>';
+      }
       return '<div style="padding:14px 16px;border-bottom:1px solid var(--border)">' +
-        '<div style="font-size:14px;color:var(--text);font-weight:500;margin-bottom:6px">' + g.title + '</div>' +
-        (g.summary ? '<div style="font-size:12px;color:var(--muted);margin-bottom:6px">' + g.summary.slice(0,80) + '</div>' : '') +
-        '<div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden"><div style="height:4px;background:var(--accent);border-radius:2px;width:' + pct + '%"></div></div>' +
-        '<div style="font-size:10px;color:var(--muted);margin-top:3px">Priority: ' + score + '/10</div>' +
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">' +
+        '<div style="font-size:14px;color:var(--text);font-weight:600;flex:1">' + g.title + '</div>' +
+        '<button onclick="markGoalDone(' + JSON.stringify(g.id) + ', this)" style="font-size:10px;padding:3px 8px;border:1px solid var(--border);border-radius:20px;background:none;color:var(--muted);cursor:pointer;flex-shrink:0">Done</button>' +
+        '</div>' +
+        (g.summary ? '<div style="font-size:12px;color:var(--muted);margin:4px 0 6px">' + g.summary.slice(0, 80) + '</div>' : '') +
+        '<div style="height:3px;background:var(--border);border-radius:2px;overflow:hidden;margin-top:6px"><div style="height:3px;background:var(--accent);border-radius:2px;width:' + pct + '%"></div></div>' +
+        dateHtml +
         '</div>';
     }).join('');
   } catch { if (pane) pane.innerHTML = '<div style="padding:24px;color:var(--muted);text-align:center;font-size:14px">Could not reach Henry</div>'; }
+}
+
+async function markGoalDone(id, btn) {
+  btn.textContent = '\u2713';
+  btn.style.color = '#22c55e';
+  btn.disabled = true;
+  try {
+    await fetch(BASE + '/sync/mac/goals', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({action:'update', id, updates:{status:'done'}}),
+    });
+    setTimeout(() => loadGoalsPaneFn(), 800);
+  } catch { btn.textContent = 'Done'; btn.disabled = false; }
 }
 
 async function loadGoals() {

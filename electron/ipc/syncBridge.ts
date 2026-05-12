@@ -974,7 +974,7 @@ self.addEventListener('fetch', (event) => {
   // They only work on the local network (same WiFi) — not internet-exposed.
   const companionWebPaths = [
     '/sync/prompt', '/sync/chat/history', '/sync/chat/save', '/sync/chat/conversation_id', '/sync/mac/today', '/sync/mac/screen',
-    '/sync/mac/habit-toggle', '/sync/mac/run', '/sync/mac/open-app', '/sync/mac/health',
+    '/sync/mac/habit-toggle', '/sync/mac/run', '/sync/mac/open-app', '/sync/mac/health', '/sync/mac/bible',
     '/sync/capture-and-process', '/sync/capture', '/sync/mac/finance',
     '/sync/mac/reminders', '/sync/mac/tasks', '/sync/mac/tasks/create',
     '/sync/mac/goals', '/sync/mac/tasks/complete',
@@ -1775,6 +1775,20 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  if (path === '/sync/mac/goals' && req.method === 'POST') {
+    const body = await readBody<{action:string;id:string;updates:Record<string,unknown>}>(req);
+    if (!body || !body.id) { jsonResponse(res, 400, { error: 'id required' }); return; }
+    try {
+      if (body.action === 'update' && body.updates) {
+        const sets = Object.entries(body.updates).map(([k]) => `${k}=?`).join(', ');
+        const vals = [...Object.values(body.updates), body.id];
+        dbRun(`UPDATE goals SET ${sets}, updated_at=datetime('now') WHERE id=?`, ...vals);
+      }
+      jsonResponse(res, 200, { ok: true });
+    } catch (e) { jsonResponse(res, 500, { error: String(e) }); }
+    return;
+  }
+
   if (path === '/sync/mac/reminders/create' && req.method === 'POST') {
     const body = await readBody<Record<string,unknown>>(req);
     const data: Record<string,unknown> = body || {};
@@ -1834,6 +1848,29 @@ self.addEventListener('fetch', (event) => {
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: String(e) }));
     }
+    return;
+  }
+
+
+  if (path === '/sync/mac/bible' && req.method === 'GET') {
+    try {
+      const url = new URL('http://x' + req.url!);
+      const ref = url.searchParams.get('ref') || '';
+      if (!ref) { jsonResponse(res, 400, { error: 'ref required' }); return; }
+      const entry = dbGetOne<{book:string;chapter:number;verse:number;text:string}>(
+        `SELECT book, chapter, verse, text FROM scripture_entries
+         WHERE LOWER(book || ' ' || chapter || ':' || verse) = LOWER(?) LIMIT 1`,
+        ref.trim()
+      );
+      if (entry) {
+        const label = `${entry.book} ${entry.chapter}:${entry.verse}`;
+        res.writeHead(200, {'Content-Type':'application/json','Access-Control-Allow-Origin':'*'});
+        res.end(JSON.stringify({ found: true, reference: label, text: entry.text }));
+      } else {
+        res.writeHead(200, {'Content-Type':'application/json','Access-Control-Allow-Origin':'*'});
+        res.end(JSON.stringify({ found: false, error: 'Bible not downloaded. Open Scripture panel in Henry and tap Download KJV.' }));
+      }
+    } catch (e) { jsonResponse(res, 500, { error: String(e) }); }
     return;
   }
 

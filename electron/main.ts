@@ -412,7 +412,7 @@ app.whenReady().then(() => {
   setSyncDb(db);
   registerSyncBridgeIpc();
 
-  // ── First-launch detection ────────────────────────────────────────────────
+  // ── First-launch detection + default habit seeding ─────────────────────────
   ipcMain.handle('henry:isFirstLaunch', () => {
     try {
       const count = (db.prepare('SELECT COUNT(*) as n FROM habits').get() as {n:number}).n
@@ -420,6 +420,27 @@ app.whenReady().then(() => {
       return { isFirst: count === 0 };
     } catch { return { isFirst: false }; }
   });
+
+  // Seed default habits if none exist
+  try {
+    const habitCount = (db.prepare('SELECT COUNT(*) as n FROM habits').get() as {n:number}).n;
+    if (habitCount === 0) {
+      const insertHabit = db.prepare(
+        "INSERT INTO habits (id, name, icon, color, target_per_day, active) VALUES (?, ?, ?, ?, ?, 1)"
+      );
+      const { randomUUID } = require('crypto') as typeof import('crypto');
+      [
+        [randomUUID(), 'Morning prayer / quiet time', '🙏', '#7c3aed', 1],
+        [randomUUID(), 'Read Bible',                  '✝', '#2563eb', 1],
+        [randomUUID(), 'Exercise',                    '💪', '#16a34a', 1],
+        [randomUUID(), 'Drink water (8 glasses)',      '💧', '#0891b2', 8],
+        [randomUUID(), 'Journal',                     '📔', '#d97706', 1],
+      ].forEach(([id, name, icon, color, target]) => {
+        try { insertHabit.run(id, name, icon, color, target); } catch { /* already exists */ }
+      });
+      console.log('[Henry] Seeded 5 default habits');
+    }
+  } catch (e) { console.warn('[Henry] Could not seed habits:', e); }
 
 
 
