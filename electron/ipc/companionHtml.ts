@@ -1068,9 +1068,25 @@ document.addEventListener('touchend', () => {
 }, { passive: true });
 
 // ── JOURNAL ──────────────────────────────────────────────────────────────────
-function initJournal() {
+async function initJournal() {
   const d = document.getElementById('jnl-date');
   if (d) d.textContent = new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  // Load today's entry if it exists
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const data = await fetch(BASE + '/sync/mac/today').then(r => r.json());
+    const entry = (data.journalToday);
+    if (entry && entry.content) {
+      const inp = document.getElementById('jnl-in');
+      const mood = document.getElementById('jnl-mood');
+      const status = document.getElementById('jnl-status');
+      if (inp && !inp.value) {
+        inp.value = entry.content;
+        if (mood && entry.mood) mood.value = entry.mood;
+        if (status) { status.textContent = 'Loaded today\'s entry'; status.style.color = 'var(--accent)'; }
+      }
+    }
+  } catch { /* offline */ }
 }
 
 async function saveJournal() {
@@ -1160,22 +1176,50 @@ async function promptHealthLog() {
 async function loadReminders() {
   try {
     const d = await fetch(BASE + '/sync/mac/reminders').then(r => r.json());
-    const rems = d.reminders || [];
+    const rems = (d.reminders || []).filter(r => !r.done);
     const remCount = document.getElementById('rem-count');
     if (remCount) remCount.textContent = String(rems.length);
     const elRem = document.getElementById('rem-list');
     const elRemPane = document.getElementById('rem-list-pane');
-    const el = elRem || elRemPane;
-    if (!rems.length) { el.innerHTML = '<div class="empty-msg">No due reminders</div>'; return; }
-    el.innerHTML = rems.map(r => {
-      const t = r.due_at ? new Date(r.due_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '';
-      const dateStr = r.due_at ? new Date(r.due_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
-      return '<div class="rem-row"><span class="rem-icon">⏰</span><div style="flex:1"><div class="rem-title">' + r.title + '</div>' + (t ? '<div class="rem-time">' + dateStr + ' ' + t + '</div>' : '') + '</div><button onclick="doneReminder(' + "'" + r.id + "'" + ')" style="background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;padding:4px;flex-shrink:0" title="Mark done">✓</button></div>';
-    }).join('');
-  } catch (e) { 
-    document.getElementById('rem-list').innerHTML = '<div class="empty-msg">Could not reach Henry. Is it running?</div>';
-  }
+    const html = !rems.length
+      ? '<div style="padding:32px 16px;color:var(--muted);text-align:center;font-size:14px">No reminders yet.<br><br><span style="font-size:12px">Say \"remind me to...\" in chat to add one.</span></div>'
+      : rems.map(r => {
+        const now = new Date();
+        const due = r.due_at ? new Date(r.due_at) : null;
+        const isOverdue = due && due < now;
+        const isToday = due && due.toDateString() === now.toDateString();
+        const timeStr = due ? due.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '';
+        const dateStr = due
+          ? (isToday ? 'Today, ' + timeStr : due.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) + (timeStr ? ' · ' + timeStr : ''))
+          : 'No time set';
+        return '<div style="display:flex;align-items:flex-start;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border)">'
+          + '<button onclick="doneReminder('' + r.id + '',this)" style="width:22px;height:22px;border-radius:50%;border:2px solid '+(isOverdue?'#ef4444':'var(--accent)')+';background:none;cursor:pointer;flex-shrink:0;margin-top:1px"></button>'
+          + '<div style="flex:1;min-width:0">'
+          + '<div style="font-size:14px;color:var(--text);font-weight:500">' + r.title + '</div>'
+          + '<div style="font-size:11px;margin-top:2px;color:' + (isOverdue ? '#ef4444' : (isToday ? 'var(--accent)' : 'var(--muted)')) + '">'
+          + (isOverdue ? '⚠ Overdue · ' : '') + dateStr + '</div>'
+          + '</div></div>';
+      }).join('');
+    if (elRem) elRem.innerHTML = html;
+    if (elRemPane) elRemPane.innerHTML = html;
+  } catch { /* offline */ }
 }
+
+async function doneReminder(id, btn) {
+  btn.style.background = 'var(--accent)';
+  btn.innerHTML = '✓';
+  btn.style.color = '#fff';
+  btn.style.fontSize = '12px';
+  btn.disabled = true;
+  try {
+    await fetch(BASE + '/sync/mac/reminders/done', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ id }),
+    });
+    setTimeout(loadReminders, 600);
+  } catch { /* ignore */ }
+}
+
 
 // ── TASKS ────────────────────────────────────────────────────────────────────
 async function loadTasks() {
