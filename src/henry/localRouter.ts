@@ -16,6 +16,7 @@
  */
 
 import { PANELS, SHORTCUTS, POWER_TIPS, findPanelsByKeyword } from './henrySelfKnowledge';
+import { buildSelfReport, logFeatureGap, trackUsage, learnPref, getLearnedPrefs } from './selfAssessment';
 
 type Handler = {
   name: string;
@@ -247,6 +248,36 @@ const INTENTS: Handler[] = [
 • How you like answers formatted
 
 The more you tell me, the more personal every response gets. I use your top facts in every single conversation.`;
+    },
+  },
+
+  // Self-assessment: "how are you doing" / "what can't you do" / "assess yourself"
+  {
+    name: 'self_assessment',
+    match: re(
+      /how are you doing/i,
+      /self.?assess/i,
+      /what (can't|cannot|can you not) (you )?do/i,
+      /what.*gaps/i,
+      /what.*missing/i,
+      /what.*don't you (know|do|support)/i,
+      /what.*feature.*request/i,
+      /assess yourself/i,
+      /how (good|well|smart) are you/i,
+    ),
+    run: async () => buildSelfReport(),
+  },
+
+  // "learn that I prefer..." / "I prefer..." — save communication preference
+  {
+    name: 'learn_pref',
+    match: re(
+      /^(learn that |please note |note that |remember that )?i prefer (.+)/i,
+      /^(learn that |please note )?when (you respond|answering|replying),? (.+)/i,
+    ),
+    run: async () => {
+      // This is handled upstream in remember shortcut, but for prefs specifically:
+      return null; // fall through to AI which will then save it
     },
   },
 

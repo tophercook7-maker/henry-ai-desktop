@@ -174,6 +174,7 @@ import BuilderPreviewPanel from './BuilderPreviewPanel';
 import { useSharedBrainState } from '../../brain/sharedState';
 import { hasAnythingToSurface, evaluateInitiative } from '../../core/initiative/initiativeEngine';
 import { parseDelegation, executeDelegation } from '@/henry/delegationInterceptor';
+import { logFeatureGap, learnPref } from '@/henry/selfAssessment';
 
 const HENRY_OPERATING_MODE_KEY = 'henry_operating_mode';
 const HENRY_BIBLICAL_PROFILE_KEY = 'henry_biblical_source_profile';
@@ -1176,6 +1177,18 @@ export default function ChatView() {
   }
 
   async function handleCompanionStream(content: string, convId: string, modeOverride?: HenryOperatingMode) {
+    // Track what kind of things the user asks Henry — helps self-assessment
+    const lc = content.toLowerCase();
+    if (lc.includes('task') || lc.includes('todo')) trackUsage('chat', 'tasks');
+    else if (lc.includes('remind')) trackUsage('chat', 'reminders');
+    else if (lc.includes('bible') || lc.includes('verse') || lc.includes('scripture')) trackUsage('chat', 'bible');
+    else if (lc.includes('remember') || lc.includes('memory') || lc.includes('save')) trackUsage('chat', 'memory');
+    else if (lc.includes('goal')) trackUsage('chat', 'goals');
+    else if (lc.includes('habit')) trackUsage('chat', 'habits');
+    else if (lc.includes('journal') || lc.includes('write')) trackUsage('chat', 'journal');
+    else if (lc.includes('finance') || lc.includes('money') || lc.includes('budget')) trackUsage('chat', 'finance');
+    else trackUsage('chat', 'general');
+
     // ── Pre-AI delegation interceptor ─────────────────────────────────────
     // "tell ChatGPT to X" / "ask Claude to Y" — execute DIRECTLY, no AI needed
     const delegation = parseDelegation(content);

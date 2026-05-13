@@ -560,6 +560,7 @@ async function checkConn() {
 
 // ── Tab switching ─────────────────────────────────────────────────────────────
 function showTab(id) {
+  trackUsage('tab:' + id);
   document.querySelectorAll('#tabs button').forEach(b => b.classList.remove('on'));
   document.querySelectorAll('#right-col .pane').forEach(p => p.classList.remove('on'));
   const tabBtn = document.getElementById('t-' + id);
@@ -650,6 +651,31 @@ function buildHistory() {
   return out.slice(-16);
 }
 
+// ── Henry learns from interactions ───────────────────────────────────────────
+const featureGaps = JSON.parse(localStorage.getItem('henry:feature_gaps') || '[]');
+const usageCounts = JSON.parse(localStorage.getItem('henry:usage_counts') || '{}');
+
+function trackUsage(feature) {
+  usageCounts[feature] = (usageCounts[feature] || 0) + 1;
+  localStorage.setItem('henry:usage_counts', JSON.stringify(usageCounts));
+}
+
+function logGap(query, reason) {
+  const existing = featureGaps.find(g => g.query === query);
+  if (existing) { existing.count++; existing.lastSeen = new Date().toISOString(); }
+  else featureGaps.push({ id: Date.now().toString(), query: query.slice(0,100), failReason: reason, count: 1, firstSeen: new Date().toISOString(), lastSeen: new Date().toISOString() });
+  featureGaps.sort((a,b) => b.count - a.count);
+  localStorage.setItem('henry:feature_gaps', JSON.stringify(featureGaps.slice(0,30)));
+}
+
+function learnPref(key, value) {
+  // Save to both localStorage and Henry's DB via /sync/learn
+  fetch(BASE + '/sync/learn', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ type: 'memory', key, value }),
+  }).catch(() => {});
+}
+
 async function sendMsg() {
   const inp = document.getElementById('msg-in');
   const text = inp.value.trim();
@@ -676,6 +702,18 @@ async function sendMsg() {
       const replyText = d.reply || d.response || d.text || d.content || JSON.stringify(d);
     bubble.textContent = replyText;
     saveMsgToHistory('assistant', replyText, d.model || null);
+    // Self-learning: detect when Henry can't do something and log it
+    const failPhrases = ["I can't", "I don't have", "I'm not able", "I cannot", "not supported", "don't support"];
+    if (failPhrases.some(p => replyText.includes(p))) {
+      logGap(text.slice(0,80), 'AI indicated inability');
+    }
+    // Track usage by question type
+    const lower = text.toLowerCase();
+    if (lower.includes('task') || lower.includes('todo')) trackUsage('chat:tasks');
+    else if (lower.includes('remind')) trackUsage('chat:reminders');
+    else if (lower.includes('bible') || lower.includes('verse')) trackUsage('chat:bible');
+    else if (lower.includes('remember') || lower.includes('save')) trackUsage('chat:memory');
+    else trackUsage('chat:general');
     }
   } catch (e) {
     bubble.textContent = '⚠ Connection error — is Henry running?';

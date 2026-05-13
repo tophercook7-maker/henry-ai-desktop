@@ -974,7 +974,7 @@ self.addEventListener('fetch', (event) => {
   // They only work on the local network (same WiFi) — not internet-exposed.
   const companionWebPaths = [
     '/sync/prompt', '/sync/chat/history', '/sync/chat/save', '/sync/chat/conversation_id', '/sync/mac/today', '/sync/mac/screen',
-    '/sync/mac/habit-toggle', '/sync/mac/run', '/sync/mac/open-app', '/sync/mac/health', '/sync/mac/bible',
+    '/sync/mac/habit-toggle', '/sync/mac/run', '/sync/mac/open-app', '/sync/mac/health', '/sync/mac/bible', '/sync/learn',
     '/sync/capture-and-process', '/sync/capture', '/sync/mac/finance',
     '/sync/mac/reminders', '/sync/mac/tasks', '/sync/mac/tasks/create',
     '/sync/mac/goals', '/sync/mac/tasks/complete',
