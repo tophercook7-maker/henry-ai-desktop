@@ -1577,6 +1577,11 @@ self.addEventListener('fetch', (event) => {
         // Live context — real data from their Mac right now
         (() => {
           const lines: string[] = ['── LIVE CONTEXT (from their Mac right now) ──'];
+          // Always inject current date/time
+          const now = new Date();
+          const dayName = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][now.getDay()];
+          const monthName = ['January','February','March','April','May','June','July','August','September','October','November','December'][now.getMonth()];
+          lines.push(`Today is ${dayName}, ${monthName} ${now.getDate()}, ${now.getFullYear()}. Current time: ${now.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}.`);
           try {
             const today = new Date().toISOString().slice(0, 10);
             const tasks = dbGet<{title:string;priority:number}>(
@@ -1588,7 +1593,12 @@ self.addEventListener('fetch', (event) => {
               "SELECT h.name FROM habits h WHERE h.active=1 AND h.id NOT IN (SELECT habit_id FROM habit_logs WHERE date=?) ORDER BY h.created_at LIMIT 5",
               today
             ) as {name:string}[];
-            if (habits.length) lines.push('Habits not yet done today: ' + habits.map(h => h.name).join(', '));
+            if (habits.length) lines.push('Habits not yet done today: ' + habits.map((h: any) => h.name).join(', '));
+            const doneHabits = dbGet<{name:string}>(
+              "SELECT h.name FROM habits h WHERE h.active=1 AND h.id IN (SELECT habit_id FROM habit_logs WHERE date=?)",
+              today
+            ) as {name:string}[];
+            if (doneHabits.length) lines.push('Habits completed today: ' + doneHabits.map((h: any) => h.name).join(', '));
             
             const goals = dbGet<{title:string;target_date:string}>(
               "SELECT title, target_date FROM goals WHERE status='active' ORDER BY priority_score DESC LIMIT 3"
