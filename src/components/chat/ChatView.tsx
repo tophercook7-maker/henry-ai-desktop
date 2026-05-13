@@ -997,6 +997,48 @@ export default function ChatView() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ── Morning brief — fires once per day when you open Henry ────────────────
+  useEffect(() => {
+    const BRIEF_KEY = `henry:morning_brief:${new Date().toISOString().slice(0,10)}`;
+    if (localStorage.getItem(BRIEF_KEY)) return;
+    if (messages.length > 2) return; // only on fresh open
+    const api = window.henryAPI;
+    if (!api) return;
+    void (async () => {
+      try {
+        const api2 = api as any;
+        const [tasks, rems, goals] = await Promise.all([
+          (api2.tasksList?.({}) ?? Promise.resolve([])),
+          (api2.remindersDue?.() ?? Promise.resolve([])),
+          (api2.getGoals?.({status:'active'}) ?? Promise.resolve({goals:[]})),
+        ]);
+        const taskList  = Array.isArray(tasks) ? tasks : [];
+        const remList   = Array.isArray(rems)  ? rems  : [];
+        const goalList  = Array.isArray(goals) ? goals : ((goals as any)?.goals || []);
+        const overdue   = goalList.filter((g:any) => g.target_date && new Date(g.target_date) < new Date());
+        if (taskList.length === 0 && remList.length === 0 && goalList.length === 0) return;
+        localStorage.setItem(BRIEF_KEY, 'true');
+        const parts: string[] = [`☀️ **Good morning, ${(window as any).__henryUserName__ || 'Topher'}.**
+`];
+        if (remList.length)   parts.push(`⏰ **${remList.length} reminder${remList.length > 1 ? 's' : ''} due:** ${remList.slice(0,3).map((r:any) => r.title).join(', ')}${remList.length > 3 ? '...' : ''}`);
+        if (taskList.length)  parts.push(`✓ **${taskList.length} open task${taskList.length > 1 ? 's' : ''}:** ${taskList.slice(0,3).map((t:any) => t.title).join(', ')}${taskList.length > 3 ? '...' : ''}`);
+        if (overdue.length)   parts.push(`◎ **${overdue.length} overdue goal${overdue.length > 1 ? 's' : ''}:** ${overdue.slice(0,2).map((g:any) => g.title).join(', ')}`);
+        parts.push(`
+What do you want to tackle first?`);
+        addMessage({
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: parts.join('\n'),
+          conversation_id: activeConversationId || '',
+          created_at: new Date().toISOString(),
+          model: 'henry:morning',
+          provider: 'henry',
+        });
+      } catch { /* if no data yet, skip */ }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ── Companion chat sync — phone messages appear live on desktop ──────────
   useEffect(() => {
     const handler = (e: Event) => {

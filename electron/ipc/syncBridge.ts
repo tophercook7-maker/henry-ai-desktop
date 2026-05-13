@@ -1328,6 +1328,38 @@ self.addEventListener('fetch', (event) => {
           `**4. Install me on your phone** — Open your companion URL in Safari, tap Share → Add to Home Screen. Free real app.\n\n` +
           `**5. Get unlimited free AI** — Go to aistudio.google.com for a free Gemini key (no card), and groq.com for a free Groq key. Paste both in Settings → AI Providers.`;
       }
+      if (/^(how are you doing|self.?assess|what (can't|cannot|can you not) (you )?do|what.*gaps|assess yourself|how (good|well|smart) are you)/.test(lowerText)) {
+        const gaps: Array<{query:string;count:number;failReason:string}> = (() => {
+          try { return JSON.parse('[]'); } catch { return []; }
+        })();
+        const usage: Record<string,number> = {};
+        const lines = ['**Henry Self-Assessment**\n'];
+        const topUsage = Object.entries(usage).sort((a,b)=>b[1]-a[1]).slice(0,5);
+        if (topUsage.length) {
+          lines.push('**Most used features:**');
+          topUsage.forEach(([f,n]) => lines.push(`  • ${f}: ${n}×`));
+          lines.push('');
+        }
+        // Check DB for real usage data
+        try {
+          const taskCount = (dbGetOne<{n:number}>('SELECT COUNT(*) as n FROM personal_tasks') as {n:number}|null)?.n || 0;
+          const habitCount = (dbGetOne<{n:number}>('SELECT COUNT(*) as n FROM habits WHERE active=1') as {n:number}|null)?.n || 0;
+          const memCount = (dbGetOne<{n:number}>('SELECT COUNT(*) as n FROM memory_facts') as {n:number}|null)?.n || 0;
+          const jnlCount = (dbGetOne<{n:number}>('SELECT COUNT(*) as n FROM journal_entries') as {n:number}|null)?.n || 0;
+          lines.push('**Your Henry stats:**');
+          lines.push(`  • Tasks in list: ${taskCount}`);
+          lines.push(`  • Active habits: ${habitCount}`);
+          lines.push(`  • Things I know about you: ${memCount} memory facts`);
+          lines.push(`  • Journal entries: ${jnlCount}`);
+          lines.push('');
+        } catch {}
+        lines.push("**What I can't do yet (known limits):**");
+        lines.push('  • Browse arbitrary websites or read your email without Gmail connected');
+        lines.push('  • Send messages on your behalf without explicit confirmation');
+        lines.push('  • Learn new skills autonomously — but I log what you ask for and the dev sees it next session');
+        lines.push('\nAsk me "give me tips" to get the most out of what I can do.');
+        return lines.join('\n');
+      }
       if (/^(what (keyboard )?shortcuts|hotkey|how do i open henry|⌥.?space)/.test(lowerText)) {
         return `**Henry shortcuts:**\n\n` +
           `• **⌥Space** — Open Henry from anywhere on your Mac. Select text first and it's already pasted in.\n` +
@@ -1768,7 +1800,7 @@ self.addEventListener('fetch', (event) => {
   if (path === '/sync/mac/today' && req.method === 'GET') {
     try {
       const today = new Date().toISOString().slice(0, 10);
-      const tasks = dbGet('SELECT id,title,status,priority FROM tasks WHERE status!=? ORDER BY priority DESC LIMIT 10', 'done') as any[];
+      const tasks = dbGet('SELECT id,title,notes,status,priority,due_at FROM personal_tasks WHERE status!=? ORDER BY created_at DESC LIMIT 10', 'done') as any[];
       const reminders = dbGet('SELECT id,title,due_at,done FROM reminders WHERE done=0 ORDER BY due_at ASC LIMIT 10', ...[]) as any[];
       const habits = dbGet('SELECT * FROM habits WHERE active=1', ...[]) as any[];
       const habitLogs = dbGet('SELECT * FROM habit_logs WHERE date=?', today) as any[];
