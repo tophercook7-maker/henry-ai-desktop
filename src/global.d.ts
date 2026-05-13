@@ -390,6 +390,7 @@ declare global {
     onCompanionCapture?: (cb: (capture: unknown) => void) => () => void;
     onCompanionPrompt?: (cb: (data: unknown) => void) => () => void;
     onCompanionActionDecision?: (cb: (decision: unknown) => void) => () => void;
+    isFirstLaunch?: () => Promise<{isFirst: boolean}>;
     onCompanionDeviceLinked?: (cb: (device: unknown) => void) => () => void;
     onSyncRequestStatus?: (cb: (replyChannel: string) => void) => () => void;
     replySyncStatus?: (channel: string, status: unknown) => void;

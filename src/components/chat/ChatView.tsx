@@ -970,6 +970,32 @@ export default function ChatView() {
     }
   }
 
+  // ── First-launch greeting ─────────────────────────────────────────────────
+  useEffect(() => {
+    const GREETED_KEY = 'henry:greeted_v1';
+    if (localStorage.getItem(GREETED_KEY)) return;
+    if (messages.length > 0) return;
+    const api = window.henryAPI;
+    if (!api?.isFirstLaunch) return;
+    void (async () => {
+      try {
+        const result = await api.isFirstLaunch?.();
+        if (!result?.isFirst) return;
+        localStorage.setItem(GREETED_KEY, 'true');
+        addMessage({
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: `Hey — I'm Henry, your personal AI on your Mac.\n\nI'm connected to your tasks, habits, goals, and more. I work best when I know you:\n\n• Say **"remember that I..."** and I'll save any fact permanently\n• Ask me anything — tasks, reminders, scripture, decisions, writing\n• Press **⌥Space** from anywhere on your Mac to open me instantly\n\nWhat are you working on right now?`,
+          conversation_id: activeConversationId || '',
+          created_at: new Date().toISOString(),
+          model: 'henry',
+          provider: 'henry',
+        });
+      } catch { /* ignore */ }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ── Companion chat sync — phone messages appear live on desktop ──────────
   useEffect(() => {
     const handler = (e: Event) => {

@@ -54,6 +54,10 @@ export default function OnboardingWizard({ onComplete }: Props) {
   const [step, setStep] = useState<StepId>('welcome');
   const [acc, setAcc] = useState<boolean | null>(null);
   const [scr, setScr] = useState<boolean | null>(null);
+  const [memName, setMemName] = useState('');
+  const [memJob, setMemJob] = useState('');
+  const [memGoal, setMemGoal] = useState('');
+  const [memSaved, setMemSaved] = useState(false);
   const [groqKey, setGroqKey] = useState('');
   const [groqError, setGroqError] = useState('');
   const [groqSaving, setGroqSaving] = useState(false);
@@ -152,7 +156,22 @@ export default function OnboardingWizard({ onComplete }: Props) {
   // ── Navigation ────────────────────────────────────────────────────────────
   function next() { const i = STEP_ORDER.indexOf(step); if (i < STEP_ORDER.length - 1) setStep(STEP_ORDER[i + 1]); }
   function back() { const i = STEP_ORDER.indexOf(step); if (i > 0) setStep(STEP_ORDER[i - 1]); }
-  function finish() { localStorage.setItem(ONBOARDING_DONE_KEY, 'true'); onComplete(); }
+  async function finish() {
+    localStorage.setItem(ONBOARDING_DONE_KEY, 'true');
+    // Save any personal info the user filled in during the memory step
+    if (!memSaved) {
+      const api = getApi();
+      const facts: {fact:string;category:string;importance:number}[] = [];
+      if (memName.trim()) facts.push({ fact: `User's name is ${memName.trim()}`, category: 'personal', importance: 3 });
+      if (memJob.trim())  facts.push({ fact: `User works as: ${memJob.trim()}`, category: 'personal', importance: 3 });
+      if (memGoal.trim()) facts.push({ fact: `User's main goal right now: ${memGoal.trim()}`, category: 'personal', importance: 3 });
+      for (const f of facts) {
+        try { await api?.saveMemoryFact?.(f); } catch { /* ignore */ }
+      }
+      setMemSaved(true);
+    }
+    onComplete();
+  }
 
   async function saveGroqKey() {
     const key = groqKey.trim();
@@ -720,6 +739,27 @@ export default function OnboardingWizard({ onComplete }: Props) {
             </div>
 
             <div className="space-y-3">
+              {/* Quick personal info capture */}
+              <div className="bg-henry-accent/10 border border-henry-accent/25 rounded-2xl p-4 space-y-3">
+                <p className="text-[10px] uppercase tracking-widest text-henry-accent/80">Tell Henry about yourself right now</p>
+                {[
+                  { label: 'Your name', placeholder: 'Topher', value: memName, set: setMemName },
+                  { label: 'What you do', placeholder: 'Laser cutting business owner', value: memJob, set: setMemJob },
+                  { label: 'Biggest goal right now', placeholder: 'Grow sales by 30% this year', value: memGoal, set: setMemGoal },
+                ].map(({ label, placeholder, value, set }) => (
+                  <div key={label}>
+                    <label className="text-[10px] text-white/50 uppercase tracking-wider block mb-1">{label}</label>
+                    <input
+                      value={value}
+                      onChange={e => set(e.target.value)}
+                      placeholder={placeholder}
+                      className="w-full bg-white/5 border border-white/15 rounded-xl px-3 py-2 text-sm text-white placeholder-white/25 outline-none focus:border-henry-accent/50 transition-all"
+                    />
+                  </div>
+                ))}
+                <p className="text-[10px] text-white/35 leading-relaxed">These save to Henry's memory now. You can add more anytime — say "remember that..." in chat or open the 🧠 Memory panel.</p>
+              </div>
+
               {/* How memory works */}
               <div className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-3">
                 <p className="text-[10px] uppercase tracking-widest text-white/40">How it works</p>
