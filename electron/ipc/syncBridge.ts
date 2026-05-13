@@ -1389,6 +1389,99 @@ self.addEventListener('fetch', (event) => {
       return;
     }
 
+    // ── Action commands — execute directly, no AI needed ────────────────────────
+
+    // "add a task: X" / "create a task: X" / "new task: X"
+    const addTaskMatch = lowerText.match(/^(?:add|create|new) (?:a )?task[:\s]+(.+)/i)
+                      || lowerText.match(/^task[:\s]+(.+)/i);
+    if (addTaskMatch) {
+      const title = resolvedText.replace(/^(?:add|create|new) (?:a )?task[:\s]+/i,'').replace(/^task[:\s]+/i,'').trim();
+      if (title.length > 1) {
+        try {
+          const id = require('crypto').randomUUID();
+          dbRun("INSERT INTO personal_tasks (id,title,status,priority,created_at) VALUES (?,?,?,?,?)",
+            id, title, 'todo', 2, new Date().toISOString());
+          sendReply(`✓ Task saved: "${title}"`);
+        } catch (e) { sendReply(`Couldn't save the task: ${e}`); }
+        return;
+      }
+    }
+
+    // "remind me to X [at/on TIME/DATE]" 
+    const remindMatch = lowerText.match(/^remind(?:er)?(?: me)? (?:to |about )?(.+)/i);
+    if (remindMatch) {
+      const rawTitle = resolvedText.replace(/^remind(?:er)?(?: me)? (?:to |about )?/i,'').trim();
+      // Try to extract a time/date from the text
+      const timeMatch = rawTitle.match(/(?:at |on )?(tomorrow|today|\d{1,2}(?::\d{2})?\s*(?:am|pm)|monday|tuesday|wednesday|thursday|friday|saturday|sunday)/i);
+      const title = rawTitle.replace(/\s*(?:at|on)\s+.+$/i,'').trim() || rawTitle;
+      const due_at = (() => {
+        if (!timeMatch) return null;
+        const t = timeMatch[1].toLowerCase();
+        const d = new Date();
+        if (t === 'tomorrow') { d.setDate(d.getDate()+1); d.setHours(9,0,0,0); }
+        else if (t === 'today') { d.setHours(17,0,0,0); }
+        else {
+          const days: Record<string,number> = {monday:1,tuesday:2,wednesday:3,thursday:4,friday:5,saturday:6,sunday:0};
+          if (days[t] !== undefined) {
+            const target = days[t];
+            const today = d.getDay();
+            const diff = (target - today + 7) % 7 || 7;
+            d.setDate(d.getDate() + diff); d.setHours(9,0,0,0);
+          }
+        }
+        return d.toISOString();
+      })();
+      try {
+        const id = require('crypto').randomUUID();
+        dbRun("INSERT INTO reminders (id,title,due_at,done,created_at) VALUES (?,?,?,?,?)",
+          id, title || rawTitle, due_at, 0, new Date().toISOString());
+        const whenStr = due_at ? ` for ${new Date(due_at).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}` : '';
+        sendReply(`✓ Reminder set: "${title || rawTitle}"${whenStr}`);
+      } catch (e) { sendReply(`Couldn't set the reminder: ${e}`); }
+      return;
+    }
+
+    // "what tasks do i have" / "show my tasks" / "list my tasks"
+    const listTasksMatch = /^(?:what|show|list|get)(?: tasks?| my tasks?| open tasks?| todo(?:s)?)/.test(lowerText)
+                        || lowerText === 'tasks' || lowerText === 'my tasks';
+    if (listTasksMatch) {
+      try {
+        const tasks = dbGet<{title:string;status:string}>(
+          "SELECT title, status FROM personal_tasks WHERE status!='done' ORDER BY created_at DESC LIMIT 10"
+        ) as {title:string;status:string}[];
+        if (!tasks.length) {
+          sendReply("You don't have any open tasks. Say 'add a task: [title]' to add one.");
+        } else {
+          sendReply(`You have ${tasks.length} open task${tasks.length>1?'s':''}:\n\n` +
+            tasks.map((t,i) => `${i+1}. ${t.title}`).join('\n'));
+
+        }
+      } catch { sendReply('Could not load tasks right now.'); }
+      return;
+    }
+
+    // "what reminders do i have" / "show reminders"
+    const listRemsMatch = /^(?:what|show|list|get)(?: reminders?| my reminders?| due(?:\s+today)?)/.test(lowerText)
+                       || lowerText === 'reminders';
+    if (listRemsMatch) {
+      try {
+        const rems = dbGet<{title:string;due_at:string}>(
+          "SELECT title, due_at FROM reminders WHERE done=0 ORDER BY due_at ASC LIMIT 10"
+        ) as {title:string;due_at:string}[];
+        if (!rems.length) {
+          sendReply("No pending reminders. Say 'remind me to [task] tomorrow' to add one.");
+        } else {
+          sendReply(`${rems.length} reminder${rems.length>1?'s':''}:\n\n` +
+            rems.map((r,i) => {
+              const d = r.due_at ? new Date(r.due_at).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : 'no time set';
+              return `${i+1}. ${r.title} — ${d}`;
+            }).join('\n'));
+
+        }
+      } catch { sendReply('Could not load reminders right now.'); }
+      return;
+    }
+
     // ── "Remember that..." — instant memory save, no AI needed ────────────────
     const rememberMatch = lowerText.match(/^(?:please )?remember(?: that)? (.+)/i);
     if (rememberMatch) {
