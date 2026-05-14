@@ -1676,6 +1676,77 @@ self.addEventListener('fetch', (event) => {
       return;
     }
 
+    // ── Delete task ──────────────────────────────────────────────────────────
+    const deleteTaskMatch = lowerText.match(/^(?:delete|remove|cancel)(?: a)? task[:\s]+(.+)/i);
+    if (deleteTaskMatch) {
+      const hint = deleteTaskMatch[1].trim();
+      try {
+        const task = dbGetOne<{id:string;title:string}>(
+          "SELECT id, title FROM personal_tasks WHERE LOWER(title) LIKE ? LIMIT 1", '%' + hint.toLowerCase() + '%'
+        );
+        if (!task) { sendReply("Could not find a task matching: " + hint); return; }
+        dbRun("DELETE FROM personal_tasks WHERE id=?", task.id);
+        sendReply('Deleted task: "' + task.title + '"');
+      } catch (e) { sendReply("Could not delete task: " + e); }
+      return;
+    }
+
+    // ── Delete reminder ───────────────────────────────────────────────────────
+    const deleteRemMatch = lowerText.match(/^(?:delete|remove|cancel)(?: a)? reminder[:\s]+(.+)/i)
+                        || lowerText.match(/^(?:mark|set) reminder(?: as)? done[:\s]+(.+)/i);
+    if (deleteRemMatch) {
+      const hint = deleteRemMatch[1].trim();
+      try {
+        const rem = dbGetOne<{id:string;title:string}>(
+          "SELECT id, title FROM reminders WHERE LOWER(title) LIKE ? AND done=0 LIMIT 1", '%' + hint.toLowerCase() + '%'
+        );
+        if (!rem) { sendReply("Could not find a reminder matching: " + hint); return; }
+        dbRun("UPDATE reminders SET done=1,updated_at=? WHERE id=?", new Date().toISOString(), rem.id);
+        sendReply('Reminder done: "' + rem.title + '"');
+      } catch (e) { sendReply("Could not update reminder: " + e); }
+      return;
+    }
+
+    // ── Complete / done goal ──────────────────────────────────────────────────
+    const doneGoalMatch = lowerText.match(/^(?:complete|finish|done|mark done|achieved?)(?: (?:goal|my goal)?)[:\s]+(.+)/i)
+                       || lowerText.match(/^(?:update|mark)(?: goal)?[:\s]+(.+?)(?:\s+(?:as|to)(?: done| complete))?$/i);
+    if (doneGoalMatch) {
+      const hint = doneGoalMatch[1].replace(/\s+(?:as|to)\s+done\s*$/i,'').replace(/\s+(?:as|to)\s+complete\s*$/i,'').trim();
+      if (hint.length > 2) {
+        try {
+          const goal = dbGetOne<{id:string;title:string}>(
+            "SELECT id, title FROM goals WHERE LOWER(title) LIKE ? AND status!='done' LIMIT 1",
+            '%' + hint.toLowerCase() + '%'
+          );
+          if (!goal) { sendReply("Could not find an active goal matching: " + hint); return; }
+          dbRun("UPDATE goals SET status='done',updated_at=? WHERE id=?", new Date().toISOString(), goal.id);
+          sendReply('Goal achieved: "' + goal.title + '"');
+        } catch (e) { sendReply("Could not update goal: " + e); }
+        return;
+      }
+    }
+
+    // ── Habit streak count ────────────────────────────────────────────────────
+    const habitStreakMatch = /^how many habit(?: streak)?s?(?: do i have)?/.test(lowerText)
+                          || /^habit streak(?:s| count)?$/.test(lowerText);
+    if (habitStreakMatch) {
+      try {
+        const habits = dbGet<{id:string;name:string}>(
+          "SELECT id, name FROM habits WHERE active=1"
+        ) as {id:string;name:string}[];
+        const lines: string[] = [habits.length + ' active habit' + (habits.length !== 1 ? 's' : '') + ':'];
+        habits.forEach(h => {
+          const streak = (dbGetOne<{streak:number}>(
+            "SELECT COUNT(*) as streak FROM habit_logs WHERE habit_id=? AND date >= date('now','-7 days')",
+            h.id
+          ) as {streak:number}|null)?.streak || 0;
+          lines.push('  ' + h.name + ': ' + streak + '/7 days this week');
+        });
+        sendReply(lines.join('\n'));
+      } catch { sendReply('Could not load habit streaks.'); }
+      return;
+    }
+
     // ── "Remember that..." — instant memory save, no AI needed ────────────────
     const rememberMatch = lowerText.match(/^(?:please )?remember(?: that)? (.+)/i);
     if (rememberMatch) {
