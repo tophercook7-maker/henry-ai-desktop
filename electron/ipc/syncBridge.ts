@@ -1712,9 +1712,9 @@ self.addEventListener('fetch', (event) => {
 
     // ── Complete / done goal ──────────────────────────────────────────────────
     const doneGoalMatch = lowerText.match(/^(?:complete|finish|done|mark done|achieved?)(?: (?:goal|my goal)?)[:\s]+(.+)/i)
-                       || lowerText.match(/^(?:update|mark)(?: goal)?[:\s]+(.+?)(?:\s+(?:as|to)(?: done| complete))?$/i);
+                       || (lowerText.includes('goal') && lowerText.match(/^(?:update|mark)(?: goal)?[:\s]+(.+?)(?:\s+(?:as|to)(?: done| complete))?$/i));
     if (doneGoalMatch) {
-      const hint = doneGoalMatch[1].replace(/\s+(?:as|to)\s+done\s*$/i,'').replace(/\s+(?:as|to)\s+complete\s*$/i,'').trim();
+      const hint = (doneGoalMatch[1] || '').replace(/\s+(?:as|to)\s+done\s*$/i,'').replace(/\s+(?:as|to)\s+complete\s*$/i,'').trim();
       if (hint.length > 2) {
         try {
           const goal = dbGetOne<{id:string;title:string}>(
@@ -1824,6 +1824,33 @@ self.addEventListener('fetch', (event) => {
         if (lines.length === 1) lines.push("Nothing scheduled today.");
         sendReply(lines.join("\n"));
       } catch { sendReply("Could not load schedule."); }
+      return;
+    }
+
+    // ── Direct verse reference: "John 3:16" / "lookup John 3:16" / "what is John 3:16"
+    const directVerseMatch = lowerText.match(/^(?:lookup|look up|what(?:'s| is)(?: the)?(?: verse)?|show me|read|get)\s+([1-3]?\s*[a-z]+\s+\d+:\d+)/i)
+                          || lowerText.match(/^([1-3]?\s*[a-z]+\s+\d+:\d+)$/i);
+    if (directVerseMatch) {
+      const ref = (directVerseMatch[1] || '').trim();
+      try {
+        const r2 = await require('node-fetch').default || { default: null };
+        // Use the bible endpoint directly
+        const count = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM scripture_entries") as {n:number}|null)?.n || 0;
+        if (count === 0) {
+          sendReply("Bible not downloaded yet. Open the Scripture panel and tap Download KJV Free.");
+        } else {
+          const parts = ref.match(/^([1-3]?\s*[a-z]+)\s+(\d+):(\d+)$/i);
+          if (parts) {
+            const book = parts[1].trim(), ch = parseInt(parts[2]), vs = parseInt(parts[3]);
+            const verse = dbGetOne<{text:string;book:string;chapter:number;verse:number}>(
+              "SELECT text, book, chapter, verse FROM scripture_entries WHERE LOWER(book)=LOWER(?) AND chapter=? AND verse=? LIMIT 1",
+              book, ch, vs
+            ) as {text:string;book:string;chapter:number;verse:number}|null;
+            if (verse) sendReply(verse.book + ' ' + verse.chapter + ':' + verse.verse + ' (KJV)\n\n"' + verse.text + '"');
+            else sendReply('Verse not found: ' + ref + '. Check the reference format.');
+          } else sendReply('Could not parse verse reference: ' + ref);
+        }
+      } catch { sendReply('Could not look up verse.'); }
       return;
     }
 
@@ -1949,6 +1976,73 @@ self.addEventListener('fetch', (event) => {
         if (parts.length === 1) parts.push("You're all caught up! Great work.");
         sendReply(parts.join("\n"));
       } catch { sendReply("Could not load priorities."); }
+      return;
+    }
+
+    // ── Prayer requests ───────────────────────────────────────────────────────
+    const addPrayerMatch = lowerText.match(/^(?:add|log|create|save)(?: a)? prayer(?: request)?[:\s]+(.+)/i);
+    if (addPrayerMatch) {
+      const req = addPrayerMatch[1].trim();
+      if (req.length > 1) {
+        try {
+          const id = require('crypto').randomUUID();
+          dbRun("INSERT INTO prayer_requests (id,title,body,status,created_at) VALUES (?,?,?,?,?)",
+            id, req.slice(0,80), req, 'active', new Date().toISOString());
+          sendReply('Prayer request saved: "' + req + '"');
+        } catch (e) { sendReply('Could not save prayer request: ' + e); }
+        return;
+      }
+    }
+
+    const showPrayerMatch = /^(?:show|list|what are|get)(?: my)? prayer(?: requests?)?/.test(lowerText)
+                         || lowerText === 'prayer requests' || lowerText === 'my prayers';
+    if (showPrayerMatch) {
+      try {
+        const reqs = dbGet<{title:string;body:string;status:string}>(
+          "SELECT title, body, status FROM prayer_requests WHERE status='active' ORDER BY created_at DESC LIMIT 10"
+        ) as {title:string;body:string;status:string}[];
+        if (!reqs.length) sendReply("No active prayer requests. Say \"add prayer request: [your request]\" to add one.");
+        else sendReply(reqs.length + ' prayer request' + (reqs.length > 1 ? 's' : '') + ':\n\n' + reqs.map((r,i) => (i+1) + '. ' + r.body).join('\n'));
+      } catch { sendReply('Could not load prayer requests.'); }
+      return;
+    }
+
+    // ── Delete goal ───────────────────────────────────────────────────────────
+    const deleteGoalMatch = lowerText.match(/^(?:delete|remove|archive)(?: goal)?[:\s]+(.+)/i);
+    if (deleteGoalMatch) {
+      const hint = deleteGoalMatch[1].trim();
+      try {
+        const goal = dbGetOne<{id:string;title:string}>(
+          "SELECT id, title FROM goals WHERE LOWER(title) LIKE ? AND status!='done' LIMIT 1",
+          '%' + hint.toLowerCase() + '%'
+        ) as {id:string;title:string}|null;
+        if (!goal) { sendReply("Could not find a goal matching: " + hint); return; }
+        dbRun("UPDATE goals SET status='archived',updated_at=? WHERE id=?", new Date().toISOString(), goal.id);
+        sendReply('Goal archived: "' + goal.title + '"');
+      } catch (e) { sendReply('Could not archive goal: ' + e); }
+      return;
+    }
+
+    // ── Update task status / priority ─────────────────────────────────────────
+    const updateTaskMatch = lowerText.match(/^(?:update|change|set|move) task[:\s]+(.+?) to (todo|doing|done|high|low|medium|med)/i);
+    if (updateTaskMatch) {
+      const hint = updateTaskMatch[1].trim();
+      const newVal = updateTaskMatch[2].toLowerCase();
+      try {
+        const task = dbGetOne<{id:string;title:string}>(
+          "SELECT id, title FROM personal_tasks WHERE LOWER(title) LIKE ? AND status!='done' LIMIT 1",
+          '%' + hint.toLowerCase() + '%'
+        ) as {id:string;title:string}|null;
+        if (!task) { sendReply("Could not find a task matching: " + hint); return; }
+        if (['todo','doing','done'].includes(newVal)) {
+          dbRun("UPDATE personal_tasks SET status=?,updated_at=? WHERE id=?", newVal, new Date().toISOString(), task.id);
+          sendReply('Task updated: "' + task.title + '" → ' + newVal);
+        } else if (['high','medium','med','low'].includes(newVal)) {
+          const pri = newVal === 'high' ? 3 : newVal === 'low' ? 1 : 2;
+          dbRun("UPDATE personal_tasks SET priority=?,updated_at=? WHERE id=?", pri, new Date().toISOString(), task.id);
+          sendReply('Task priority set to ' + newVal + ': "' + task.title + '"');
+        }
+      } catch (e) { sendReply('Could not update task: ' + e); }
       return;
     }
 
