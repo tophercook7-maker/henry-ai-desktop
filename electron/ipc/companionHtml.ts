@@ -409,6 +409,33 @@ html,body{height:100%;height:100dvh;min-height:100dvh;background:var(--bg);color
       </div>
     </div>
 
+
+<!-- PHONE: Bible pane -->
+<div id="p-bible" style="display:none;flex-direction:column;height:100%;overflow:hidden">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--border);font-weight:700;font-size:15px">
+    <span>✝ Bible</span>
+    <span style="font-size:11px;color:var(--muted);font-weight:400" id="bible-status">KJV</span>
+  </div>
+  <!-- Search bar -->
+  <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;gap:8px">
+    <input id="bible-ref-in" placeholder="John 3:16 or topic..." style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:8px 14px;font-size:14px;color:var(--text);outline:none" onkeydown="if(event.key==='Enter')lookupVerse(this.value)"/>
+    <button onclick="lookupVerse(document.getElementById('bible-ref-in').value)" style="background:var(--accent);color:#fff;border:none;border-radius:12px;padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer">Go</button>
+  </div>
+  <!-- Result -->
+  <div id="bible-result" style="flex:1;overflow-y:auto;padding:16px">
+    <div style="color:var(--muted);text-align:center;padding:32px 16px;font-size:14px">
+      Enter a verse reference (John 3:16) or a topic (perseverance, hope, strength) to search.
+      <br><br>
+      <span style="font-size:12px;opacity:0.7">Requires Bible downloaded in the Scripture panel on your Mac.</span>
+    </div>
+  </div>
+  <!-- Saved verse display -->
+  <div id="bible-verse-display" style="display:none;padding:16px;background:var(--surface);border-top:1px solid var(--border)">
+    <div id="bible-ref-label" style="font-size:11px;color:var(--accent);font-weight:700;margin-bottom:6px"></div>
+    <div id="bible-text" style="font-size:14px;color:var(--text);line-height:1.6;font-style:italic"></div>
+  </div>
+</div>
+
 <!-- PHONE: bottom nav -->
 <div id="bottom-nav">
   <button class="on" onclick="phoneTo('chat')" id="bn-chat"><span class="bi">◉</span>Chat</button>
@@ -583,7 +610,7 @@ function phoneTo(id) {
   const chatCol = document.getElementById('chat-col');
   const rightCol = document.getElementById('right-col');
   // Phone-only panes (tasks/rem/jnl/health) — toggle display directly
-  const phoneOnlyPanes = ['tasks','rem','jnl','health','goals'];
+  const phoneOnlyPanes = ['tasks','rem','jnl','health','goals','bible'];
   if (phoneOnlyPanes.includes(id)) {
     chatCol.classList.remove('active'); rightCol.classList.remove('active');
     phoneOnlyPanes.forEach(pid => {
@@ -596,6 +623,7 @@ function phoneTo(id) {
     if (id === 'rem') loadReminders();
     if (id === 'tasks') loadTasks();
     if (id === 'goals') loadGoalsPaneFn();
+    if (id === 'bible') initBible();
     if (id === 'jnl') initJournal();
   } else if (id === 'chat') {
     phoneOnlyPanes.forEach(pid => { const el = document.getElementById('p-' + pid); if (el) el.style.display = 'none'; });
@@ -790,7 +818,32 @@ async function loadToday() {
     renderHabits(habitsData, habitLogsData);
     renderTasks(d.tasks || []);
     renderReminders(d.reminders || []);
+    renderFocusCard(d, habitsData, habitLogsData);
   } catch { /* offline */ }
+}
+
+function renderFocusCard(data, habits, logs) {
+  const bodyEl = document.getElementById('focus-body');
+  const tagEl = document.getElementById('focus-tag');
+  if (!bodyEl) return;
+  const today = new Date().toISOString().slice(0,10);
+  const rems = (data.reminders || []).filter(r => !r.done);
+  const tasks = (data.tasks || []);
+  const undoneHabits = habits.filter(h => !logs.find(l => l.habit_id === h.id && l.count >= h.target_per_day));
+  // Priority: reminders > tasks > habits
+  if (rems.length) {
+    bodyEl.textContent = rems[0].title;
+    if (tagEl) tagEl.textContent = 'Reminder';
+  } else if (tasks.length) {
+    bodyEl.textContent = tasks[0].title;
+    if (tagEl) tagEl.textContent = 'Task';
+  } else if (undoneHabits.length) {
+    bodyEl.textContent = undoneHabits[0].icon + ' ' + undoneHabits[0].name;
+    if (tagEl) tagEl.textContent = 'Habit';
+  } else {
+    bodyEl.textContent = 'All caught up! Great work today.';
+    if (tagEl) { tagEl.textContent = ''; tagEl.style.display = 'none'; }
+  }
 }
 
 function renderHabits(habits, logs) {
@@ -1326,6 +1379,50 @@ async function completeTask(id) {
 }
 
 // ── GOALS ────────────────────────────────────────────────────────────────────
+async function initBible() {
+  const statusEl = document.getElementById('bible-status');
+  const resultEl = document.getElementById('bible-result');
+  // Check if bible is downloaded
+  try {
+    const r = await fetch(BASE + '/sync/mac/bible?ref=John+3:16');
+    const d = await r.json();
+    if (d.found) {
+      if (statusEl) statusEl.textContent = 'KJV Downloaded';
+      if (resultEl) resultEl.innerHTML = '<div style="color:var(--muted);text-align:center;padding:32px 16px;font-size:14px">Bible downloaded! Enter a verse (John 3:16) or topic to search.</div>';
+    } else {
+      if (statusEl) statusEl.textContent = 'Not downloaded';
+      if (resultEl) resultEl.innerHTML = '<div style="color:var(--muted);text-align:center;padding:32px 16px;font-size:14px">Bible not downloaded yet.<br><br>Open Henry on your Mac → Scripture panel → tap <strong>Download KJV Free</strong>.<br><br>Then all 31,000 verses are available here.</div>';
+    }
+  } catch {
+    if (resultEl) resultEl.innerHTML = '<div style="color:var(--muted);text-align:center;padding:32px 16px;font-size:14px">Could not reach Henry. Make sure Henry is open on your Mac.</div>';
+  }
+}
+
+async function lookupVerse(ref) {
+  if (!ref || !ref.trim()) return;
+  const resultEl = document.getElementById('bible-result');
+  const display = document.getElementById('bible-verse-display');
+  const refLabel = document.getElementById('bible-ref-label');
+  const textEl = document.getElementById('bible-text');
+  if (resultEl) resultEl.innerHTML = '<div style="color:var(--muted);text-align:center;padding:24px">Looking up…</div>';
+  try {
+    const r = await fetch(BASE + '/sync/mac/bible?ref=' + encodeURIComponent(ref.trim()));
+    const d = await r.json();
+    if (d.found && d.text) {
+      if (refLabel) refLabel.textContent = (d.reference || ref).toUpperCase();
+      if (textEl) textEl.textContent = d.text;
+      if (display) display.style.display = 'block';
+      if (resultEl) resultEl.innerHTML = '<div style="padding:8px 0;color:var(--muted);font-size:12px">Found! See below.</div>';
+    } else if (!d.found && d.error && d.error.includes('not downloaded')) {
+      if (resultEl) resultEl.innerHTML = '<div style="color:var(--muted);text-align:center;padding:24px;font-size:13px">Bible not downloaded yet.<br>Open Henry on your Mac → Scripture panel → Download KJV Free.</div>';
+    } else {
+      if (resultEl) resultEl.innerHTML = '<div style="color:var(--muted);text-align:center;padding:24px;font-size:13px">Verse not found. Try a different reference or topic.</div>';
+    }
+  } catch {
+    if (resultEl) resultEl.innerHTML = '<div style="color:var(--muted);text-align:center;padding:24px;font-size:13px">Could not reach Henry. Make sure Henry is running on your Mac.</div>';
+  }
+}
+
 async function loadGoalsPaneFn() {
   const pane = document.getElementById('goals-list-pane');
   if (!pane) return;
