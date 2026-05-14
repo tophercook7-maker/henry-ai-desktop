@@ -1487,9 +1487,12 @@ self.addEventListener('fetch', (event) => {
     const remindMatch = lowerText.match(/^remind(?:er)?(?: me)? (?:to |about )?(.+)/i);
     if (remindMatch) {
       const rawTitle = resolvedText.replace(/^remind(?:er)?(?: me)? (?:to |about )?/i,'').trim();
-      // Try to extract a time/date from the text
-      const timeMatch = rawTitle.match(/(?:at |on )?(tomorrow|today|\d{1,2}(?::\d{2})?\s*(?:am|pm)|monday|tuesday|wednesday|thursday|friday|saturday|sunday)/i);
-      const title = rawTitle.replace(/\s*(?:at|on)\s+.+$/i,'').trim() || rawTitle;
+      // Try to extract a time/date from the text - only strip known time words
+      const timeMatch = rawTitle.match(/\b(tomorrow|today|\d{1,2}(?::\d{2})?\s*(?:am|pm)|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i);
+      // Only strip the time part, not generic "on" words
+      const title = timeMatch 
+        ? rawTitle.replace(/\s*\b(?:at|on)\s+(?:tomorrow|today|\d{1,2}(?::\d{2})?\s*(?:am|pm)|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b.*/i, '').trim() || rawTitle
+        : rawTitle;
       const due_at = (() => {
         if (!timeMatch) return null;
         const t = timeMatch[1].toLowerCase();
@@ -1862,6 +1865,90 @@ self.addEventListener('fetch', (event) => {
           sendReply("Finance this month:\nIncome:   $" + inc.toFixed(2) + "\nExpenses: $" + exp.toFixed(2) + "\nNet:      " + (net >= 0 ? "+" : "") + "$" + net.toFixed(2));
         }
       } catch { sendReply("Could not load finance data."); }
+      return;
+    }
+
+    // ── Maker Studio: profit / jobs ──────────────────────────────────────────
+    const profitMatch = /^(?:what.?s|show)(?: my)? (?:profit|revenue|income)(?: this month| this week| today)?/.test(lowerText)
+                     || /^(?:how much)(?: have i)? (?:made|earned|grossed)/.test(lowerText);
+    if (profitMatch) {
+      try {
+        const month = new Date().toISOString().slice(0,7);
+        const revenue = (dbGetOne<{n:number}>(
+          "SELECT COALESCE(SUM(revenue),0) as n FROM production_runs WHERE strftime('%Y-%m',created_at)=?", month
+        ) as {n:number}|null)?.n || 0;
+        const cost = (dbGetOne<{n:number}>(
+          "SELECT COALESCE(SUM(material_cost),0) as n FROM production_runs WHERE strftime('%Y-%m',created_at)=?", month
+        ) as {n:number}|null)?.n || 0;
+        const jobCount = (dbGetOne<{n:number}>(
+          "SELECT COUNT(*) as n FROM production_runs WHERE strftime('%Y-%m',created_at)=?", month
+        ) as {n:number}|null)?.n || 0;
+        if (revenue === 0 && jobCount === 0) {
+          sendReply("No production runs logged this month yet. Open Maker Studio to log jobs and track profit.");
+        } else {
+          const profit = revenue - cost;
+          sendReply("This month's Maker Studio:\n\nJobs: " + jobCount + "\nRevenue: $" + revenue.toFixed(2) + "\nMaterial cost: $" + cost.toFixed(2) + "\nProfit: " + (profit >= 0 ? "+" : "") + "$" + profit.toFixed(2));
+        }
+      } catch { sendReply("Could not load production data. Make sure you have logged jobs in Maker Studio."); }
+      return;
+    }
+
+    // ── Maker Studio: materials in stock ──────────────────────────────────────
+    const materialsMatch = /^(?:what|show)(?: materials?| my materials?| stock| inventory)(?: do i have| in stock)?/.test(lowerText)
+                        || /^(?:materials?|stock|inventory)$/.test(lowerText);
+    if (materialsMatch) {
+      try {
+        const mats = dbGet<{name:string;stock_quantity:number;unit:string;cost_per_unit:number}>(
+          "SELECT name, stock_quantity, unit, cost_per_unit FROM materials ORDER BY stock_quantity ASC LIMIT 10"
+        ) as {name:string;stock_quantity:number;unit:string;cost_per_unit:number}[];
+        if (!mats.length) {
+          sendReply("No materials tracked yet. Add materials in Maker Studio to track inventory.");
+        } else {
+          const low = mats.filter(m => m.stock_quantity < 5);
+          let reply = mats.length + " materials tracked:\n\n";
+          mats.forEach(m => {
+            const flag = m.stock_quantity < 5 ? " ⚠ LOW" : "";
+            reply += "• " + m.name + ": " + m.stock_quantity + " " + (m.unit || "units") + flag + "\n";
+          });
+          if (low.length) reply += "\n⚠ " + low.length + " material" + (low.length > 1 ? "s" : "") + " running low.";
+          sendReply(reply.trim());
+        }
+      } catch { sendReply("Could not load materials. Open Maker Studio to add inventory."); }
+      return;
+    }
+
+    // ── Focus / most important right now ─────────────────────────────────────
+    const focusMatch = /^(?:what should i(?: do| focus on| work on| tackle)?|what.?s most important|what.?s next|top priority|focus(?: mode)?(?:\s+now)?)/.test(lowerText);
+    if (focusMatch) {
+      try {
+        const today = new Date().toISOString().slice(0,10);
+        // Priority: overdue reminders > today's reminders > high-priority tasks > undone habits
+        const overdueRem = dbGetOne<{title:string}>(
+          "SELECT title FROM reminders WHERE done=0 AND due_at < ? ORDER BY due_at ASC LIMIT 1",
+          new Date().toISOString()
+        ) as {title:string}|null;
+        if (overdueRem) { sendReply("⏰ Most urgent: **" + overdueRem.title + "** — this reminder is overdue."); return; }
+        
+        const topTask = dbGetOne<{title:string;priority:number}>(
+          "SELECT title, priority FROM personal_tasks WHERE status!='done' ORDER BY priority DESC, created_at ASC LIMIT 1"
+        ) as {title:string;priority:number}|null;
+        
+        const topGoal = dbGetOne<{title:string}>(
+          "SELECT title FROM goals WHERE status!='done' ORDER BY priority_score DESC LIMIT 1"
+        ) as {title:string}|null;
+        
+        const undoneHabit = dbGetOne<{name:string;icon:string}>(
+          "SELECT h.name, h.icon FROM habits h WHERE h.active=1 AND h.id NOT IN (SELECT habit_id FROM habit_logs WHERE date=?) ORDER BY h.created_at ASC LIMIT 1",
+          today
+        ) as {name:string;icon:string}|null;
+        
+        const parts: string[] = ["Here's what to focus on right now:\n"];
+        if (topTask) parts.push("✓ Top task: **" + topTask.title + "**");
+        if (undoneHabit) parts.push("○ Habit due: " + undoneHabit.icon + " " + undoneHabit.name);
+        if (topGoal) parts.push("◎ Active goal: " + topGoal.title);
+        if (parts.length === 1) parts.push("You're all caught up! Great work.");
+        sendReply(parts.join("\n"));
+      } catch { sendReply("Could not load priorities."); }
       return;
     }
 
