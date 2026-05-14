@@ -1302,7 +1302,7 @@ self.addEventListener('fetch', (event) => {
     // ── Knowledge router — instant answers, no AI needed ─────────────────────
     const lowerText = resolvedText.toLowerCase().trim();
     const knowledgeAnswer = (() => {
-      if (/^(what can you do|help|give me a tour|show me what you can do|overview|what do you do)/.test(lowerText)) {
+      if ((/^(what can you do|help me$|give me a tour|show me what you can do|overview of henry|what do you do)/.test(lowerText)) || lowerText === 'help') {
         return `Here's everything I can do:\n\n` +
           `💬 **Chat** — Talk to me, ask anything, give commands\n` +
           `☀️ **Today** — Daily habits, tasks, day plan, word of the day\n` +
@@ -1747,6 +1747,48 @@ self.addEventListener('fetch', (event) => {
       return;
     }
 
+    // ── Recurring reminders ──────────────────────────────────────────────────
+    const recurringMatch = lowerText.match(/^(?:set|add|create)(?: a)? (?:daily|weekly|recurring)(?: reminder)?[:\s]+(.+?)(?:\s+(?:every day|daily|each day|at \d))?$/i)
+                        || lowerText.match(/^remind me (?:every day|daily|each day)(?: at .+?)? to (.+)/i);
+    if (recurringMatch) {
+      const title = (recurringMatch[1] || recurringMatch[2] || '').trim();
+      if (title.length > 1) {
+        try {
+          const id = require('crypto').randomUUID();
+          // Set due_at for tomorrow 6am as the first occurrence
+          const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate()+1); tomorrow.setHours(6,0,0,0);
+          dbRun("INSERT INTO reminders (id,title,due_at,done,repeat,created_at) VALUES (?,?,?,?,?,?)",
+            id, title, tomorrow.toISOString(), 0, 'daily', new Date().toISOString());
+          sendReply('Recurring daily reminder set: "' + title + '" starting tomorrow at 6am. You can edit the time in the Reminders panel.');
+        } catch (e) { sendReply('Could not set recurring reminder: ' + e); }
+        return;
+      }
+    }
+
+    // ── Weekly summary ────────────────────────────────────────────────────────
+    const weeklySummaryMatch = /^(?:how am i doing this week|weekly summary|week(?:ly)? report|how(?:'s| is) my week)/.test(lowerText);
+    if (weeklySummaryMatch) {
+      try {
+        const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate()-7);
+        const weekAgoStr = weekAgo.toISOString().slice(0,10);
+        const today = new Date().toISOString().slice(0,10);
+
+        const tasksDone = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM personal_tasks WHERE status='done' AND completed_at >= ?", weekAgoStr) as {n:number}|null)?.n || 0;
+        const habitsTotal = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM habit_logs WHERE date >= ?", weekAgoStr) as {n:number}|null)?.n || 0;
+        const jnlEntries = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM journal_entries WHERE date >= ?", weekAgoStr) as {n:number}|null)?.n || 0;
+        const goalsActive = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM goals WHERE status!='done'") as {n:number}|null)?.n || 0;
+        const habitCount = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM habits WHERE active=1") as {n:number}|null)?.n || 0;
+
+        const lines = ['Your week at a glance:\n'];
+        lines.push('✓ Tasks completed: ' + tasksDone);
+        lines.push('🔥 Habit check-ins: ' + habitsTotal + (habitCount ? ' (out of ' + (habitCount * 7) + ' possible)' : ''));
+        lines.push('📔 Journal entries: ' + jnlEntries);
+        lines.push('◎ Active goals: ' + goalsActive);
+        sendReply(lines.join('\n'));
+      } catch { sendReply('Could not generate weekly summary.'); }
+      return;
+    }
+
     // ── "Remember that..." — instant memory save, no AI needed ────────────────
     const rememberMatch = lowerText.match(/^(?:please )?remember(?: that)? (.+)/i);
     if (rememberMatch) {
@@ -1762,6 +1804,30 @@ self.addEventListener('fetch', (event) => {
         } catch { sendReply(`I noted that, though I had trouble saving it permanently.`); }
         return;
       }
+    }
+
+    // ── Weather lookup ────────────────────────────────────────────────────────
+    const weatherMatch = /^(?:what(?:'s| is)(?: the)? weather|weather(?: today| now| forecast)?|will it rain|is it (?:hot|cold|raining|sunny))/.test(lowerText);
+    if (weatherMatch) {
+      try {
+        // Use wttr.in for free weather — returns simple text
+        const https = require('https') as typeof import('https');
+        const weatherText = await new Promise<string>((resolve) => {
+          const req = https.get('https://wttr.in/Hot+Springs+Arkansas?format=3', { timeout: 4000 }, (res: any) => {
+            let data = '';
+            res.on('data', (chunk: any) => data += chunk);
+            res.on('end', () => resolve(data.trim()));
+          });
+          req.on('error', () => resolve(''));
+          req.on('timeout', () => { req.destroy(); resolve(''); });
+        });
+        if (weatherText && !weatherText.includes('Unknown location')) {
+          sendReply('Weather in Hot Springs, AR: ' + weatherText);
+        } else {
+          sendReply("I can't fetch live weather right now. Check weather.gov or your phone's weather app for Hot Springs, AR.");
+        }
+      } catch { sendReply("I can't fetch live weather right now. Check weather.gov for Hot Springs, AR."); }
+      return;
     }
 
     // Direct computer command detection — no AI, just execute
