@@ -1389,6 +1389,82 @@ self.addEventListener('fetch', (event) => {
       return;
     }
 
+    // ── Date / time — instant, no AI needed ─────────────────────────────────────
+    if (/^(what(?:'s| is)(?: the)? (today'?s? )?(date|day|time)|what day|today'?s date|current (date|day|time))/.test(lowerText)) {
+      const now = new Date();
+      const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+      const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+      const day = days[now.getDay()];
+      const month = months[now.getMonth()];
+      const date = now.getDate();
+      const year = now.getFullYear();
+      const time = now.toLocaleTimeString('en-US', {hour:'numeric', minute:'2-digit'});
+      sendReply(`It's ${day}, ${month} ${date}, ${year} — ${time}.`);
+      return;
+    }
+
+    // ── Complete / done task ──────────────────────────────────────────────────
+    const completeTaskMatch = lowerText.match(/^(?:complete|finish|done|mark done|check off)(?: my)?(?: first| last| top)? task[:\s]*(.*)$/i)
+                           || lowerText.match(/^(?:mark|complete|finish)(?: task)?[:\s]+(.+)(?: as)? done$/i);
+    if (completeTaskMatch) {
+      try {
+        const hint = completeTaskMatch[1]?.trim().toLowerCase() || '';
+        let task: {id:string;title:string}|null = null;
+        if (hint) {
+          task = dbGetOne<{id:string;title:string}>(
+            "SELECT id, title FROM personal_tasks WHERE status!='done' AND LOWER(title) LIKE ? ORDER BY created_at ASC LIMIT 1",
+            '%' + hint + '%'
+          );
+        }
+        if (!task) {
+          task = dbGetOne<{id:string;title:string}>(
+            "SELECT id, title FROM personal_tasks WHERE status!='done' ORDER BY created_at ASC LIMIT 1"
+          );
+        }
+        if (!task) { sendReply("You don't have any open tasks to complete."); return; }
+        dbRun("UPDATE personal_tasks SET status='done', completed_at=? WHERE id=?", new Date().toISOString(), task.id);
+        sendReply(`✓ Done: "${task.title}"`);
+      } catch (e) { sendReply(`Couldn't complete the task: ${e}`); }
+      return;
+    }
+
+    // ── Goals list ────────────────────────────────────────────────────────────
+    const listGoalsMatch = /^(?:what|show|list|get)(?: goals?| my goals?| active goals?)/.test(lowerText)
+                        || lowerText === 'goals' || lowerText === 'my goals';
+    if (listGoalsMatch) {
+      try {
+        const goals = dbGet<{title:string;priority_score:number}>(
+          "SELECT title, priority_score, created_at FROM goals WHERE status!='done' ORDER BY priority_score DESC, created_at DESC LIMIT 10"
+        ) as {title:string;target_date:string;priority_score:number}[];
+        if (!goals.length) {
+          sendReply("You don't have any active goals yet. Open the Goals panel and add your first one.");
+        } else {
+            sendReply(goals.length + ' active goal' + (goals.length>1?'s':'') + ':\n\n' +
+            goals.map((g,i) => {
+              return (i+1) + '. ' + g.title;
+            }).join('\n'));
+        }
+      } catch { sendReply('Could not load goals right now.'); }
+      return;
+    }
+
+    // ── Add goal ──────────────────────────────────────────────────────────────
+    const addGoalMatch = lowerText.match(/^(?:add|create|new) (?:a )?goal[:\s]+(.+)/i)
+                      || lowerText.match(/^goal[:\s]+(.+)/i);
+    if (addGoalMatch) {
+      const title = resolvedText.replace(/^(?:add|create|new) (?:a )?goal[:\s]+/i,'').replace(/^goal[:\s]+/i,'').trim();
+      if (title.length > 1) {
+        try {
+          const id = require('crypto').randomUUID();
+          dbRun("INSERT INTO goals (id,title,status,priority_score,strategic_significance_score,emotional_significance_score,created_at,updated_at,last_active_at) VALUES (?,?,?,?,?,?,?,?,?)",
+            id, title, 'active', 0.7, 0.7, 0.5, new Date().toISOString(), new Date().toISOString(), new Date().toISOString());
+          try { dbRun('PRAGMA wal_checkpoint(PASSIVE)'); } catch {}
+          sendReply(`✓ Goal added: "${title}"`);
+        } catch (e) { sendReply(`Couldn't save the goal: ${e}`); }
+        return;
+      }
+    }
+
     // ── Action commands — execute directly, no AI needed ────────────────────────
 
     // "add a task: X" / "create a task: X" / "new task: X"
@@ -1479,6 +1555,52 @@ self.addEventListener('fetch', (event) => {
 
         }
       } catch { sendReply('Could not load reminders right now.'); }
+      return;
+    }
+
+    // ── Toggle habit done ─────────────────────────────────────────────────────
+    const habitDoneMatch = lowerText.match(/^(?:done|completed?|finished?|mark(?:ed)? done|checked?)(?: my)?(?: habit[:\s]+)?(.+)/i)
+                        || lowerText.match(/^(.+)(?: habit)? (?:done|completed|finished)$/i);
+    if (habitDoneMatch) {
+      const hint = (habitDoneMatch[1] || '').trim().toLowerCase();
+      // Only fire if hint matches a real habit name
+      const matchedHabit = hint.length > 2 ? dbGetOne<{id:string;name:string}>(
+        "SELECT id, name FROM habits WHERE active=1 AND LOWER(name) LIKE ? LIMIT 1",
+        '%' + hint + '%'
+      ) : null;
+      if (matchedHabit) {
+        const today = new Date().toISOString().slice(0,10);
+        try {
+          const existing = dbGetOne<{id:string}>("SELECT id FROM habit_logs WHERE habit_id=? AND date=?", matchedHabit.id, today);
+          if (!existing) {
+            dbRun("INSERT INTO habit_logs (id,habit_id,date,count,created_at) VALUES (?,?,?,?,?)",
+              require('crypto').randomUUID(), matchedHabit.id, today, 1, new Date().toISOString());
+          }
+          sendReply('✓ ' + matchedHabit.name + ' marked done for today.');
+        } catch (e) { sendReply("Could not update habit: " + e); }
+        return;
+      }
+    }
+
+    // ── Log health ─────────────────────────────────────────────────────────────
+    const healthLogMatch = lowerText.match(/^log(?:ged)? (\d+(?:\.\d+)?)\s*(oz|glasses?|steps?|mins?|minutes?|hours?|hrs?|calories?|cal|lbs?|kg)\s*(?:of\s+)?(.+)?$/i)
+                        || lowerText.match(/^(?:log|add|record)\s+(.+)\s+(water|steps|exercise|sleep|calories)$/i);
+    if (healthLogMatch) {
+      try {
+        const today = new Date().toISOString().slice(0,10);
+        let value = parseFloat(healthLogMatch[1] || '1');
+        let unit = (healthLogMatch[2] || '').toLowerCase();
+        let label = (healthLogMatch[3] || healthLogMatch[2] || 'health').trim();
+        let category = 'custom';
+        if (unit.includes('oz') || unit.includes('glass') || label.includes('water')) category = 'water';
+        else if (unit.includes('step')) category = 'steps';
+        else if (unit.includes('min') || label.includes('exercise') || label.includes('workout')) category = 'exercise';
+        else if (unit.includes('hr') || unit.includes('hour') || label.includes('sleep')) category = 'sleep';
+        else if (unit.includes('cal')) category = 'calories';
+        dbRun("INSERT INTO health_logs (id,date,category,label,value,unit,created_at) VALUES (?,?,?,?,?,?,?)",
+          require('crypto').randomUUID(), today, category, label || category, value, unit, new Date().toISOString());
+        sendReply('✓ Logged: ' + value + ' ' + unit + ' (' + category + ')');
+      } catch (e) { sendReply("Could not log: " + e); }
       return;
     }
 
