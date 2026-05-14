@@ -1789,6 +1789,82 @@ self.addEventListener('fetch', (event) => {
       return;
     }
 
+    // ── Add journal entry ─────────────────────────────────────────────────────
+    const journalMatch = lowerText.match(/^(?:add|create|write|log)(?: a)? journal(?: entry)?[:\s]+(.+)/i)
+                      || lowerText.match(/^journal[:\s]+(.+)/i);
+    if (journalMatch) {
+      const content = (journalMatch[1] || '').trim();
+      if (content.length > 1) {
+        try {
+          const today = new Date().toISOString().slice(0,10);
+          const id = require('crypto').randomUUID();
+          dbRun("INSERT INTO journal_entries (id,date,content,mood,created_at) VALUES (?,?,?,?,?)",
+            id, today, content, '', new Date().toISOString());
+          sendReply('Journal entry saved: "' + content + '"');
+        } catch (e) { sendReply('Could not save journal entry: ' + e); }
+        return;
+      }
+    }
+
+    // ── Schedule today ────────────────────────────────────────────────────────
+    const scheduleMatch = /^(?:what.?s on my schedule|schedule(?:\s+for)?\s+today|today.?s schedule|what do i have today|what.?s today)/.test(lowerText);
+    if (scheduleMatch) {
+      try {
+        const today = new Date().toISOString().slice(0,10);
+        const tasks = dbGet<{title:string}>("SELECT title FROM personal_tasks WHERE status!='done' ORDER BY created_at DESC LIMIT 5") as {title:string}[];
+        const rems = dbGet<{title:string}>("SELECT title FROM reminders WHERE done=0 ORDER BY due_at ASC LIMIT 5") as {title:string}[];
+        const habits = dbGet<{name:string;icon:string}>("SELECT h.name, h.icon FROM habits h WHERE h.active=1 AND h.id NOT IN (SELECT habit_id FROM habit_logs WHERE date=?) ORDER BY h.created_at LIMIT 5", today) as {name:string;icon:string}[];
+        const lines: string[] = ["Today at a glance:\n"];
+        if (rems.length) { lines.push("Reminders: " + rems.map(r => r.title).join(", ")); }
+        if (tasks.length) { lines.push("Open tasks: " + tasks.slice(0,3).map(t => t.title).join(", ")); }
+        if (habits.length) { lines.push("Habits still to do: " + habits.map(h => h.icon + " " + h.name).join(", ")); }
+        if (lines.length === 1) lines.push("Nothing scheduled today.");
+        sendReply(lines.join("\n"));
+      } catch { sendReply("Could not load schedule."); }
+      return;
+    }
+
+    // ── Bible verse search ─────────────────────────────────────────────────────
+    const bibleSearchMatch = lowerText.match(/^(?:find|show|search)(?: a| me)?(?: bible| scripture)?(?: verse| verses?)?(?: about| on| for)\s+(.+)/i)
+                          || lowerText.match(/^(?:verse|scripture)(?: about| on| for)\s+(.+)/i);
+    if (bibleSearchMatch) {
+      const topic = (bibleSearchMatch[1] || '').trim();
+      if (topic.length > 2) {
+        try {
+          const count = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM scripture_entries") as {n:number}|null)?.n || 0;
+          if (count === 0) {
+            sendReply("Bible not downloaded yet. Open the Scripture panel and tap Download KJV Free to get all 31,000 verses.");
+          } else {
+            const results = dbGet<{book:string;chapter:number;verse:number;text:string}>(
+              "SELECT book, chapter, verse, text FROM scripture_entries WHERE LOWER(text) LIKE ? LIMIT 3",
+              "%" + topic.toLowerCase() + "%"
+            ) as {book:string;chapter:number;verse:number;text:string}[];
+            if (!results.length) { sendReply("No verses found about \"" + topic + "\". Try different keywords."); }
+            else { sendReply("Verses about \"" + topic + "\":\n\n" + results.map(v => v.book + " " + v.chapter + ":" + v.verse + " — " + v.text).join("\n\n")); }
+          }
+        } catch { sendReply("Could not search scripture."); }
+        return;
+      }
+    }
+
+    // ── Finance summary ────────────────────────────────────────────────────────
+    const financeSummaryMatch = /^(?:show|what|get)(?: me)?(?: my)? (?:finance|money|spending|budget|income|expense)/.test(lowerText)
+                             || lowerText === "finance summary" || lowerText === "my finances";
+    if (financeSummaryMatch) {
+      try {
+        const month = new Date().toISOString().slice(0,7);
+        const inc = (dbGetOne<{n:number}>("SELECT COALESCE(SUM(amount),0) as n FROM transactions WHERE type='income' AND strftime('%Y-%m',date)=?", month) as {n:number}|null)?.n || 0;
+        const exp = (dbGetOne<{n:number}>("SELECT COALESCE(SUM(amount),0) as n FROM transactions WHERE type='expense' AND strftime('%Y-%m',date)=?", month) as {n:number}|null)?.n || 0;
+        if (inc === 0 && exp === 0) {
+          sendReply("No transactions logged this month. Open Finance to import a bank statement or add transactions.");
+        } else {
+          const net = inc - exp;
+          sendReply("Finance this month:\nIncome:   $" + inc.toFixed(2) + "\nExpenses: $" + exp.toFixed(2) + "\nNet:      " + (net >= 0 ? "+" : "") + "$" + net.toFixed(2));
+        }
+      } catch { sendReply("Could not load finance data."); }
+      return;
+    }
+
     // ── "Remember that..." — instant memory save, no AI needed ────────────────
     const rememberMatch = lowerText.match(/^(?:please )?remember(?: that)? (.+)/i);
     if (rememberMatch) {
