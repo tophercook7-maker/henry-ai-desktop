@@ -1604,6 +1604,78 @@ self.addEventListener('fetch', (event) => {
       return;
     }
 
+    // ── Health summary ────────────────────────────────────────────────────────
+    const healthSummaryMatch = /^(?:show|what(?:'s| is| are)?|how much|how many)(?: my)? (?:health|water|steps?|sleep|exercise|calories?|logs?)(?: today| this week)?/.test(lowerText)
+                            || /^(?:health|water|steps?)(?:\s+today)?$/.test(lowerText);
+    if (healthSummaryMatch) {
+      try {
+        const today = new Date().toISOString().slice(0,10);
+        const logs = dbGet<{category:string;label:string;value:number;unit:string}>(
+          "SELECT category, label, value, unit FROM health_logs WHERE date=? ORDER BY created_at DESC",
+          today
+        ) as {category:string;label:string;value:number;unit:string}[];
+        if (!logs.length) {
+          sendReply("No health data logged today yet. Say 'log 8oz water' or 'log 30 min exercise' to track.");
+        } else {
+          // Group by category
+          const grouped: Record<string,string[]> = {};
+          logs.forEach(l => {
+            const cat = l.category || l.label;
+            if (!grouped[cat]) grouped[cat] = [];
+            grouped[cat].push(l.value + (l.unit ? ' ' + l.unit : ''));
+          });
+          const lines = ["Today's health log:\\n"];
+          Object.entries(grouped).forEach(([cat, vals]) => {
+            lines.push('• ' + cat + ': ' + vals.join(', '));
+          });
+          sendReply(lines.join('\n'));
+        }
+      } catch { sendReply('Could not load health data.'); }
+      return;
+    }
+
+    // ── Habit streak / status ─────────────────────────────────────────────────
+    const habitStatusMatch = /^(?:what(?:'s| is)?|show|check)(?: my)? habit(?:s| streak| status)?/.test(lowerText)
+                          || /habit(?:s| streak)?(?:\s+today)?$/.test(lowerText);
+    if (habitStatusMatch) {
+      try {
+        const today = new Date().toISOString().slice(0,10);
+        const habits = dbGet<{id:string;name:string;icon:string;target_per_day:number}>(
+          "SELECT id, name, icon, target_per_day FROM habits WHERE active=1 ORDER BY created_at"
+        ) as {id:string;name:string;icon:string;target_per_day:number}[];
+        const doneLogs = dbGet<{habit_id:string;count:number}>(
+          "SELECT habit_id, count FROM habit_logs WHERE date=?", today
+        ) as {habit_id:string;count:number}[];
+        const doneIds = new Set(doneLogs.map(l => l.habit_id));
+        const done = habits.filter(h => doneIds.has(h.id));
+        const remaining = habits.filter(h => !doneIds.has(h.id));
+        const lines: string[] = [];
+        if (done.length) lines.push('✓ Done today: ' + done.map(h => h.icon + ' ' + h.name).join(', '));
+        if (remaining.length) lines.push('○ Still to do: ' + remaining.map(h => h.icon + ' ' + h.name).join(', '));
+        if (!habits.length) lines.push('No active habits. Add some in the Health panel.');
+        sendReply(lines.join('\n') || 'All habits complete today!');
+      } catch { sendReply('Could not load habits.'); }
+      return;
+    }
+
+    // ── What do you know about me ─────────────────────────────────────────────
+    const aboutMeMatch = /^(?:what do you know about me|what do you remember|tell me about myself|what(?:'s| is) in your memory|my memory|show my memory|what have you learned about me)/.test(lowerText);
+    if (aboutMeMatch) {
+      try {
+        const facts = dbGet<{fact:string;category:string;importance:number}>(
+          "SELECT fact, category, importance FROM memory_facts ORDER BY importance DESC, created_at DESC LIMIT 15"
+        ) as {fact:string;category:string;importance:number}[];
+        if (!facts.length) {
+          sendReply("I don't know much about you yet. Say 'remember that I [fact]' to teach me.");
+        } else {
+          sendReply(facts.length + ' things I know about you:\n\n' +
+            facts.map((f,i) => (i+1) + '. ' + f.fact).join('\n') +
+            '\n\nAdd more by saying "remember that I [fact]".');
+        }
+      } catch { sendReply('Could not read memory.'); }
+      return;
+    }
+
     // ── "Remember that..." — instant memory save, no AI needed ────────────────
     const rememberMatch = lowerText.match(/^(?:please )?remember(?: that)? (.+)/i);
     if (rememberMatch) {
@@ -1670,7 +1742,7 @@ self.addEventListener('fetch', (event) => {
       }
 
       // Disk space
-      if (/disk|storage|free space|how much/.test(t)) {
+      if (/disk|storage|free space|how much.*(?:disk|storage|space|memory|ram)/.test(t)) {
         const out = execSync('df -h / | tail -1', { encoding: 'utf8', timeout: 5000 }) as string;
         const p = out.trim().split(/\s+/);
         return 'Disk: ' + p[1] + ' total, ' + p[3] + ' free (' + p[4] + ' used)';
