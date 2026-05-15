@@ -2275,6 +2275,44 @@ self.addEventListener('fetch', (event) => {
     }
 
 
+    // ── Memory / DB cleanup ──────────────────────────────────────────────────
+    const cleanMemoryMatch = /^(?:clean up|deduplicate|dedup|remove duplicates from)(?: my)? (?:memory|notes|facts|goals|tasks)/.test(lowerText)
+                           || lowerText === 'dedup memory' || lowerText === 'clean memory';
+    if (cleanMemoryMatch) {
+      try {
+        // Deduplicate memory facts (keep oldest by id)
+        dbRun("DELETE FROM memory_facts WHERE id NOT IN (SELECT MIN(id) FROM memory_facts GROUP BY LOWER(TRIM(fact)))");
+        // Deduplicate goals
+        dbRun("DELETE FROM goals WHERE id NOT IN (SELECT MIN(id) FROM goals GROUP BY LOWER(TRIM(title)), status)");
+        // Deduplicate tasks
+        dbRun("DELETE FROM personal_tasks WHERE id NOT IN (SELECT MIN(id) FROM personal_tasks GROUP BY LOWER(TRIM(title)), status)");
+        const facts = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM memory_facts") as {n:number}|null)?.n || 0;
+        const goals = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM goals WHERE status='active'") as {n:number}|null)?.n || 0;
+        const tasks = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM personal_tasks WHERE status!='done'") as {n:number}|null)?.n || 0;
+        sendReply("Cleanup complete.\n\n• " + facts + " unique memory facts\n• " + goals + " active goals\n• " + tasks + " open tasks\n\nDuplicates removed.");
+      } catch (e) { sendReply("Could not run cleanup: " + e); }
+      return;
+    }
+
+    // ── Delete a memory fact ───────────────────────────────────────────────────
+    const deleteMemMatch = lowerText.match(/^(?:delete|remove|forget)(?: that)?(?: (?:memory|note|fact))?[:\s]+(.+)/i)
+                        || lowerText.match(/^forget (?:that )?(?:i )?(.+)/i);
+    if (deleteMemMatch) {
+      const hint = deleteMemMatch[1].trim().toLowerCase();
+      if (hint.length > 3 && !['a', 'an', 'the', 'my'].includes(hint)) {
+        try {
+          const fact = dbGetOne<{id:string;fact:string}>(
+            "SELECT id, fact FROM memory_facts WHERE LOWER(fact) LIKE ? ORDER BY importance DESC LIMIT 1",
+            '%' + hint + '%'
+          ) as {id:string;fact:string}|null;
+          if (!fact) { sendReply("No memory found matching: " + hint); return; }
+          dbRun("DELETE FROM memory_facts WHERE id=?", fact.id);
+          sendReply("Forgotten: \"" + fact.fact + "\"");
+        } catch (e) { sendReply("Could not delete memory: " + e); }
+        return;
+      }
+    }
+
     // ── "Remember that..." — instant memory save, no AI needed ────────────────
     const rememberMatch = lowerText.match(/^(?:please )?remember(?: that)? (.+)/i);
     if (rememberMatch) {
