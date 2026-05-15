@@ -1572,6 +1572,17 @@ self.addEventListener('fetch', (event) => {
     // "what tasks do i have" / "show my tasks" / "list my tasks"
     const listTasksMatch = /^(?:what|show|list|get)(?: tasks?| my tasks?| my open tasks?| open tasks?| all tasks?| todo(?:s)?)/.test(lowerText)
                         || lowerText === 'tasks' || lowerText === 'my tasks' || lowerText === 'open tasks';
+    // Separate: count of DONE tasks
+    const countDoneTasksMatch = /^how many tasks(?: are| have i)?(?: completed?| done| finished)/.test(lowerText)
+                              || lowerText === 'how many tasks done' || lowerText === 'tasks completed';
+    if (countDoneTasksMatch) {
+      try {
+        const n = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM personal_tasks WHERE status='done'") as {n:number}|null)?.n || 0;
+        const t = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM personal_tasks") as {n:number}|null)?.n || 0;
+        sendReply(n + " of " + t + " task" + (t !== 1 ? "s" : "") + " completed.");
+      } catch { sendReply("Could not count completed tasks."); }
+      return;
+    }
     if (listTasksMatch) {
       try {
         const tasks = dbGet<{title:string;status:string}>(
@@ -1754,6 +1765,17 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Habit streak / status ─────────────────────────────────────────────────
+    // Habit count ("how many habits done today") - separate from status list
+    if (/^how many habits(?: (?:have i|did i|are))? (?:done|completed?|finished?)(?: today)?$/.test(lowerText)) {
+      try {
+        const today = new Date().toISOString().slice(0,10);
+        const done = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM habit_logs WHERE date=?", today) as {n:number}|null)?.n || 0;
+        const total = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM habits WHERE active=1") as {n:number}|null)?.n || 0;
+        sendReply(done + "/" + total + " habit" + (total !== 1 ? "s" : "") + " completed today.");
+      } catch { sendReply("Could not count habits."); }
+      return;
+    }
+
     const habitStatusMatch = /^(?:what(?:'s| is)?|show|check)(?: my)? habit(?:s| streak| status)?/.test(lowerText)
                           || /habit(?:s| streak)?(?:\s+today)?$/.test(lowerText);
     if (habitStatusMatch) {
@@ -2188,7 +2210,9 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Update task status / priority ─────────────────────────────────────────
-    const updateTaskMatch = lowerText.match(/^(?:update|change|set|move) task[:\s]+(.+?) to (todo|doing|done|high|low|medium|med)/i);
+    const updateTaskMatch = lowerText.match(/^(?:update|change|set|move) task[:\s]+(.+?) to (todo|doing|done|high|low|medium|med)/i)
+                        || lowerText.match(/^mark task[:\s]+(.+) (?:as )?(done|complete|todo|doing)/i)
+                        || lowerText.match(/^(?:task[:\s]+)(.+) (?:is |→ ?|-> ?)(done|todo|doing)/i);
     if (updateTaskMatch) {
       const hint = updateTaskMatch[1].trim();
       const newVal = updateTaskMatch[2].toLowerCase();
@@ -2370,6 +2394,28 @@ self.addEventListener('fetch', (event) => {
           sendReply("Got it — " + qty + " order" + (qty > 1 ? 's' : '') + " completed" + (desc ? ': ' + desc : '') + ". How much did you charge? Say 'log revenue $X' to add the income.");
         }
       } catch { sendReply("Noted! Open Maker Studio to log the full job details."); }
+      return;
+    }
+
+    // ── End of day summary ───────────────────────────────────────────────────
+    const eodMatch = /^(?:end of day|eod|day summary|daily summary|wrap up|wrap up my day|what did i do today)/.test(lowerText);
+    if (eodMatch) {
+      try {
+        const today = new Date().toISOString().slice(0,10);
+        const doneTasks = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM personal_tasks WHERE status='done' AND completed_at >= ?", today + 'T00:00:00.000Z') as {n:number}|null)?.n || 0;
+        const habitsDone = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM habit_logs WHERE date=?", today) as {n:number}|null)?.n || 0;
+        const activeHabits = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM habits WHERE active=1") as {n:number}|null)?.n || 0;
+        const healthLogs = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM health_logs WHERE date=?", today) as {n:number}|null)?.n || 0;
+        const journalToday = dbGetOne<{content:string}>("SELECT content FROM journal_entries WHERE date=? LIMIT 1", today) as {content:string}|null;
+        const openTasks = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM personal_tasks WHERE status!='done'") as {n:number}|null)?.n || 0;
+        const lines = ["Today's wrap-up:\n"];
+        lines.push("✓ Tasks completed: " + doneTasks + (openTasks > 0 ? " (" + openTasks + " still open)" : " — all done!"));
+        lines.push("○ Habits: " + habitsDone + "/" + activeHabits + " completed");
+        lines.push("❤️ Health logs: " + healthLogs);
+        if (journalToday) lines.push("📔 Journaled: " + journalToday.content.slice(0,40) + (journalToday.content.length > 40 ? '…' : ''));
+        lines.push("\nGood work today, Topher!");
+        sendReply(lines.join("\n"));
+      } catch { sendReply("Good work today! Could not load full summary."); }
       return;
     }
 
