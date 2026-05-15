@@ -1301,6 +1301,24 @@ self.addEventListener('fetch', (event) => {
 
     // ── Knowledge router — instant answers, no AI needed ─────────────────────
     const lowerText = resolvedText.toLowerCase().trim();
+
+    // ── Implicit task creation: "I need to X" / "I should X" ──────────────────
+    const implicitTaskRx = lowerText.match(/^i (?:need to|should|have to|must|gotta)(?: still)? (.+?)(?:\s+today)?$/i);
+    const implicitTaskGuard = /^i (?:need to|should|have to) (remember|note|write|journal|pray|exercise|read|drink|sleep)/.test(lowerText);
+    const implicitTaskMatch = implicitTaskRx && !implicitTaskGuard ? implicitTaskRx : null;
+    if (implicitTaskMatch && implicitTaskMatch[1] && implicitTaskMatch[1].length > 3) {
+      const title = implicitTaskMatch[1].trim();
+      const habitWords = ['prayer','pray','bible','exercise','water','journal'];
+      if (!habitWords.some(h => title.toLowerCase().includes(h))) {
+        try {
+          const id = require('crypto').randomUUID();
+          dbRun("INSERT INTO personal_tasks (id,title,status,priority,created_at) VALUES (?,?,?,?,?)",
+            id, title, 'todo', 2, new Date().toISOString());
+          sendReply('Task saved: "' + title + '"\n\nSay "what tasks do I have" to see your list.');
+        } catch (e) { sendReply('Could not save task: ' + e); }
+        return;
+      }
+    }
     const knowledgeAnswer = (() => {
       if ((/^(what can you do|help me$|give me a tour|show me what you can do|overview of henry|what do you do)/.test(lowerText)) || lowerText === 'help') {
         return `Here's everything I can do:\n\n` +
@@ -1963,18 +1981,30 @@ self.addEventListener('fetch', (event) => {
         const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate()-7);
         const weekAgoStr = weekAgo.toISOString().slice(0,10);
         const today = new Date().toISOString().slice(0,10);
-
-        const tasksDone = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM personal_tasks WHERE status='done' AND completed_at >= ?", weekAgoStr) as {n:number}|null)?.n || 0;
-        const habitsTotal = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM habit_logs WHERE date >= ?", weekAgoStr) as {n:number}|null)?.n || 0;
-        const jnlEntries = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM journal_entries WHERE date >= ?", weekAgoStr) as {n:number}|null)?.n || 0;
-        const goalsActive = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM goals WHERE status!='done'") as {n:number}|null)?.n || 0;
         const habitCount = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM habits WHERE active=1") as {n:number}|null)?.n || 0;
 
-        const lines = ['Your week at a glance:\n'];
-        lines.push('✓ Tasks completed: ' + tasksDone);
-        lines.push('🔥 Habit check-ins: ' + habitsTotal + (habitCount ? ' (out of ' + (habitCount * 7) + ' possible)' : ''));
-        lines.push('📔 Journal entries: ' + jnlEntries);
-        lines.push('◎ Active goals: ' + goalsActive);
+        const tasksDone = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM personal_tasks WHERE status='done' AND completed_at >= ?", weekAgoStr) as {n:number}|null)?.n || 0;
+        const tasksOpen = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM personal_tasks WHERE status!='done'") as {n:number}|null)?.n || 0;
+        const habitsTotal = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM habit_logs WHERE date >= ?", weekAgoStr) as {n:number}|null)?.n || 0;
+        const habitPossible = habitCount * 7;
+        const habitPct = habitPossible > 0 ? Math.round((habitsTotal / habitPossible) * 100) : 0;
+        const jnlEntries = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM journal_entries WHERE date >= ?", weekAgoStr) as {n:number}|null)?.n || 0;
+        const goalsActive = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM goals WHERE status='active'") as {n:number}|null)?.n || 0;
+        const revenue = (dbGetOne<{n:number}>("SELECT COALESCE(SUM(amount),0) as n FROM transactions WHERE type='income' AND date >= ?", weekAgoStr) as {n:number}|null)?.n || 0;
+        const prayerCount = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM prayer_requests WHERE status='active'") as {n:number}|null)?.n || 0;
+
+        const lines = ['Your week (last 7 days):\n'];
+        lines.push('✓ Tasks done:    ' + tasksDone + (tasksOpen > 0 ? '  (' + tasksOpen + ' still open)' : ''));
+        lines.push('🔥 Habits:       ' + habitsTotal + '/' + habitPossible + ' check-ins (' + habitPct + '%)');
+        lines.push('📔 Journal:      ' + jnlEntries + ' entr' + (jnlEntries === 1 ? 'y' : 'ies'));
+        lines.push('◎ Active goals:  ' + goalsActive);
+        if (revenue > 0) lines.push('💰 Revenue:      $' + revenue.toFixed(2));
+        if (prayerCount > 0) lines.push('🙏 Prayers:      ' + prayerCount + ' active request' + (prayerCount === 1 ? '' : 's'));
+
+        // Encouragement based on habit rate
+        if (habitPct >= 80) lines.push('\n🎉 Excellent week — ' + habitPct + '% habit consistency!');
+        else if (habitPct >= 50) lines.push('\nGood progress this week. Keep the habits going!');
+        else if (habitPct < 30 && habitCount > 0) lines.push('\nHabit consistency was low this week. Tomorrow is a fresh start!');
         sendReply(lines.join('\n'));
       } catch { sendReply('Could not generate weekly summary.'); }
       return;
@@ -1998,7 +2028,8 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Schedule today ────────────────────────────────────────────────────────
-    const scheduleMatch = /^(?:what.?s on my schedule|schedule(?:\s+for)?\s+today|today.?s schedule|what do i have today|what.?s today)/.test(lowerText);
+    const scheduleMatch = /^(?:what.?s on my schedule|schedule(?:\s+for)?\s+today|today.?s schedule|what do i have today|what.?s today|today)/.test(lowerText)
+                       || lowerText === 'today';
     if (scheduleMatch) {
       try {
         const today = new Date().toISOString().slice(0,10);
@@ -2401,7 +2432,7 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── End of day summary ───────────────────────────────────────────────────
-    const eodMatch = /^(?:end of day|eod|day summary|daily summary|wrap up|wrap up my day|what did i do today)/.test(lowerText);
+    const eodMatch = /^(?:end of day|eod|day summary|daily summary|wrap up|wrap up my day|what did i do today|what did i accomplish today|what have i done today|how did my day go)/.test(lowerText);
     if (eodMatch) {
       try {
         const today = new Date().toISOString().slice(0,10);
