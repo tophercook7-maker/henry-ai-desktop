@@ -1483,10 +1483,12 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Add goal ──────────────────────────────────────────────────────────────
-    const addGoalMatch = lowerText.match(/^(?:add|create|new) (?:a )?goal[:\s]+(.+)/i)
+    const addGoalMatch = lowerText.match(/^(?:add|create|new|set) (?:a )?goal[:\s]+(.+)/i)
                       || lowerText.match(/^goal[:\s]+(.+)/i);
     if (addGoalMatch) {
-      const title = resolvedText.replace(/^(?:add|create|new) (?:a )?goal[:\s]+/i,'').replace(/^goal[:\s]+/i,'').trim();
+      const title = resolvedText
+        .replace(/^(?:add|create|new|set) (?:a )?goal[:\s]+/i,'')
+        .replace(/^goal[:\s]+/i,'').trim();
       if (title.length > 1) {
         try {
           const id = require('crypto').randomUUID();
@@ -2156,8 +2158,8 @@ self.addEventListener('fetch', (event) => {
       }
     }
 
-    const showPrayerMatch = /^(?:show|list|what are|get)(?: my)? prayer(?: requests?)?/.test(lowerText)
-                         || lowerText === 'prayer requests' || lowerText === 'my prayers';
+    const showPrayerMatch = /^(?:show|list|what are|get|read)(?: me)?(?: my)? prayer(?: requests?| list)?/.test(lowerText)
+                         || lowerText === 'prayer requests' || lowerText === 'my prayers' || lowerText === 'prayer list';
     if (showPrayerMatch) {
       try {
         const reqs = dbGet<{title:string;body:string;status:string}>(
@@ -2311,6 +2313,64 @@ self.addEventListener('fetch', (event) => {
         } catch (e) { sendReply("Could not delete memory: " + e); }
         return;
       }
+    }
+
+    // ── Pause/activate habit ─────────────────────────────────────────────────
+    const pauseHabitMatch = lowerText.match(/^(?:turn off|disable|pause|deactivate|stop tracking)(?: habit)?[:\s]+(.+)/i)
+                         || lowerText.match(/^(?:pause|disable) (.+) habit$/i);
+    if (pauseHabitMatch) {
+      const hint = (pauseHabitMatch[1] || '').trim().toLowerCase();
+      if (hint.length > 1) {
+        try {
+          const habit = dbGetOne<{id:string;name:string;active:number}>(
+            "SELECT id, name, active FROM habits WHERE LOWER(name) LIKE ? LIMIT 1",
+            '%' + hint + '%'
+          ) as {id:string;name:string;active:number}|null;
+          if (!habit) { sendReply("Could not find a habit matching: " + hint); return; }
+          dbRun("UPDATE habits SET active=0 WHERE id=?", habit.id);
+          sendReply("Paused habit: \"" + habit.name + "\"\n\nIt won't appear in your daily list. Say \"enable habit: " + habit.name + "\" to turn it back on.");
+        } catch (e) { sendReply("Could not pause habit: " + e); }
+        return;
+      }
+    }
+
+    const enableHabitMatch = lowerText.match(/^(?:turn on|enable|activate|resume|restart)(?: habit)?[:\s]+(.+)/i);
+    if (enableHabitMatch) {
+      const hint = (enableHabitMatch[1] || '').trim().toLowerCase();
+      try {
+        const habit = dbGetOne<{id:string;name:string}>(
+          "SELECT id, name FROM habits WHERE LOWER(name) LIKE ? LIMIT 1",
+          '%' + hint + '%'
+        ) as {id:string;name:string}|null;
+        if (!habit) { sendReply("Could not find a habit matching: " + hint); return; }
+        dbRun("UPDATE habits SET active=1 WHERE id=?", habit.id);
+        sendReply("Resumed habit: \"" + habit.name + "\" — it will appear in your daily list again.");
+      } catch (e) { sendReply("Could not enable habit: " + e); }
+      return;
+    }
+
+    // ── Log a production job (Maker Studio quick log) ─────────────────────────
+    // Match: "I made 5 signs" / "I completed 3 orders for $450" / "I delivered 2 boards"
+    const jobLogMatch = lowerText.match(/^i (?:made|completed|finished|sold|delivered|produced|cut|engraved)(?: (\d+))?(?:\s+\w+)? (?:orders?|jobs?|signs?|pieces?|items?|boards?|plaques?|trays?|coasters?)/i)
+                     || lowerText.match(/^i (?:made|completed|finished|sold|delivered|produced)(?: (\d+))?(?:\s+\w+)? (?:orders?|jobs?|signs?|pieces?|items?|boards?|plaques?|trays?|coasters?)(?:\s+today)?/i);
+    const jobQty = jobLogMatch ? (parseInt(lowerText.match(/(\d+)/)?.[1] || '1') || 1) : 0;
+    const jobRevMatch = jobLogMatch ? lowerText.match(/(?:for|at|worth)\s*\$?([\d.]+)/) : null;
+    if (jobLogMatch) {
+      const qty = jobQty;
+      const desc = '';
+      const revenue = parseFloat(jobRevMatch?.[1] || '0') || 0;
+      try {
+        const today = new Date().toISOString().slice(0,10);
+        const id = require('crypto').randomUUID();
+        if (revenue > 0) {
+          dbRun("INSERT INTO production_runs (id,title,quantity,revenue,date,created_at) VALUES (?,?,?,?,?,?) ON CONFLICT DO NOTHING",
+            id, desc || 'Custom order', qty, revenue, today, new Date().toISOString());
+          sendReply("Logged " + qty + " order" + (qty > 1 ? 's' : '') + " for $" + revenue.toFixed(2) + " in Maker Studio.");
+        } else {
+          sendReply("Got it — " + qty + " order" + (qty > 1 ? 's' : '') + " completed" + (desc ? ': ' + desc : '') + ". How much did you charge? Say 'log revenue $X' to add the income.");
+        }
+      } catch { sendReply("Noted! Open Maker Studio to log the full job details."); }
+      return;
     }
 
     // ── "Remember that..." — instant memory save, no AI needed ────────────────
