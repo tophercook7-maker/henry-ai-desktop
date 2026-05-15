@@ -1360,7 +1360,7 @@ self.addEventListener('fetch', (event) => {
         lines.push('\nAsk me "give me tips" to get the most out of what I can do.');
         return lines.join('\n');
       }
-      if (/^(what (keyboard )?shortcuts|hotkey|how do i open henry|⌥.?space)/.test(lowerText)) {
+      if (/^(shortcuts?|what (keyboard )?shortcuts?|hotkey|how do i open henry|⌥.?space)/.test(lowerText)) {
         return `**Henry shortcuts:**\n\n` +
           `• **⌥Space** — Open Henry from anywhere on your Mac. Select text first and it's already pasted in.\n` +
           `• **⌘⇧H** — Open Henry's full window\n` +
@@ -2172,6 +2172,57 @@ self.addEventListener('fetch', (event) => {
         } catch (e) { sendReply("Could not save note: " + e); }
         return;
       }
+    }
+
+    // ── Morning routine ──────────────────────────────────────────────────────
+    const morningMatch = /^(?:morning routine|morning brief|start my day|good morning henry|what.*morning routine)/.test(lowerText);
+    if (morningMatch) {
+      try {
+        const today = new Date().toISOString().slice(0,10);
+        const now = new Date();
+        const dayName = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][now.getDay()];
+        const month = ['January','February','March','April','May','June','July','August','September','October','November','December'][now.getMonth()];
+
+        const tasks = dbGet<{title:string}>(
+          "SELECT title FROM personal_tasks WHERE status!='done' ORDER BY priority DESC, created_at ASC LIMIT 3"
+        ) as {title:string}[];
+        const rems = dbGet<{title:string;due_at:string}>(
+          "SELECT title, due_at FROM reminders WHERE done=0 ORDER BY due_at ASC LIMIT 3"
+        ) as {title:string;due_at:string}[];
+        const habits = dbGet<{name:string;icon:string}>(
+          "SELECT h.name, h.icon FROM habits h WHERE h.active=1 AND h.id NOT IN (SELECT habit_id FROM habit_logs WHERE date=?) ORDER BY h.created_at ASC",
+          today
+        ) as {name:string;icon:string}[];
+        const goals = dbGet<{title:string}>(
+          "SELECT title FROM goals WHERE status!='done' ORDER BY priority_score DESC LIMIT 2"
+        ) as {title:string}[];
+        const pray = dbGet<{title:string}>(
+          "SELECT title FROM prayer_requests WHERE status='active' ORDER BY created_at DESC LIMIT 2"
+        ) as {title:string}[];
+
+        const lines = [`Good morning, Topher! ${dayName}, ${month} ${now.getDate()}.\n`];
+        if (rems.length) lines.push('⏰ Reminders: ' + rems.map(r => r.title).join(', '));
+        if (habits.length) lines.push('○ Habits to do: ' + habits.map(h => h.icon + ' ' + h.name).join(', '));
+        if (tasks.length) lines.push('✓ Top tasks: ' + tasks.map(t => t.title).join(', '));
+        if (goals.length) lines.push('◎ Active goals: ' + goals.map(g => g.title).join(', '));
+        if (pray.length) lines.push('🙏 Prayer requests: ' + pray.map(p => p.title).join(', '));
+        lines.push('\nHave a great day!');
+        sendReply(lines.join('\n'));
+      } catch { sendReply('Good morning, Topher! Could not load your full brief right now.'); }
+      return;
+    }
+
+    // ── Bible download trigger ────────────────────────────────────────────────
+    const bibleDownloadMatch = /^(?:download|install|get|import)(?: the)?(?: kjv| bible| scripture| kjv bible)/.test(lowerText)
+                             || lowerText === 'download bible' || lowerText === 'install bible' || lowerText === 'get the bible';
+    if (bibleDownloadMatch) {
+      const count = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM scripture_entries") as {n:number}|null)?.n || 0;
+      if (count > 0) {
+        sendReply('The KJV Bible is already downloaded — ' + count.toLocaleString() + ' verses ready. Try "find a verse about hope" or "John 3:16".');
+      } else {
+        sendReply('To download the KJV Bible:\n\n1. Open Henry on your Mac\n2. Click **Scripture** in the left sidebar\n3. Click **⬇ Download KJV Free** (about 3MB)\n4. All 31,102 verses will be available instantly in Henry and on your phone.\n\nThe download takes about 10 seconds on a normal connection.');
+      }
+      return;
     }
 
     // ── "Remember that..." — instant memory save, no AI needed ────────────────
