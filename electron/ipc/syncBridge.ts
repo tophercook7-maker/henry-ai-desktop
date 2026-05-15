@@ -1595,10 +1595,46 @@ self.addEventListener('fetch', (event) => {
     }
 
     // "what tasks do i have" / "show my tasks" / "list my tasks"
+    // ── Overdue tasks ─────────────────────────────────────────────────────────
+    const overdueMatch = /^(?:what(?:'s| is)(?: my)?(?: overdue| past due|overdue)|show(?: my)? overdue|list overdue|overdue tasks?)/.test(lowerText)
+                      || lowerText === "overdue" || lowerText === "what's overdue";
+    if (overdueMatch) {
+      try {
+        const now = new Date().toISOString();
+        const overdue = dbGet<{title:string;due_at:string}>(
+          "SELECT title, due_at FROM personal_tasks WHERE status!='done' AND due_at IS NOT NULL AND due_at < ? ORDER BY due_at ASC LIMIT 10",
+          now
+        ) as {title:string;due_at:string}[];
+        if (!overdue.length) {
+          sendReply("No overdue tasks. You're on top of things!");
+        } else {
+          sendReply(overdue.length + " overdue task" + (overdue.length > 1 ? "s" : "") + ":\n\n" +
+            overdue.map((t,i) => (i+1) + ". " + t.title).join("\n"));
+        }
+      } catch { sendReply("Could not check overdue tasks."); }
+      return;
+    }
+
     const listTasksMatch = /^(?:what|show|list|get|how many)(?: tasks?| my tasks?| my open tasks?| open tasks?| all tasks?| todo(?:s)?)/.test(lowerText)
                         || lowerText === 'tasks' || lowerText === 'my tasks' || lowerText === 'open tasks'
                         || /^how many (?:open |active )?tasks/.test(lowerText);
-    // Separate: count of DONE tasks
+    // Separate: count of DONE tasks + list done today
+    const doneTodayMatch = /^(?:what(?: tasks?)? did i (?:complet|finish)|what tasks.*(?:today|done|complet)|tasks? done today|completed today)/.test(lowerText)
+                        || lowerText === 'tasks done today' || lowerText === 'completed today';
+    if (doneTodayMatch) {
+      try {
+        const today = new Date().toISOString().slice(0,10);
+        const done = dbGet<{title:string}>(
+          "SELECT title FROM personal_tasks WHERE status='done' AND completed_at >= ? ORDER BY completed_at DESC LIMIT 10",
+          today + 'T00:00:00.000Z'
+        ) as {title:string}[];
+        if (!done.length) sendReply("No tasks completed yet today. Keep going!");
+        else sendReply(done.length + " task" + (done.length > 1 ? "s" : "") + " completed today:\n\n" +
+          done.map((t,i) => (i+1) + ". " + t.title).join("\n"));
+      } catch { sendReply("Could not load completed tasks."); }
+      return;
+    }
+
     const countDoneTasksMatch = /^how many tasks(?: are| have i)?(?: completed?| done| finished)/.test(lowerText)
                               || lowerText === 'how many tasks done' || lowerText === 'tasks completed';
     if (countDoneTasksMatch) {
@@ -2519,6 +2555,30 @@ self.addEventListener('fetch', (event) => {
         } catch (e) { sendReply("Could not log revenue. Open Finance panel to add manually."); }
         return;
       }
+    }
+
+    // ── Missed habit acknowledgement ────────────────────────────────────────────
+    const missedHabitMatch = lowerText.match(/^i (?:missed|skipped|didn'?t do|forgot)(?: my)? (.+?)(?:\s+today)?$/i);
+    if (missedHabitMatch) {
+      const what = (missedHabitMatch[1] || '').trim().toLowerCase();
+      const habitWords = ['prayer','pray','bible','exercise','water','journal','habit'];
+      if (habitWords.some(h => what.includes(h))) {
+        sendReply("That's okay — grace for today. Tomorrow is a fresh start. 🙏\n\nIf you want to mark it done anyway, say \"mark " + what + " done\".");
+        return;
+      }
+    }
+
+    // ── Clear done tasks ─────────────────────────────────────────────────────
+    const clearDoneMatch = /^(?:clear|archive|remove|clean up)(?: all)?(?: my)?(?: done| completed| finished)(?: tasks?)?$/.test(lowerText)
+                        || lowerText === 'clear completed' || lowerText === 'clear done' || lowerText === 'archive done tasks';
+    if (clearDoneMatch) {
+      try {
+        const n = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM personal_tasks WHERE status='done'") as {n:number}|null)?.n || 0;
+        if (!n) { sendReply("No completed tasks to clear."); return; }
+        dbRun("DELETE FROM personal_tasks WHERE status='done'");
+        sendReply("Cleared " + n + " completed task" + (n !== 1 ? "s" : "") + ". Your list is clean.");
+      } catch (e) { sendReply("Could not clear tasks: " + e); }
+      return;
     }
 
     // ── "Remember that..." — instant memory save, no AI needed ────────────────
