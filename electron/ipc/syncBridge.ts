@@ -1462,7 +1462,8 @@ self.addEventListener('fetch', (event) => {
 
     // ── Goals list ────────────────────────────────────────────────────────────
     const listGoalsMatch = /^(?:what|show|list|get|how many)(?: goals?| my goals?| active goals?)/.test(lowerText)
-                        || lowerText === 'goals' || lowerText === 'my goals'
+                        || /^what.?s my (?:top|most important|main|biggest)(?: goal)?/.test(lowerText)
+                        || lowerText === 'goals' || lowerText === 'my goals' || lowerText === 'top goal'
                         || /^how many goals/.test(lowerText);
     if (listGoalsMatch) {
       try {
@@ -1614,7 +1615,7 @@ self.addEventListener('fetch', (event) => {
     const habitDoneMatch = lowerText.match(/^(?:done|completed?|finished?|mark(?:ed)? done|checked?)(?: my)?(?: habit[:\s]+)?(.+)/i)
                         || lowerText.match(/^(.+)(?: habit)? (?:done|completed|finished)$/i)
                         || lowerText.match(/^i (?:finished|completed|did)(?: my)? (.+?)(?:\s+today)?$/i)
-                        || lowerText.match(/^i (?:prayed|exercised|worked out|read(?:\s+my bible)?|journaled|drank)(?: my)?(?: water)?(?:\s+today)?$/i)
+                        || lowerText.match(/^i (?:prayed|exercised|worked out|read(?:\s+my bible)?|journaled|drank)(?: my)?(?: water)?(?:\s+(?:today|this morning|this evening|earlier|already))?$/i)
                         || (hasHabitKeyword && lowerText.match(/^(?:mark|mark done)(?: my)?(?: (?:read|morning|daily))? ?(?:bible|prayer|exercise|water|journal)(?: done)?$/i));
     if (habitDoneMatch) {
       // Extract hint from whichever capture group matched, strip "with " prefix
@@ -1623,17 +1624,20 @@ self.addEventListener('fetch', (event) => {
       // Map natural words to habit name fragments
       const activityMap: Record<string,string> = {
         'praying': 'prayer', 'prayed': 'prayer', 'prayer': 'prayer',
-        'bible': 'bible', 'exercising': 'exercise', 'exercised': 'exercise',
-        'water': 'water', 'journaled': 'journal', 'journaling': 'journal',
+        'bible': 'bible', 'read': 'bible',
+        'exercising': 'exercise', 'exercised': 'exercise', 'exercise': 'exercise',
+        'water': 'water', 'drank': 'water', 'drunk': 'water', 'drinking': 'water',
+        'journaled': 'journal', 'journaling': 'journal', 'journal': 'journal',
         'worked out': 'exercise', 'ran': 'exercise',
       };
       hint = activityMap[hint] || hint;
-      // Extract activity keyword from lowerText when no capture group
+      // Extract activity keyword from lowerText - check water FIRST before exercise
       if (!hint || hint.length < 2) {
-        const acts = ['prayer','bible','exercise','water','journal'];
-        for (const act of acts) { if (lowerText.includes(act)) { hint = act; break; } }
-        if (!hint && lowerText.includes('pray')) hint = 'prayer';
-        if (!hint && lowerText.includes('exercis') || lowerText.includes('work out') || lowerText.includes('ran')) hint = 'exercise';
+        if (lowerText.includes('water') || lowerText.includes('drank') || lowerText.includes('drunk')) hint = 'water';
+        else if (lowerText.includes('prayer') || lowerText.includes('pray')) hint = 'prayer';
+        else if (lowerText.includes('bible') || lowerText.includes('scripture') || lowerText.includes('read bible')) hint = 'bible';
+        else if (lowerText.includes('journal')) hint = 'journal';
+        else if (lowerText.includes('exercis') || lowerText.includes('work out') || lowerText.includes('ran')) hint = 'exercise';
       }
       // Only fire if hint matches a real habit name
       const matchedHabit = hint.length > 1 ? dbGetOne<{id:string;name:string}>(
@@ -1788,6 +1792,51 @@ self.addEventListener('fetch', (event) => {
       } catch { sendReply('Could not read memory.'); }
       return;
     }
+
+    // ── Bulk operations ────────────────────────────────────────────────────────
+    const clearDoneTasksMatch = /^(?:clear|remove|delete|archive)(?: all)?(?: my)?(?: completed| done| finished)(?: tasks?)?$/.test(lowerText)
+                              || lowerText === 'clear completed' || lowerText === 'clear done tasks';
+    if (clearDoneTasksMatch) {
+      try {
+        const count = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM personal_tasks WHERE status='done'") as {n:number}|null)?.n || 0;
+        if (count === 0) { sendReply("No completed tasks to clear."); return; }
+        dbRun("DELETE FROM personal_tasks WHERE status='done'");
+        sendReply("Cleared " + count + " completed task" + (count !== 1 ? 's' : '') + ".");
+      } catch (e) { sendReply("Could not clear tasks: " + e); }
+      return;
+    }
+
+    const archiveDoneGoalsMatch = /^(?:archive|clear)(?: all)?(?: my)?(?: completed| done| finished)(?: goals?)?$/.test(lowerText)
+                                || lowerText === 'archive done goals' || lowerText === 'clear done goals';
+    if (archiveDoneGoalsMatch) {
+      try {
+        const count = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM goals WHERE status='done'") as {n:number}|null)?.n || 0;
+        if (count === 0) { sendReply("No completed goals to archive."); return; }
+        dbRun("UPDATE goals SET status='archived',updated_at=? WHERE status='done'", new Date().toISOString());
+        sendReply("Archived " + count + " completed goal" + (count !== 1 ? 's' : '') + ".");
+      } catch (e) { sendReply("Could not archive goals: " + e); }
+      return;
+    }
+
+    // ── Search memory / notes ─────────────────────────────────────────────────
+    const searchMemoryMatch = lowerText.match(/^(?:what did i (?:note|write|say|record|save) about|find.*note.*about|search.*memory.*for|what do you know about)\s+(.+)/i);
+    if (searchMemoryMatch) {
+      const keyword = searchMemoryMatch[1].trim().toLowerCase();
+      try {
+        const results = dbGet<{fact:string;category:string}>(
+          "SELECT fact, category FROM memory_facts WHERE LOWER(fact) LIKE ? ORDER BY importance DESC, created_at DESC LIMIT 5",
+          '%' + keyword + '%'
+        ) as {fact:string;category:string}[];
+        if (!results.length) {
+          sendReply('Nothing in memory about "' + keyword + '". Say "remember that I [fact]" to save something.');
+        } else {
+          sendReply('Found ' + results.length + ' memory item' + (results.length > 1 ? 's' : '') + ' about "' + keyword + '":\n\n' +
+            results.map((r,i) => (i+1) + '. ' + r.fact).join('\n'));
+        }
+      } catch { sendReply('Could not search memory.'); }
+      return;
+    }
+
 
     // ── Delete task ──────────────────────────────────────────────────────────
     const deleteTaskMatch = lowerText.match(/^(?:delete|remove|cancel)(?: a)? task[:\s]+(.+)/i)
@@ -2224,6 +2273,7 @@ self.addEventListener('fetch', (event) => {
       }
       return;
     }
+
 
     // ── "Remember that..." — instant memory save, no AI needed ────────────────
     const rememberMatch = lowerText.match(/^(?:please )?remember(?: that)? (.+)/i);
