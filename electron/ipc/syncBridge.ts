@@ -1403,6 +1403,29 @@ self.addEventListener('fetch', (event) => {
       return;
     }
 
+    // ── Habit fast-path: intercept "mark X done" before task handler ──────────
+    {
+      const hkws = ['prayer','praying','bible','exercise','journal','water'];
+      const hasHKW = hkws.some(k => lowerText.includes(k));
+      if (hasHKW && /^(?:mark|done|check|finish|complete)/.test(lowerText)) {
+        let hk = hkws.find(k => lowerText.includes(k)) || '';
+        if (hk === 'praying') hk = 'prayer';
+        const fh = hk ? dbGetOne<{id:string;name:string}>(
+          "SELECT id, name FROM habits WHERE active=1 AND LOWER(name) LIKE ? LIMIT 1", '%'+hk+'%'
+        ) as {id:string;name:string}|null : null;
+        if (fh) {
+          const td = new Date().toISOString().slice(0,10);
+          try {
+            const ex = dbGetOne<{id:string}>("SELECT id FROM habit_logs WHERE habit_id=? AND date=?", fh.id, td);
+            if (!ex) dbRun("INSERT INTO habit_logs (id,habit_id,date,count,created_at) VALUES (?,?,?,?,?)",
+              require('crypto').randomUUID(), fh.id, td, 1, new Date().toISOString());
+            sendReply('\u2713 ' + fh.name + ' marked done for today.');
+          } catch { sendReply('Could not update habit.'); }
+          return;
+        }
+      }
+    }
+
     // ── Complete / done task ──────────────────────────────────────────────────
     const completeTaskMatch = lowerText.match(/^(?:complete|finish|done|mark done|check off)(?: my)?(?: first| last| top)? task[:\s]*(.*)$/i)
                            || lowerText.match(/^(?:mark|complete|finish)(?: task)?[:\s]+(.+)(?: as)? done$/i);
@@ -1416,6 +1439,7 @@ self.addEventListener('fetch', (event) => {
             '%' + hint + '%'
           );
         }
+        if (!task && hint) { sendReply("Could not find an open task matching: " + hint); return; }
         if (!task) {
           task = dbGetOne<{id:string;title:string}>(
             "SELECT id, title FROM personal_tasks WHERE status!='done' ORDER BY created_at ASC LIMIT 1"
@@ -1575,10 +1599,14 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Toggle habit done ─────────────────────────────────────────────────────
+    // Check for explicit habit keywords FIRST to prevent task handler stealing them
+    const knownHabitKeywords = ['prayer','praying','bible','exercise','exercised','water','journal','journaled'];
+    const hasHabitKeyword = knownHabitKeywords.some(k => lowerText.includes(k));
     const habitDoneMatch = lowerText.match(/^(?:done|completed?|finished?|mark(?:ed)? done|checked?)(?: my)?(?: habit[:\s]+)?(.+)/i)
                         || lowerText.match(/^(.+)(?: habit)? (?:done|completed|finished)$/i)
                         || lowerText.match(/^i (?:finished|completed|did)(?: my)? (.+?)(?:\s+today)?$/i)
-                        || lowerText.match(/^i (?:prayed|exercised|worked out|read(?:\s+my bible)?|journaled|drank)(?: my)?(?: water)?(?:\s+today)?$/i);
+                        || lowerText.match(/^i (?:prayed|exercised|worked out|read(?:\s+my bible)?|journaled|drank)(?: my)?(?: water)?(?:\s+today)?$/i)
+                        || (hasHabitKeyword && lowerText.match(/^(?:mark|mark done)(?: my)?(?: (?:read|morning|daily))? ?(?:bible|prayer|exercise|water|journal)(?: done)?$/i));
     if (habitDoneMatch) {
       // Extract hint from whichever capture group matched, strip "with " prefix
       let hint = (habitDoneMatch[1] || habitDoneMatch[2] || habitDoneMatch[3] || '').trim().toLowerCase();
@@ -1617,6 +1645,21 @@ self.addEventListener('fetch', (event) => {
       }
     }
 
+    // ── Terse health log: "water: 16oz", "sleep: 8h", "steps: 5000" ─────────
+    const terseHealthMatch = lowerText.match(/^(water|sleep|steps?|exercise|calories?|cal)[:\s]+([\d.]+)\s*(oz|glasses?|hrs?|hours?|mins?|minutes?|steps?|cal(?:ories)?|oz)?/i);
+    if (terseHealthMatch) {
+      try {
+        const cat = terseHealthMatch[1].toLowerCase().replace(/steps/, 'steps').replace(/calories?|cal/, 'calories');
+        const val = parseFloat(terseHealthMatch[2]) || 1;
+        const unit = (terseHealthMatch[3] || (cat === 'water' ? 'oz' : cat === 'sleep' ? 'hrs' : cat === 'steps' ? 'steps' : cat === 'exercise' ? 'min' : 'cal')).toLowerCase();
+        const today = new Date().toISOString().slice(0,10);
+        dbRun("INSERT INTO health_logs (id,date,category,label,value,unit,created_at) VALUES (?,?,?,?,?,?,?)",
+          require('crypto').randomUUID(), today, cat, cat, val, unit, new Date().toISOString());
+        sendReply("Logged: " + val + " " + unit + " (" + cat + ")");
+      } catch (e) { sendReply("Could not log: " + e); }
+      return;
+    }
+
     // ── Natural activity logging ─────────────────────────────────────────────
     const naturalHealthMatch = lowerText.match(/^i (?:slept|got) (\d+(?:\.\d+)?) hours?(?: of sleep)?(?:\s+today)?$/i)
                             || lowerText.match(/^i (?:drank|had) (\d+(?:\s+(?:glasses?|oz|cups?))?) (?:of )?water(?:\s+today)?$/i)
@@ -1643,8 +1686,9 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Log health ─────────────────────────────────────────────────────────────
-    const healthLogMatch = lowerText.match(/^log(?:ged)? (\d+(?:\.\d+)?)\s*(oz|glasses?|steps?|mins?|minutes?|hours?|hrs?|calories?|cal|lbs?|kg)\s*(?:of\s+)?(.+)?$/i)
-                        || lowerText.match(/^(?:log|add|record)\s+(.+)\s+(water|steps|exercise|sleep|calories)$/i);
+    const healthLogMatch = lowerText.match(/^log(?:ged)? (\d+(?:\.\d+)?)\s*(oz|glasses?|steps?|mins?|minutes?|hours?|hrs?|h\b|calories?|cal|lbs?|kg)\s*(?:of\s+)?(.+)?$/i)
+                        || lowerText.match(/^(?:log|add|record)\s+(.+)\s+(water|steps|exercise|sleep|calories)$/i)
+                        || lowerText.match(/^log\s+(water|sleep|steps?|exercise|calories?)\s+(\d+(?:\.\d+)?)(h\b|hrs?|oz|steps?|mins?|cal)?/i);
     if (healthLogMatch) {
       try {
         const today = new Date().toISOString().slice(0,10);
@@ -2101,6 +2145,21 @@ self.addEventListener('fetch', (event) => {
         }
       } catch (e) { sendReply('Could not update task: ' + e); }
       return;
+    }
+
+    // ── Quick note ────────────────────────────────────────────────────────────
+    const noteMatch = lowerText.match(/^(?:note|jot|capture|save note|quick note)[:\s]+(.+)/i);
+    if (noteMatch) {
+      const content = noteMatch[1].trim();
+      if (content.length > 1) {
+        try {
+          const id = require('crypto').randomUUID();
+          dbRun("INSERT INTO memory_facts (id,fact,category,importance,created_at) VALUES (?,?,?,?,?)",
+            id, content, 'note', 1, new Date().toISOString());
+          sendReply("Note saved: \"" + content + "\"");
+        } catch (e) { sendReply("Could not save note: " + e); }
+        return;
+      }
     }
 
     // ── "Remember that..." — instant memory save, no AI needed ────────────────
