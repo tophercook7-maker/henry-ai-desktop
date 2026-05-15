@@ -1570,8 +1570,9 @@ self.addEventListener('fetch', (event) => {
     }
 
     // "what tasks do i have" / "show my tasks" / "list my tasks"
-    const listTasksMatch = /^(?:what|show|list|get)(?: tasks?| my tasks?| my open tasks?| open tasks?| all tasks?| todo(?:s)?)/.test(lowerText)
-                        || lowerText === 'tasks' || lowerText === 'my tasks' || lowerText === 'open tasks';
+    const listTasksMatch = /^(?:what|show|list|get|how many)(?: tasks?| my tasks?| my open tasks?| open tasks?| all tasks?| todo(?:s)?)/.test(lowerText)
+                        || lowerText === 'tasks' || lowerText === 'my tasks' || lowerText === 'open tasks'
+                        || /^how many (?:open |active )?tasks/.test(lowerText);
     // Separate: count of DONE tasks
     const countDoneTasksMatch = /^how many tasks(?: are| have i)?(?: completed?| done| finished)/.test(lowerText)
                               || lowerText === 'how many tasks done' || lowerText === 'tasks completed';
@@ -1600,8 +1601,8 @@ self.addEventListener('fetch', (event) => {
     }
 
     // "what reminders do i have" / "show reminders"
-    const listRemsMatch = /^(?:what|show|list|get)(?: reminders?| my reminders?| due(?:\s+today)?)/.test(lowerText)
-                       || lowerText === 'reminders';
+    const listRemsMatch = /^(?:what|show|list|get|how many)(?: reminders?| my reminders?| due(?:\s+today)?)/.test(lowerText)
+                       || lowerText === 'reminders' || /^how many reminders/.test(lowerText);
     if (listRemsMatch) {
       try {
         const rems = dbGet<{title:string;due_at:string}>(
@@ -1629,6 +1630,7 @@ self.addEventListener('fetch', (event) => {
                         || lowerText.match(/^(.+)(?: habit)? (?:done|completed|finished)$/i)
                         || lowerText.match(/^i (?:finished|completed|did)(?: my)? (.+?)(?:\s+today)?$/i)
                         || lowerText.match(/^i (?:prayed|exercised|worked out|read(?:\s+my bible)?|journaled|drank)(?: my)?(?: water)?(?:\s+(?:today|this morning|this evening|earlier|already))?$/i)
+                        || lowerText.match(/^i (?:just|already|finally) (?:finished|completed|did|done|prayed|exercised|journaled|read)(?: my )?(?:journal(?:ing|ed)?|pray(?:ing|ed|er)?|exercis(?:ing|ed)?|bible|reading)?(?: today)?$/i)
                         || (hasHabitKeyword && lowerText.match(/^(?:mark|mark done)(?: my)?(?: (?:read|morning|daily))? ?(?:bible|prayer|exercise|water|journal)(?: done)?$/i));
     if (habitDoneMatch) {
       // Extract hint from whichever capture group matched, strip "with " prefix
@@ -1649,7 +1651,7 @@ self.addEventListener('fetch', (event) => {
         if (lowerText.includes('water') || lowerText.includes('drank') || lowerText.includes('drunk')) hint = 'water';
         else if (lowerText.includes('prayer') || lowerText.includes('pray')) hint = 'prayer';
         else if (lowerText.includes('bible') || lowerText.includes('scripture') || lowerText.includes('read bible')) hint = 'bible';
-        else if (lowerText.includes('journal')) hint = 'journal';
+        else if (lowerText.includes('journal') || lowerText.includes('journaling') || lowerText.includes('journaled')) hint = 'journal';
         else if (lowerText.includes('exercis') || lowerText.includes('work out') || lowerText.includes('ran')) hint = 'exercise';
       }
       // Only fire if hint matches a real habit name
@@ -2417,6 +2419,57 @@ self.addEventListener('fetch', (event) => {
         sendReply(lines.join("\n"));
       } catch { sendReply("Good work today! Could not load full summary."); }
       return;
+    }
+
+    // ── Add a new habit ────────────────────────────────────────────────────────
+    const addHabitMatch = lowerText.match(/^(?:add|create|new)(?: a)? habit[:\s]+(.+)/i)
+                       || lowerText.match(/^habit[:\s]+(.+)/i);
+    if (addHabitMatch) {
+      const name = addHabitMatch[1].trim();
+      if (name.length > 1) {
+        try {
+          const id = require('crypto').randomUUID();
+          dbRun("INSERT INTO habits (id,name,icon,color,target_per_day,active,created_at) VALUES (?,?,?,?,?,?,?)",
+            id, name, '⭐', '#7c3aed', 1, 1, new Date().toISOString());
+          sendReply("Added habit: \"" + name + "\" — it will now appear in your daily check-in list.");
+        } catch (e) { sendReply("Could not add habit: " + e); }
+        return;
+      }
+    }
+
+    // ── Show notes ─────────────────────────────────────────────────────────────
+    const showNotesMatch = /^(?:show|list|what are)(?: all)?(?: my)? notes?/.test(lowerText)
+                        || lowerText === 'my notes' || lowerText === 'notes';
+    if (showNotesMatch) {
+      try {
+        const notes = dbGet<{fact:string;created_at:string}>(
+          "SELECT fact, created_at FROM memory_facts WHERE category='note' ORDER BY created_at DESC LIMIT 15"
+        ) as {fact:string;created_at:string}[];
+        if (!notes.length) {
+          sendReply("No notes saved yet. Say \"note: [anything]\" to save a quick note.");
+        } else {
+          sendReply(notes.length + " note" + (notes.length > 1 ? "s" : "") + ":\n\n" +
+            notes.map((n,i) => (i+1) + ". " + n.fact).join("\n"));
+        }
+      } catch { sendReply("Could not load notes."); }
+      return;
+    }
+
+    // ── Log revenue / income ─────────────────────────────────────────────────
+    const revenueMatch = lowerText.match(/^(?:log|add|record)(?:\s+revenue)?[:\s]+\$?([\d.]+)/i)
+                      || lowerText.match(/^i made \$([\d.]+)(?: today)?$/i)
+                      || lowerText.match(/^revenue[:\s]+\$?([\d.]+)/i);
+    if (revenueMatch) {
+      const amount = parseFloat(revenueMatch[1]) || 0;
+      if (amount > 0) {
+        try {
+          const today = new Date().toISOString().slice(0,10);
+          dbRun("INSERT INTO transactions (id,date,type,amount,category,description,created_at) VALUES (?,?,?,?,?,?,?)",
+            require('crypto').randomUUID(), today, 'income', amount, 'laser', 'Logged via chat', new Date().toISOString());
+          sendReply("Logged income: $" + amount.toFixed(2) + " for today.");
+        } catch (e) { sendReply("Could not log revenue. Open Finance panel to add manually."); }
+        return;
+      }
     }
 
     // ── "Remember that..." — instant memory save, no AI needed ────────────────
