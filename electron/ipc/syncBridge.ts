@@ -1439,8 +1439,16 @@ self.addEventListener('fetch', (event) => {
             '%' + hint + '%'
           );
         }
-        if (!task && hint) { sendReply("Could not find an open task matching: " + hint); return; }
-        if (!task) {
+        // Handle positional: "first task", "my first task", "oldest task"
+        if (!task && /^(?:my )?(?:first|oldest|top|any)(?: task)?$/.test(hint)) {
+          task = dbGetOne<{id:string;title:string}>(
+            "SELECT id, title FROM personal_tasks WHERE status!='done' ORDER BY created_at ASC LIMIT 1"
+          );
+        }
+        if (!task && hint && !/^(?:my )?(?:first|oldest|top|any)(?: task)?$/.test(hint)) {
+          sendReply("Could not find an open task matching: " + hint); return;
+        }
+        if (!task && !hint) {
           task = dbGetOne<{id:string;title:string}>(
             "SELECT id, title FROM personal_tasks WHERE status!='done' ORDER BY created_at ASC LIMIT 1"
           );
@@ -1453,8 +1461,9 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Goals list ────────────────────────────────────────────────────────────
-    const listGoalsMatch = /^(?:what|show|list|get)(?: goals?| my goals?| active goals?)/.test(lowerText)
-                        || lowerText === 'goals' || lowerText === 'my goals';
+    const listGoalsMatch = /^(?:what|show|list|get|how many)(?: goals?| my goals?| active goals?)/.test(lowerText)
+                        || lowerText === 'goals' || lowerText === 'my goals'
+                        || /^how many goals/.test(lowerText);
     if (listGoalsMatch) {
       try {
         const goals = dbGet<{title:string;priority_score:number}>(
@@ -1558,8 +1567,8 @@ self.addEventListener('fetch', (event) => {
     }
 
     // "what tasks do i have" / "show my tasks" / "list my tasks"
-    const listTasksMatch = /^(?:what|show|list|get)(?: tasks?| my tasks?| open tasks?| todo(?:s)?)/.test(lowerText)
-                        || lowerText === 'tasks' || lowerText === 'my tasks';
+    const listTasksMatch = /^(?:what|show|list|get)(?: tasks?| my tasks?| my open tasks?| open tasks?| all tasks?| todo(?:s)?)/.test(lowerText)
+                        || lowerText === 'tasks' || lowerText === 'my tasks' || lowerText === 'open tasks';
     if (listTasksMatch) {
       try {
         const tasks = dbGet<{title:string;status:string}>(
@@ -1781,9 +1790,11 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Delete task ──────────────────────────────────────────────────────────
-    const deleteTaskMatch = lowerText.match(/^(?:delete|remove|cancel)(?: a)? task[:\s]+(.+)/i);
+    const deleteTaskMatch = lowerText.match(/^(?:delete|remove|cancel)(?: a)? task[:\s]+(.+)/i)
+                        || lowerText.match(/^(?:delete|remove|cancel)(?: my)?(?: first| last| that)? task$/i);
     if (deleteTaskMatch) {
-      const hint = deleteTaskMatch[1].trim();
+      const hint = (deleteTaskMatch[1] || '').trim();
+      const isPositional = /^(?:my )?(?:first|oldest|last|that)(?: task)?$/.test(hint) || !hint;
       try {
         const task = dbGetOne<{id:string;title:string}>(
           "SELECT id, title FROM personal_tasks WHERE LOWER(title) LIKE ? LIMIT 1", '%' + hint.toLowerCase() + '%'
@@ -2081,7 +2092,8 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Prayer requests ───────────────────────────────────────────────────────
-    const addPrayerMatch = lowerText.match(/^(?:add|log|create|save)(?: a)? prayer(?: request)?[:\s]+(.+)/i);
+    const addPrayerMatch = lowerText.match(/^(?:add|log|create|save)(?: a)? prayer(?: request)?[:\s]+(.+)/i)
+                       || lowerText.match(/^prayer[:\s]+(.+)/i);
     if (addPrayerMatch) {
       const req = addPrayerMatch[1].trim();
       if (req.length > 1) {
@@ -2109,7 +2121,7 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Delete goal ───────────────────────────────────────────────────────────
-    const deleteGoalMatch = lowerText.match(/^(?:delete|remove|archive)(?: goal)?[:\s]+(.+)/i);
+    const deleteGoalMatch = !lowerText.includes('task') && lowerText.match(/^(?:delete|remove|archive)(?: (?:a |my )?goal)?[:\s]+(.+)/i);
     if (deleteGoalMatch) {
       const hint = deleteGoalMatch[1].trim();
       try {
@@ -2265,7 +2277,7 @@ self.addEventListener('fetch', (event) => {
       }
 
       // List files
-      if (/list|show.*(?:desktop|files)|desktop.*files/.test(t)) {
+      if (/(?:list|show).*(?:desktop|files|folder|directory)|desktop.*files/.test(t)) {
         const target = t.includes('document') ? macHome + '/Documents' : t.includes('download') ? macHome + '/Downloads' : macHome + '/Desktop';
         const out = execSync('ls "' + target + '"', { encoding: 'utf8', timeout: 5000 }) as string;
         return (target.split('/').pop() || 'Desktop') + ':\n' + out.trim();
