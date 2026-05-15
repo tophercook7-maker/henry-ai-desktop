@@ -1628,7 +1628,7 @@ self.addEventListener('fetch', (event) => {
     const hasHabitKeyword = knownHabitKeywords.some(k => lowerText.includes(k));
     const habitDoneMatch = lowerText.match(/^(?:done|completed?|finished?|mark(?:ed)? done|checked?)(?: my)?(?: habit[:\s]+)?(.+)/i)
                         || lowerText.match(/^(.+)(?: habit)? (?:done|completed|finished)$/i)
-                        || lowerText.match(/^i (?:finished|completed|did)(?: my)? (.+?)(?:\s+today)?$/i)
+                        || lowerText.match(/^i (?:just |already |finally )?(?:finished|completed|did) (?:my )?(.+?)(?:\s+today)?$/i)
                         || lowerText.match(/^i (?:prayed|exercised|worked out|read(?:\s+my bible)?|journaled|drank)(?: my)?(?: water)?(?:\s+(?:today|this morning|this evening|earlier|already))?$/i)
                         || lowerText.match(/^i (?:just|already|finally) (?:finished|completed|did|done|prayed|exercised|journaled|read)(?: my )?(?:journal(?:ing|ed)?|pray(?:ing|ed|er)?|exercis(?:ing|ed)?|bible|reading)?(?: today)?$/i)
                         || (hasHabitKeyword && lowerText.match(/^(?:mark|mark done)(?: my)?(?: (?:read|morning|daily))? ?(?:bible|prayer|exercise|water|journal)(?: done)?$/i));
@@ -1649,8 +1649,9 @@ self.addEventListener('fetch', (event) => {
       // Extract activity keyword from lowerText - check water FIRST before exercise
       if (!hint || hint.length < 2) {
         if (lowerText.includes('water') || lowerText.includes('drank') || lowerText.includes('drunk')) hint = 'water';
+        else if (lowerText.includes('journaling') || (lowerText.includes('journal') && /finished|completed|done|just/.test(lowerText))) hint = 'journal';
         else if (lowerText.includes('prayer') || lowerText.includes('pray')) hint = 'prayer';
-        else if (lowerText.includes('bible') || lowerText.includes('scripture') || lowerText.includes('read bible')) hint = 'bible';
+        else if (lowerText.includes('bible') || lowerText.includes('scripture') || lowerText.includes('read bible') || (lowerText.includes('reading') && lowerText.includes('bible'))) hint = 'bible';
         else if (lowerText.includes('journal') || lowerText.includes('journaling') || lowerText.includes('journaled')) hint = 'journal';
         else if (lowerText.includes('exercis') || lowerText.includes('work out') || lowerText.includes('ran')) hint = 'exercise';
       }
