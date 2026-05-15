@@ -1390,7 +1390,7 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Date / time — instant, no AI needed ─────────────────────────────────────
-    if (/^(what(?:'s| is)(?: the)? (today'?s? )?(date|day|time)|what day|today'?s date|current (date|day|time))/.test(lowerText)) {
+    if (/^(what(?:'s| is)(?: the)? (today'?s? )?(date|day|time)|what day|today'?s date|current (date|day|time)|what time is it|time now)/.test(lowerText)) {
       const now = new Date();
       const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
       const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -1468,10 +1468,12 @@ self.addEventListener('fetch', (event) => {
     // ── Action commands — execute directly, no AI needed ────────────────────────
 
     // "add a task: X" / "create a task: X" / "new task: X"
-    const addTaskMatch = lowerText.match(/^(?:add|create|new) (?:a )?task[:\s]+(.+)/i)
+    const addTaskMatch = lowerText.match(/^(?:add|create|new) (?:a )?task(?:\s+for\s+(?:tomorrow|today))?[:\s]+(.+)/i)
                       || lowerText.match(/^task[:\s]+(.+)/i);
     if (addTaskMatch) {
-      const title = resolvedText.replace(/^(?:add|create|new) (?:a )?task[:\s]+/i,'').replace(/^task[:\s]+/i,'').trim();
+      const title = resolvedText
+        .replace(/^(?:add|create|new) (?:a )?task(?:\s+for\s+(?:tomorrow|today))?[:\s]+/i,'')
+        .replace(/^task[:\s]+/i,'').trim();
       if (title.length > 1) {
         try {
           const id = require('crypto').randomUUID();
@@ -1484,30 +1486,41 @@ self.addEventListener('fetch', (event) => {
     }
 
     // "remind me to X [at/on TIME/DATE]" 
-    const remindMatch = lowerText.match(/^remind(?:er)?(?: me)? (?:to |about )?(.+)/i);
+    const remindMatch = lowerText.match(/^remind(?:er)?(?: me)? (?:to |about )?(.+)/i)
+                    || lowerText.match(/^(?:set|add|create)(?: a)? reminder(?: for)?[:\s]+(.+)/i);
     if (remindMatch) {
-      const rawTitle = resolvedText.replace(/^remind(?:er)?(?: me)? (?:to |about )?/i,'').trim();
-      // Try to extract a time/date from the text - only strip known time words
-      const timeMatch = rawTitle.match(/\b(tomorrow|today|\d{1,2}(?::\d{2})?\s*(?:am|pm)|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i);
-      // Only strip the time part, not generic "on" words
-      const title = timeMatch 
-        ? rawTitle.replace(/\s*\b(?:at|on)\s+(?:tomorrow|today|\d{1,2}(?::\d{2})?\s*(?:am|pm)|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b.*/i, '').trim() || rawTitle
-        : rawTitle;
+      const rawTitle = resolvedText
+        .replace(/^remind(?:er)?(?: me)? (?:to |about )?/i,'')
+        .replace(/^(?:set|add|create)(?: a)? reminder(?: for)?[:\s]+/i,'').trim();
+      // Parse time: handles "3pm today", "tomorrow at 9am", "friday at 2:30pm"
+      const timeMatch = rawTitle.match(/\b(\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i);
+      const dayMatch  = rawTitle.match(/\b(tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i);
+      const title = rawTitle
+        .replace(/\s*\b(?:at|on|for)\s+(?:tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/gi, '')
+        .replace(/\s*\bat\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)\b/gi, '')
+        .trim() || rawTitle;
       const due_at = (() => {
-        if (!timeMatch) return null;
-        const t = timeMatch[1].toLowerCase();
+        if (!timeMatch && !dayMatch) return null;
         const d = new Date();
-        if (t === 'tomorrow') { d.setDate(d.getDate()+1); d.setHours(9,0,0,0); }
-        else if (t === 'today') { d.setHours(17,0,0,0); }
-        else {
+        const dayStr = dayMatch ? dayMatch[1].toLowerCase() : '';
+        if (dayStr === 'tomorrow') { d.setDate(d.getDate()+1); }
+        else if (dayStr === 'today') { /* keep today */ }
+        else if (dayStr) {
           const days: Record<string,number> = {monday:1,tuesday:2,wednesday:3,thursday:4,friday:5,saturday:6,sunday:0};
-          if (days[t] !== undefined) {
-            const target = days[t];
-            const today = d.getDay();
-            const diff = (target - today + 7) % 7 || 7;
-            d.setDate(d.getDate() + diff); d.setHours(9,0,0,0);
+          if (days[dayStr] !== undefined) {
+            const target = days[dayStr], curr = d.getDay();
+            const diff = (target - curr + 7) % 7 || 7;
+            d.setDate(d.getDate() + diff);
           }
         }
+        if (timeMatch) {
+          const tStr = timeMatch[1].toLowerCase().replace(/\s/g, '');
+          const isPm = tStr.includes('pm');
+          const [hStr, mStr] = tStr.replace(/[apm]/g, '').split(':');
+          let h = parseInt(hStr); const m = parseInt(mStr || '0');
+          if (isPm && h !== 12) h += 12; else if (!isPm && h === 12) h = 0;
+          d.setHours(h, m, 0, 0);
+        } else { d.setHours(dayStr === 'today' ? 17 : 9, 0, 0, 0); }
         return d.toISOString();
       })();
       try {
@@ -1563,11 +1576,30 @@ self.addEventListener('fetch', (event) => {
 
     // ── Toggle habit done ─────────────────────────────────────────────────────
     const habitDoneMatch = lowerText.match(/^(?:done|completed?|finished?|mark(?:ed)? done|checked?)(?: my)?(?: habit[:\s]+)?(.+)/i)
-                        || lowerText.match(/^(.+)(?: habit)? (?:done|completed|finished)$/i);
+                        || lowerText.match(/^(.+)(?: habit)? (?:done|completed|finished)$/i)
+                        || lowerText.match(/^i (?:finished|completed|did)(?: my)? (.+?)(?:\s+today)?$/i)
+                        || lowerText.match(/^i (?:prayed|exercised|worked out|read(?:\s+my bible)?|journaled|drank)(?: my)?(?: water)?(?:\s+today)?$/i);
     if (habitDoneMatch) {
-      const hint = (habitDoneMatch[1] || '').trim().toLowerCase();
+      // Extract hint from whichever capture group matched, strip "with " prefix
+      let hint = (habitDoneMatch[1] || habitDoneMatch[2] || habitDoneMatch[3] || '').trim().toLowerCase();
+      hint = hint.replace(/^with\s+/, '');
+      // Map natural words to habit name fragments
+      const activityMap: Record<string,string> = {
+        'praying': 'prayer', 'prayed': 'prayer', 'prayer': 'prayer',
+        'bible': 'bible', 'exercising': 'exercise', 'exercised': 'exercise',
+        'water': 'water', 'journaled': 'journal', 'journaling': 'journal',
+        'worked out': 'exercise', 'ran': 'exercise',
+      };
+      hint = activityMap[hint] || hint;
+      // Extract activity keyword from lowerText when no capture group
+      if (!hint || hint.length < 2) {
+        const acts = ['prayer','bible','exercise','water','journal'];
+        for (const act of acts) { if (lowerText.includes(act)) { hint = act; break; } }
+        if (!hint && lowerText.includes('pray')) hint = 'prayer';
+        if (!hint && lowerText.includes('exercis') || lowerText.includes('work out') || lowerText.includes('ran')) hint = 'exercise';
+      }
       // Only fire if hint matches a real habit name
-      const matchedHabit = hint.length > 2 ? dbGetOne<{id:string;name:string}>(
+      const matchedHabit = hint.length > 1 ? dbGetOne<{id:string;name:string}>(
         "SELECT id, name FROM habits WHERE active=1 AND LOWER(name) LIKE ? LIMIT 1",
         '%' + hint + '%'
       ) : null;
@@ -1583,6 +1615,31 @@ self.addEventListener('fetch', (event) => {
         } catch (e) { sendReply("Could not update habit: " + e); }
         return;
       }
+    }
+
+    // ── Natural activity logging ─────────────────────────────────────────────
+    const naturalHealthMatch = lowerText.match(/^i (?:slept|got) (\d+(?:\.\d+)?) hours?(?: of sleep)?(?:\s+today)?$/i)
+                            || lowerText.match(/^i (?:drank|had) (\d+(?:\s+(?:glasses?|oz|cups?))?) (?:of )?water(?:\s+today)?$/i)
+                            || lowerText.match(/^i (?:walked|ran|did) (\d+(?:,?\d+)?) ?steps?(?:\s+today)?$/i)
+                            || lowerText.match(/^i (?:exercised|worked out|ran|jogged)(?: for)? (\d+) ?(?:mins?|minutes?|hours?|hrs?)?(?:\s+today)?$/i)
+                            || lowerText.match(/^i (?:burned|consumed) (\d+) ?(?:calories|cal)(?:\s+today)?$/i);
+    if (naturalHealthMatch) {
+      try {
+        const today = new Date().toISOString().slice(0,10);
+        const rawVal = (naturalHealthMatch[1] || '').replace(',','').trim();
+        let value = parseFloat(rawVal) || 1;
+        let category = 'custom';
+        let unit = '';
+        if (/slept|sleep|hours/.test(lowerText)) { category = 'sleep'; unit = 'hrs'; }
+        else if (/drank|water|glasses/.test(lowerText)) { category = 'water'; unit = 'oz'; if (rawVal.includes('glass')) value *= 8; }
+        else if (/steps|walked|ran.*step/.test(lowerText)) { category = 'steps'; unit = 'steps'; }
+        else if (/exercised|worked out|jogged|ran/.test(lowerText)) { category = 'exercise'; unit = 'min'; }
+        else if (/calories|burned|consumed/.test(lowerText)) { category = 'calories'; unit = 'cal'; }
+        dbRun("INSERT INTO health_logs (id,date,category,label,value,unit,created_at) VALUES (?,?,?,?,?,?,?)",
+          require('crypto').randomUUID(), today, category, category, value, unit, new Date().toISOString());
+        sendReply('Logged: ' + value + (unit ? ' ' + unit : '') + ' (' + category + ')');
+      } catch (e) { sendReply('Could not log: ' + e); }
+      return;
     }
 
     // ── Log health ─────────────────────────────────────────────────────────────
