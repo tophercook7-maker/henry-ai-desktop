@@ -1320,6 +1320,13 @@ self.addEventListener('fetch', (event) => {
       }
     }
     const knowledgeAnswer = (() => {
+      // Version / identity
+      if (/^(?:what version|which version|your version|version number|what.*version are you)/.test(lowerText) || lowerText === 'version') {
+        return 'Henry AI v1.5.3 — your personal AI workspace for Mac.\n\n70+ instant local commands, all offline-capable. Built by Anthropic Claude + Topher Cook.';
+      }
+      if (/^(?:who (?:made|built|created|are) you|who is henry|what is henry|what are you)/.test(lowerText)) {
+        return "I'm Henry — your personal AI workspace. Topher built me with Claude to run his laser business, track habits, manage tasks, and stay focused.\n\nI live on your Mac and phone, work offline, and remember your life.";
+      }
       if ((/^(what can you do|help me$|give me a tour|show me what you can do|overview of henry|what do you do)/.test(lowerText)) || lowerText === 'help') {
         return `Here's everything I can do:\n\n` +
           `💬 **Chat** — Talk to me, ask anything, give commands\n` +
@@ -1479,10 +1486,10 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Goals list ────────────────────────────────────────────────────────────
-    const listGoalsMatch = /^(?:what|show|list|get|how many)(?: goals?| my goals?| active goals?)/.test(lowerText)
+    const listGoalsMatch = /^(?:what|show|list|get|how many|count)(?: goals?| my goals?| active goals?)/.test(lowerText)
                         || /^what.?s my (?:top|most important|main|biggest)(?: goal)?/.test(lowerText)
                         || lowerText === 'goals' || lowerText === 'my goals' || lowerText === 'top goal'
-                        || /^how many goals/.test(lowerText);
+                        || /^(?:how many|count)(?: my)? goals/.test(lowerText);
     if (listGoalsMatch) {
       try {
         const goals = dbGet<{title:string;priority_score:number}>(
@@ -2214,6 +2221,15 @@ self.addEventListener('fetch', (event) => {
       }
     }
 
+    const prayerCountMatch = /^how many (?:prayer requests?|prayers?)(?: do i have)?$/.test(lowerText) || lowerText === 'prayer count';
+    if (prayerCountMatch) {
+      try {
+        const n = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM prayer_requests WHERE status='active'") as {n:number}|null)?.n || 0;
+        sendReply(n + " active prayer request" + (n !== 1 ? "s" : "") + "." + (n > 0 ? " Say 'show prayer requests' to see them." : ""));
+      } catch { sendReply("Could not count prayer requests."); }
+      return;
+    }
+
     const showPrayerMatch = /^(?:show|list|what are|get|read)(?: me)?(?: my)? prayer(?: requests?| list)?/.test(lowerText)
                          || lowerText === 'prayer requests' || lowerText === 'my prayers' || lowerText === 'prayer list';
     if (showPrayerMatch) {
@@ -2410,7 +2426,8 @@ self.addEventListener('fetch', (event) => {
     // ── Log a production job (Maker Studio quick log) ─────────────────────────
     // Match: "I made 5 signs" / "I completed 3 orders for $450" / "I delivered 2 boards"
     const jobLogMatch = lowerText.match(/^i (?:made|completed|finished|sold|delivered|produced|cut|engraved)(?: (\d+))?(?:\s+\w+)? (?:orders?|jobs?|signs?|pieces?|items?|boards?|plaques?|trays?|coasters?)/i)
-                     || lowerText.match(/^i (?:made|completed|finished|sold|delivered|produced)(?: (\d+))?(?:\s+\w+)? (?:orders?|jobs?|signs?|pieces?|items?|boards?|plaques?|trays?|coasters?)(?:\s+today)?/i);
+                     || lowerText.match(/^i (?:made|completed|finished|sold|delivered|produced)(?: (\d+))?(?:\s+\w+)? (?:orders?|jobs?|signs?|pieces?|items?|boards?|plaques?|trays?|coasters?)(?:\s+today)?/i)
+                     || lowerText.match(/^i (?:got|received|landed|booked)(?: a| an)?(?: new)? (?:order|job|client|customer|booking)/i);
     const jobQty = jobLogMatch ? (parseInt(lowerText.match(/(\d+)/)?.[1] || '1') || 1) : 0;
     const jobRevMatch = jobLogMatch ? lowerText.match(/(?:for|at|worth)\s*\$?([\d.]+)/) : null;
     if (jobLogMatch) {
@@ -2432,7 +2449,7 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── End of day summary ───────────────────────────────────────────────────
-    const eodMatch = /^(?:end of day|eod|day summary|daily summary|wrap up|wrap up my day|what did i do today|what did i accomplish today|what have i done today|how did my day go)/.test(lowerText);
+    const eodMatch = /^(?:end of day|eod|day summary|daily summary|wrap up|wrap up my day|what did i do today|what did i accomplish today|what have i done today|how did my day go|good night|goodnight|heading to bed|time for bed|going to bed|i'm done for the day|i am done for the day|i'm heading to bed|im heading to bed|heading to bed)/.test(lowerText);
     if (eodMatch) {
       try {
         const today = new Date().toISOString().slice(0,10);
