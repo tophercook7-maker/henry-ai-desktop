@@ -1525,7 +1525,8 @@ self.addEventListener('fetch', (event) => {
                         || lowerText.match(/^mark task(?:\s+done)?[:\s]+(.+)/i)
                         || lowerText.match(/^complete task[:\s]+(.+)/i)
                         || lowerText.match(/^finish task[:\s]+(.+)/i)
-                        || lowerText.match(/^i (?:finished|completed|done)(?: the)? (.+?) (?:task|job|todo)$/i);
+                        || lowerText.match(/^i (?:finished|completed|done|wrapped up|knocked out)(?: the)? (.+?)(?:\s+(?:task|job|todo|project))?$/i)
+                        || lowerText.match(/^(?:just )?(?:finished|completed|did|done with)(?: the)? (.+)/i);
     if (completeTaskMatch) {
       try {
         const hint = completeTaskMatch[1]?.trim().toLowerCase() || '';
@@ -2024,6 +2025,34 @@ self.addEventListener('fetch', (event) => {
       return;
     }
 
+    // ── "what did I just log" / "what did I log today" ─────────────────────
+    const loggedTodayMatch = /^(?:what did i(?: just)? log|show (?:my )?(?:today|recent) (?:logs?|entries?)|what have i logged)/.test(lowerText);
+    if (loggedTodayMatch) {
+      try {
+        const today = new Date().toISOString().slice(0,10);
+        const health = dbGet<{category:string;value:number;unit:string}>(
+          "SELECT category, SUM(value) as value, unit FROM health_logs WHERE date=? GROUP BY category, unit", today
+        ) as {category:string;value:number;unit:string}[];
+        const income = (dbGetOne<{n:number}>(
+          "SELECT COALESCE(SUM(amount),0) as n FROM transactions WHERE date=? AND type='income'", today
+        ) as {n:number}|null)?.n || 0;
+        const tasksDone = (dbGetOne<{n:number}>(
+          "SELECT COUNT(*) as n FROM personal_tasks WHERE date(completed_at)=?", today
+        ) as {n:number}|null)?.n || 0;
+        const habitsDone = (dbGetOne<{n:number}>(
+          "SELECT COUNT(*) as n FROM habit_logs WHERE date=?", today
+        ) as {n:number}|null)?.n || 0;
+        const lines = ["Today's log:\n"];
+        if (health.length) lines.push("💪 Health: " + health.map(h => h.value.toFixed(0) + " " + h.unit + " " + h.category).join(", "));
+        if (income > 0) lines.push("💰 Revenue: $" + income.toFixed(2));
+        if (tasksDone > 0) lines.push("✓ Tasks completed: " + tasksDone);
+        if (habitsDone > 0) lines.push("🔄 Habits done: " + habitsDone);
+        if (lines.length === 1) lines.push("Nothing logged yet today. Try 'water: 32oz' or 'prayer done'.");
+        sendReply(lines.join("\n"));
+      } catch { sendReply("Could not load today's log."); }
+      return;
+    }
+
     const healthSummaryMatch = /^(?:show|what(?:'s| is| are)?|how much|how many)(?: my)? (?:health|water|steps?|sleep|exercise|calories?|logs?)(?: today| this week)?/.test(lowerText)
                             || /^(?:health|water|steps?)(?:\s+today)?$/.test(lowerText);
     if (healthSummaryMatch) {
@@ -2427,6 +2456,7 @@ self.addEventListener('fetch', (event) => {
 
     // ── Direct verse reference: "John 3:16" / "lookup John 3:16" / "what is John 3:16"
     const directVerseMatch = lowerText.match(/^(?:lookup|look up|what(?:'s| is)(?: the)?(?: verse)?|show me|read|get)\s+([1-3]?\s*[a-z]+\s+\d+:\d+)/i)
+                         || lowerText.match(/^([1-3]?\s*(?:genesis|exodus|leviticus|numbers|deuteronomy|joshua|judges|ruth|samuel|kings|chronicles|ezra|nehemiah|esther|job|psalms?|proverbs?|ecclesiastes|isaiah|jeremiah|lamentations|ezekiel|daniel|hosea|joel|amos|obadiah|jonah|micah|nahum|habakkuk|zephaniah|haggai|zechariah|malachi|matthew|mark|luke|john|acts|romans|corinthians|galatians|ephesians|philippians|colossians|thessalonians|timothy|titus|philemon|hebrews|james|peter|jude|revelation))\s+\d+(?::\d+)?/i)
                           || lowerText.match(/^([1-3]?\s*[a-z]+\s+\d+:\d+)$/i);
     if (directVerseMatch) {
       const ref = (directVerseMatch[1] || '').trim();
