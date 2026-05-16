@@ -1724,6 +1724,7 @@ self.addEventListener('fetch', (event) => {
 
     // "remind me to X [at/on TIME/DATE]" 
     const remindMatch = lowerText.match(/^remind(?:er)?(?: me)? (?:to |about )?(.+)/i)
+                    || lowerText.match(/^reminder[:\s]+(.+)/i)
                     || lowerText.match(/^(?:set|add|create)(?: a)? reminder(?: for)?[:\s]+(.+)/i)
                     || lowerText.match(/^(?:set(?: up)?|add|create)(?: a| an?)?(?: daily| weekly| recurring| quick)? reminder[:\s]*(.+)/i)
                     || lowerText.match(/^(?:set up|create)(?: a| an?)? (?:daily|weekly|recurring) reminder[:\s]+(.+)/i);
@@ -2505,10 +2506,10 @@ self.addEventListener('fetch', (event) => {
     }
 
     const scheduleMatch = /^(?:what.?s on my schedule|schedule(?:\s+for)?\s+today|today.?s schedule|what do i have today|what.?s today|today)/.test(lowerText)
-                       || lowerText === 'today' || lowerText === 'status'
+                       || lowerText === 'today' || lowerText === 'status' || lowerText === 'check in' || lowerText === 'daily check'
                        || lowerText === 'quick update' || lowerText === "how's everything" || lowerText === "how is everything"
                        || /^(?:what.?s my|give me my|show me my) (?:plan|day brief|daily brief|day plan)(?: for today)?$/.test(lowerText)
-                       || lowerText === "my plan" || lowerText === "day brief" || lowerText === "daily brief";
+                       || lowerText === "my plan" || lowerText === "day brief" || lowerText === "daily brief" || lowerText === "today's summary";
     if (scheduleMatch) {
       try {
         const today = new Date().toISOString().slice(0,10);
@@ -2615,8 +2616,9 @@ self.addEventListener('fetch', (event) => {
       return;
     }
 
-    const profitMatch = /^(?:what.?s my|show my|get my|how much|my)(?: )? (?:profit|revenue|income|earnings?)(?: this month| this week| today| last week)?/.test(lowerText)
-                     || /^how much did i (?:make|earn|get paid|bring in)(?: last week| this week| today| this month)?/.test(lowerText)
+    const profitMatch = /^(?:what.?s my|show my|get my|how much|my)(?: )? (?:profit|revenue|income|earnings?)(?: this month| this week| today| last week| all time| ever| total)?/.test(lowerText)
+                     || /^how much did i (?:make|earn|get paid|bring in)(?: last week| this week| today| this month| all time| total| ever)?/.test(lowerText)
+                     || /^(?:total|lifetime|all.time)(?: (?:revenue|income|earnings?|profit))?$/.test(lowerText)
                      || /^(?:how much)(?: have i)? (?:made|earned|grossed)/.test(lowerText)
                      || lowerText === "revenue" || lowerText === "revenue this month" || lowerText === "my revenue";
     if (profitMatch) {
@@ -3024,7 +3026,8 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── End of day summary ───────────────────────────────────────────────────
-    const eodMatch = /^(?:end of day|eod|day summary|daily summary|wrap up|wrap up my day|what did i do today|what did i accomplish today|what have i done today|how did my day go|good night|goodnight|heading to bed|time for bed|going to bed|i'm done for the day|i am done for the day|i'm heading to bed|im heading to bed|heading to bed)/.test(lowerText);
+    const eodMatch = /^(?:end of day|eod|day summary|daily summary|wrap up|wrap up my day|what did i do today|what did i accomplish today|what have i done today|how did my day go|good night|goodnight|heading to bed|time for bed|going to bed|i'm done for the day|i am done for the day|i'm heading to bed|im heading to bed|heading to bed|evening|night|calling it|that's a wrap)/.test(lowerText)
+                  || lowerText === 'evening' || lowerText === 'night' || lowerText === "i'm calling it";
     if (eodMatch) {
       try {
         const today = new Date().toISOString().slice(0,10);
