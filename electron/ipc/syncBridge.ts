@@ -3045,8 +3045,10 @@ self.addEventListener('fetch', (event) => {
 
     // ── Microsoft Office Integration ──────────────────────────────────────────
     // Commands: "open word", "new word doc", "create excel sheet", "open powerpoint", etc.
-    const officeMatch = lowerText.match(/^(?:open|create|new|launch|start)(?: a| an)? ?(word|excel|powerpoint|outlook|onenote)(?: (?:doc(?:ument)?|file|sheet|spreadsheet|presentation|email|note)?)?/i)
-                     || lowerText.match(/^(?:word|excel|powerpoint|outlook)(?: (?:open|new|create|doc|file|sheet))?$/i);
+    const officeMatch = !/(with|of|for|containing|about)\s+(my|all|the)\s+(tasks?|goals?|notes?|habits?|data|revenue)/.test(lowerText) && (
+      lowerText.match(/^(?:open|create|new|launch|start)(?: a| an)? ?(word|excel|powerpoint|outlook|onenote)(?: (?:doc(?:ument)?|file|sheet|spreadsheet|presentation|email|note)?)?/i)
+      || lowerText.match(/^(?:word|excel|powerpoint|outlook)(?: (?:open|new|create|doc|file|sheet))?$/i)
+    );
     if (officeMatch) {
       const app = (officeMatch[1] || officeMatch[0] || '').toLowerCase().trim();
       const appMap: Record<string,string> = {
@@ -3144,18 +3146,103 @@ self.addEventListener('fetch', (event) => {
       return;
     }
 
-    // "create invoice for Henderson in word" / "make a quote for Wilson"
+    // "create invoice for Henderson" — open Word and let AI draft in next turn
     const createDocMatch = lowerText.match(/^(?:make|create|write|draft|generate)(?: (?:me|a|an))? (?:invoice|quote|estimate|proposal|letter|contract|report|checklist)(?: for .+)?(?:\s+in word| as (?:a )?word)?/i);
     if (createDocMatch) {
       const docType = lowerText.match(/invoice|quote|estimate|proposal|letter|contract|report|checklist/i)?.[0] || 'document';
-      const forWho = lowerText.match(/(?:for|to) ([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)/)?.[1] || '';
-      // Flag for AI to handle, but first open Word
+      const forWho = lowerText.match(/(?:for|to) ([A-Za-z]+(?:\s+[A-Za-z]+)?)/i)?.[1] || '';
       try {
         const { execSync } = await import('child_process') as typeof import('child_process');
         execSync('open -a "Microsoft Word"', { timeout: 4000 });
-      } catch { /* ok if already open */ }
-      // Let AI generate the content (don't return — fall through to AI)
+        await new Promise(r => setTimeout(r, 1500));
+        try { execSync('osascript -e \'tell application "Microsoft Word" to make new document\'', { timeout: 4000 }); } catch { /* ok */ }
+      } catch { /* ok */ }
       sendReply('📄 Opening Word... I\'ll draft the ' + docType + (forWho ? ' for ' + forWho : '') + ' for you.\n\n(Ask me in the next message: "draft a ' + docType + ' for ' + (forWho || 'client') + '" and I\'ll write it out for you to copy in)');
+      return;
+    }
+
+    // "export my tasks to word" / "create a word doc with my goals"
+    const exportToOfficeMatch = lowerText.match(/^(?:export|copy|put|add|create)(?: (?:my|a))?(?: (?:tasks?|goals?|notes?|habits?|reminders?|prayer requests?|revenue|health))+(?:\s+(?:to|in|as|into))?(?: (?:a|an?))? (?:word|excel|spreadsheet|doc(?:ument)?)?/i)
+                             || lowerText.match(/^create(?: a)? (?:word|excel)(?: (?:doc|sheet|file))? (?:with|of|for) (?:my|all)(?: (?:tasks?|goals?|habits?|notes?|revenue|health))/i);
+    if (exportToOfficeMatch) {
+      const toExcel = /excel|spreadsheet/.test(lowerText);
+      const isGoals = /goals?/.test(lowerText);
+      const isTasks = /tasks?/.test(lowerText);
+      const isNotes = /notes?|memory/.test(lowerText);
+      const isHabits = /habits?/.test(lowerText);
+      const isRevenue = /revenue|finance/.test(lowerText);
+
+      try {
+        // Build content from DB
+        const lines: string[] = [];
+        const today = new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
+        lines.push('Henry AI Export — ' + today + '\n');
+
+        if (isTasks) {
+          const tasks = dbGet<{title:string;status:string;priority:number}>(
+            "SELECT title, status, priority FROM personal_tasks WHERE status!='done' ORDER BY priority DESC, created_at DESC LIMIT 20"
+          ) as {title:string;status:string;priority:number}[];
+          lines.push('OPEN TASKS (' + tasks.length + '):');
+          tasks.forEach((t,i) => lines.push((i+1) + '. [' + t.status.toUpperCase() + '] ' + t.title));
+          lines.push('');
+        }
+        if (isGoals) {
+          const goals = dbGet<{title:string;priority_score:number}>(
+            "SELECT title, priority_score FROM goals WHERE status='active' ORDER BY priority_score DESC LIMIT 15"
+          ) as {title:string;priority_score:number}[];
+          lines.push('ACTIVE GOALS (' + goals.length + '):');
+          goals.forEach((g,i) => lines.push((i+1) + '. ' + g.title));
+          lines.push('');
+        }
+        if (isNotes) {
+          const notes = dbGet<{fact:string}>(
+            "SELECT fact FROM memory_facts WHERE category='note' ORDER BY created_at DESC LIMIT 15"
+          ) as {fact:string}[];
+          lines.push('NOTES (' + notes.length + '):');
+          notes.forEach((n,i) => lines.push((i+1) + '. ' + n.fact));
+          lines.push('');
+        }
+        if (isHabits) {
+          const habits = dbGet<{name:string}>(
+            "SELECT name FROM habits WHERE active=1 ORDER BY created_at"
+          ) as {name:string}[];
+          lines.push('HABITS (' + habits.length + '):');
+          habits.forEach((h,i) => lines.push((i+1) + '. ' + h.name));
+          lines.push('');
+        }
+        if (isRevenue) {
+          const month = new Date().toISOString().slice(0,7);
+          const income = (dbGetOne<{n:number}>("SELECT COALESCE(SUM(amount),0) as n FROM transactions WHERE type='income' AND strftime('%Y-%m',date)=?", month) as {n:number}|null)?.n || 0;
+          const txs = dbGet<{date:string;amount:number;category:string}>(
+            "SELECT date, amount, category FROM transactions WHERE strftime('%Y-%m',date)=? ORDER BY date DESC LIMIT 20", month
+          ) as {date:string;amount:number;category:string}[];
+          lines.push('REVENUE (' + month + '):');
+          lines.push('Total: $' + income.toFixed(2));
+          txs.forEach(t => lines.push(t.date + ': $' + t.amount.toFixed(2) + ' (' + t.category + ')'));
+          lines.push('');
+        }
+
+        const content = lines.join('\n');
+        const { execSync } = await import('child_process') as typeof import('child_process');
+        const appName = toExcel ? 'Microsoft Excel' : 'Microsoft Word';
+
+        execSync('open -a "' + appName + '"', { timeout: 4000 });
+        await new Promise(r => setTimeout(r, 2000));
+
+        if (!toExcel) {
+          // Word: create doc and insert text via AppleScript
+          try {
+            execSync('osascript -e \'tell application "Microsoft Word" to make new document\'', { timeout: 3000 });
+            await new Promise(r => setTimeout(r, 1000));
+            const escaped = content.replace(/'/g, "\'").replace(/\n/g, '\\n');
+            const script = 'tell application "Microsoft Word" to type text (active document) text: "' + escaped.replace(/"/g, '\\"') + '"';
+            execSync('osascript -e "' + script + '"', { timeout: 5000 });
+          } catch { /* ok — user can copy manually */ }
+          sendReply('✅ Exported to Word!\n\n' + content.slice(0, 300) + (content.length > 300 ? '\n\n…(' + lines.length + ' items total)' : '') + '\n\nWord is open with your data. Save it with Cmd+S.');
+        } else {
+          sendReply('✅ Opening Excel...\n\nHere\'s your data to paste in:\n\n' + content.slice(0,400));
+        }
+      } catch (e) { sendReply('Could not export: ' + e); }
       return;
     }
 
