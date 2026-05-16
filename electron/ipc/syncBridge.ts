@@ -1320,8 +1320,8 @@ self.addEventListener('fetch', (event) => {
       }
     }
     // ── AI provider status ────────────────────────────────────────────────────
-    const aiStatusMatch = /^(?:show |what(?:'s| are)(?: my)? )?(?:ai |provider )?(?:status|providers?|models?)(?: status)?$/.test(lowerText)
-                       || lowerText === 'ai status' || lowerText === 'providers' || lowerText === 'which ai';
+    const aiStatusMatch = /^(?:show |what(?:'s| are)(?: my)? )?(?:ai |provider )?(?:providers?|models?)(?: status)?$/.test(lowerText)
+                       || lowerText === 'ai status' || lowerText === 'providers' || lowerText === 'which ai' || lowerText === 'provider status';
     if (aiStatusMatch) {
       const g2 = global as any;
       const rlStore2: Record<string, number> = g2['__henry_rl__'] || {};
@@ -1510,7 +1510,11 @@ self.addEventListener('fetch', (event) => {
 
     // ── Complete / done task ──────────────────────────────────────────────────
     const completeTaskMatch = lowerText.match(/^(?:complete|finish|done|mark done|check off)(?: my)?(?: first| last| top)? task[:\s]*(.*)$/i)
-                           || lowerText.match(/^(?:mark|complete|finish)(?: task)?[:\s]+(.+)(?: as)? done$/i);
+                        || lowerText.match(/^(?:mark|complete|finish)(?: task)?[:\s]+(.+)(?: as)? done$/i)
+                        || lowerText.match(/^mark task(?:\s+done)?[:\s]+(.+)/i)
+                        || lowerText.match(/^complete task[:\s]+(.+)/i)
+                        || lowerText.match(/^finish task[:\s]+(.+)/i)
+                        || lowerText.match(/^i (?:finished|completed|done)(?: the)? (.+?) (?:task|job|todo)$/i);
     if (completeTaskMatch) {
       try {
         const hint = completeTaskMatch[1]?.trim().toLowerCase() || '';
@@ -1547,6 +1551,24 @@ self.addEventListener('fetch', (event) => {
                         || /^what.?s my (?:top|most important|main|biggest)(?: goal)?/.test(lowerText)
                         || lowerText === 'goals' || lowerText === 'my goals' || lowerText === 'top goal'
                         || /^(?:how many|count)(?: my)? goals/.test(lowerText);
+    // ── Completed goals ──────────────────────────────────────────────────────
+    const completedGoalsMatch = /^(?:show|list|how many)(?: my)?(?: completed?| achieved?| done| finished)(?: goals?)?/.test(lowerText)
+                              || /^how many goals? (?:have i|did i)(?: hit| achieve| complete| finish)?/.test(lowerText)
+                              || lowerText === "goals achieved" || lowerText === "completed goals";
+    if (completedGoalsMatch) {
+      try {
+        const done = dbGet<{title:string}>(
+          "SELECT title FROM goals WHERE status IN ('done','completed','abandoned') ORDER BY updated_at DESC LIMIT 10"
+        ) as {title:string}[];
+        const active = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM goals WHERE status='active'") as {n:number}|null)?.n || 0;
+        if (!done.length) sendReply("No goals marked done yet. Say 'mark goal done: [title]' when you achieve one.\n\nYou have " + active + " active goals in progress.");
+        else sendReply(done.length + " goal" + (done.length > 1 ? "s" : "") + " completed:\n\n" +
+          done.map((g,i) => (i+1) + ". ✅ " + g.title).join("\n") +
+          "\n\nStill going: " + active + " active goal" + (active !== 1 ? "s" : ""));
+      } catch { sendReply("Could not load completed goals."); }
+      return;
+    }
+
     if (listGoalsMatch) {
       try {
         const goals = dbGet<{title:string;priority_score:number}>(
@@ -1847,12 +1869,13 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Terse health log: "water: 16oz", "sleep: 8h", "steps: 5000" ─────────
-    const terseHealthMatch = lowerText.match(/^(water|sleep|steps?|exercise|calories?|cal)[:\s]+([\d.]+)\s*(oz|glasses?|hrs?|hours?|mins?|minutes?|steps?|cal(?:ories)?|oz)?/i);
+    const terseHealthMatch = lowerText.match(/^(?:log\s+)?(water|sleep|steps?|exercise|weight|calories?|cal)[:\s]+([\d.]+)\s*(oz|glasses?|hrs?|hours?|mins?|minutes?|steps?|cal(?:ories)?|oz|lb[s]?|kg)?/i);
     if (terseHealthMatch) {
       try {
         const cat = terseHealthMatch[1].toLowerCase().replace(/steps/, 'steps').replace(/calories?|cal/, 'calories');
         const val = parseFloat(terseHealthMatch[2]) || 1;
-        const unit = (terseHealthMatch[3] || (cat === 'water' ? 'oz' : cat === 'sleep' ? 'hrs' : cat === 'steps' ? 'steps' : cat === 'exercise' ? 'min' : 'cal')).toLowerCase();
+        const cat2unit: Record<string,string> = {water:'oz',sleep:'hrs',steps:'steps',exercise:'min',weight:'lbs',calories:'cal',cal:'cal'};
+        const unit = (terseHealthMatch[3] || cat2unit[cat] || 'units').toLowerCase();
         const today = new Date().toISOString().slice(0,10);
         dbRun("INSERT INTO health_logs (id,date,category,label,value,unit,created_at) VALUES (?,?,?,?,?,?,?)",
           require('crypto').randomUUID(), today, cat, cat, val, unit, new Date().toISOString());
@@ -2193,7 +2216,8 @@ self.addEventListener('fetch', (event) => {
 
     // ── Schedule today ────────────────────────────────────────────────────────
     const scheduleMatch = /^(?:what.?s on my schedule|schedule(?:\s+for)?\s+today|today.?s schedule|what do i have today|what.?s today|today)/.test(lowerText)
-                       || lowerText === 'today';
+                       || lowerText === 'today' || lowerText === 'status'
+                       || lowerText === 'quick update' || lowerText === "how's everything" || lowerText === "how is everything";
     if (scheduleMatch) {
       try {
         const today = new Date().toISOString().slice(0,10);
@@ -2669,8 +2693,9 @@ self.addEventListener('fetch', (event) => {
     // ── Log revenue / income ─────────────────────────────────────────────────
     const revenueMatch = lowerText.match(/^(?:log|add|record)(?:\s+revenue)[:\s]+\$?([\d.]+)/i)
                       || lowerText.match(/^(?:log|add|record)[:\s]+\$([\d.]+)/i)
-                      || lowerText.match(/^i made \$([\d.]+)(?: today)?$/i)
-                      || lowerText.match(/^revenue[:\s]+\$?([\d.]+)/i);
+                      || lowerText.match(/^i (?:made|earned|got paid|received|collected) \$([\d.]+)(?: today)?$/i)
+                      || lowerText.match(/^revenue[:\s]+\$?([\d.]+)/i)
+                      || lowerText.match(/^got paid[:\s]+\$?([\d.]+)/i);
     if (revenueMatch) {
       const amount = parseFloat(revenueMatch[1]) || 0;
       if (amount > 0) {
