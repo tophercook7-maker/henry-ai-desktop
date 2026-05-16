@@ -3043,6 +3043,122 @@ self.addEventListener('fetch', (event) => {
       }
     }
 
+    // ── Microsoft Office Integration ──────────────────────────────────────────
+    // Commands: "open word", "new word doc", "create excel sheet", "open powerpoint", etc.
+    const officeMatch = lowerText.match(/^(?:open|create|new|launch|start)(?: a| an)? ?(word|excel|powerpoint|outlook|onenote)(?: (?:doc(?:ument)?|file|sheet|spreadsheet|presentation|email|note)?)?/i)
+                     || lowerText.match(/^(?:word|excel|powerpoint|outlook)(?: (?:open|new|create|doc|file|sheet))?$/i);
+    if (officeMatch) {
+      const app = (officeMatch[1] || officeMatch[0] || '').toLowerCase().trim();
+      const appMap: Record<string,string> = {
+        word: 'Microsoft Word',
+        excel: 'Microsoft Excel',
+        powerpoint: 'Microsoft PowerPoint',
+        outlook: 'Microsoft Outlook',
+        onenote: 'Microsoft OneNote',
+      };
+      const appKey = Object.keys(appMap).find(k => app.includes(k)) || 'word';
+      const appName = appMap[appKey];
+      const isNew = /create|new/.test(lowerText);
+      try {
+        const { execSync } = await import('child_process') as typeof import('child_process');
+        if (isNew && (appKey === 'word' || appKey === 'excel' || appKey === 'powerpoint')) {
+          execSync('open -a "' + appName + '"', { timeout: 5000 });
+          // Give it a moment to launch, then create new doc
+          await new Promise(resolve => setTimeout(resolve, 1500));
+          const script = appKey === 'word'
+            ? 'tell application "Microsoft Word" to make new document'
+            : appKey === 'excel'
+            ? 'tell application "Microsoft Excel" to make new workbook'
+            : 'tell application "Microsoft PowerPoint" to make new presentation';
+          try { execSync('osascript -e "' + script + '"', { timeout: 5000 }); } catch { /* ok */ }
+          sendReply('✅ New ' + appName + ' document created.\n\nYou can now say:\n• "write a quote for Henderson in word" to have Henry draft content\n• "save to desktop" to save the file\n• "close word" when done');
+        } else {
+          execSync('open -a "' + appName + '"', { timeout: 5000 });
+          sendReply('✅ ' + appName + ' opened.\n\nYou can say:\n• "create new word doc" to open a blank document\n• "open word file: /path/to/file.docx" to open a specific file\n• "write [content] in word" to draft with Henry');
+        }
+      } catch (e) { sendReply('Could not open ' + appName + ': ' + e + '\n\nMake sure Microsoft Office is installed.'); }
+      return;
+    }
+
+    // Open a specific Office file
+    const openOfficeFileMatch = lowerText.match(/^open (?:word|excel|powerpoint) file[:\s]+(.+)/i)
+                             || lowerText.match(/^open (.+\.(?:docx?|xlsx?|pptx?|csv))/i);
+    if (openOfficeFileMatch) {
+      const filePath = (openOfficeFileMatch[1] || '').trim().replace(/^["']|["']$/g, '');
+      try {
+        const { execSync } = await import('child_process') as typeof import('child_process');
+        const expanded = filePath.replace('~', process.env.HOME || '');
+        execSync('open "' + expanded + '"', { timeout: 5000 });
+        sendReply('✅ Opened: ' + filePath);
+      } catch (e) { sendReply('Could not open file: ' + filePath + '\nMake sure the path is correct.'); }
+      return;
+    }
+
+    // Save current Office doc to a location
+    const saveOfficeMatch = lowerText.match(/^save(?: (?:word|excel|powerpoint))?(?: (?:doc|file|sheet|to))?[:\s]+(.+)/i)
+                         || /^save to desktop$/.test(lowerText)
+                         || /^save(?: the)? (?:doc(?:ument)?|file|sheet)$/.test(lowerText);
+    if (saveOfficeMatch) {
+      let savePath = (Array.isArray(saveOfficeMatch) ? (saveOfficeMatch[1] || '') : '').trim();
+      if (!savePath || lowerText === 'save to desktop') savePath = '~/Desktop/Henry-' + new Date().toISOString().slice(0,10);
+      try {
+        const { execSync } = await import('child_process') as typeof import('child_process');
+        const expanded = savePath.replace('~', process.env.HOME || '');
+        // Try Word first, then Excel
+        const wordSave = 'tell application "Microsoft Word" to save active document';
+        try { execSync('osascript -e "' + wordSave + '"', { timeout: 5000 }); sendReply('✅ Word document saved.'); }
+        catch { 
+          const excelSave = 'tell application "Microsoft Excel" to save active workbook';
+          try { execSync('osascript -e "' + excelSave + '"', { timeout: 5000 }); sendReply('✅ Excel file saved.'); }
+          catch { sendReply('No active Office document to save. Open Word or Excel first.'); }
+        }
+      } catch (e) { sendReply('Could not save: ' + e); }
+      return;
+    }
+
+    // Close Office app
+    const closeOfficeMatch = lowerText.match(/^close(?: (?:word|excel|powerpoint|outlook))?$/i);
+    if (closeOfficeMatch && /word|excel|powerpoint|outlook/.test(lowerText)) {
+      const app2 = lowerText.includes('excel') ? 'Microsoft Excel'
+                 : lowerText.includes('powerpoint') ? 'Microsoft PowerPoint'
+                 : lowerText.includes('outlook') ? 'Microsoft Outlook'
+                 : 'Microsoft Word';
+      try {
+        const { execSync } = await import('child_process') as typeof import('child_process');
+        execSync('osascript -e "tell application \"' + app2 + '\" to quit saving no"', { timeout: 5000 });
+        sendReply('✅ ' + app2 + ' closed.');
+      } catch (e) { sendReply('Could not close ' + app2 + ': ' + e); }
+      return;
+    }
+
+    // "write [content] in word" → create doc with AI-drafted content then open Word
+    const writeInWordMatch = lowerText.match(/^(?:write|draft|create)(?: (?:a|an))?(.*?)(?:\s+in word| in excel| as a word doc| as a docx)/i);
+    if (writeInWordMatch) {
+      const what = (writeInWordMatch[1] || '').trim();
+      // We can't call AI inline here, so save task + open Word
+      try {
+        const { execSync } = await import('child_process') as typeof import('child_process');
+        execSync('open -a "Microsoft Word"', { timeout: 5000 });
+        sendReply('✅ Word opened.\n\nTo draft "' + (what || 'your document') + '":\n1. I\'ll be here to write content — just ask\n2. You can paste what I write directly into Word\n3. Or say "create invoice for Henderson" in chat and I\'ll format it for you');
+      } catch { sendReply('Could not open Word. Make sure Microsoft Office is installed.'); }
+      return;
+    }
+
+    // "create invoice for Henderson in word" / "make a quote for Wilson"
+    const createDocMatch = lowerText.match(/^(?:make|create|write|draft|generate)(?: (?:me|a|an))? (?:invoice|quote|estimate|proposal|letter|contract|report|checklist)(?: for .+)?(?:\s+in word| as (?:a )?word)?/i);
+    if (createDocMatch) {
+      const docType = lowerText.match(/invoice|quote|estimate|proposal|letter|contract|report|checklist/i)?.[0] || 'document';
+      const forWho = lowerText.match(/(?:for|to) ([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)/)?.[1] || '';
+      // Flag for AI to handle, but first open Word
+      try {
+        const { execSync } = await import('child_process') as typeof import('child_process');
+        execSync('open -a "Microsoft Word"', { timeout: 4000 });
+      } catch { /* ok if already open */ }
+      // Let AI generate the content (don't return — fall through to AI)
+      sendReply('📄 Opening Word... I\'ll draft the ' + docType + (forWho ? ' for ' + forWho : '') + ' for you.\n\n(Ask me in the next message: "draft a ' + docType + ' for ' + (forWho || 'client') + '" and I\'ll write it out for you to copy in)');
+      return;
+    }
+
     // ── "Remember that..." — instant memory save, no AI needed ────────────────
     const rememberMatch = lowerText.match(/^(?:please )?remember(?: that)? (.+)/i);
     if (rememberMatch) {
