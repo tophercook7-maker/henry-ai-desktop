@@ -1840,8 +1840,10 @@ self.addEventListener('fetch', (event) => {
       return;
     }
 
-    const habitStatusMatch = /^(?:what(?:'s| is)?|show|check)(?: my)? habit(?:s| streak| status)?/.test(lowerText)
-                          || /habit(?:s| streak)?(?:\s+today)?$/.test(lowerText);
+    // Don't intercept "longest streak" / "habit streaks this week" → goes to habitStreakMatch
+    const habitStatusMatch = (/^(?:what(?:'s| is)?|show|check)(?: my)? habits?(?:\s+(?:status|today|done|this week))?$/.test(lowerText)
+                          || lowerText === 'habits' || lowerText === 'my habits')
+                          && !/streak|longest|best/.test(lowerText);
     if (habitStatusMatch) {
       try {
         const today = new Date().toISOString().slice(0,10);
@@ -1960,7 +1962,9 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Complete / done goal ──────────────────────────────────────────────────
-    const doneGoalMatch = lowerText.match(/^(?:complete|finish|done|mark done|achieved?)(?: (?:goal|my goal)?)[:\s]+(.+)/i)
+    const doneGoalMatch = lowerText.match(/^(?:complete|finish|achieved?|accomplish(?:ed)?)(?: (?:goal|my goal)?)[:\s]+(.+)/i)
+                       || lowerText.match(/^mark (?:goal )?done[:\s]+(.+)/i)
+                       || lowerText.match(/^finish(?:ed)? goal[:\s]+(.+)/i)
                        || (lowerText.includes('goal') && lowerText.match(/^(?:update|mark)(?: goal)?[:\s]+(.+?)(?:\s+(?:as|to)(?: done| complete))?$/i));
     if (doneGoalMatch) {
       const hint = (doneGoalMatch[1] || '').replace(/\s+(?:as|to)\s+done\s*$/i,'').replace(/\s+(?:as|to)\s+complete\s*$/i,'').trim();
@@ -1979,21 +1983,27 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Habit streak count ────────────────────────────────────────────────────
-    const habitStreakMatch = /^how many habit(?: streak)?s?(?: do i have)?/.test(lowerText)
-                          || /^habit streak(?:s| count)?$/.test(lowerText);
+    const habitStreakMatch = /^(?:how many |show |what(?:'s| is) my )?habit streak(?:s| count)?(?:\s+(?:do i have|today))?$/.test(lowerText)
+                          || /^(?:longest|best|my) habit streak/.test(lowerText);
     if (habitStreakMatch) {
       try {
         const habits = dbGet<{id:string;name:string}>(
-          "SELECT id, name FROM habits WHERE active=1"
+          "SELECT id, name FROM habits WHERE active=1 ORDER BY created_at ASC"
         ) as {id:string;name:string}[];
-        const lines: string[] = [habits.length + ' active habit' + (habits.length !== 1 ? 's' : '') + ':'];
+        const today = new Date().toISOString().slice(0,10);
+        const lines: string[] = ['Habit streaks this week:\n'];
+        let best = { name: '', streak: 0 };
         habits.forEach(h => {
-          const streak = (dbGetOne<{streak:number}>(
-            "SELECT COUNT(*) as streak FROM habit_logs WHERE habit_id=? AND date >= date('now','-7 days')",
+          const logs = dbGet<{date:string}>(
+            "SELECT date FROM habit_logs WHERE habit_id=? AND date >= date('now','-6 days') ORDER BY date ASC",
             h.id
-          ) as {streak:number}|null)?.streak || 0;
-          lines.push('  ' + h.name + ': ' + streak + '/7 days this week');
+          ) as {date:string}[];
+          const streak = logs.length;
+          if (streak > best.streak) best = { name: h.name, streak };
+          const bar = '🔥'.repeat(streak) + '○'.repeat(Math.max(0, 7 - streak));
+          lines.push(bar + '  ' + h.name + ' (' + streak + '/7)');
         });
+        if (best.streak > 0) lines.push('\n🏆 Best: ' + best.name + ' — ' + best.streak + ' day' + (best.streak !== 1 ? 's' : ''));
         sendReply(lines.join('\n'));
       } catch { sendReply('Could not load habit streaks.'); }
       return;
@@ -2158,27 +2168,28 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Maker Studio: profit / jobs ──────────────────────────────────────────
-    const profitMatch = /^(?:what.?s|show)(?: my)? (?:profit|revenue|income)(?: this month| this week| today)?/.test(lowerText)
-                     || /^(?:how much)(?: have i)? (?:made|earned|grossed)/.test(lowerText);
+    const profitMatch = /^(?:what.?s my|show my|get my|how much|my)(?: )? (?:profit|revenue|income|earnings?)(?: this month| this week| today)?/.test(lowerText)
+                     || /^(?:how much)(?: have i)? (?:made|earned|grossed)/.test(lowerText)
+                     || lowerText === "revenue" || lowerText === "revenue this month" || lowerText === "my revenue";
     if (profitMatch) {
       try {
         const month = new Date().toISOString().slice(0,7);
-        const revenue = (dbGetOne<{n:number}>(
-          "SELECT COALESCE(SUM(revenue),0) as n FROM production_runs WHERE strftime('%Y-%m',created_at)=?", month
+        const income = (dbGetOne<{n:number}>(
+          "SELECT COALESCE(SUM(amount),0) as n FROM transactions WHERE type='income' AND strftime('%Y-%m',date)=?", month
         ) as {n:number}|null)?.n || 0;
-        const cost = (dbGetOne<{n:number}>(
-          "SELECT COALESCE(SUM(material_cost),0) as n FROM production_runs WHERE strftime('%Y-%m',created_at)=?", month
+        const expenses = (dbGetOne<{n:number}>(
+          "SELECT COALESCE(SUM(amount),0) as n FROM transactions WHERE type='expense' AND strftime('%Y-%m',date)=?", month
         ) as {n:number}|null)?.n || 0;
-        const jobCount = (dbGetOne<{n:number}>(
-          "SELECT COUNT(*) as n FROM production_runs WHERE strftime('%Y-%m',created_at)=?", month
+        const txCount = (dbGetOne<{n:number}>(
+          "SELECT COUNT(*) as n FROM transactions WHERE strftime('%Y-%m',date)=?", month
         ) as {n:number}|null)?.n || 0;
-        if (revenue === 0 && jobCount === 0) {
-          sendReply("No production runs logged this month yet. Open Maker Studio to log jobs and track profit.");
+        if (income === 0 && txCount === 0) {
+          sendReply("No income logged this month yet. Say \"log revenue: $X\" to record sales.");
         } else {
-          const profit = revenue - cost;
-          sendReply("This month's Maker Studio:\n\nJobs: " + jobCount + "\nRevenue: $" + revenue.toFixed(2) + "\nMaterial cost: $" + cost.toFixed(2) + "\nProfit: " + (profit >= 0 ? "+" : "") + "$" + profit.toFixed(2));
+          const profit = income - expenses;
+          sendReply("Maker Studio — This Month:\n\n💰 Revenue:  $" + income.toFixed(2) + "\n📦 Expenses: $" + expenses.toFixed(2) + "\n📈 Profit:   $" + profit.toFixed(2) + "\n🧾 " + txCount + " transaction" + (txCount !== 1 ? "s" : ""));
         }
-      } catch { sendReply("Could not load production data. Make sure you have logged jobs in Maker Studio."); }
+      } catch { sendReply("Could not load revenue data."); }
       return;
     }
 
@@ -2581,6 +2592,23 @@ self.addEventListener('fetch', (event) => {
       return;
     }
 
+    // ── Henry usage duration ──────────────────────────────────────────────────
+    const usageDaysMatch = /^how (?:long|many days) (?:have i|am i) (?:been )?using(?: henry)?$/.test(lowerText)
+                        || /^when did i (?:start|first use)(?: henry)?/.test(lowerText);
+    if (usageDaysMatch) {
+      try {
+        const oldest = dbGetOne<{d:string}>(
+          "SELECT MIN(created_at) as d FROM (SELECT created_at FROM personal_tasks UNION SELECT created_at FROM goals UNION SELECT created_at FROM memory_facts)"
+        ) as {d:string}|null;
+        if (!oldest?.d) { sendReply("I can't find when you started — but I'm glad you're here!"); return; }
+        const start = new Date(oldest.d);
+        const days = Math.floor((Date.now() - start.getTime()) / 86400000);
+        sendReply("You've been using Henry for " + days + " day" + (days !== 1 ? "s" : "") + " (since " +
+          start.toLocaleDateString('en-US', {month:'long', day:'numeric', year:'numeric'}) + ").");
+      } catch { sendReply("I can't calculate the exact duration right now."); }
+      return;
+    }
+
     // ── "Remember that..." — instant memory save, no AI needed ────────────────
     const rememberMatch = lowerText.match(/^(?:please )?remember(?: that)? (.+)/i);
     if (rememberMatch) {
@@ -2701,265 +2729,293 @@ self.addEventListener('fetch', (event) => {
       }
     } catch { /* fall through to AI */ }
 
-    // Send to Groq for real questions
+    // ── Iron Gateway v2 — Multi-provider round-robin with auto-fallback ─────
+    // Cycles through ALL free AI sources. When one rate-limits or errors,
+    // immediately tries the next. Each provider has a cooldown before retry.
     try {
-      const dbSettings = dbGet<{key:string;value:string}>('SELECT key, value FROM settings');
+      const dbSettings2 = dbGet<{key:string;value:string}>('SELECT key, value FROM settings');
       const settingsMap: Record<string,string> = {};
-      for (const {key,value} of dbSettings) settingsMap[key] = value;
-      const dbProviders = dbGet<{id:string;api_key:string}>('SELECT id, api_key FROM providers WHERE enabled=1');
-      const groq = dbProviders.find(p => p.id === 'groq');
-      const apiKey = groq?.api_key || '';
-      const model = settingsMap['companion_model'] || 'llama-3.3-70b-versatile';
+      for (const {key,value} of dbSettings2 as {key:string;value:string}[]) settingsMap[key] = value;
+      const dbProviders2 = dbGet<{id:string;api_key:string}>('SELECT id, api_key FROM providers WHERE enabled=1');
+      const groqKey = (dbProviders2 as {id:string;api_key:string}[]).find(p => p.id === 'groq')?.api_key || '';
+      const geminiKey = settingsMap['gemini_api_key'] || '';
+      const cerebrasKey = settingsMap['cerebras_api_key'] || '';
+      const openrouterKey = settingsMap['openrouter_api_key'] || '';
 
-      if (!apiKey) {
-        sendReply('No Groq API key set.');
+      // ── Provider registry ──────────────────────────────────────────────────
+      // Each entry: { hostname, path, model, headers, bodyFn, name }
+      // Listed in priority order. Henry tries each until one succeeds.
+      // Rate-limit state tracked in-memory with 60-second cooldown.
+
+      type ProviderDef = {
+        name: string;
+        hostname: string;
+        path: string;
+        model: string;
+        key: string;
+        bodyFn?: (msgs: object[], model: string) => string;
+      };
+
+      const providers: ProviderDef[] = [
+        // Groq tier-1: fast 70B (best quality, ~30 RPM free)
+        { name: 'Groq/llama-4-scout', hostname: 'api.groq.com', path: '/openai/v1/chat/completions',
+          model: 'meta-llama/llama-4-scout-17b-16e-instruct', key: groqKey },
+        // Groq tier-2: llama-3.3-70b versatile
+        { name: 'Groq/llama-3.3-70b', hostname: 'api.groq.com', path: '/openai/v1/chat/completions',
+          model: 'llama-3.3-70b-versatile', key: groqKey },
+        // Groq tier-3: Qwen3-32b
+        { name: 'Groq/qwen3-32b', hostname: 'api.groq.com', path: '/openai/v1/chat/completions',
+          model: 'qwen/qwen3-32b', key: groqKey },
+        // Groq tier-4: fast 8B (very high rate limits, lower quality)
+        { name: 'Groq/llama-3.1-8b', hostname: 'api.groq.com', path: '/openai/v1/chat/completions',
+          model: 'llama-3.1-8b-instant', key: groqKey },
+        // Gemini 2.0 Flash (15 RPM free, 1M tokens/day)
+        { name: 'Gemini/flash-2.0', hostname: 'generativelanguage.googleapis.com',
+          path: '/v1beta/models/gemini-2.0-flash:streamGenerateContent?alt=sse',
+          model: 'gemini-2.0-flash', key: geminiKey },
+        // Gemini 1.5 Flash (separate quota)
+        { name: 'Gemini/flash-1.5', hostname: 'generativelanguage.googleapis.com',
+          path: '/v1beta/models/gemini-1.5-flash:streamGenerateContent?alt=sse',
+          model: 'gemini-1.5-flash', key: geminiKey },
+        // Cerebras (very fast, generous free tier)
+        { name: 'Cerebras/llama-4-scout', hostname: 'api.cerebras.ai',
+          path: '/v1/chat/completions', model: 'llama-4-scout', key: cerebrasKey },
+        // OpenRouter free tier
+        { name: 'OpenRouter/llama-3.3-70b', hostname: 'openrouter.ai',
+          path: '/api/v1/chat/completions', model: 'meta-llama/llama-3.3-70b-instruct:free', key: openrouterKey },
+        { name: 'OpenRouter/gemma-3-27b', hostname: 'openrouter.ai',
+          path: '/api/v1/chat/completions', model: 'google/gemma-3-27b-it:free', key: openrouterKey },
+        { name: 'OpenRouter/deepseek-r1', hostname: 'openrouter.ai',
+          path: '/api/v1/chat/completions', model: 'deepseek/deepseek-r1:free', key: openrouterKey },
+      ].filter(p => p.key.length > 5); // Only include providers with valid keys
+
+      if (providers.length === 0) {
+        sendReply('No AI providers configured. Add a Groq API key in Settings.');
         return;
       }
 
-      const history = body.history || [];
+      // Rate-limit cooldown tracker (in-process, resets on restart)
+      // Key = provider name, value = timestamp when cooldown expires
+      const RL_STORE_KEY = '__henry_rl__';
+      const g = global as any;
+      if (!g[RL_STORE_KEY]) g[RL_STORE_KEY] = {};
+      const rlStore: Record<string, number> = g[RL_STORE_KEY];
+      const COOLDOWN_MS = 60_000; // 60-second cooldown after rate limit
 
-      // ── Build a warm, human system prompt with persistent memory ──────────
-      // Pull recent facts from memory_facts so Henry recalls past conversations.
+      const availableProviders = providers.filter(p => {
+        const cooldownUntil = rlStore[p.name] || 0;
+        return Date.now() > cooldownUntil;
+      });
+
+      if (availableProviders.length === 0) {
+        // All rate-limited — pick the one whose cooldown expires soonest
+        const soonest = providers.reduce((a, b) => 
+          (rlStore[a.name] || 0) < (rlStore[b.name] || 0) ? a : b
+        );
+        const wait = Math.ceil(((rlStore[soonest.name] || 0) - Date.now()) / 1000);
+        sendReply('All AI providers are temporarily rate-limited. Try again in ~' + wait + ' seconds, or say a command instead.');
+        return;
+      }
+
+      // Build system prompt (same as before — reused across all providers)
       let factsBlock = '';
       let userName = '';
       try {
         const facts = dbGet<{ fact: string; importance: number }>(
           'SELECT fact, importance FROM memory_facts ORDER BY importance DESC, created_at DESC LIMIT 25'
         ) as { fact: string; importance: number }[];
-        if (facts && facts.length) {
+        if (facts?.length) {
           factsBlock = facts.map(f => '- ' + f.fact).join('\n');
-          // Pull a name out of the facts if we have one
           for (const f of facts) {
             const m = f.fact.match(/^User name:\s*(.+)$/i);
             if (m) { userName = m[1].trim(); break; }
           }
         }
-      } catch { /* memory_facts table may not exist on first run */ }
+      } catch { /* */ }
 
-      // Pull recent conversation summaries from the SAME paired-device state
-      // so Henry has context across separate /sync/prompt sessions, not just
-      // within a single phone session.
       let recentSummary = '';
       try {
         const recentMsgs = dbGet<{ role: string; content: string }>(
           "SELECT role, content FROM messages WHERE role IN ('user','assistant') ORDER BY created_at DESC LIMIT 8"
         ) as { role: string; content: string }[];
-        if (recentMsgs && recentMsgs.length) {
+        if (recentMsgs?.length) {
           recentSummary = recentMsgs.reverse()
             .map(m => (m.role === 'user' ? 'You earlier' : 'Henry earlier') + ': ' + (m.content || '').slice(0, 200))
             .join('\n');
         }
       } catch { /* */ }
 
-      const greeting = userName ? `You are Henry, talking with ${userName}.` : `You are Henry.`;
-      const systemPrompt = [
+      const greeting = userName ? \`You are Henry, talking with \${userName}.\` : \`You are Henry.\`;
+      const now2 = new Date();
+      const dayName2 = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][now2.getDay()];
+      const monthName2 = ['January','February','March','April','May','June','July','August','September','October','November','December'][now2.getMonth()];
+
+      const liveCtxLines: string[] = [\`Today is \${dayName2}, \${monthName2} \${now2.getDate()}, \${now2.getFullYear()}. Current time: \${now2.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}.\`];
+      try {
+        const today2 = now2.toISOString().slice(0, 10);
+        const tasks2 = dbGet<{title:string}>( "SELECT title FROM personal_tasks WHERE status='todo' ORDER BY priority DESC, created_at DESC LIMIT 5") as {title:string}[];
+        if (tasks2.length) liveCtxLines.push('Open tasks: ' + tasks2.map(t => t.title).join(', '));
+        const habits2 = dbGet<{name:string}>("SELECT h.name FROM habits h WHERE h.active=1 AND h.id NOT IN (SELECT habit_id FROM habit_logs WHERE date=?) ORDER BY h.created_at LIMIT 5", today2) as {name:string}[];
+        if (habits2.length) liveCtxLines.push('Habits pending today: ' + habits2.map(h => h.name).join(', '));
+        const goals2 = dbGet<{title:string}>("SELECT title FROM goals WHERE status='active' ORDER BY priority_score DESC LIMIT 3") as {title:string}[];
+        if (goals2.length) liveCtxLines.push('Active goals: ' + goals2.map(g => g.title).join(', '));
+      } catch { /* */ }
+
+      const systemPrompt2 = [
         greeting,
-        "Henry is a warm, thoughtful, conversational AI — the user's personal companion who runs on their Mac and is reachable from their phone. Down-to-earth, curious, and genuinely interested in the person you're talking with. Like a smart friend, not a help desk.",
-        "",
-        "── ABSOLUTE RULES ──────────────────────────────────────────────",
-        "1. NEVER invent facts about the user, their work, projects, clients, products, social media, or anything personal. If they didn't tell you, you don't know.",
-        "2. The ONLY things you actually know about this user are listed in 'What you remember' below. If a fact isn't there and isn't in this conversation, you DON'T know it. Don't guess. Don't elaborate. Don't fabricate examples.",
-        "3. If you don't know something, say so plainly: 'I don't know yet — tell me about it' or 'You haven't mentioned that to me'. This is the right answer most of the time.",
-        "4. NEVER say things like 'I've noticed you've been working on...', 'I've seen your...', 'You've got some great work on Instagram', etc. unless those specific facts appear verbatim in 'What you remember' below.",
-        "5. NEVER claim to access apps, accounts, social media, websites, files, or anything outside what the user just typed unless you actually used a tool in this turn that returned that data.",
-        "6. When the user asks for advice, give general advice based on what they just told you. Don't pretend to have done research on their specific situation when you haven't.",
-        "",
-        "── HOW YOU TALK ────────────────────────────────────────────────",
-        "• Like a real person. Use contractions. Vary sentence length. Sometimes one line is right; sometimes a paragraph is.",
-        "• Match their energy. Casual when they're casual, focused when they're focused, gentle when they're upset.",
-        "• Brief but never curt. Three thoughtful sentences beats one blunt one.",
-        "• Ask one good follow-up question only when it actually helps. Don't pepper them.",
-        "• Use facts from 'What you remember' naturally when they're directly relevant — don't force-fit them, don't announce them.",
-        "",
-        "── WHAT YOU CAN ACTUALLY DO ON THIS MAC ───────────────────────",
-        "You ARE connected to this Mac. When the user asks for any of these, just say yes and tell them you're doing it — the bridge will execute it automatically:",
-        "• Take a screenshot — say 'Taking a screenshot now.'",
-        "• Create a folder on Desktop / Documents / Downloads — say 'Creating that folder for you.' (use words like 'create folder named X on my desktop')",
-        "• Open an app (Safari, Mail, Calendar, Notes, etc.) — say 'Opening X.'",
-        "• Open a URL or website — say 'Opening that link.'",
-        "• Check disk space / storage — say 'Let me check.'",
-        "• List files on Desktop / Documents / Downloads — say 'Here's what's on your desktop.'",
-        "• List running apps — say 'Here are the apps running.'",
-        "• Look up Bible verses — say 'Here it is.'",
-        "",
-        "What you CANNOT do: browse arbitrary websites, read email/messages, post to social media, see Instagram, search Google, access bank accounts, access any cloud service, or read documents you weren't shown. If asked, say so plainly and offer something you CAN do.",
-        "",
-        "When the user asks you to do one of the things you CAN do, do NOT refuse, do NOT say 'I can't access your computer', do NOT explain that you're a language model. Just confirm in one short friendly line and the system will execute. Example user requests that you SHOULD accept enthusiastically: 'take a screenshot', 'open Safari', 'make a folder called Project X on my desktop', 'show me my desktop files', 'how much disk space do I have', 'what apps are running'.",
-        "",
-        factsBlock
-          ? `── WHAT YOU REMEMBER ABOUT ${userName ? userName.toUpperCase() : 'THIS USER'} ──\nThese are the ONLY facts you know about them. Anything not on this list you do NOT know.\n${factsBlock}`
-          : `── WHAT YOU REMEMBER ──\nNothing yet — this is an early conversation. Don't make things up; ask them about themselves naturally if relevant.`,
+        "Henry is a warm, thoughtful, conversational AI — the user's personal companion. Down-to-earth, genuine, brief but never curt. Like a smart friend, not a help desk.",
+        "ABSOLUTE RULES: NEVER invent facts. The ONLY facts you know are in 'What you remember'. If not listed, say 'I don't know yet.' Match their energy. Ask one good question max.",
+        factsBlock ? \`── WHAT YOU REMEMBER ──\n\${factsBlock}\` : "── WHAT YOU REMEMBER ──\nNothing yet — early conversation.",
+        "── LIVE CONTEXT ──\n" + liveCtxLines.join('\n'),
+        recentSummary ? "── RECENT CONVERSATION ──\n" + recentSummary : '',
+      ].filter(Boolean).join('\n\n');
 
-        // Live context — real data from their Mac right now
-        (() => {
-          const lines: string[] = ['── LIVE CONTEXT (from their Mac right now) ──'];
-          // Always inject current date/time
-          const now = new Date();
-          const dayName = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][now.getDay()];
-          const monthName = ['January','February','March','April','May','June','July','August','September','October','November','December'][now.getMonth()];
-          lines.push(`Today is ${dayName}, ${monthName} ${now.getDate()}, ${now.getFullYear()}. Current time: ${now.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}.`);
-          try {
-            const today = new Date().toISOString().slice(0, 10);
-            const tasks = dbGet<{title:string;priority:number}>(
-              "SELECT title, priority FROM personal_tasks WHERE status='todo' ORDER BY priority DESC, created_at DESC LIMIT 5"
-            ) as {title:string;priority:number}[];
-            if (tasks.length) lines.push('Open tasks: ' + tasks.map(t => t.title).join(', '));
-            
-            const habits = dbGet<{name:string}>(
-              "SELECT h.name FROM habits h WHERE h.active=1 AND h.id NOT IN (SELECT habit_id FROM habit_logs WHERE date=?) ORDER BY h.created_at LIMIT 5",
-              today
-            ) as {name:string}[];
-            if (habits.length) lines.push('Habits not yet done today: ' + habits.map((h: any) => h.name).join(', '));
-            const doneHabits = dbGet<{name:string}>(
-              "SELECT h.name FROM habits h WHERE h.active=1 AND h.id IN (SELECT habit_id FROM habit_logs WHERE date=?)",
-              today
-            ) as {name:string}[];
-            if (doneHabits.length) lines.push('Habits completed today: ' + doneHabits.map((h: any) => h.name).join(', '));
-            
-            const goals = dbGet<{title:string;target_date:string}>(
-              "SELECT title, target_date FROM goals WHERE status='active' ORDER BY priority_score DESC LIMIT 3"
-            ) as {title:string;target_date:string}[];
-            if (goals.length) lines.push('Active goals: ' + goals.map(g => g.title + (g.target_date ? ' (due '+g.target_date+')' : '')).join(', '));
-            
-            const rems = dbGet<{title:string;due_at:string}>(
-              "SELECT title, due_at FROM reminders WHERE done=0 AND due_at <= datetime('now','+24 hours') ORDER BY due_at LIMIT 3"
-            ) as {title:string;due_at:string}[];
-            if (rems.length) lines.push('Due reminders: ' + rems.map(r => r.title).join(', '));
-          } catch { /* best effort */ }
-          return lines.length > 1 ? lines.join('\n') : null;
-        })(),
-      ].filter(Boolean).join('\n');
-
-      const messages = [
-        { role: 'system', content: systemPrompt },
-        ...history.slice(-16),
+      const messages2 = [
+        { role: 'system', content: systemPrompt2 },
+        ...(body.history || []).slice(-12),
         { role: 'user', content: userText }
       ];
 
-      // Stream from Groq
-      const { default: https } = await import('https');
-      const postBody = JSON.stringify({ model, messages, temperature: 0.3, max_tokens: 1500, stream: true });
-      const opts = {
-        hostname: 'api.groq.com',
-        path: '/openai/v1/chat/completions',
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey, 'Content-Length': Buffer.byteLength(postBody) }
+      // ── Try providers in order ──────────────────────────────────────────────
+      const { default: https2 } = await import('https');
+
+      let replied = false;
+
+      const tryProvider = (idx: number): void => {
+        if (idx >= availableProviders.length) {
+          if (!replied) sendReply('All available AI providers failed. Try again in a moment.');
+          return;
+        }
+
+        const prov = availableProviders[idx];
+        const isGemini = prov.hostname.includes('generativelanguage');
+
+        // Build request body based on provider
+        let postBody2: string;
+        let reqHeaders: Record<string,string>;
+
+        if (isGemini) {
+          // Gemini uses different format: contents array
+          const geminiContents = messages2
+            .filter(m => m.role !== 'system')
+            .map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }));
+          const systemInstruction = { parts: [{ text: systemPrompt2 }] };
+          postBody2 = JSON.stringify({ contents: geminiContents, systemInstruction, generationConfig: { temperature: 0.4, maxOutputTokens: 1200 } });
+          reqHeaders = { 'Content-Type': 'application/json', 'x-goog-api-key': prov.key };
+        } else {
+          // OpenAI-compatible (Groq, Cerebras, OpenRouter)
+          postBody2 = JSON.stringify({ model: prov.model, messages: messages2, temperature: 0.4, max_tokens: 1200, stream: true });
+          reqHeaders = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + prov.key, 'Content-Length': String(Buffer.byteLength(postBody2)) };
+          if (prov.hostname === 'openrouter.ai') {
+            reqHeaders['HTTP-Referer'] = 'https://henry-ai.app';
+            reqHeaders['X-Title'] = 'Henry AI';
+          }
+        }
+
+        const pathWithKey = isGemini ? prov.path + (prov.path.includes('?') ? '&' : '?') + 'key=' + prov.key : prov.path;
+
+        const opts2 = {
+          hostname: prov.hostname,
+          path: isGemini ? prov.path : prov.path,
+          method: 'POST',
+          headers: reqHeaders,
+          timeout: 5000  // 5s socket timeout — fail fast and try next provider
+        };
+
+        let fullText2 = '';
+        let doneSent2 = false;
+        let statusCode = 200;
+
+        const req3 = https2.request(opts2, (r3) => {
+          statusCode = r3.statusCode || 200;
+
+          // Rate-limit or error → mark provider and try next
+          if (statusCode === 429 || statusCode === 503 || statusCode === 524) {
+            rlStore[prov.name] = Date.now() + COOLDOWN_MS;
+            console.log(\`[Iron Gateway] \${prov.name} rate-limited (HTTP \${statusCode}), trying next...\`);
+            r3.resume(); // drain
+            tryProvider(idx + 1);
+            return;
+          }
+          if (statusCode >= 400 && statusCode !== 200) {
+            console.log(\`[Iron Gateway] \${prov.name} error HTTP \${statusCode}, trying next...\`);
+            r3.resume();
+            tryProvider(idx + 1);
+            return;
+          }
+
+          r3.on('data', (chunk: Buffer) => {
+            const rawLines = chunk.toString().split('\n');
+            for (const rawLine of rawLines) {
+              if (!rawLine.startsWith('data: ')) continue;
+              const data = rawLine.slice(6).trim();
+              if (data === '[DONE]') {
+                if (!doneSent2 && fullText2) {
+                  doneSent2 = true;
+                  finishReply(fullText2);
+                }
+                return;
+              }
+              try {
+                const parsed = JSON.parse(data);
+                // Gemini streaming format
+                let delta = '';
+                if (isGemini) {
+                  delta = parsed.candidates?.[0]?.content?.parts?.[0]?.text || '';
+                } else {
+                  delta = parsed.choices?.[0]?.delta?.content || '';
+                }
+                if (delta) {
+                  fullText2 += delta;
+                  pushToDevice(deviceId, { type: 'companion_chunk', payload: { chunk: delta } });
+                }
+              } catch { /* ignore parse errors */ }
+            }
+          });
+
+          r3.on('end', () => {
+            if (fullText2 && !doneSent2) {
+              doneSent2 = true;
+              finishReply(fullText2);
+            } else if (!fullText2 && !doneSent2) {
+              // Empty response — try next provider
+              console.log(\`[Iron Gateway] \${prov.name} returned empty, trying next...\`);
+              tryProvider(idx + 1);
+            }
+          });
+        });
+
+        req3.on('error', (e: Error) => {
+          console.log(\`[Iron Gateway] \${prov.name} network error: \${e.message}, trying next...\`);
+          if (!replied) tryProvider(idx + 1);
+        });
+        req3.on('timeout', () => {
+          console.log('[Iron Gateway] ' + prov.name + ' timed out after 6s, trying next...');
+          req3.destroy();
+          if (!replied) tryProvider(idx + 1);
+        });
+
+        req3.write(postBody2);
+        req3.end();
       };
 
-      let fullText = '';
-      let doneSent = false;
-      const req2 = https.request(opts, (r2) => {
-        r2.on('data', (chunk: Buffer) => {
-          const lines = chunk.toString().split('\n');
-          for (const line of lines) {
-            if (!line.startsWith('data: ')) continue;
-            const data = line.slice(6);
-            if (data === '[DONE]') {
-              if (!doneSent) {
-                doneSent = true;
-                // Track AI response for intent resolution
-                deviceContext.set(deviceId, { ...deviceContext.get(deviceId), lastAiResponse: fullText });
+      const finishReply = (text: string) => {
+        if (replied) return;
+        replied = true;
+        deviceContext.set(deviceId, { ...deviceContext.get(deviceId), lastAiResponse: text });
+        try { extractAndSaveFacts(body.text || '', text); } catch { /* non-critical */ }
+        const cantPhrases = ["I don't have direct access","I don't have access to your computer","I'm currently interacting with you on your phone","I cannot access your","I can't directly access"];
+        const hasCannotPhrase = cantPhrases.some(p => text.includes(p));
+        if (hasCannotPhrase) {
+          sendReply('I had trouble with that. Try asking differently, or use the quick buttons at the bottom.');
+        } else {
+          sendReply(text);
+        }
+      };
 
-                // Extract and save any facts from this exchange
-                try {
-                  extractAndSaveFacts(body.text || '', fullText);
-                } catch { /* non-critical */ }
-                // Strip "I can't access your computer" type responses — these shouldn't reach the user
-                let cleanText = fullText;
-                const cantPhrases = [
-                  "I don't have direct access",
-                  "I don't have access to your computer",
-                  "I'm currently interacting with you on your phone",
-                  "I cannot access your",
-                  "I can't directly access",
-                  "don't have the ability to",
-                  "I'm a text-based AI",
-                  "As an AI, I don't",
-                  "I'm not able to access",
-                ];
-                const hasCannotPhrase = cantPhrases.some(p => cleanText.includes(p));
-                if (hasCannotPhrase) {
-                  cleanText = 'I had trouble with that. Try asking differently, or use the quick buttons at the bottom.';
-                }
-                sendReply(cleanText);
-              }
-              return;
-            }
-            try {
-              const parsed = JSON.parse(data);
-              const delta = parsed.choices?.[0]?.delta?.content || '';
-              if (delta) {
-                fullText += delta;
-                pushToDevice(deviceId, { type: 'companion_chunk', payload: { chunk: delta } });
-              }
-            } catch { /* ignore parse errors */ }
-          }
-        });
-        r2.on('end', async () => {
-          if (!fullText || doneSent) return; // doneSent means [DONE] already pushed the response
+      // Kick off the chain
+      tryProvider(0);
 
-          // Execute any computer actions Henry mentioned
-          let finalText = fullText;
-          const { execSync } = await import('child_process');
-          const sysOs = await import('os');
-          const sysHome = sysOs.default.homedir();
-
-          // Check for screenshot request
-          if (/computer:screenshot\s*\(\s*\)|take.*screenshot|screenshot/i.test(fullText)) {
-            try {
-              const tmpFile = sysOs.default.tmpdir() + '/henry_mobile_sc_' + Date.now() + '.png';
-              execSync('screencapture -x "' + tmpFile + '"', {timeout: 5000});
-              const sysFs = await import('fs');
-              const buf = sysFs.default.readFileSync(tmpFile);
-              sysFs.default.unlinkSync(tmpFile);
-              const b64 = buf.toString('base64');
-              pushToDevice(deviceId, { type: 'companion_screenshot', payload: { base64: b64 } });
-            } catch(e) { /* screenshot failed */ }
-          }
-
-          // Check for folder creation
-          const folderMatch = fullText.match(/computer:newFolder\s*\([^)]*path=["']?([^"',)]+)["']?[^)]*name=["']?([^"',)]+)["']?/i);
-          if (folderMatch) {
-            try {
-              const folderPath = (folderMatch[1].trim().replace(/\/$/, '') + '/' + folderMatch[2].trim()).replace(/^~/, sysHome);
-              const sysFs2 = await import('fs');
-              sysFs2.default.mkdirSync(folderPath, {recursive: true});
-              const { exec } = await import('child_process');
-              exec('open "' + folderPath + '"');
-              finalText = fullText + '\n\n✓ Folder created: ' + folderPath;
-            } catch(e) { finalText = fullText + '\n\n✗ Folder error: ' + (e instanceof Error ? e.message : String(e)); }
-          }
-
-          // Check for shell command
-          const shellMatch = fullText.match(/computer:runShell\s*\([^)]*command=["']([^"']+)["']/i)
-            || fullText.match(/computer:runShell\s*\(([^)]+)\)/i);
-          if (shellMatch && !folderMatch) {
-            try {
-              const cmd = shellMatch[1].replace(/command=["']?/i,'').replace(/["']$/,'').trim()
-                .replace(/\/Users\/yourusername\//g, sysHome + '/').replace(/^~\//, sysHome + '/');
-              const out = execSync(cmd, {timeout: 10000, encoding: 'utf8'});
-              finalText = fullText + '\n\n✓ Output:\n' + (out?.trim() || 'Done');
-            } catch(e) { finalText = fullText + '\n\n✗ Error: ' + (e instanceof Error ? e.message : String(e)); }
-          }
-
-          // Check for open app
-          const appMatch = fullText.match(/computer:openApp\s*\(["']?([^"',)]+)["']?\)/i);
-          if (appMatch) {
-            try {
-              const { exec } = await import('child_process');
-              exec('open -a "' + appMatch[1].trim() + '"');
-              finalText = fullText + '\n\n✓ Opened ' + appMatch[1].trim();
-            } catch(e) { /* ignore */ }
-          }
-
-          sendReply(finalText);
-        });
-      });
-      req2.on('error', (e: Error) => {
-        sendReply('Error: ' + e.message);
-      });
-      req2.write(postBody);
-      req2.end();
     } catch (e) {
       sendReply('Error: ' + (e instanceof Error ? e.message : String(e)));
     }
