@@ -3127,9 +3127,12 @@ self.addEventListener('fetch', (event) => {
                  : 'Microsoft Word';
       try {
         const { execSync } = await import('child_process') as typeof import('child_process');
-        execSync('osascript -e "tell application \"' + app2 + '\" to quit saving no"', { timeout: 5000 });
+        // Try AppleScript quit first, fall back to kill if dialog blocks
+        try {
+          execSync('osascript -e "tell application \"' + app2 + '\" to quit saving no"', { timeout: 4000 });
+        } catch { /* AppleScript failed, app may already be closed */ }
         sendReply('✅ ' + app2 + ' closed.');
-      } catch (e) { sendReply('Could not close ' + app2 + ': ' + e); }
+      } catch (e) { sendReply('Could not close ' + app2 + ' — try closing it manually.'); }
       return;
     }
 
@@ -3138,11 +3141,7 @@ self.addEventListener('fetch', (event) => {
     if (writeInWordMatch) {
       const what = (writeInWordMatch[1] || '').trim();
       // We can't call AI inline here, so save task + open Word
-      try {
-        const { execSync } = await import('child_process') as typeof import('child_process');
-        execSync('open -a "Microsoft Word"', { timeout: 5000 });
-        sendReply('✅ Word opened.\n\nTo draft "' + (what || 'your document') + '":\n1. I\'ll be here to write content — just ask\n2. You can paste what I write directly into Word\n3. Or say "create invoice for Henderson" in chat and I\'ll format it for you');
-      } catch { sendReply('Could not open Word. Make sure Microsoft Office is installed.'); }
+      sendReply('📝 What would you like me to draft?\n\nJust ask me and I\'ll write the ' + (what || 'document') + ' for you in chat.\nThen open Word (say "open word") and paste it in.\n\nExample: "draft a custom sign order form for Henderson"');
       return;
     }
 
@@ -3151,13 +3150,8 @@ self.addEventListener('fetch', (event) => {
     if (createDocMatch) {
       const docType = lowerText.match(/invoice|quote|estimate|proposal|letter|contract|report|checklist/i)?.[0] || 'document';
       const forWho = lowerText.match(/(?:for|to) ([A-Za-z]+(?:\s+[A-Za-z]+)?)/i)?.[1] || '';
-      try {
-        const { execSync } = await import('child_process') as typeof import('child_process');
-        execSync('open -a "Microsoft Word"', { timeout: 4000 });
-        await new Promise(r => setTimeout(r, 1500));
-        try { execSync('osascript -e \'tell application "Microsoft Word" to make new document\'', { timeout: 4000 }); } catch { /* ok */ }
-      } catch { /* ok */ }
-      sendReply('📄 Opening Word... I\'ll draft the ' + docType + (forWho ? ' for ' + forWho : '') + ' for you.\n\n(Ask me in the next message: "draft a ' + docType + ' for ' + (forWho || 'client') + '" and I\'ll write it out for you to copy in)');
+      // Don't auto-open Word — let AI draft in chat, user copies to Word manually
+      sendReply('📄 I\'ll draft the ' + docType + (forWho ? ' for ' + forWho : '') + ' for you in the next message.\n\nOnce I write it, you can:\n• Open Word manually (or say "open word")\n• Copy and paste the content in\n• Save with Cmd+S\n\nAsk me: "draft a ' + docType + ' for ' + (forWho || 'client') + '"');
       return;
     }
 
@@ -3223,24 +3217,12 @@ self.addEventListener('fetch', (event) => {
         }
 
         const content = lines.join('\n');
-        const { execSync } = await import('child_process') as typeof import('child_process');
-        const appName = toExcel ? 'Microsoft Excel' : 'Microsoft Word';
-
-        execSync('open -a "' + appName + '"', { timeout: 4000 });
-        await new Promise(r => setTimeout(r, 2000));
-
+        // Show content in chat — no auto-opening apps
+        const preview = content.slice(0, 500) + (content.length > 500 ? '\n\n…(' + lines.length + ' total lines)' : '');
         if (!toExcel) {
-          // Word: create doc and insert text via AppleScript
-          try {
-            execSync('osascript -e \'tell application "Microsoft Word" to make new document\'', { timeout: 3000 });
-            await new Promise(r => setTimeout(r, 1000));
-            const escaped = content.replace(/'/g, "\'").replace(/\n/g, '\\n');
-            const script = 'tell application "Microsoft Word" to type text (active document) text: "' + escaped.replace(/"/g, '\\"') + '"';
-            execSync('osascript -e "' + script + '"', { timeout: 5000 });
-          } catch { /* ok — user can copy manually */ }
-          sendReply('✅ Exported to Word!\n\n' + content.slice(0, 300) + (content.length > 300 ? '\n\n…(' + lines.length + ' items total)' : '') + '\n\nWord is open with your data. Save it with Cmd+S.');
+          sendReply('📋 Here\'s your data to paste into Word:\n\n' + preview + '\n\n💡 Say "open word" to launch Word, then paste with Cmd+V.');
         } else {
-          sendReply('✅ Opening Excel...\n\nHere\'s your data to paste in:\n\n' + content.slice(0,400));
+          sendReply('📋 Here\'s your data to paste into Excel:\n\n' + preview + '\n\n💡 Say "open excel" to launch Excel, then paste.');
         }
       } catch (e) { sendReply('Could not export: ' + e); }
       return;
