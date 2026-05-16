@@ -1498,11 +1498,20 @@ self.addEventListener('fetch', (event) => {
 
     // ── Habit fast-path: intercept "mark X done" before task handler ──────────
     {
-      const hkws = ['prayer','praying','bible','exercise','journal','water'];
-      const hasHKW = hkws.some(k => lowerText.includes(k));
-      if (hasHKW && /^(?:mark|done|check|finish|complete)/.test(lowerText)) {
-        let hk = hkws.find(k => lowerText.includes(k)) || '';
+      const hkws = ['prayer','praying','bible','exercise','journal','water','run','jog','walk'];
+      const hasHKW = hkws.some((k: string) => lowerText.includes(k));
+      const naturalHabitDone = /^(?:went for a?|did (?:my|the|a)|drank|finished|completed)(?: (?:my|a|the))? (?:run|jog|walk|bible|reading|journal|water|prayer|exercise|meditation)/i.test(lowerText)
+                             || /^(?:i (?:prayed|exercised|ran|jogged|walked|meditated|journaled|drank|read (?:my )?bible))/i.test(lowerText);
+      if ((hasHKW || naturalHabitDone) && (/^(?:mark|done|check|finish|complete)/.test(lowerText) || naturalHabitDone)) {
+        let hk = hkws.find((k: string) => lowerText.includes(k)) || '';
         if (hk === 'praying') hk = 'prayer';
+        if (hk === 'run' || hk === 'jog' || hk === 'walk') hk = 'exercise';
+        if (hk === 'meditat') hk = 'meditation';
+        // naturalHabitDone - extract keyword from text if no hkw matched
+        if (!hk) {
+          const nMap: Record<string,string> = {run:'exercise',jog:'exercise',walk:'exercise',bible:'bible',reading:'bible',journal:'journal',water:'water',prayer:'prayer',prayed:'prayer'};
+          for (const word of Object.keys(nMap)) { if (lowerText.includes(word)) { hk = nMap[word]; break; } }
+        }
         const fh = hk ? dbGetOne<{id:string;name:string}>(
           "SELECT id, name FROM habits WHERE active=1 AND LOWER(name) LIKE ? LIMIT 1", '%'+hk+'%'
         ) as {id:string;name:string}|null : null;
@@ -3046,6 +3055,23 @@ self.addEventListener('fetch', (event) => {
             id, today5, amount, 'expense', category, new Date().toISOString());
           sendReply('💸 Logged expense: $' + amount.toFixed(2) + (category !== 'supplies' ? ' — ' + category : '') + '\n\nSay "what\'s my revenue this month" to see profit after expenses.');
         } catch (e) { sendReply('Could not log expense: ' + e); }
+        return;
+      }
+    }
+
+    // ── Quick income log: "booked a $800 job" / "received deposit of $200" ──
+    const quickIncomeMatch = lowerText.match(/^(?:booked|landed|got)(?: a| an)?(?: \$([\d.]+))?(?: job| order| client| project| gig)?$/i)
+                          || lowerText.match(/^received(?: a)?(?: deposit of)? \$([\d.]+)/i)
+                          || lowerText.match(/^got(?: paid)? \$([\d.]+)(?: (?:deposit|today))?/i);
+    if (quickIncomeMatch) {
+      const amt = parseFloat(quickIncomeMatch[1] || quickIncomeMatch[2] || '0');
+      if (amt > 0) {
+        try {
+          const id = require('crypto').randomUUID();
+          dbRun("INSERT INTO transactions (id,date,amount,type,category,created_at) VALUES (?,?,?,?,?,?)",
+            id, new Date().toISOString().slice(0,10), amt, 'income', 'job', new Date().toISOString());
+          sendReply('💰 Logged income: $' + amt.toFixed(2) + '\n\nSay "what\'s my revenue this month" to see your totals.');
+        } catch (e) { sendReply('Could not log income: ' + e); }
         return;
       }
     }
