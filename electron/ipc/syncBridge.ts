@@ -1637,6 +1637,25 @@ self.addEventListener('fetch', (event) => {
 
 
     // ── Add goal ──────────────────────────────────────────────────────────────
+    // "update goal: X to: Y" — must fire before addGoalMatch
+    const updateGoalMatch = /^(?:update|change|edit|revise)(?: (?:my|the|a))?(?: goal)?[:\s]+/.test(lowerText);
+    if (updateGoalMatch) {
+      const m = resolvedText.match(/^(?:update|change|edit|revise)(?: (?:my|the|a))?(?: goal)?[:\s]+(.+?) (?:to|as)[:\s]+(.+)/i);
+      if (m) {
+        const oldHint = m[1].trim().toLowerCase();
+        const newTitle = m[2].trim();
+        try {
+          const g = dbGetOne<{id:string;title:string}>(
+            "SELECT id, title FROM goals WHERE LOWER(title) LIKE ? AND status='active' LIMIT 1",
+            '%' + oldHint + '%'
+          ) as {id:string;title:string}|null;
+          if (g) { dbRun("UPDATE goals SET title=?, updated_at=? WHERE id=?", newTitle, new Date().toISOString(), g.id); sendReply('✏️ Goal updated: "' + g.title + '" → "' + newTitle + '"'); }
+          else { sendReply('No active goal found matching "' + oldHint + '". Say "what goals do I have" to see your list.'); }
+        } catch (e) { sendReply('Could not update goal: ' + e); }
+        return;
+      }
+    }
+
     const addGoalMatch = lowerText.match(/^(?:add|create|new|set) (?:a )?goal[:\s]+(.+)/i)
                       || lowerText.match(/^goal[:\s]+(.+)/i);
     if (addGoalMatch) {
@@ -1677,7 +1696,9 @@ self.addEventListener('fetch', (event) => {
 
     // "remind me to X [at/on TIME/DATE]" 
     const remindMatch = lowerText.match(/^remind(?:er)?(?: me)? (?:to |about )?(.+)/i)
-                    || lowerText.match(/^(?:set|add|create)(?: a)? reminder(?: for)?[:\s]+(.+)/i);
+                    || lowerText.match(/^(?:set|add|create)(?: a)? reminder(?: for)?[:\s]+(.+)/i)
+                    || lowerText.match(/^(?:set(?: up)?|add|create)(?: a| an?)?(?: daily| weekly| recurring| quick)? reminder[:\s]*(.+)/i)
+                    || lowerText.match(/^(?:set up|create)(?: a| an?)? (?:daily|weekly|recurring) reminder[:\s]+(.+)/i);
     if (remindMatch) {
       const rawTitle = resolvedText
         .replace(/^remind(?:er)?(?: me)? (?:to |about )?/i,'')
@@ -2280,6 +2301,25 @@ self.addEventListener('fetch', (event) => {
       return;
     }
 
+    // ── Snooze reminder ──────────────────────────────────────────────────────
+    const snoozeReminderMatch = lowerText.match(/^snooze(?: reminder)?[:\s]+(.+)/i)
+                             || lowerText.match(/^(?:postpone|delay|push back)(?: reminder)?[:\s]+(.+)/i);
+    if (snoozeReminderMatch) {
+      const hint = (snoozeReminderMatch[1] || '').trim().toLowerCase();
+      try {
+        const rem = dbGetOne<{id:string;title:string;due_at:string}>(
+          "SELECT id, title, due_at FROM reminders WHERE LOWER(title) LIKE ? AND done=0 LIMIT 1",
+          '%' + hint + '%'
+        ) as {id:string;title:string;due_at:string}|null;
+        if (!rem) { sendReply('No active reminder found matching: "' + hint + '"'); return; }
+        const base = rem.due_at ? new Date(rem.due_at) : new Date();
+        const newDue = new Date(base.getTime() + 86400000); // +1 day
+        dbRun("UPDATE reminders SET due_at=?, updated_at=? WHERE id=?", newDue.toISOString(), new Date().toISOString(), rem.id);
+        sendReply('💤 Snoozed: "' + rem.title + '" → ' + newDue.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}));
+      } catch (e) { sendReply('Could not snooze: ' + e); }
+      return;
+    }
+
     // ── Delete reminder ───────────────────────────────────────────────────────
     const deleteRemMatch = lowerText.match(/^(?:delete|remove|cancel)(?: a)? reminder[:\s]+(.+)/i)
                         || lowerText.match(/^(?:mark|set) reminder(?: as)? done[:\s]+(.+)/i);
@@ -2437,7 +2477,9 @@ self.addEventListener('fetch', (event) => {
 
     const scheduleMatch = /^(?:what.?s on my schedule|schedule(?:\s+for)?\s+today|today.?s schedule|what do i have today|what.?s today|today)/.test(lowerText)
                        || lowerText === 'today' || lowerText === 'status'
-                       || lowerText === 'quick update' || lowerText === "how's everything" || lowerText === "how is everything";
+                       || lowerText === 'quick update' || lowerText === "how's everything" || lowerText === "how is everything"
+                       || /^(?:what.?s my|give me my|show me my) (?:plan|day brief|daily brief|day plan)(?: for today)?$/.test(lowerText)
+                       || lowerText === "my plan" || lowerText === "day brief" || lowerText === "daily brief";
     if (scheduleMatch) {
       try {
         const today = new Date().toISOString().slice(0,10);
@@ -2666,6 +2708,25 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Update task status / priority ─────────────────────────────────────────
+    // ── Rename task ───────────────────────────────────────────────────────────
+    const renameTaskMatch = lowerText.match(/^(?:rename|edit|update|change)(?: task)?[:\s]+(.+?) (?:to|as|→)[:\s]+(.+)/i);
+    if (renameTaskMatch) {
+      const oldHint = (renameTaskMatch[1] || '').trim().toLowerCase();
+      const newTitle = (renameTaskMatch[2] || '').trim();
+      if (oldHint.length > 2 && newTitle.length > 2) {
+        try {
+          const task = dbGetOne<{id:string;title:string}>(
+            "SELECT id, title FROM personal_tasks WHERE LOWER(title) LIKE ? AND status!='done' LIMIT 1",
+            '%' + oldHint + '%'
+          ) as {id:string;title:string}|null;
+          if (!task) { sendReply('Could not find task matching: "' + oldHint + '"'); return; }
+          dbRun("UPDATE personal_tasks SET title=?, updated_at=? WHERE id=?", newTitle, new Date().toISOString(), task.id);
+          sendReply('✏️ Renamed: "' + task.title + '" → "' + newTitle + '"');
+        } catch (e) { sendReply('Could not rename task: ' + e); }
+        return;
+      }
+    }
+
     const updateTaskMatch = lowerText.match(/^(?:update|change|set|move) task[:\s]+(.+?) to (todo|doing|done|high|low|medium|med)/i)
                         || lowerText.match(/^mark task[:\s]+(.+) (?:as )?(done|complete|todo|doing)/i)
                         || lowerText.match(/^(?:task[:\s]+)(.+) (?:is |→ ?|-> ?)(done|todo|doing)/i);
