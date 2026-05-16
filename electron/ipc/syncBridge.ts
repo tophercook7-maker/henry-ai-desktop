@@ -2008,6 +2008,22 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Health summary ────────────────────────────────────────────────────────
+    // ── Health this week ─────────────────────────────────────────────────────
+    const healthWeekMatch = /^(?:show|how much|what(?:'s| is)?)(?: my)? (?:water|sleep|exercise|steps?|calories?)(?: average)?(?: this week| this past week| for the week)$/.test(lowerText);
+    if (healthWeekMatch) {
+      try {
+        const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate()-7);
+        const weekStr = weekAgo.toISOString().slice(0,10);
+        const logs = dbGet<{category:string;value:number;unit:string;date:string}>(
+          "SELECT category, SUM(value) as value, unit, date FROM health_logs WHERE date >= ? GROUP BY category, unit ORDER BY category",
+          weekStr
+        ) as {category:string;value:number;unit:string;date:string}[];
+        if (!logs.length) sendReply("No health data logged this week. Say 'log 8 oz water' to start tracking.");
+        else sendReply("Health this week:\n\n" + logs.map(l => l.category + ": " + l.value.toFixed(0) + " " + l.unit).join("\n"));
+      } catch { sendReply("Could not load weekly health."); }
+      return;
+    }
+
     const healthSummaryMatch = /^(?:show|what(?:'s| is| are)?|how much|how many)(?: my)? (?:health|water|steps?|sleep|exercise|calories?|logs?)(?: today| this week)?/.test(lowerText)
                             || /^(?:health|water|steps?)(?:\s+today)?$/.test(lowerText);
     if (healthSummaryMatch) {
@@ -2093,6 +2109,34 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Bulk operations ────────────────────────────────────────────────────────
+    // ── Bulk complete tasks: "done: task1, task2, task3" ───────────────────────
+    const bulkDoneMatch = lowerText.match(/^(?:done|finished|completed?|mark done)[:\s]+(.+)/i);
+    if (bulkDoneMatch) {
+      const items = bulkDoneMatch[1].split(/[,;]+/).map((s: string) => s.trim()).filter((s: string) => s.length > 2);
+      if (items.length >= 2) {
+        // Multiple items separated by comma — bulk complete
+        const completed: string[] = [];
+        const notFound: string[] = [];
+        for (const item of items.slice(0, 5)) {
+          try {
+            const task = dbGetOne<{id:string;title:string}>(
+              "SELECT id, title FROM personal_tasks WHERE LOWER(title) LIKE ? AND status!='done' LIMIT 1",
+              '%' + item.toLowerCase() + '%'
+            ) as {id:string;title:string}|null;
+            if (task) {
+              dbRun("UPDATE personal_tasks SET status='done', completed_at=?, updated_at=? WHERE id=?",
+                new Date().toISOString(), new Date().toISOString(), task.id);
+              completed.push(task.title);
+            } else { notFound.push(item); }
+          } catch { notFound.push(item); }
+        }
+        let reply = completed.length ? "✓ Done (" + completed.length + "):\n" + completed.map((t,i) => (i+1) + ". " + t).join("\n") : "";
+        if (notFound.length) reply += (reply ? "\n\n" : "") + "Not found: " + notFound.join(", ");
+        sendReply(reply || "No matching tasks found.");
+        return;
+      }
+    }
+
     // ── Clear done reminders ─────────────────────────────────────────────────
     const clearDoneRemsMatch = /^(?:clear|remove|delete|dismiss)(?: all)?(?: my)?(?: done| completed| finished)(?: reminders?)?$/.test(lowerText)
                             || lowerText === 'clear done reminders' || lowerText === 'dismiss done reminders';
@@ -2128,6 +2172,46 @@ self.addEventListener('fetch', (event) => {
         sendReply("Archived " + count + " completed goal" + (count !== 1 ? 's' : '') + ".");
       } catch (e) { sendReply("Could not archive goals: " + e); }
       return;
+    }
+
+    // ── Universal search ────────────────────────────────────────────────────────
+    const universalSearchMatch = lowerText.match(/^(?:search(?: (?:my|all))?(?: (?:notes?|memory|tasks?|everything|data))?(?:\s+for)?|find(?: everything about| all about| (?:my notes?|tasks?) (?:about|for|with))?)[:\s]+(.+)/i)
+                               || lowerText.match(/^(?:look up|show (?:everything|all)(?: about))[:\s]+(.+)/i);
+    if (universalSearchMatch) {
+      const keyword = (universalSearchMatch[2] || universalSearchMatch[1] || '').trim().toLowerCase();
+      if (keyword.length > 2) {
+        try {
+          const results: string[] = [];
+          // Search memory_facts
+          const facts = dbGet<{fact:string;category:string}>(
+            "SELECT fact, category FROM memory_facts WHERE LOWER(fact) LIKE ? ORDER BY importance DESC LIMIT 5",
+            '%' + keyword + '%'
+          ) as {fact:string;category:string}[];
+          if (facts.length) results.push("📝 Notes/Memory (" + facts.length + "):\n" + facts.map((f,i) => (i+1) + ". " + f.fact).join("\n"));
+          // Search tasks
+          const tasks = dbGet<{title:string;status:string}>(
+            "SELECT title, status FROM personal_tasks WHERE LOWER(title) LIKE ? LIMIT 5",
+            '%' + keyword + '%'
+          ) as {title:string;status:string}[];
+          if (tasks.length) results.push("✓ Tasks (" + tasks.length + "):\n" + tasks.map((t,i) => (i+1) + ". " + t.title + " [" + t.status + "]").join("\n"));
+          // Search goals
+          const goals = dbGet<{title:string}>(
+            "SELECT title FROM goals WHERE LOWER(title) LIKE ? AND status='active' LIMIT 3",
+            '%' + keyword + '%'
+          ) as {title:string}[];
+          if (goals.length) results.push("◎ Goals (" + goals.length + "):\n" + goals.map((g,i) => (i+1) + ". " + g.title).join("\n"));
+          // Search prayer requests
+          const prayers = dbGet<{body:string}>(
+            "SELECT body FROM prayer_requests WHERE LOWER(body) LIKE ? AND status='active' LIMIT 3",
+            '%' + keyword + '%'
+          ) as {body:string}[];
+          if (prayers.length) results.push("🙏 Prayers (" + prayers.length + "):\n" + prayers.map((p,i) => (i+1) + ". " + p.body).join("\n"));
+
+          if (!results.length) sendReply('Nothing found for "' + keyword + '" in your notes, tasks, goals, or prayers.');
+          else sendReply('Search results for "' + keyword + '":\n\n' + results.join("\n\n"));
+        } catch { sendReply("Could not complete search."); }
+        return;
+      }
     }
 
     // ── Search memory / notes ─────────────────────────────────────────────────
