@@ -1676,6 +1676,7 @@ self.addEventListener('fetch', (event) => {
     // "what tasks do i have" / "show my tasks" / "list my tasks"
     // ── Tasks in progress (doing) ────────────────────────────────────────────
     const doingTasksMatch = /^(?:show|what|list)(?: (?:tasks?|all))?(?: i(?:'m| am))? (?:working on|in progress|doing|started|active)/.test(lowerText)
+                          || /^what tasks? (?:are)? ?(?:almost done|nearly done|in progress)/.test(lowerText)
                           || /^(?:what(?: tasks?)? am i|tasks? (?:in progress|i(?:'m| am) working on|doing))/.test(lowerText)
                           || lowerText === "in progress" || lowerText === "what am i working on";
     if (doingTasksMatch) {
@@ -1691,6 +1692,31 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Overdue tasks ─────────────────────────────────────────────────────────
+    // ── Tasks due this week ────────────────────────────────────────────────────
+    const dueSoonMatch = /^(?:show|what|list)(?: (?:tasks?|all))?(?: due| coming)?(?: this week| soon| upcoming)/.test(lowerText)
+                      || /^(?:tasks?|what) (?:due|coming) (?:this week|soon)/.test(lowerText)
+                      || lowerText === "due this week" || lowerText === "what's due";
+    if (dueSoonMatch) {
+      try {
+        const endOfWeek = new Date(); endOfWeek.setDate(endOfWeek.getDate() + 7); endOfWeek.setHours(23,59,59,999);
+        const tasks = dbGet<{title:string;due_at:string}>(
+          "SELECT title, due_at FROM personal_tasks WHERE status!='done' AND due_at IS NOT NULL AND due_at <= ? ORDER BY due_at ASC LIMIT 10",
+          endOfWeek.toISOString()
+        ) as {title:string;due_at:string}[];
+        const noDate = dbGet<{title:string}>(
+          "SELECT title FROM personal_tasks WHERE status='todo' ORDER BY priority DESC, created_at DESC LIMIT 5"
+        ) as {title:string}[];
+        const lines = [];
+        if (tasks.length) lines.push(tasks.length + " task" + (tasks.length > 1 ? "s" : "") + " due this week:\n" + tasks.map((t,i) => {
+          const d = new Date(t.due_at);
+          return (i+1) + ". " + t.title + " (" + d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}) + ")";
+        }).join("\n"));
+        if (!tasks.length) lines.push("No tasks with due dates this week.\n\nTop open tasks:\n" + noDate.map((t,i) => (i+1) + ". " + t.title).join("\n"));
+        sendReply(lines.join("\n\n"));
+      } catch { sendReply("Could not load due tasks."); }
+      return;
+    }
+
     const overdueMatch = /^(?:what(?:'s| is)(?: my)?(?: overdue| past due|overdue)|show(?: my)? overdue|list overdue|overdue tasks?)/.test(lowerText)
                       || lowerText === "overdue" || lowerText === "what's overdue";
     if (overdueMatch) {
@@ -2469,6 +2495,39 @@ self.addEventListener('fetch', (event) => {
       return;
     }
 
+    // ── Hashtag power shortcuts: #task, #note, #goal, #habit ────────────────
+    const hashtagMatch = resolvedText.match(/^#(task|note|goal|habit|prayer|reminder)[:\s]+(.+)/i);
+    if (hashtagMatch) {
+      const tag = hashtagMatch[1].toLowerCase();
+      const content = hashtagMatch[2].trim();
+      if (content.length > 1) {
+        try {
+          const id = require('crypto').randomUUID();
+          const now4 = new Date().toISOString();
+          if (tag === 'task') {
+            dbRun("INSERT INTO personal_tasks (id,title,status,priority,created_at) VALUES (?,?,?,?,?)", id, content, 'todo', 2, now4);
+            sendReply('✓ Task: "' + content + '"');
+          } else if (tag === 'note') {
+            dbRun("INSERT INTO memory_facts (id,fact,category,importance,created_at) VALUES (?,?,?,?,?)", id, content, 'note', 1, now4);
+            sendReply('📝 Note: "' + content + '"');
+          } else if (tag === 'goal') {
+            dbRun("INSERT INTO goals (id,title,status,priority_score,created_at) VALUES (?,?,?,?,?)", id, content, 'active', 5.0, now4);
+            sendReply('◎ Goal: "' + content + '"');
+          } else if (tag === 'habit') {
+            dbRun("INSERT INTO habits (id,name,icon,color,target_per_day,active,created_at) VALUES (?,?,?,?,?,?,?)", id, content, '⭐', '#7c3aed', 1, 1, now4);
+            sendReply('🔄 Habit: "' + content + '"');
+          } else if (tag === 'prayer') {
+            dbRun("INSERT INTO prayer_requests (id,title,body,status,created_at) VALUES (?,?,?,?,?)", id, content.slice(0,80), content, 'active', now4);
+            sendReply('🙏 Prayer: "' + content + '"');
+          } else if (tag === 'reminder') {
+            dbRun("INSERT INTO reminders (id,title,done,created_at) VALUES (?,?,?,?)", id, content, 0, now4);
+            sendReply('⏰ Reminder: "' + content + '"');
+          }
+        } catch (e) { sendReply('Could not save: ' + e); }
+        return;
+      }
+    }
+
     // ── Quick note ────────────────────────────────────────────────────────────
     const noteMatch = lowerText.match(/^(?:note|jot|capture|save note|quick note)[:\s]+(.+)/i);
     if (noteMatch) {
@@ -2613,7 +2672,8 @@ self.addEventListener('fetch', (event) => {
     // Match: "I made 5 signs" / "I completed 3 orders for $450" / "I delivered 2 boards"
     const jobLogMatch = lowerText.match(/^i (?:made|completed|finished|sold|delivered|produced|cut|engraved)(?: (\d+))?(?:\s+\w+)? (?:orders?|jobs?|signs?|pieces?|items?|boards?|plaques?|trays?|coasters?)/i)
                      || lowerText.match(/^i (?:made|completed|finished|sold|delivered|produced)(?: (\d+))?(?:\s+\w+)? (?:orders?|jobs?|signs?|pieces?|items?|boards?|plaques?|trays?|coasters?)(?:\s+today)?/i)
-                     || lowerText.match(/^i (?:got|received|landed|booked)(?: a| an)?(?: new)? (?:order|job|client|customer|booking)/i);
+                     || lowerText.match(/^i (?:got|received|landed|booked)(?: a| an)?(?: new)? (?:order|job|client|customer|booking)/i)
+                     || lowerText.match(/^i (?:wrapped up|knocked out|cranked out|shipped)(?: the| a| an)?(?: .+)? (?:job|order|project|piece|sign|tray|board)/i);
     const jobQty = jobLogMatch ? (parseInt(lowerText.match(/(\d+)/)?.[1] || '1') || 1) : 0;
     const jobRevMatch = jobLogMatch ? lowerText.match(/(?:for|at|worth)\s*\$?([\d.]+)/) : null;
     if (jobLogMatch) {
