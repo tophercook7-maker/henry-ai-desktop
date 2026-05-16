@@ -1303,7 +1303,9 @@ self.addEventListener('fetch', (event) => {
     const lowerText = resolvedText.toLowerCase().trim();
 
     // ── Implicit task creation: "I need to X" / "I should X" ──────────────────
-    const implicitTaskRx = lowerText.match(/^i (?:need to|should|have to|must|gotta)(?: still)? (.+?)(?:\s+today)?$/i);
+    const implicitTaskRx = lowerText.match(/^i (?:need to|should|have to|must|gotta)(?: still)? (.+?)(?:\s+today)?$/i)
+                       || lowerText.match(/^(?:need to|gotta|must) (.+?)(?:\s+today)?$/i)
+                       || lowerText.match(/^(?:\w+) (?:wants?|needs?|ordered)(?: a| an| \d+)? (.+?) (?:from me|asap|today|done)$/i);
     const implicitTaskGuard = /^i (?:need to|should|have to) (remember|note|write|journal|pray|exercise|read|drink|sleep)/.test(lowerText);
     const implicitTaskMatch = implicitTaskRx && !implicitTaskGuard ? implicitTaskRx : null;
     if (implicitTaskMatch && implicitTaskMatch[1] && implicitTaskMatch[1].length > 3) {
@@ -1502,7 +1504,8 @@ self.addEventListener('fetch', (event) => {
       const hasHKW = hkws.some((k: string) => lowerText.includes(k));
       const naturalHabitDone = /^(?:went for a?|did (?:my|the|a)|drank|finished|completed)(?: (?:my|a|the))? (?:run|jog|walk|bible|reading|journal|water|prayer|exercise|meditation)/i.test(lowerText)
                              || /^(?:i (?:prayed|exercised|ran|jogged|walked|meditated|journaled|drank|read (?:my )?bible))/i.test(lowerText);
-      if ((hasHKW || naturalHabitDone) && (/^(?:mark|done|check|finish|complete)/.test(lowerText) || naturalHabitDone)) {
+      const habitWordDone = /^(?:prayer(?:ed)?|bible|exercise(?:d)?|journal(?:ed)?|water|run|jog|walk)(?: done| today)?$/i.test(lowerText);
+      if ((hasHKW || naturalHabitDone) && (/^(?:mark|done|check|finish|complete)/.test(lowerText) || naturalHabitDone || habitWordDone)) {
         let hk = hkws.find((k: string) => lowerText.includes(k)) || '';
         if (hk === 'praying') hk = 'prayer';
         if (hk === 'run' || hk === 'jog' || hk === 'walk') hk = 'exercise';
@@ -1530,6 +1533,8 @@ self.addEventListener('fetch', (event) => {
 
     // ── Complete / done task ──────────────────────────────────────────────────
     const completeTaskMatch = lowerText.match(/^(?:complete|finish|done|mark done|check off)(?: my)?(?: first| last| top)? task[:\s]*(.*)$/i)
+                        || (!/^(?:all|i'm|that's|good|mission|nothing|totally|almost|nearly)/.test(lowerText) ? lowerText.match(/^(.{3,45}) done$/i) : null)
+                        || (lowerText.match(/^(.{3,40}) done$/i) && !/^(?:all|i'm|that's|good|mission|nothing|totally)/.test(lowerText))
                         || lowerText.match(/^(?:mark|complete|finish)(?: task)?[:\s]+(.+)(?: as)? done$/i)
                         || lowerText.match(/^mark task(?:\s+done)?[:\s]+(.+)/i)
                         || lowerText.match(/^complete task[:\s]+(.+)/i)
@@ -1538,7 +1543,8 @@ self.addEventListener('fetch', (event) => {
                         || lowerText.match(/^(?:just )?(?:finished|completed|did|done with)(?: the)? (.+)/i);
     if (completeTaskMatch) {
       try {
-        const hint = completeTaskMatch[1]?.trim().toLowerCase() || '';
+        const ctm = Array.isArray(completeTaskMatch) ? completeTaskMatch : null;
+        const hint = ctm?.[1]?.trim().toLowerCase() || '';
         let task: {id:string;title:string}|null = null;
         if (hint) {
           task = dbGetOne<{id:string;title:string}>(
