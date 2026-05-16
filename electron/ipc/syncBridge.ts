@@ -2845,12 +2845,12 @@ self.addEventListener('fetch', (event) => {
         }
       } catch { /* */ }
 
-      const greeting = userName ? \`You are Henry, talking with \${userName}.\` : \`You are Henry.\`;
+      const greeting = userName ? `You are Henry, talking with ${userName}.` : `You are Henry.`;
       const now2 = new Date();
       const dayName2 = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][now2.getDay()];
       const monthName2 = ['January','February','March','April','May','June','July','August','September','October','November','December'][now2.getMonth()];
 
-      const liveCtxLines: string[] = [\`Today is \${dayName2}, \${monthName2} \${now2.getDate()}, \${now2.getFullYear()}. Current time: \${now2.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}.\`];
+      const liveCtxLines: string[] = [`Today is ${dayName2}, ${monthName2} ${now2.getDate()}, ${now2.getFullYear()}. Current time: ${now2.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}.`];
       try {
         const today2 = now2.toISOString().slice(0, 10);
         const tasks2 = dbGet<{title:string}>( "SELECT title FROM personal_tasks WHERE status='todo' ORDER BY priority DESC, created_at DESC LIMIT 5") as {title:string}[];
@@ -2865,7 +2865,7 @@ self.addEventListener('fetch', (event) => {
         greeting,
         "Henry is a warm, thoughtful, conversational AI — the user's personal companion. Down-to-earth, genuine, brief but never curt. Like a smart friend, not a help desk.",
         "ABSOLUTE RULES: NEVER invent facts. The ONLY facts you know are in 'What you remember'. If not listed, say 'I don't know yet.' Match their energy. Ask one good question max.",
-        factsBlock ? \`── WHAT YOU REMEMBER ──\n\${factsBlock}\` : "── WHAT YOU REMEMBER ──\nNothing yet — early conversation.",
+        factsBlock ? `── WHAT YOU REMEMBER ──\n${factsBlock}` : "── WHAT YOU REMEMBER ──\nNothing yet — early conversation.",
         "── LIVE CONTEXT ──\n" + liveCtxLines.join('\n'),
         recentSummary ? "── RECENT CONVERSATION ──\n" + recentSummary : '',
       ].filter(Boolean).join('\n\n');
@@ -2932,13 +2932,13 @@ self.addEventListener('fetch', (event) => {
           // Rate-limit or error → mark provider and try next
           if (statusCode === 429 || statusCode === 503 || statusCode === 524) {
             rlStore[prov.name] = Date.now() + COOLDOWN_MS;
-            console.log(\`[Iron Gateway] \${prov.name} rate-limited (HTTP \${statusCode}), trying next...\`);
+            console.log(`[Iron Gateway] ${prov.name} rate-limited (HTTP ${statusCode}), trying next...`);
             r3.resume(); // drain
             tryProvider(idx + 1);
             return;
           }
           if (statusCode >= 400 && statusCode !== 200) {
-            console.log(\`[Iron Gateway] \${prov.name} error HTTP \${statusCode}, trying next...\`);
+            console.log(`[Iron Gateway] ${prov.name} error HTTP ${statusCode}, trying next...`);
             r3.resume();
             tryProvider(idx + 1);
             return;
@@ -2979,14 +2979,14 @@ self.addEventListener('fetch', (event) => {
               finishReply(fullText2);
             } else if (!fullText2 && !doneSent2) {
               // Empty response — try next provider
-              console.log(\`[Iron Gateway] \${prov.name} returned empty, trying next...\`);
+              console.log(`[Iron Gateway] ${prov.name} returned empty, trying next...`);
               tryProvider(idx + 1);
             }
           });
         });
 
         req3.on('error', (e: Error) => {
-          console.log(\`[Iron Gateway] \${prov.name} network error: \${e.message}, trying next...\`);
+          console.log(`[Iron Gateway] ${prov.name} network error: ${e.message}, trying next...`);
           if (!replied) tryProvider(idx + 1);
         });
         req3.on('timeout', () => {
