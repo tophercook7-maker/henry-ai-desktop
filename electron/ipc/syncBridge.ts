@@ -1319,7 +1319,64 @@ self.addEventListener('fetch', (event) => {
         return;
       }
     }
-    const knowledgeAnswer = (() => {
+    // ── AI provider status ────────────────────────────────────────────────────
+    const aiStatusMatch = /^(?:show |what(?:'s| are)(?: my)? )?(?:ai |provider )?(?:status|providers?|models?)(?: status)?$/.test(lowerText)
+                       || lowerText === 'ai status' || lowerText === 'providers' || lowerText === 'which ai';
+    if (aiStatusMatch) {
+      const g2 = global as any;
+      const rlStore2: Record<string, number> = g2['__henry_rl__'] || {};
+      const now3 = Date.now();
+      const dbP = dbGet<{id:string;api_key:string}>('SELECT id, api_key FROM providers WHERE enabled=1');
+      const dbS = dbGet<{key:string;value:string}>('SELECT key, value FROM settings');
+      const sMap: Record<string,string> = {};
+      for (const {key,value} of dbS as {key:string;value:string}[]) sMap[key] = value;
+      const groqKey2 = (dbP as {id:string;api_key:string}[]).find(p => p.id === 'groq')?.api_key || '';
+      const gemKey2 = sMap['gemini_api_key'] || '';
+      const cerKey2 = sMap['cerebras_api_key'] || '';
+      const orKey2 = sMap['openrouter_api_key'] || '';
+      const lines2 = ['Iron Gateway v2 — AI Provider Status:\n'];
+      const provStatus = [
+        { name: 'Groq (llama-4-scout, 3.3-70b, qwen3, 8b)', key: groqKey2 },
+        { name: 'Gemini 2.0 Flash + 1.5 Flash', key: gemKey2 },
+        { name: 'Cerebras (llama-4-scout)', key: cerKey2 },
+        { name: 'OpenRouter (:free models)', key: orKey2 },
+      ];
+      for (const p of provStatus) {
+        const hasKey = p.key.length > 5;
+        // Check if any subprovider from this family is rate-limited
+        const rlName = Object.keys(rlStore2).find(k => k.toLowerCase().includes(p.name.split('/')[0].toLowerCase()));
+        const isRL = rlName && rlStore2[rlName] > now3;
+        const waitSec = isRL ? Math.ceil((rlStore2[rlName!] - now3) / 1000) : 0;
+        if (!hasKey) lines2.push('⬜ ' + p.name + ' — no API key');
+        else if (isRL) lines2.push('🔴 ' + p.name + ' — rate-limited (' + waitSec + 's cooldown)');
+        else lines2.push('🟢 ' + p.name + ' — ready');
+      }
+      lines2.push('\nAdd keys: "set gemini key: YOUR_KEY" · "set openrouter key: YOUR_KEY" · "set cerebras key: YOUR_KEY"');
+      sendReply(lines2.join('\n'));
+      return;
+    }
+
+    // ── Set API key for additional providers ────────────────────────────────────
+    const setKeyMatch = lowerText.match(/^set (gemini|openrouter|cerebras|groq) (?:api )?key[:\s]+(.+)/i);
+    if (setKeyMatch) {
+      const provider = setKeyMatch[1].toLowerCase();
+      const keyVal = setKeyMatch[2].trim();
+      if (keyVal.length < 10) { sendReply('That key looks too short. Paste your full API key after the colon.'); return; }
+      const settingKey = provider + '_api_key';
+      try {
+        const existing = dbGetOne<{key:string}>('SELECT key FROM settings WHERE key=?', settingKey);
+        if (existing) {
+          dbRun('UPDATE settings SET value=? WHERE key=?', keyVal, settingKey);
+        } else {
+          dbRun('INSERT INTO settings (key, value) VALUES (?,?)', settingKey, keyVal);
+        }
+        const maskedKey = keyVal.slice(0, 6) + '...' + keyVal.slice(-4);
+        sendReply('✅ ' + provider.charAt(0).toUpperCase() + provider.slice(1) + ' API key saved (' + maskedKey + ').\n\nHenry will now use ' + provider + ' as a fallback AI provider. Say "ai status" to see the full provider list.');
+      } catch (e) { sendReply('Could not save key: ' + e); }
+      return;
+    }
+
+        const knowledgeAnswer = (() => {
       // Version / identity
       if (/^(?:what version|which version|your version|version number|what.*version are you)/.test(lowerText) || lowerText === 'version') {
         return 'Henry AI v1.5.3 — your personal AI workspace for Mac.\n\n70+ instant local commands, all offline-capable. Built by Anthropic Claude + Topher Cook.';
