@@ -1379,7 +1379,18 @@ self.addEventListener('fetch', (event) => {
         const knowledgeAnswer = (() => {
       // Version / identity
       if (/^(?:what version|which version|your version|version number|what.*version are you)/.test(lowerText) || lowerText === 'version') {
-        return 'Henry AI v1.5.3 — your personal AI workspace for Mac.\n\n70+ instant local commands, all offline-capable. Built by Anthropic Claude + Topher Cook.';
+        return 'Henry AI v1.6.0 — your personal AI workspace for Mac.\n\n100+ instant local commands, all offline-capable. Built by Anthropic Claude + Topher Cook.';
+      }
+      if (/^(?:what (?:ai |model |llm )(?:are you|is this)|which model|what model|what.*(?:model|ai) (?:are you|using)|how fast are you|your response time)/.test(lowerText)) {
+        const g3 = global as any;
+        const rl = g3['__henry_rl__'] || {};
+        const now5 = Date.now();
+        const providerNames = ['Groq/llama-4-scout','Groq/llama-3.3-70b','Groq/qwen3-32b','Groq/llama-3.1-8b','Gemini/flash-2.0','Gemini/flash-1.5','Cerebras/llama-4-scout','OpenRouter/llama-3.3-70b'];
+        const available = providerNames.filter(p => !rl[p] || rl[p] < now5);
+        return "Iron Gateway v2 — I'm running on the first available free provider:\n\n" +
+          available.slice(0,4).map((p,i) => (i===0 ? '▶ ' : '  ') + p).join('\n') +
+          (available.length > 4 ? '\n  + ' + (available.length-4) + ' more\n' : '\n') +
+          '\nLocal commands: <20ms. AI responses: 200-600ms depending on provider.\nSay "ai status" for the full provider list.';
       }
       if (/^(?:who (?:made|built|created|are) you|who is henry|what is henry|what are you)/.test(lowerText)) {
         return "I'm Henry — your personal AI workspace. Topher built me with Claude to run his laser business, track habits, manage tasks, and stay focused.\n\nI live on your Mac and phone, work offline, and remember your life.";
@@ -2827,6 +2838,53 @@ self.addEventListener('fetch', (event) => {
           }
           sendReply(saved.length + " tasks added:\n\n" + saved.map((t,i) => (i+1) + ". " + t).join("\n"));
         } catch (e) { sendReply("Could not save tasks: " + e); }
+        return;
+      }
+    }
+
+    // ── Orders/jobs this month ────────────────────────────────────────────────
+    const ordersMonthMatch = /^how many (?:orders?|jobs?) (?:did i|have i)(?: complet(?:ed|e)?| finish(?:ed)?| do(?:ne)?| ship(?:ped)?| deliver(?:ed)?)?(?: this month| this week| today)?$/.test(lowerText)
+                           || /^(?:orders?|jobs?) (?:this month|this week|completed? this)/.test(lowerText);
+    if (ordersMonthMatch) {
+      try {
+        const month5 = new Date().toISOString().slice(0,7);
+        const week5 = new Date(); week5.setDate(week5.getDate()-7);
+        const weekStr = week5.toISOString().slice(0,10);
+        const monthJobs = (dbGetOne<{n:number}>(
+          "SELECT COUNT(*) as n FROM production_runs WHERE strftime('%Y-%m',created_at)=?", month5
+        ) as {n:number}|null)?.n || 0;
+        const weekJobs = (dbGetOne<{n:number}>(
+          "SELECT COUNT(*) as n FROM production_runs WHERE date(created_at) >= ?", weekStr
+        ) as {n:number}|null)?.n || 0;
+        const income = (dbGetOne<{n:number}>(
+          "SELECT COALESCE(SUM(amount),0) as n FROM transactions WHERE type='income' AND strftime('%Y-%m',date)=?", month5
+        ) as {n:number}|null)?.n || 0;
+        sendReply("This month:\n\n" +
+          "📦 Orders logged: " + monthJobs + "\n" +
+          "📦 Last 7 days: " + weekJobs + "\n" +
+          "💰 Revenue: $" + income.toFixed(2) + "\n\n" +
+          "Say 'I made X signs today' to log orders, or 'log revenue: $X' for income.");
+      } catch { sendReply("Could not load order count."); }
+      return;
+    }
+
+    // ── How long has a task been on my list ────────────────────────────────────
+    const taskAgeMatch = lowerText.match(/^(?:how long has|when did i add)(?: (?:the|my))? (.+?) (?:been on my list|task been open|been pending|task)?$/i)
+                      || lowerText.match(/^(?:age of|when was)(?: (?:the|my))? (.+?) (?:task|added|created)?$/i);
+    if (taskAgeMatch) {
+      const hint = (taskAgeMatch[1] || '').trim().toLowerCase();
+      if (hint.length > 2) {
+        try {
+          const task = dbGetOne<{title:string;created_at:string}>(
+            "SELECT title, created_at FROM personal_tasks WHERE LOWER(title) LIKE ? ORDER BY created_at ASC LIMIT 1",
+            '%' + hint + '%'
+          ) as {title:string;created_at:string}|null;
+          if (!task) { sendReply("Could not find a task matching: " + hint); return; }
+          const created = new Date(task.created_at);
+          const days = Math.floor((Date.now() - created.getTime()) / 86400000);
+          const dateStr = created.toLocaleDateString('en-US', {month:'long', day:'numeric'});
+          sendReply('"' + task.title + '" has been on your list for ' + days + ' day' + (days !== 1 ? 's' : '') + ' (added ' + dateStr + ').');
+        } catch { sendReply("Could not look up task age."); }
         return;
       }
     }
