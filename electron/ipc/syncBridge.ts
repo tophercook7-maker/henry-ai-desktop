@@ -1573,6 +1573,25 @@ self.addEventListener('fetch', (event) => {
                         || lowerText === 'goals' || lowerText === 'my goals' || lowerText === 'top goal'
                         || /^(?:how many|count)(?: my)? goals/.test(lowerText);
     // ── Completed goals ──────────────────────────────────────────────────────
+    // ── Goal completion percentage ──────────────────────────────────────────
+    const goalsPctMatch = /^(?:what(?:'s| is)(?: my)?|show)(?: my)? (?:goal )?(?:percent(?:age)?|progress|completion|rate|score)(?: (?:done|complete|finished|achieved))?/.test(lowerText)
+                       || /^(?:how many|what (?:percent|%))(?: of)?(?: my)? goals(?: are)? (?:done|complete|finished|achieved|hit)/.test(lowerText);
+    if (goalsPctMatch) {
+      try {
+        const active = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM goals WHERE status='active'") as {n:number}|null)?.n || 0;
+        const done = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM goals WHERE status IN ('done','completed','abandoned')") as {n:number}|null)?.n || 0;
+        const total = active + done;
+        const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+        sendReply('Goal progress:\n\n' +
+          '✅ Completed: ' + done + '\n' +
+          '🔄 Active: ' + active + '\n' +
+          '📊 Completion rate: ' + pct + '%\n\n' +
+          (done === 0 ? 'No goals completed yet. Say "mark goal done: [title]" when you hit one.' : 
+           pct >= 50 ? 'Great progress! Over halfway there.' : 'Keep going — you have ' + active + ' goals in flight.'));
+      } catch { sendReply('Could not load goal progress.'); }
+      return;
+    }
+
     const completedGoalsMatch = /^(?:show|list|how many)(?: my)?(?: completed?| achieved?| done| finished)(?: goals?)?/.test(lowerText)
                               || /^how many goals? (?:have i|did i)(?: hit| achieve| complete| finish)?/.test(lowerText)
                               || lowerText === "goals achieved" || lowerText === "completed goals";
@@ -1798,7 +1817,8 @@ self.addEventListener('fetch', (event) => {
     }
 
     const overdueMatch = /^(?:what(?:'s| is)(?: my)?(?: overdue| past due|overdue)|show(?: my)? overdue|list overdue|overdue tasks?)/.test(lowerText)
-                      || lowerText === "overdue" || lowerText === "what's overdue";
+                      || /^what(?: tasks?)?(?: are)? (?:past due|overdue|late|overdue)/.test(lowerText)
+                      || lowerText === "overdue" || lowerText === "what's overdue" || lowerText === "past due" || lowerText === "what's past due";
     if (overdueMatch) {
       try {
         const now = new Date().toISOString();
@@ -2575,6 +2595,26 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Maker Studio: profit / jobs ──────────────────────────────────────────
+    // ── Show expenses ──────────────────────────────────────────────────────────
+    const showExpenseMatch = /^(?:show|what(?: did i)?|list)(?: my)?(?: (?:total|all))? expenses?(?: this month| this week| today)?/.test(lowerText)
+                          || /^how much did i (?:spend|pay|spend on|pay for)(?: this month| this week| today| on .+)?/.test(lowerText)
+                          || lowerText === 'my expenses' || lowerText === 'expenses';
+    if (showExpenseMatch) {
+      try {
+        const month5 = new Date().toISOString().slice(0,7);
+        const expenses = dbGet<{category:string;amount:number}>(
+          "SELECT category, SUM(amount) as amount FROM transactions WHERE type='expense' AND strftime('%Y-%m',date)=? GROUP BY category ORDER BY amount DESC",
+          month5
+        ) as {category:string;amount:number}[];
+        const total = expenses.reduce((s,e) => s + e.amount, 0);
+        if (!expenses.length) sendReply("No expenses logged this month. Say \"I spent $X on Y\" or \"log expense: $X category\" to track spending.");
+        else sendReply("Expenses this month:\n\n" +
+          expenses.map(e => '• ' + e.category + ': $' + e.amount.toFixed(2)).join('\n') +
+          '\n\n💸 Total: $' + total.toFixed(2));
+      } catch { sendReply('Could not load expenses.'); }
+      return;
+    }
+
     const profitMatch = /^(?:what.?s my|show my|get my|how much|my)(?: )? (?:profit|revenue|income|earnings?)(?: this month| this week| today| last week)?/.test(lowerText)
                      || /^how much did i (?:make|earn|get paid|bring in)(?: last week| this week| today| this month)?/.test(lowerText)
                      || /^(?:how much)(?: have i)? (?:made|earned|grossed)/.test(lowerText)
@@ -2814,7 +2854,7 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Morning routine ──────────────────────────────────────────────────────
-    const morningMatch = /^(?:morning routine|morning brief|start my day|good morning henry|what.*morning routine|let'?s do morning|morning check.?in|daily check.?in|start the day)/.test(lowerText)
+    const morningMatch = /^(?:morning routine|morning brief|start my day|good morning henry|what.*morning routine|let'?s do morning|morning check.?in|daily check.?in|start the day|new day|fresh start|start fresh|reset for the day|new morning)/.test(lowerText)
                      || lowerText === 'gm' || lowerText === 'good morning' || lowerText === 'morning';
     if (morningMatch) {
       try {
@@ -3389,7 +3429,7 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Bare "done" → complete top in-progress task ──────────────────────────
-    if (lowerText === 'done' || lowerText === 'finished' || lowerText === "i'm done with that") {
+    if (lowerText === 'done' || lowerText === 'finished' || lowerText === "i'm done with that" || lowerText === 'completed') {
       try {
         // Try doing tasks first, then top todo
         const task = dbGetOne<{id:string;title:string}>(
