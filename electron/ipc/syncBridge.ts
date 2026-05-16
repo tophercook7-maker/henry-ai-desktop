@@ -2566,7 +2566,8 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Maker Studio: profit / jobs ──────────────────────────────────────────
-    const profitMatch = /^(?:what.?s my|show my|get my|how much|my)(?: )? (?:profit|revenue|income|earnings?)(?: this month| this week| today)?/.test(lowerText)
+    const profitMatch = /^(?:what.?s my|show my|get my|how much|my)(?: )? (?:profit|revenue|income|earnings?)(?: this month| this week| today| last week)?/.test(lowerText)
+                     || /^how much did i (?:make|earn|get paid|bring in)(?: last week| this week| today| this month)?/.test(lowerText)
                      || /^(?:how much)(?: have i)? (?:made|earned|grossed)/.test(lowerText)
                      || lowerText === "revenue" || lowerText === "revenue this month" || lowerText === "my revenue";
     if (profitMatch) {
@@ -2692,7 +2693,7 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Delete goal ───────────────────────────────────────────────────────────
-    const deleteGoalMatch = !lowerText.includes('task') && lowerText.match(/^(?:delete|remove|archive)(?: (?:a |my )?goal)?[:\s]+(.+)/i);
+    const deleteGoalMatch = !lowerText.includes('task') && !lowerText.includes('habit') && lowerText.match(/^(?:delete|remove|archive)(?: (?:a |my )?goal)?[:\s]+(.+)/i);
     if (deleteGoalMatch) {
       const hint = deleteGoalMatch[1].trim();
       try {
@@ -2728,6 +2729,10 @@ self.addEventListener('fetch', (event) => {
     }
 
     const updateTaskMatch = lowerText.match(/^(?:update|change|set|move) task[:\s]+(.+?) to (todo|doing|done|high|low|medium|med)/i)
+                        || lowerText.match(/^(?:set|mark|make)(?: task)?[:\s]+(.+?) (?:as |to )?(high|low|urgent|top)(?: priority)?$/i)
+                        || lowerText.match(/^deprioritize[:\s]+(.+)/i)
+                        || lowerText.match(/^set task[:\s]+(.+?) (?:to|as) (high|low|medium|urgent|normal)(?: priority)?/i)
+                        || lowerText.match(/^make (.+?) (?:task )?(high|low|urgent|normal|high priority|top priority)/i)
                         || lowerText.match(/^mark task[:\s]+(.+) (?:as )?(done|complete|todo|doing)/i)
                         || lowerText.match(/^(?:task[:\s]+)(.+) (?:is |→ ?|-> ?)(done|todo|doing)/i);
     if (updateTaskMatch) {
@@ -2743,7 +2748,7 @@ self.addEventListener('fetch', (event) => {
           dbRun("UPDATE personal_tasks SET status=?,updated_at=? WHERE id=?", newVal, new Date().toISOString(), task.id);
           sendReply('Task updated: "' + task.title + '" → ' + newVal);
         } else if (['high','medium','med','low'].includes(newVal)) {
-          const pri = newVal === 'high' ? 3 : newVal === 'low' ? 1 : 2;
+          const pri = (newVal === 'high' || newVal === 'urgent' || newVal === 'top') ? 3 : newVal === 'low' ? 1 : 2;
           dbRun("UPDATE personal_tasks SET priority=?,updated_at=? WHERE id=?", pri, new Date().toISOString(), task.id);
           sendReply('Task priority set to ' + newVal + ': "' + task.title + '"');
         }
@@ -2872,8 +2877,10 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Delete a memory fact ───────────────────────────────────────────────────
-    const deleteMemMatch = lowerText.match(/^(?:delete|remove|forget)(?: that)?(?: (?:memory|note|fact))?[:\s]+(.+)/i)
-                        || lowerText.match(/^forget (?:that )?(?:i )?(.+)/i);
+    const deleteMemMatch = !/(habit|task|goal|reminder)/.test(lowerText.slice(0,20)) && (
+      lowerText.match(/^(?:delete|remove|forget)(?: that)?(?: (?:memory|note|fact))?[:\s]+(.+)/i)
+      || lowerText.match(/^forget (?:that )?(?:i )?(.+)/i)
+    );
     if (deleteMemMatch) {
       const hint = deleteMemMatch[1].trim().toLowerCase();
       if (hint.length > 3 && !['a', 'an', 'the', 'my'].includes(hint)) {
@@ -2891,6 +2898,23 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Pause/activate habit ─────────────────────────────────────────────────
+    // ── Delete habit ──────────────────────────────────────────────────────────
+    const deleteHabitMatch = lowerText.match(/^(?:delete|remove|cancel|get rid of)(?: (?:my|the|a))? habit[:\s]+(.+)/i);
+    if (deleteHabitMatch) {
+      const hint = (deleteHabitMatch[1] || '').trim().toLowerCase();
+      try {
+        const habit = dbGetOne<{id:string;name:string}>(
+          "SELECT id, name FROM habits WHERE LOWER(name) LIKE ? LIMIT 1",
+          '%' + hint + '%'
+        ) as {id:string;name:string}|null;
+        if (!habit) { sendReply('No habit found matching: "' + hint + '"'); return; }
+        dbRun("DELETE FROM habits WHERE id=?", habit.id);
+        dbRun("DELETE FROM habit_logs WHERE habit_id=?", habit.id);
+        sendReply('🗑️ Habit deleted: "' + habit.name + '"');
+      } catch (e) { sendReply('Could not delete habit: ' + e); }
+      return;
+    }
+
     const pauseHabitMatch = lowerText.match(/^(?:turn off|disable|pause|deactivate|stop tracking)(?: habit)?[:\s]+(.+)/i)
                          || lowerText.match(/^(?:pause|disable) (.+) habit$/i);
     if (pauseHabitMatch) {
@@ -3007,6 +3031,25 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Log revenue / income ─────────────────────────────────────────────────
+    // ── Log expense ──────────────────────────────────────────────────────────
+    const expenseMatch = lowerText.match(/^(?:log|record|add)(?: an?)? expense[:\s]+\$?([\d.]+)(?: (.+))?/i)
+                      || lowerText.match(/^i (?:spent|paid|bought)(?: \$)?([\d.]+)(?: (?:on|for) (.+))?/i)
+                      || lowerText.match(/^(?:spent|expense|cost)[:\s]+\$([\d.]+)(?: (?:on|for) (.+))?/i);
+    if (expenseMatch) {
+      const amount = parseFloat(expenseMatch[1] || '0');
+      const category = (expenseMatch[2] || 'supplies').trim().slice(0, 80);
+      if (amount > 0) {
+        try {
+          const id = require('crypto').randomUUID();
+          const today5 = new Date().toISOString().slice(0,10);
+          dbRun("INSERT INTO transactions (id,date,amount,type,category,created_at) VALUES (?,?,?,?,?,?)",
+            id, today5, amount, 'expense', category, new Date().toISOString());
+          sendReply('💸 Logged expense: $' + amount.toFixed(2) + (category !== 'supplies' ? ' — ' + category : '') + '\n\nSay "what\'s my revenue this month" to see profit after expenses.');
+        } catch (e) { sendReply('Could not log expense: ' + e); }
+        return;
+      }
+    }
+
     const revenueMatch = lowerText.match(/^(?:log|add|record)(?:\s+revenue)[:\s]+\$?([\d.]+)/i)
                       || lowerText.match(/^(?:log|add|record)[:\s]+\$([\d.]+)/i)
                       || lowerText.match(/^i (?:made|earned|got paid|received|collected) \$([\d.]+)(?: today)?$/i)
@@ -3316,6 +3359,24 @@ self.addEventListener('fetch', (event) => {
           sendReply('📋 Here\'s your data to paste into Excel:\n\n' + preview + '\n\n💡 Say "open excel" to launch Excel, then paste.');
         }
       } catch (e) { sendReply('Could not export: ' + e); }
+      return;
+    }
+
+    // ── Bare "done" → complete top in-progress task ──────────────────────────
+    if (lowerText === 'done' || lowerText === 'finished' || lowerText === "i'm done with that") {
+      try {
+        // Try doing tasks first, then top todo
+        const task = dbGetOne<{id:string;title:string}>(
+          "SELECT id, title FROM personal_tasks WHERE status='doing' ORDER BY updated_at DESC LIMIT 1"
+        ) as {id:string;title:string}|null
+        || dbGetOne<{id:string;title:string}>(
+          "SELECT id, title FROM personal_tasks WHERE status='todo' ORDER BY priority DESC, created_at ASC LIMIT 1"
+        ) as {id:string;title:string}|null;
+        if (!task) { sendReply('No open tasks to complete. Add one with "add task: X".'); return; }
+        dbRun("UPDATE personal_tasks SET status='done', completed_at=?, updated_at=? WHERE id=?",
+          new Date().toISOString(), new Date().toISOString(), task.id);
+        sendReply('✓ Done: "' + task.title + '"\n\nSay "next" or "what should I focus on" for the next task.');
+      } catch { sendReply('Could not complete task.'); }
       return;
     }
 
