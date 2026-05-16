@@ -1652,6 +1652,22 @@ self.addEventListener('fetch', (event) => {
     }
 
     // "what tasks do i have" / "show my tasks" / "list my tasks"
+    // ── Tasks in progress (doing) ────────────────────────────────────────────
+    const doingTasksMatch = /^(?:show|what|list)(?: (?:tasks?|all))?(?: i(?:'m| am))? (?:working on|in progress|doing|started|active)/.test(lowerText)
+                          || /^(?:what(?: tasks?)? am i|tasks? (?:in progress|i(?:'m| am) working on|doing))/.test(lowerText)
+                          || lowerText === "in progress" || lowerText === "what am i working on";
+    if (doingTasksMatch) {
+      try {
+        const doing = dbGet<{title:string}>(
+          "SELECT title FROM personal_tasks WHERE status='doing' ORDER BY updated_at DESC LIMIT 10"
+        ) as {title:string}[];
+        if (!doing.length) sendReply("No tasks in progress. Say \"update task: [title] to doing\" to start working on one.");
+        else sendReply(doing.length + " task" + (doing.length > 1 ? "s" : "") + " in progress:\n\n" +
+          doing.map((t,i) => (i+1) + ". " + t.title).join("\n") + "\n\nSay \"complete task: [title]\" when done.");
+      } catch { sendReply("Could not load in-progress tasks."); }
+      return;
+    }
+
     // ── Overdue tasks ─────────────────────────────────────────────────────────
     const overdueMatch = /^(?:what(?:'s| is)(?: my)?(?: overdue| past due|overdue)|show(?: my)? overdue|list overdue|overdue tasks?)/.test(lowerText)
                       || lowerText === "overdue" || lowerText === "what's overdue";
@@ -1719,6 +1735,29 @@ self.addEventListener('fetch', (event) => {
     }
 
     // "what reminders do i have" / "show reminders"
+    // ── Reminders due today ─────────────────────────────────────────────────
+    const remsDueTodayMatch = /^(?:show|what|list)(?: my)? reminders? (?:due|for|today)/.test(lowerText)
+                           || /^(?:today|due today).* reminders?/.test(lowerText)
+                           || lowerText === "reminders today" || lowerText === "due today";
+    if (remsDueTodayMatch) {
+      try {
+        const today = new Date(); today.setHours(23,59,59,999);
+        const todayStr = today.toISOString();
+        const startStr = new Date(new Date().setHours(0,0,0,0)).toISOString();
+        const rems = dbGet<{title:string;due_at:string}>(
+          "SELECT title, due_at FROM reminders WHERE done=0 AND due_at >= ? AND due_at <= ? ORDER BY due_at ASC LIMIT 10",
+          startStr, todayStr
+        ) as {title:string;due_at:string}[];
+        if (!rems.length) sendReply("No reminders due today. 🎉");
+        else sendReply(rems.length + " reminder" + (rems.length > 1 ? "s" : "") + " today:\n\n" +
+          rems.map((r,i) => {
+            const t = new Date(r.due_at);
+            return (i+1) + ". " + r.title + " @ " + t.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
+          }).join("\n"));
+      } catch { sendReply("Could not load today's reminders."); }
+      return;
+    }
+
     const listRemsMatch = /^(?:what|show|list|get|how many)(?: reminders?| my reminders?| due(?:\s+today)?)/.test(lowerText)
                        || lowerText === 'reminders' || /^how many reminders/.test(lowerText);
     if (listRemsMatch) {
@@ -2275,7 +2314,8 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Focus / most important right now ─────────────────────────────────────
-    const focusMatch = /^(?:what should i(?: do| focus on| work on| tackle)?|what.?s most important|what.?s next|top priority|focus(?: mode)?(?:\s+now)?)/.test(lowerText);
+    const focusMatch = /^(?:what should i(?: do| focus on| work on| tackle)?|what.?s most important|what.?s next|top priority|focus(?: mode)?(?:\s+now)?)/.test(lowerText)
+                      && !/pray(?:er|ing|ed)?/.test(lowerText);
     if (focusMatch) {
       try {
         const today = new Date().toISOString().slice(0,10);
@@ -2335,6 +2375,8 @@ self.addEventListener('fetch', (event) => {
     }
 
     const showPrayerMatch = /^(?:show|list|what are|get|read)(?: me)?(?: my)? prayer(?: requests?| list)?/.test(lowerText)
+                         || /^what should i (?:pray for|be praying for)/.test(lowerText)
+                         || lowerText === "what should i pray for"
                          || lowerText === 'prayer requests' || lowerText === 'my prayers' || lowerText === 'prayer list';
     if (showPrayerMatch) {
       try {
@@ -2404,7 +2446,7 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Morning routine ──────────────────────────────────────────────────────
-    const morningMatch = /^(?:morning routine|morning brief|start my day|good morning henry|what.*morning routine)/.test(lowerText);
+    const morningMatch = /^(?:morning routine|morning brief|start my day|good morning henry|what.*morning routine|let'?s do morning|morning check.?in|daily check.?in|start the day)/.test(lowerText);
     if (morningMatch) {
       try {
         const today = new Date().toISOString().slice(0,10);
