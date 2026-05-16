@@ -1597,6 +1597,44 @@ self.addEventListener('fetch', (event) => {
       return;
     }
 
+    // ── Set goal deadline ────────────────────────────────────────────────────
+    const goalDeadlineMatch = lowerText.match(/^(?:set|add)(?: a)? (?:goal )?(?:deadline|due date|target date)[:\s]+(.+?) (?:by|to|on|for) (.+)/i)
+                           || lowerText.match(/^(?:set|update) (.+?) (?:goal )?(?:deadline|due date)[:\s]+(.+)/i);
+    if (goalDeadlineMatch) {
+      const goalHint = (goalDeadlineMatch[1] || '').trim().toLowerCase();
+      const dateHint = (goalDeadlineMatch[2] || goalDeadlineMatch[1] || '').trim();
+      try {
+        // Find the goal
+        const goal = goalHint.length > 2 ? dbGetOne<{id:string;title:string}>(
+          "SELECT id, title FROM goals WHERE LOWER(title) LIKE ? AND status='active' LIMIT 1",
+          '%' + goalHint.toLowerCase() + '%'
+        ) as {id:string;title:string}|null
+        : dbGetOne<{id:string;title:string}>(
+          "SELECT id, title FROM goals WHERE status='active' ORDER BY priority_score DESC LIMIT 1"
+        ) as {id:string;title:string}|null;
+        if (!goal) {
+          // Fall back to top goal if no match
+          const topGoalFallback = dbGetOne<{id:string;title:string}>(
+            "SELECT id, title FROM goals WHERE status='active' ORDER BY priority_score DESC LIMIT 1"
+          ) as {id:string;title:string}|null;
+          if (!topGoalFallback) { sendReply("No active goals found."); return; }
+          const existFb = dbGetOne<{summary:string}>("SELECT summary FROM goals WHERE id=?", topGoalFallback.id) as {summary:string}|null;
+          const newSumFb = "Deadline: " + dateHint + (existFb?.summary ? " | " + existFb.summary : "");
+          dbRun("UPDATE goals SET summary=?, updated_at=? WHERE id=?", newSumFb, new Date().toISOString(), topGoalFallback.id);
+          sendReply('Goal deadline set: "' + topGoalFallback.title + '" \u2192 ' + dateHint + '\n\n(Used top goal since "' + goalHint + '" wasn\'t found)');
+          return;
+        }
+        // Store deadline in summary field since goals table has no target_date
+        const existing = dbGetOne<{summary:string}>("SELECT summary FROM goals WHERE id=?", goal.id) as {summary:string}|null;
+        const newSummary = "Deadline: " + dateHint + (existing?.summary ? " | " + existing.summary : "");
+        dbRun("UPDATE goals SET summary=?, updated_at=? WHERE id=?", newSummary, new Date().toISOString(), goal.id);
+        sendReply('Goal deadline set: "' + goal.title + '" → ' + dateHint);
+      } catch (e) { sendReply("Could not set deadline: " + e); }
+      return;
+    }
+
+
+
     // ── Add goal ──────────────────────────────────────────────────────────────
     const addGoalMatch = lowerText.match(/^(?:add|create|new|set) (?:a )?goal[:\s]+(.+)/i)
                       || lowerText.match(/^goal[:\s]+(.+)/i);
@@ -2055,6 +2093,19 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Bulk operations ────────────────────────────────────────────────────────
+    // ── Clear done reminders ─────────────────────────────────────────────────
+    const clearDoneRemsMatch = /^(?:clear|remove|delete|dismiss)(?: all)?(?: my)?(?: done| completed| finished)(?: reminders?)?$/.test(lowerText)
+                            || lowerText === 'clear done reminders' || lowerText === 'dismiss done reminders';
+    if (clearDoneRemsMatch) {
+      try {
+        const n = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM reminders WHERE done=1") as {n:number}|null)?.n || 0;
+        if (!n) { sendReply("No completed reminders to clear."); return; }
+        dbRun("DELETE FROM reminders WHERE done=1");
+        sendReply("Cleared " + n + " completed reminder" + (n !== 1 ? "s" : "") + ".");
+      } catch (e) { sendReply("Could not clear reminders: " + e); }
+      return;
+    }
+
     const clearDoneTasksMatch = /^(?:clear|remove|delete|archive)(?: all)?(?: my)?(?: completed| done| finished)(?: tasks?)?$/.test(lowerText)
                               || lowerText === 'clear completed' || lowerText === 'clear done tasks';
     if (clearDoneTasksMatch) {
@@ -2252,6 +2303,25 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Schedule today ────────────────────────────────────────────────────────
+    // ── Recent journal entries ────────────────────────────────────────────────
+    const recentJournalMatch = /^(?:show|list|what did i)(?: (?:my|the))?(?: recent)? journal(?:\s+entries?| (?:this week|today|lately))?$/.test(lowerText)
+                             || /^(?:my )?journal(?: entries?| this week| today| lately)?$/.test(lowerText);
+    if (recentJournalMatch) {
+      try {
+        const entries = dbGet<{date:string;title:string;content:string}>(
+          "SELECT date, title, content FROM journal_entries ORDER BY date DESC LIMIT 7"
+        ) as {date:string;title:string;content:string}[];
+        if (!entries.length) sendReply("No journal entries yet. Say \"journal: [your thoughts]\" to write one.");
+        else sendReply(entries.length + " recent journal entr" + (entries.length > 1 ? "ies" : "y") + ":\n\n" +
+          entries.map((e,i) => {
+            const d = new Date(e.date).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+            const preview = (e.content || '').slice(0,50).replace(/\n/g,' ');
+            return (i+1) + ". " + d + " — " + preview + (e.content?.length > 50 ? "…" : "");
+          }).join("\n"));
+      } catch { sendReply("Could not load journal entries."); }
+      return;
+    }
+
     const scheduleMatch = /^(?:what.?s on my schedule|schedule(?:\s+for)?\s+today|today.?s schedule|what do i have today|what.?s today|today)/.test(lowerText)
                        || lowerText === 'today' || lowerText === 'status'
                        || lowerText === 'quick update' || lowerText === "how's everything" || lowerText === "how is everything";
