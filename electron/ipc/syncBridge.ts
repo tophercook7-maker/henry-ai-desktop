@@ -1688,6 +1688,21 @@ self.addEventListener('fetch', (event) => {
       return;
     }
 
+    // ── High priority tasks filter ────────────────────────────────────────────
+    const highPriorityTasksMatch = /^(?:what|show|list)(?: tasks?)?(?: (?:are|my))?(?: high.priority| top priority| important| urgent| priority)(?: tasks?)?/.test(lowerText)
+                                || lowerText === "high priority" || lowerText === "priority tasks" || lowerText === "my priorities";
+    if (highPriorityTasksMatch) {
+      try {
+        const tasks = dbGet<{title:string;priority:number}>(
+          "SELECT title, priority FROM personal_tasks WHERE status!='done' AND priority >= 3 ORDER BY priority DESC, created_at DESC LIMIT 10"
+        ) as {title:string;priority:number}[];
+        if (!tasks.length) sendReply("No high-priority tasks. Use \"set task priority: [title] to high\" to mark urgent tasks.");
+        else sendReply(tasks.length + " high-priority task" + (tasks.length > 1 ? "s" : "") + ":\n\n" +
+          tasks.map((t,i) => (i+1) + ". 🔴 " + t.title).join("\n"));
+      } catch { sendReply("Could not load high-priority tasks."); }
+      return;
+    }
+
     const listTasksMatch = /^(?:what|show|list|get|how many)(?: tasks?| my tasks?| my open tasks?| open tasks?| all tasks?| todo(?:s)?)/.test(lowerText)
                         || lowerText === 'tasks' || lowerText === 'my tasks' || lowerText === 'open tasks'
                         || /^how many (?:open |active )?tasks/.test(lowerText);
@@ -2446,7 +2461,8 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Morning routine ──────────────────────────────────────────────────────
-    const morningMatch = /^(?:morning routine|morning brief|start my day|good morning henry|what.*morning routine|let'?s do morning|morning check.?in|daily check.?in|start the day)/.test(lowerText);
+    const morningMatch = /^(?:morning routine|morning brief|start my day|good morning henry|what.*morning routine|let'?s do morning|morning check.?in|daily check.?in|start the day)/.test(lowerText)
+                     || lowerText === 'gm' || lowerText === 'good morning' || lowerText === 'morning';
     if (morningMatch) {
       try {
         const today = new Date().toISOString().slice(0,10);
@@ -2651,7 +2667,8 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Log revenue / income ─────────────────────────────────────────────────
-    const revenueMatch = lowerText.match(/^(?:log|add|record)(?:\s+revenue)?[:\s]+\$?([\d.]+)/i)
+    const revenueMatch = lowerText.match(/^(?:log|add|record)(?:\s+revenue)[:\s]+\$?([\d.]+)/i)
+                      || lowerText.match(/^(?:log|add|record)[:\s]+\$([\d.]+)/i)
                       || lowerText.match(/^i made \$([\d.]+)(?: today)?$/i)
                       || lowerText.match(/^revenue[:\s]+\$?([\d.]+)/i);
     if (revenueMatch) {
@@ -2706,6 +2723,27 @@ self.addEventListener('fetch', (event) => {
           start.toLocaleDateString('en-US', {month:'long', day:'numeric', year:'numeric'}) + ").");
       } catch { sendReply("I can't calculate the exact duration right now."); }
       return;
+    }
+
+    // ── Multi-task add: "add tasks: A, B, C" ────────────────────────────────
+    const multiTaskMatch = lowerText.match(/^add (?:\d+ )?tasks?[:\s]+(.+)/i);
+    if (multiTaskMatch) {
+      const rawItems = multiTaskMatch[1];
+      // Split on comma or semicolon, but only if there are multiple items
+      const items = rawItems.split(/[,;]+/).map(s => s.trim()).filter(s => s.length > 2);
+      if (items.length >= 2) {
+        try {
+          const saved: string[] = [];
+          for (const item of items.slice(0, 5)) { // max 5 at once
+            const id = require('crypto').randomUUID();
+            dbRun("INSERT INTO personal_tasks (id,title,status,priority,created_at) VALUES (?,?,?,?,?)",
+              id, item, 'todo', 2, new Date().toISOString());
+            saved.push(item);
+          }
+          sendReply(saved.length + " tasks added:\n\n" + saved.map((t,i) => (i+1) + ". " + t).join("\n"));
+        } catch (e) { sendReply("Could not save tasks: " + e); }
+        return;
+      }
     }
 
     // ── "Remember that..." — instant memory save, no AI needed ────────────────
