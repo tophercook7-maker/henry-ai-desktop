@@ -510,30 +510,7 @@ export async function routeLocally(query: string): Promise<LocalRouteResult> {
   const q = (query || '').trim();
   if (!q || q.length < 2) return { handled: false };
 
-  // ── Open Mac app (before AI generates tool-call syntax) ─────────────────
-  const openAppRe = /^open\s+(?:the\s+)?(?:app\s+)?(.+?)(?:\s+app)?$/i;
-  const openAppM = openAppRe.exec(q);
-  if (openAppM && !q.toLowerCase().includes('file') && !q.includes('/')) {
-    const appName = openAppM[1].trim();
-    const officeApps = ['word','excel','powerpoint','outlook','onenote'];
-    if (!officeApps.includes(appName.toLowerCase())) {
-      const a = api();
-      if (a?.computerOsascript) {
-        try {
-          await a.computerOsascript(`tell application "Finder" to open application "${appName}"`);
-          return { handled: true, reply: `✅ Opened ${appName}.`, intentName: 'open_app' };
-        } catch { /* fall through */ }
-      }
-      // Fallback via sync bridge
-      try {
-        const r = await fetch('http://127.0.0.1:4242/sync/mac/open-app', {
-          method: 'POST', headers: {'Content-Type':'application/json'},
-          body: JSON.stringify({ app: appName })
-        });
-        if (r.ok) return { handled: true, reply: `✅ Opened ${appName}.`, intentName: 'open_app' };
-      } catch { /* fall through */ }
-    }
-  }
+  // Henry does not open apps from chat — suggest keyboard shortcuts instead
 
   // ── Panel help — handled here so the query is in scope ──────────────────
   const PANEL_QUERY_RE = /^(?:how do i use|tell me about|what is|what does|explain|how does|help me with|how do i)\s+(.+)/i;

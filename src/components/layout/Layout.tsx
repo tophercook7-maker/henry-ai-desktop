@@ -78,8 +78,21 @@ function CompanionUrlCard() {
   }
 
   function openInBrowser(url: string) {
-    // Force Safari — not Chrome — for the companion PWA
-    (window as any).henryAPI?.computerRunShell?.({ command: `open -a Safari "${url}"`, timeout: 3000 });
+    // Copy to clipboard first (always works)
+    navigator.clipboard?.writeText(url).catch(() => {});
+    // Try to open Safari via shell
+    fetch('http://127.0.0.1:4242/computer/shell', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Henry-Internal': 'true' },
+      body: JSON.stringify({ command: `open -a Safari "${url}"` })
+    }).then(r => {
+      if (!r.ok) throw new Error('shell failed');
+    }).catch(() => {
+      // Fallback: open in whatever browser is available
+      window.open(url, '_blank');
+    });
+    setCopied(true);
+    setTimeout(() => setCopied(false), 3000);
   }
 
   return (
@@ -97,8 +110,8 @@ function CompanionUrlCard() {
               {copied ? '✓ Copied' : 'Copy'}
             </button>
             <button onClick={() => openInBrowser(localUrl)}
-              className="text-[11px] px-3 py-1.5 rounded-lg border border-henry-border/30 text-henry-text-muted hover:text-henry-text transition-all">
-              Open ↗
+              className="text-[11px] px-3 py-1.5 rounded-lg border border-henry-accent/30 bg-henry-accent/10 text-henry-accent hover:bg-henry-accent/20 transition-all font-medium">
+              📱 Open in Safari
             </button>
           </div>
         </div>

@@ -475,7 +475,8 @@ async function handleRequest(
       if (!body) { jsonResponse(res, 400, {ok: false, error: 'Bad request'}); return; }
       try {
         const { exec } = await import('child_process');
-        exec(`open -a "${body.name}"`, (err) => {});
+        // Henry no longer auto-opens apps
+        res.writeHead(200).end('{"ok":false,"reason":"Henry does not open apps"}');
         jsonResponse(res, 200, {ok: true});
       } catch(e) {
         jsonResponse(res, 200, {ok: false, error: e instanceof Error ? e.message : String(e)});
@@ -1548,6 +1549,17 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Complete / done task ──────────────────────────────────────────────────
+    // ── "open [app]" → keyboard guide, never auto-launch ──────────────────
+    const openAppGuideMatch = lowerText.match(/^open(?:\s+the)?\s+([a-zA-Z][\w\s]{1,25})(?:\s+app)?$/i);
+    if (openAppGuideMatch && !/file|folder|document|\//.test(lowerText)) {
+      const _appName = (openAppGuideMatch[1] || '').trim();
+      const _skipWords = ['task','goal','note','habit','bible','chat','henry','my','the','a','up'];
+      if (!_skipWords.includes(_appName.toLowerCase()) && _appName.length > 1) {
+        sendReply('Press **Cmd+Space**, type **"' + _appName + '"**, press Enter.\n\nHenry keeps your hands on the keyboard — no auto-launching.');
+        return;
+      }
+    }
+
     const xDoneBlocklist = /^(?:all|i'm|that's|good|mission|nothing|totally|almost|nearly|sign order|laser order|delivery|walnut sign|maple sign|signs? order|habits?|show habits?)/i;
     const xDoneResult = !xDoneBlocklist.test(lowerText) ? lowerText.match(/^(.{3,45}) done$/i) : null;
     const completeTaskMatch = lowerText.match(/^(?:complete|finish|done|mark done|check off)(?: my)?(?: first| last| top)? task[:\s]*(.*)$/i)
@@ -2282,7 +2294,7 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Universal search ────────────────────────────────────────────────────────
-    const universalSearchMatch = lowerText.match(/^(?:search(?: (?:my|all))?(?: (?:notes?|memory|tasks?|everything|data))?(?:\s+for)?|find(?: everything about| all about| (?:my notes?|tasks?) (?:about|for|with))?)[:\s]+(.+)/i)
+    const universalSearchMatch = !/^(?:find|show|search)(?: me)?(?: some)? (?:videos?|pictures?|photos?|images?|tutorials?)/i.test(lowerText) && lowerText.match(/^(?:search(?: (?:my|all))?(?: (?:notes?|memory|tasks?|everything|data))?(?:\s+for)?|find(?: everything about| all about| (?:my notes?|tasks?) (?:about|for|with))?)[:\s]+(.+)/i)
                                || lowerText.match(/^(?:look up|show (?:everything|all)(?: about))[:\s]+(.+)/i);
     if (universalSearchMatch) {
       const keyword = (universalSearchMatch[2] || universalSearchMatch[1] || '').trim().toLowerCase();
@@ -2648,6 +2660,37 @@ self.addEventListener('fetch', (event) => {
                      || /^(?:total|lifetime|all.time)(?: (?:revenue|income|earnings?|profit))?$/.test(lowerText)
                      || /^(?:how much)(?: have i)? (?:made|earned|grossed)/.test(lowerText)
                      || lowerText === "revenue" || lowerText === "revenue this month" || lowerText === "my revenue";
+
+    // ── Image / video search (returns rich markdown links) ──────────────────
+    const imgSearchMatch = lowerText.match(/^(?:show|find|search|get|give me)(?: me)?(?: some)? (?:pictures?|photos?|images?) (?:of|about|for) (.+)/i)
+                        || lowerText.match(/^(?:pictures?|photos?|images?) of (.+)/i)
+                        || lowerText.match(/^image[:\s]+(.+)/i);
+    if (imgSearchMatch) {
+      const query = (imgSearchMatch[1] || '').trim();
+      sendReply(
+        '🖼️ **Images: ' + query + '**\n\n' +
+        '• [Google Images](https://www.google.com/search?tbm=isch&q=' + encodeURIComponent(query) + ') — search results\n' +
+        '• [Unsplash](https://unsplash.com/s/photos/' + encodeURIComponent(query.replace(/\s+/g,'-')) + ') — free high-res\n' +
+        '• [Pinterest](https://www.pinterest.com/search/pins/?q=' + encodeURIComponent(query) + ') — curated ideas\n\n' +
+        '_Open any link above — they open in your browser._'
+      );
+      return;
+    }
+
+    const vidSearchMatch = lowerText.match(/^(?:show|find|search|get|give me)(?: me)?(?: some)? (?:videos?|tutorials?|youtube)(?: videos?)? (?:of|about|for|on|for) (.+)/i)
+                        || lowerText.match(/^(?:videos?|youtube)[:\s]+(.+)/i)
+                        || lowerText.match(/^find (?:videos?|tutorials?) (?:about|for|on) (.+)/i)
+                        || (/^how to .+ (?:video|youtube|tutorial)$/i.test(lowerText) ? lowerText.match(/^how to (.+)/i) : null);
+    if (vidSearchMatch) {
+      const query = (vidSearchMatch[1] || '').trim();
+      sendReply(
+        '🎬 **Videos: ' + query + '**\n\n' +
+        '• [YouTube](https://www.youtube.com/results?search_query=' + encodeURIComponent(query) + ') — best tutorials\n' +
+        '• [YouTube Shorts](https://www.youtube.com/results?search_query=' + encodeURIComponent(query) + '&sp=EgQQAQ%3D%3D) — quick clips\n\n' +
+        '_These open in your browser. For laser/maker topics, search "' + query + ' timelapse" or "' + query + ' tutorial 2024"._'
+      );
+      return;
+    }
 
     // ── Revenue by week breakdown ──────────────────────────────────────────────
     const weeklyRevMatch = /^(?:show|what(?:'s| is)?|break(?:down)?)(?: my)? (?:revenue|income|earnings?)(?: by week| this week| weekly| each week| per week)?$/.test(lowerText)
@@ -3319,24 +3362,8 @@ self.addEventListener('fetch', (event) => {
       const appKey = Object.keys(appMap).find(k => app.includes(k)) || 'word';
       const appName = appMap[appKey];
       const isNew = /create|new/.test(lowerText);
-      try {
-        const { execSync } = await import('child_process') as typeof import('child_process');
-        if (isNew && (appKey === 'word' || appKey === 'excel' || appKey === 'powerpoint')) {
-          execSync('open -a "' + appName + '"', { timeout: 5000 });
-          // Give it a moment to launch, then create new doc
-          await new Promise(resolve => setTimeout(resolve, 1500));
-          const script = appKey === 'word'
-            ? 'tell application "Microsoft Word" to make new document'
-            : appKey === 'excel'
-            ? 'tell application "Microsoft Excel" to make new workbook'
-            : 'tell application "Microsoft PowerPoint" to make new presentation';
-          try { execSync('osascript -e "' + script + '"', { timeout: 5000 }); } catch { /* ok */ }
-          sendReply('✅ New ' + appName + ' document created.\n\nYou can now say:\n• "write a quote for Henderson in word" to have Henry draft content\n• "save to desktop" to save the file\n• "close word" when done');
-        } else {
-          execSync('open -a "' + appName + '"', { timeout: 5000 });
-          sendReply('✅ ' + appName + ' opened.\n\nYou can say:\n• "create new word doc" to open a blank document\n• "open word file: /path/to/file.docx" to open a specific file\n• "write [content] in word" to draft with Henry');
-        }
-      } catch (e) { sendReply('Could not open ' + appName + ': ' + e + '\n\nMake sure Microsoft Office is installed.'); }
+      // Henry no longer opens apps — guide user with keyboard shortcut
+      sendReply('Press **Cmd+Space**, type "' + appName + '", press Enter to open it.\n\nHenry can draft content for any Office doc right here in chat — just ask!');
       return;
     }
 
@@ -3345,12 +3372,7 @@ self.addEventListener('fetch', (event) => {
                              || lowerText.match(/^open (.+\.(?:docx?|xlsx?|pptx?|csv))/i);
     if (openOfficeFileMatch) {
       const filePath = (openOfficeFileMatch[1] || '').trim().replace(/^["']|["']$/g, '');
-      try {
-        const { execSync } = await import('child_process') as typeof import('child_process');
-        const expanded = filePath.replace('~', process.env.HOME || '');
-        execSync('open "' + expanded + '"', { timeout: 5000 });
-        sendReply('✅ Opened: ' + filePath);
-      } catch (e) { sendReply('Could not open file: ' + filePath + '\nMake sure the path is correct.'); }
+      sendReply('To open "' + filePath + '" — double-click it in Finder, or use Cmd+O in the app.\n\nHenry can read and work with the content in chat — just paste it in!');
       return;
     }
 
@@ -3379,18 +3401,8 @@ self.addEventListener('fetch', (event) => {
     // Close Office app
     const closeOfficeMatch = lowerText.match(/^close(?: (?:word|excel|powerpoint|outlook))?$/i);
     if (closeOfficeMatch && /word|excel|powerpoint|outlook/.test(lowerText)) {
-      const app2 = lowerText.includes('excel') ? 'Microsoft Excel'
-                 : lowerText.includes('powerpoint') ? 'Microsoft PowerPoint'
-                 : lowerText.includes('outlook') ? 'Microsoft Outlook'
-                 : 'Microsoft Word';
-      try {
-        const { execSync } = await import('child_process') as typeof import('child_process');
-        // Try AppleScript quit first, fall back to kill if dialog blocks
-        try {
-          execSync('osascript -e "tell application \"' + app2 + '\" to quit saving no"', { timeout: 4000 });
-        } catch { /* AppleScript failed, app may already be closed */ }
-        sendReply('✅ ' + app2 + ' closed.');
-      } catch (e) { sendReply('Could not close ' + app2 + ' — try closing it manually.'); }
+      // Henry does not control apps — guide user
+      sendReply('Press **Cmd+Q** in the app to quit, or **Cmd+W** to close just the window.');
       return;
     }
 
@@ -3598,13 +3610,8 @@ self.addEventListener('fetch', (event) => {
         } catch (e) { return 'Failed: ' + (e instanceof Error ? e.message : String(e)); }
       }
 
-      // Open app
-      const openAppM = text.match(/^open\s+(?:the\s+)?(?:app\s+)?(.+?)(?:\s+app)?$/i);
-      if (openAppM && !t.includes('file') && !t.includes('/') && !t.includes('folder')) {
-        const appName = openAppM[1].trim();
-        try { execSync('open -a "' + appName + '"', { timeout: 5000 }); return 'Opened ' + appName + '.'; }
-        catch { return 'Could not find "' + appName + '". Check the name.'; }
-      }
+      // Open app — DISABLED: Henry doesn't auto-open apps.
+      // Say what you want and Henry handles it in chat.
 
       // Open URL
       const urlM = text.match(/(?:go to|open|navigate to)\s+(https?:\/\/\S+|www\.\S+)/i);
@@ -3779,8 +3786,10 @@ self.addEventListener('fetch', (event) => {
 
       const systemPrompt2 = [
         greeting,
-        "Henry is a warm, thoughtful, conversational AI — the user's personal companion. Down-to-earth, genuine, brief but never curt. Like a smart friend, not a help desk.",
+        "Henry is a warm, thoughtful, conversational AI — the user\'s personal companion AND an elite senior engineer. Down-to-earth, genuine, brief but never curt. World-class coder + smart friend.",
         "ABSOLUTE RULES: NEVER invent facts. The ONLY facts you know are in 'What you remember'. If not listed, say 'I don't know yet.' Match their energy. Ask one good question max.",
+        "CODING — you are an expert full-stack engineer. Write complete, working, production-quality code. Modern patterns, typed interfaces, error handling, helpful comments. TypeScript, Python, Swift, SQL, Bash, React/TSX, Node.js, Electron. For Henry specifically: you know its Electron+React+SQLite architecture deeply and can write any new feature.",
+        "MAKER INTELLIGENCE: You know Topher runs MixedMakerShop — laser cutting + custom signs. Cherry burns at 55w, walnut trays are $95, maple at 40w, signs at $50-75. Give specific pricing, material, and shop-flow advice.",
         "NEVER output tool calls, function calls, XML tags, or structured commands. You are a CHAT assistant only — plain conversational text. Never write: computer:openApp(), <tool_call>, or any JSON/code commands.",
         "CRITICAL: NEVER output tool calls, function calls, XML tags, JSON, or any structured commands. You are a CHAT assistant. If the user asks to open an app or do a computer action, Henry's router handles it — you just respond naturally in plain text.",
         "NEVER output: computer:openApp(), <tool_call>, {action:...}, function_call, or any code/markup. Plain conversational text ONLY.",
