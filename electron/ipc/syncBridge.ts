@@ -1549,6 +1549,29 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Complete / done task ──────────────────────────────────────────────────
+    // ── "open/show [henry panel]" → switch panel via SSE push ──────────────
+    const HENRY_PANELS: Record<string,string> = {
+      today:'today', journal:'journal', tasks:'tasks', goals:'goals', habits:'health',
+      health:'health', finance:'finance', focus:'focus', notes:'memory', memory:'memory',
+      settings:'settings', scripture:'scripture', prayer:'prayer', chat:'chat',
+      companion:'companion', 'today panel':'today', 'health panel':'health',
+      'task panel':'tasks', 'goal panel':'goals', 'journal panel':'journal',
+    };
+    const panelSwitchM = lowerText.match(/^(?:open|go to|show me?|switch to|navigate to|take me to)(?: (?:the|my|henry))?\s+([\w\s]{2,20})(?:\s+panel|\s+tab|\s+view)?$/i);
+    if (panelSwitchM) {
+      const hint = (panelSwitchM[1] || '').trim().toLowerCase();
+      const panelKey = HENRY_PANELS[hint];
+      if (panelKey) {
+        pushToAll({ type: 'navigate', payload: { panel: panelKey }, id: '', timestamp: 0 } as any);
+        // Also push directly to desktop app renderer via IPC
+        BrowserWindow.getAllWindows().forEach(win => {
+          try { win.webContents.send('navigate', panelKey); } catch { /* ignore */ }
+        });
+        sendReply('✅ Opening **' + (hint.charAt(0).toUpperCase() + hint.slice(1)) + '**.');
+        return;
+      }
+    }
+
     // ── "open [app]" → keyboard guide, never auto-launch ──────────────────
     const openAppGuideMatch = lowerText.match(/^open(?:\s+the)?\s+([a-zA-Z][\w\s]{1,25})(?:\s+app)?$/i);
     if (openAppGuideMatch && !/file|folder|document|\//.test(lowerText)) {

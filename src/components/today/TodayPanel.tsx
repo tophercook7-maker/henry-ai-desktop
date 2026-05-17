@@ -31,10 +31,10 @@ export default function TodayPanel() {
   const [todayHabits, setTodayHabits] = useState<{habit: any; done: boolean}[]>([]);
   const [henryStatus, setHenryStatus] = useState<'checking'|'ready'|'needs-key'|'ollama'|'proxy'>('checking');
 
-  // Check Henry's AI readiness
+  // Check Henry's AI readiness (run once on mount only)
   React.useEffect(() => {
     const api = (window as any).henryAPI;
-    if (!api) return;
+    if (!api) { setHenryStatus('needs-key'); return; }
     Promise.all([
       api.getProviders().catch(() => []),
       api.getSettings().catch(() => ({})),
@@ -43,13 +43,9 @@ export default function TodayPanel() {
         p.id === 'groq' && (p.api_key || p.apiKey || '').length > 10
       );
       const isOllama = settings?.companion_provider === 'ollama';
-      if (hasGroqKey || isOllama) {
-        setHenryStatus(isOllama ? 'ollama' : 'ready');
-      } else {
-        setHenryStatus('needs-key');
-      }
+      setHenryStatus(isOllama ? 'ollama' : hasGroqKey ? 'ready' : 'needs-key');
     }).catch(() => setHenryStatus('needs-key'));
-  });
+  }, []); // ← [] = run once on mount, not on every render
   const [captureRoute, setCaptureRoute] = useState<'task'|'reminder'|'journal'|'auto'>('auto');
   const [captureSaving, setCaptureSaving] = useState(false);
   const [intention, setIntentionState] = useState(() => getDailyIntention()?.text ?? '');
@@ -208,15 +204,15 @@ export default function TodayPanel() {
     setCaptureSaving(false);
   }
 
-  // Pull live data from SQLite
-  useState(() => {
+  // Pull live data from SQLite (useEffect not useState — never call APIs in render)
+  useEffect(() => {
     const api = (window as any).henryAPI;
     if (!api) return;
     Promise.all([
-      api.tasksList({ status: 'todo' }).catch(() => []),
-      api.remindersDue().catch(() => []),
-      api.focusStats().catch(() => ({ todayMins: 0 })),
-      api.financeSummary(new Date().toISOString().slice(0,7)).catch(() => ({ income: 0, expenses: 0 })),
+      api.tasksList?.({ status: 'todo' }).catch(() => []),
+      api.remindersDue?.().catch(() => []),
+      api.focusStats?.().catch(() => ({ todayMins: 0 })),
+      api.financeSummary?.(new Date().toISOString().slice(0,7)).catch(() => ({ income: 0, expenses: 0 })),
     ]).then(([tasks, reminders, focus, finance]: any[]) => {
       setLiveData({
         dueTasks: (tasks || []).length,
@@ -226,7 +222,7 @@ export default function TodayPanel() {
         expenses: finance?.expenses || 0,
       });
     }).catch(() => {});
-  });
+  }, []); // run once on mount
   const [henryReply, setHenryReply] = useState('');
   const [henryStreaming, setHenryStreaming] = useState(false);
   const [lastQuestion, setLastQuestion] = useState('');
