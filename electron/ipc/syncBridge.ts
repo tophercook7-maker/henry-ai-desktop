@@ -1589,8 +1589,8 @@ self.addEventListener('fetch', (event) => {
         const { execSync: _clipExec } = await import('child_process') as typeof import('child_process');
         const _clipTxt = _clipExec('pbpaste', { encoding: 'utf8', timeout: 2000 }).trim();
         if (_clipTxt && _clipTxt.length > 4) {
-          const _action = lowerText.startsWith('fix') ? 'Fix any bugs in' : lowerText.startsWith('explain') || lowerText.includes('what does') ? 'Explain what this code does' : lowerText.startsWith('improve') ? 'Improve and optimize' : lowerText.startsWith('refactor') ? 'Refactor for best practices' : lowerText.startsWith('debug') || lowerText.includes('wrong') ? 'Find and fix all bugs in' : 'Review and explain';
-          resolvedText = _action + ':\n\n```\n' + _clipTxt.slice(0, 6000) + '\n```';
+          const _action = lowerText.startsWith('fix') ? 'Fix all bugs and issues in this code' : lowerText.startsWith('explain') || lowerText.includes('what does') ? 'Explain clearly what this code does, line by line if needed' : lowerText.startsWith('improve') ? 'Improve, optimize, and modernize this code' : lowerText.startsWith('refactor') ? 'Refactor this code for clarity, performance, and best practices' : lowerText.startsWith('debug') || lowerText.includes('wrong') ? 'Debug and fix all issues in this code' : 'Review this code and explain what it does';
+          resolvedText = '📋 User asked: ' + lowerText + '\n\n' + _action + ':\n\n```\n' + _clipTxt.slice(0, 6000) + '\n```';
         }
       } catch { /* fall through */ }
     }
@@ -3723,6 +3723,66 @@ self.addEventListener('fetch', (event) => {
       return null;
     }
 
+    // ── Run shell command ──────────────────────────────────────────────────
+    const shellRunMatch = lowerText.match(/^(?:run|exec|execute|terminal|shell|cmd)[:\s]+(.+)/i);
+    if (shellRunMatch) {
+      const shellCmd = (shellRunMatch[1] || '').trim();
+      if (/^(?:rm -rf|sudo rm|format|fdisk|mkfs|:(){ :|:& };:)/i.test(shellCmd)) {
+        sendReply('That command could be destructive. Run it manually in Terminal.');
+        return;
+      }
+      try {
+        const { execSync: _sh } = await import('child_process') as typeof import('child_process');
+        // Try to find a sensible cwd for the command
+        const _possibleDirs = [
+          process.env.HOME + '/Documents/henry-ai-desktop',
+          process.env.HOME || '/tmp',
+          '/tmp'
+        ];
+        let _cwd = process.env.HOME || '/tmp';
+        if (/git/.test(shellCmd)) {
+          // For git commands, try to find a git repo
+          for (const dir of _possibleDirs) {
+            try { const { existsSync } = await import('fs') as typeof import('fs'); if (existsSync(dir + '/.git')) { _cwd = dir; break; } } catch { continue; }
+          }
+        }
+        const out = _sh(shellCmd, { encoding: 'utf8', timeout: 10000, cwd: _cwd, shell: '/bin/zsh' }).trim();
+        sendReply('```\n$ ' + shellCmd + '\n\n' + (out || '(no output)') + '\n```');
+      } catch (e: any) {
+        sendReply('```\n$ ' + shellCmd + '\n\nError: ' + ((e.stderr||e.message||'').toString().slice(0,400)) + '\n```');
+      }
+      return;
+    }
+
+    // ── Run Python inline ──────────────────────────────────────────────────
+    const pyRunMatch = lowerText.match(/^(?:run python|python run|py)[:\s]+(.+)/i)
+                    || lowerText.match(/^execute python[:\s]+(.+)/i);
+    if (pyRunMatch) {
+      const pyCode = resolvedText.replace(/^(?:run python|python run|py|execute python)[:\s]+/i, '').trim();
+      try {
+        const { execSync: _py } = await import('child_process') as typeof import('child_process');
+        const pyResult = _py('python3 -c ' + JSON.stringify(pyCode), { encoding: 'utf8', timeout: 8000, shell: '/bin/zsh' }).trim();
+        sendReply('```python\n' + pyCode + '\n\n# Output:\n' + (pyResult || '(no output)') + '\n```');
+      } catch (e: any) {
+        sendReply('```python\n' + pyCode + '\n\n# Error:\n' + ((e.stderr||e.message||'').toString().slice(0,400)) + '\n```');
+      }
+      return;
+    }
+
+    // ── Run Node.js inline ─────────────────────────────────────────────────
+    const nodeRunMatch = lowerText.match(/^(?:run node|node run|javascript|js run)[:\s]+(.+)/i);
+    if (nodeRunMatch) {
+      const jsCode = resolvedText.replace(/^(?:run node|node run|javascript|js run)[:\s]+/i, '').trim();
+      try {
+        const { execSync: _nd } = await import('child_process') as typeof import('child_process');
+        const ndResult = _nd('node -e ' + JSON.stringify(jsCode), { encoding: 'utf8', timeout: 8000, shell: '/bin/zsh' }).trim();
+        sendReply('```javascript\n' + jsCode + '\n\n// Output:\n' + (ndResult || '(no output)') + '\n```');
+      } catch (e: any) {
+        sendReply('```javascript\n' + jsCode + '\n\n// Error:\n' + ((e.stderr||e.message||'').toString().slice(0,400)) + '\n```');
+      }
+      return;
+    }
+
     // ── Clipboard read ─────────────────────────────────────────────────────
     if (/^(?:what(?:'s| is)(?: in)? my clipboard|read(?: my)? clipboard|clipboard|what did i copy|show clipboard)/.test(lowerText)) {
       try {
@@ -3982,7 +4042,7 @@ self.addEventListener('fetch', (event) => {
       const messages2 = [
         { role: 'system', content: systemPrompt2 },
         ...(body.history || []).slice(-12),
-        { role: 'user', content: userText }
+        { role: 'user', content: resolvedText }
       ];
 
       // ── Try providers in order ──────────────────────────────────────────────
