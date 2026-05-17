@@ -1382,7 +1382,18 @@ self.addEventListener('fetch', (event) => {
         const knowledgeAnswer = (() => {
       // Version / identity
       if (/^(?:what version|which version|your version|version number|what.*version are you)/.test(lowerText) || lowerText === 'version') {
-        return 'Henry AI v1.7.8 — your personal AI workspace for Mac.\n\n145+ instant local commands, all <20ms, offline-capable.\n\nBuilt open-source by Topher Cook + Claude. Add API keys to unlock 10 free AI providers that auto-failover. Say \'what can you do\' to see everything.';
+        return 'Henry AI v1.8.1 — your Mac AI: reads files, runs code, remembers your business, manages your day.\n\n150+ instant local commands, all <20ms.\n\n🔩 Iron Gateway v2: 10 free AI providers — Groq (llama-4-scout, llama-3.3-70b, qwen3), Gemini 2.0+1.5 Flash, Cerebras, OpenRouter. Round-robin with auto-failover.\n\nSay \'what can you do\' to see everything.';
+      }
+      if (/^(?:how does(?: henry'?s?)? iron gateway|explain iron gateway|what is iron gateway|iron gateway explained|how does.*ai.*work|what providers|which providers|what ai providers)/.test(lowerText)) {
+        return '🔩 **Iron Gateway v2** — Henry\'s free AI engine:\n\n' +
+          '1. Groq/llama-4-scout-17b (fastest)\n2. Groq/llama-3.3-70b\n3. Groq/qwen3-32b\n' +
+          '4. Groq/llama-3.1-8b-instant\n5. Gemini 2.0 Flash\n6. Gemini 1.5 Flash\n' +
+          '7. Cerebras/llama-4-scout\n8. OpenRouter/llama-3.3-70b:free\n' +
+          '9. OpenRouter/gemma-3-27b:free\n10. OpenRouter/deepseek-r1:free\n\n' +
+          'Round-robin with 60s rate-limit cooldowns. Add keys: "set gemini key: YOUR_KEY"';
+      }
+      if (/^(?:how does(?: henry'?s?)? iron gateway|explain iron gateway|iron gateway|what is iron gateway|what providers|which providers)/.test(lowerText)) {
+        return '🔩 **Iron Gateway v2** — Henry\'s free AI engine:\n\n1. Groq/llama-4-scout (fastest)\n2. Groq/llama-3.3-70b\n3. Groq/qwen3-32b\n4. Groq/8b-instant\n5. Gemini 2.0 Flash\n6. Gemini 1.5 Flash\n7. Cerebras/llama-4-scout\n8-10. OpenRouter (llama, gemma, deepseek):free\n\nRound-robin with 60s cooldowns. Add keys: "set gemini key: YOUR_KEY"';
       }
       if (/^(?:what (?:ai |model |llm )(?:are you|is this)|which model|what model|what.*(?:model|ai) (?:are you|using)|how fast are you|your response time)/.test(lowerText)) {
         const g3 = global as any;
@@ -1677,7 +1688,37 @@ self.addEventListener('fetch', (event) => {
                         || lowerText === 'goals' || lowerText === 'my goals' || lowerText === 'top goal'
                         || /^(?:how many|count)(?: my)? goals/.test(lowerText);
     // ── Completed goals ──────────────────────────────────────────────────────
-    // ── Goal completion percentage ──────────────────────────────────────────
+    // ── Mark goal done ──────────────────────────────────────────────────────
+    const markGoalDoneRx = lowerText.match(/^(?:mark|complete|finish|hit|achieved?|done)(?: (?:my|the|a))? goal[:\s]+(.+)/i)
+                        || lowerText.match(/^(?:goal (?:done|complete|finished|achieved))[:\s]+(.+)/i);
+    if (markGoalDoneRx) {
+      const hint = (markGoalDoneRx[1] || '').trim().toLowerCase();
+      if (hint.length > 1) {
+        try {
+          // Try exact first, then fuzzy on any word
+          const words = hint.split(/\s+/).filter(w => w.length > 3);
+          let g = dbGetOne<{id:string;title:string}>(
+            "SELECT id, title FROM goals WHERE LOWER(title) LIKE ? AND status='active' LIMIT 1",
+            '%' + hint + '%'
+          ) as {id:string;title:string}|null;
+          if (!g && words.length) {
+            for (const w of words) {
+              g = dbGetOne<{id:string;title:string}>(
+                "SELECT id, title FROM goals WHERE LOWER(title) LIKE ? AND status='active' LIMIT 1",
+                '%' + w + '%'
+              ) as {id:string;title:string}|null;
+              if (g) break;
+            }
+          }
+          if (!g) { sendReply('No active goal matching "' + hint + '". Say "what goals do I have" to see your list.'); return; }
+          dbRun("UPDATE goals SET status='done', updated_at=? WHERE id=?", new Date().toISOString(), g.id);
+          sendReply('🏆 Goal achieved: "' + g.title + '"\n\nGreat work, Topher. Say "what goals do I have" to see what\'s next.');
+        } catch (e) { sendReply('Could not mark goal done: ' + e); }
+        return;
+      }
+    }
+
+    // ── Goal completion percentage ──────────────────────────────────────────────
     const goalsPctMatch = /^(?:what(?:'s| is)(?: my)?|show)(?: my)? (?:goal )?(?:percent(?:age)?|progress|completion|rate|score)(?: (?:done|complete|finished|achieved))?/.test(lowerText)
                        || /^(?:how many|what (?:percent|%))(?: of)?(?: my)? goals(?: are)? (?:done|complete|finished|achieved|hit)/.test(lowerText);
     if (goalsPctMatch) {
@@ -2711,6 +2752,25 @@ self.addEventListener('fetch', (event) => {
 
     // ── Maker Studio: profit / jobs ──────────────────────────────────────────
     // ── Show expenses ──────────────────────────────────────────────────────────
+    // ── Show all transactions this month ────────────────────────────────────
+    const showTxMatch = /^(?:show|list)(?: all| my)?(?: this month\'s| recent)? transactions?(?: this month)?/.test(lowerText)
+                     || lowerText === 'transactions' || lowerText === 'show transactions' || lowerText === 'my transactions';
+    if (showTxMatch) {
+      try {
+        const month5 = new Date().toISOString().slice(0,7);
+        const txs = dbGet<{date:string;amount:number;type:string;category:string}>(
+          "SELECT date, amount, type, category FROM transactions WHERE strftime('%Y-%m', date)=? ORDER BY date DESC LIMIT 20",
+          month5
+        ) as {date:string;amount:number;type:string;category:string}[];
+        if (!txs.length) { sendReply('No transactions this month yet.'); return; }
+        const income = txs.filter(t => t.type==='income').reduce((s,t) => s+t.amount, 0);
+        const expenses = txs.filter(t => t.type==='expense').reduce((s,t) => s+t.amount, 0);
+        const lines = txs.map(t => (t.type==='income'?'💰':'💸') + ' ' + t.date.slice(5) + ' $' + t.amount.toFixed(0) + ' — ' + t.category);
+        sendReply('Transactions this month:\n\n' + lines.join('\n') + '\n\n💰 Income: $' + income.toFixed(0) + '  💸 Expenses: $' + expenses.toFixed(0) + '  📊 Profit: $' + (income-expenses).toFixed(0));
+      } catch { sendReply('Could not load transactions.'); }
+      return;
+    }
+
     const showExpenseMatch = /^(?:show|what(?: did i)?|list)(?: my)?(?: (?:total|all))? expenses?(?: this month| this week| today)?/.test(lowerText)
                           || /^how much did i (?:spend|pay|spend on|pay for)(?: this month| this week| today| on .+)?/.test(lowerText)
                           || lowerText === 'my expenses' || lowerText === 'expenses';
@@ -3810,6 +3870,23 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Read file ─────────────────────────────────────────────────────────
+    // ── Write / create file from chat ────────────────────────────────────────
+    const writeFileMx = resolvedText.match(/^(?:write|create|save)(?: (?:a |the )?file)?[:\s]+([~\/][\w.\/\-]+(?:\.\w+)?)\s+(?:with content|content:|with )[:\s]*(.+)/is)
+                     || resolvedText.match(/^(?:create|write) file[:\s]+([~\/][\w.\/\-]+(?:\.\w+)?)\n([\s\S]+)/i);
+    if (writeFileMx) {
+      const rawPath = (writeFileMx[1] || '').trim().replace(/["']/g,'');
+      const content = (writeFileMx[2] || '').trim();
+      const ep = rawPath.startsWith('~') ? rawPath.replace('~', process.env.HOME||'') : rawPath;
+      if (ep && content) {
+        try {
+          const { writeFileSync: wfs } = await import('fs') as typeof import('fs');
+          wfs(ep, content, 'utf8');
+          sendReply('✅ File written: **' + ep + '** (' + content.length + ' chars)\nSay "read file: ' + rawPath + '" to verify.');
+        } catch (e: any) { sendReply('Could not write file: ' + (e.message||e)); }
+        return;
+      }
+    }
+
     const readFileMx = resolvedText.match(/^(?:read|show|open|cat|view|explain|analyze|debug)(?: (?:file|the file))?[:\s]+([~\/][\w.\/\s\-~]+(?:\.\w+)?)/i);
     if (readFileMx) {
       const rp = (readFileMx[1] || '').trim().replace(/["']/g,'');
@@ -3846,6 +3923,32 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── System info ────────────────────────────────────────────────────────
+    if (/^(?:how much ram|memory usage|how much memory|ram usage|show memory)/.test(lowerText)) {
+      try {
+        const { execSync: _rm } = await import('child_process') as typeof import('child_process');
+        const mem = _rm("python3 -c 'import psutil; v=psutil.virtual_memory(); print(str(round(v.used/1e9,1))+\"GB used of \"+str(round(v.total/1e9,1))+\"GB (\"+str(round(v.percent))+\"%)\")'", { encoding:'utf8', timeout:4000, shell:'/bin/zsh' }).trim();
+        sendReply('🧠 **RAM:** ' + (mem || 'Check Activity Monitor → Memory tab'));
+      } catch { sendReply('🧠 Check RAM: **Activity Monitor** → Memory tab.'); }
+      return;
+    }
+    if (/^(?:battery|how much battery|battery level|battery life|power level|charge)/.test(lowerText)) {
+      try {
+        const { execSync: _bt } = await import('child_process') as typeof import('child_process');
+        const pct = _bt("pmset -g batt | grep -o '[0-9]*%' | head -1", { encoding:'utf8', shell:'/bin/bash', timeout:3000 }).trim();
+        const state = _bt("pmset -g batt | grep -o 'charging\|charged\|discharging' | head -1", { encoding:'utf8', shell:'/bin/bash', timeout:3000 }).trim();
+        sendReply('🔋 **Battery:** ' + (pct || 'unknown') + (state ? ' — ' + state : ''));
+      } catch { sendReply('🔋 Check battery in the menu bar.'); }
+      return;
+    }
+    if (/^(?:what wifi|wifi|wi-fi|what network|internet|what connection|connected to)/.test(lowerText)) {
+      try {
+        const { execSync: _wf } = await import('child_process') as typeof import('child_process');
+        const ssid = _wf("/System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport -I 2>/dev/null | awk '/ SSID/{print $2}'", { encoding:'utf8', shell:'/bin/bash', timeout:3000 }).trim();
+        const ip = _wf("ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo 'no IP'", { encoding:'utf8', shell:'/bin/bash', timeout:3000 }).trim();
+        sendReply('📶 **WiFi:** ' + (ssid || 'not detected') + ' · IP: ' + ip);
+      } catch { sendReply('📶 Check WiFi in the menu bar.'); }
+      return;
+    }
     if (/^(?:system info|what mac|mac info|computer info|hardware info|my computer|show system|what computer do i have)/.test(lowerText)) {
       try {
         const { execSync: _exc3 } = await import('child_process') as typeof import('child_process');
