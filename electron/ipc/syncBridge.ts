@@ -1381,7 +1381,7 @@ self.addEventListener('fetch', (event) => {
         const knowledgeAnswer = (() => {
       // Version / identity
       if (/^(?:what version|which version|your version|version number|what.*version are you)/.test(lowerText) || lowerText === 'version') {
-        return 'Henry AI v1.6.0 — your personal AI workspace for Mac.\n\n100+ instant local commands, all offline-capable. Built by Anthropic Claude + Topher Cook.';
+        return 'Henry AI v1.7.6 — your personal AI workspace for Mac.\n\n145+ instant local commands, all <20ms, offline-capable.\n\nBuilt open-source by Topher Cook + Claude. Add API keys to unlock 10 free AI providers that auto-failover. Say \'what can you do\' to see everything.';
       }
       if (/^(?:what (?:ai |model |llm )(?:are you|is this)|which model|what model|what.*(?:model|ai) (?:are you|using)|how fast are you|your response time)/.test(lowerText)) {
         const g3 = global as any;
@@ -3781,6 +3781,9 @@ self.addEventListener('fetch', (event) => {
         greeting,
         "Henry is a warm, thoughtful, conversational AI — the user's personal companion. Down-to-earth, genuine, brief but never curt. Like a smart friend, not a help desk.",
         "ABSOLUTE RULES: NEVER invent facts. The ONLY facts you know are in 'What you remember'. If not listed, say 'I don't know yet.' Match their energy. Ask one good question max.",
+        "NEVER output tool calls, function calls, XML tags, or structured commands. You are a CHAT assistant only — plain conversational text. Never write: computer:openApp(), <tool_call>, or any JSON/code commands.",
+        "CRITICAL: NEVER output tool calls, function calls, XML tags, JSON, or any structured commands. You are a CHAT assistant. If the user asks to open an app or do a computer action, Henry's router handles it — you just respond naturally in plain text.",
+        "NEVER output: computer:openApp(), <tool_call>, {action:...}, function_call, or any code/markup. Plain conversational text ONLY.",
         factsBlock ? `── WHAT YOU REMEMBER ──\n${factsBlock}` : "── WHAT YOU REMEMBER ──\nNothing yet — early conversation.",
         "── LIVE CONTEXT ──\n" + liveCtxLines.join('\n'),
         recentSummary ? "── RECENT CONVERSATION ──\n" + recentSummary : '',

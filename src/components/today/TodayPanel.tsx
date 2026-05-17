@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useStore } from '../../store';
 import { getDailyCost } from '../../henry/gateway';
 import { getTodayBriefing, getTodayKey, saveBriefing, setGenerating, isGenerating, buildBriefingPrompt, buildLiveContext } from '../../henry/proactiveBriefing';
@@ -32,7 +32,7 @@ export default function TodayPanel() {
   const [henryStatus, setHenryStatus] = useState<'checking'|'ready'|'needs-key'|'ollama'|'proxy'>('checking');
 
   // Check Henry's AI readiness
-  useState(() => {
+  React.useEffect(() => {
     const api = (window as any).henryAPI;
     if (!api) return;
     Promise.all([
@@ -265,7 +265,7 @@ export default function TodayPanel() {
           return f.slice(0, 15).map((x: any) => x.content || x.fact || '').filter(Boolean).join('; ');
         } catch { return ''; }
       })();
-      const liveCtx = await buildLiveContext().catch(() => '');
+      const liveCtx = await buildLiveContext().catch((e) => { console.warn('[TodayPanel] buildLiveContext failed:', e); return ''; });
       const dayOfWeek = new Date().toLocaleDateString('en-US', { weekday: 'long' });
       const dateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
 

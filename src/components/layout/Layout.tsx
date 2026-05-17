@@ -78,7 +78,8 @@ function CompanionUrlCard() {
   }
 
   function openInBrowser(url: string) {
-    (window as any).henryAPI?.computerRunShell?.({ command: `open "${url}"`, timeout: 3000 });
+    // Force Safari — not Chrome — for the companion PWA
+    (window as any).henryAPI?.computerRunShell?.({ command: `open -a Safari "${url}"`, timeout: 3000 });
   }
 
   return (
@@ -102,7 +103,7 @@ function CompanionUrlCard() {
           </div>
         </div>
         <p className="text-[11px] text-henry-text-muted leading-relaxed">
-          On your iPad or iPhone: open Safari, type this URL, bookmark it. Both must be on the same WiFi.
+          📱 iPhone/iPad: Open Safari (not Chrome), type this URL, then tap Share (□↑) → "Add to Home Screen" to install as an app.
         </p>
       </div>
       {tunnelUrl && (
