@@ -1531,10 +1531,25 @@ self.addEventListener('fetch', (event) => {
       }
     }
 
+    // ── Maker job completion phrases ──────────────────────────────────────────
+    const makerJobDone = /^(?:delivery|order|job|sign(?:s)?|tray(?:s)?) (?:done|complete|ready|made|finished|shipped)$/.test(lowerText)
+                      || /^(?:made|cut|engraved|finished)(?: \d+)?(?: (?:walnut|maple|cherry|oak|sign|tray))? (?:sign|tray|board|piece|order)(?:s)?(?:(?: today)| for .+)?$/.test(lowerText);
+    if (makerJobDone) {
+      const qty = lowerText.match(/(\d+)/)?.[1];
+      const product = lowerText.match(/(?:walnut|maple|cherry|oak|sign|tray|board)/i)?.[0] || 'order';
+      sendReply('✅ ' + (qty || '1') + ' ' + product + '(s) complete.\n\nLog the revenue: "I got paid $X"');
+      return;
+    }
+
+    // ── 'customer paid' without amount ──────────────────────────────────────
+    if (/^customer(?: just)? paid$/.test(lowerText) || lowerText === 'payment received') {
+      sendReply('How much? Say "customer paid $X" or "I got paid $X" to log it.');
+      return;
+    }
+
     // ── Complete / done task ──────────────────────────────────────────────────
     const completeTaskMatch = lowerText.match(/^(?:complete|finish|done|mark done|check off)(?: my)?(?: first| last| top)? task[:\s]*(.*)$/i)
                         || (!/^(?:all|i'm|that's|good|mission|nothing|totally|almost|nearly)/.test(lowerText) ? lowerText.match(/^(.{3,45}) done$/i) : null)
-                        || (lowerText.match(/^(.{3,40}) done$/i) && !/^(?:all|i'm|that's|good|mission|nothing|totally)/.test(lowerText))
                         || lowerText.match(/^(?:mark|complete|finish)(?: task)?[:\s]+(.+)(?: as)? done$/i)
                         || lowerText.match(/^mark task(?:\s+done)?[:\s]+(.+)/i)
                         || lowerText.match(/^complete task[:\s]+(.+)/i)
@@ -1730,10 +1745,13 @@ self.addEventListener('fetch', (event) => {
 
     // "remind me to X [at/on TIME/DATE]" 
     const remindMatch = lowerText.match(/^remind(?:er)?(?: me)? (?:to |about )?(.+)/i)
+                    || lowerText.match(/^(?:customer|client) (?:pickup|coming|scheduled|arriving?|visit)(?: at| for)? (.+)/i)
+                    || lowerText.match(/^pickup(?:\s+at)? (.+)/i)
                     || lowerText.match(/^reminder[:\s]+(.+)/i)
                     || lowerText.match(/^(?:set|add|create)(?: a)? reminder(?: for)?[:\s]+(.+)/i)
                     || lowerText.match(/^(?:set(?: up)?|add|create)(?: a| an?)?(?: daily| weekly| recurring| quick)? reminder[:\s]*(.+)/i)
-                    || lowerText.match(/^(?:set up|create)(?: a| an?)? (?:daily|weekly|recurring) reminder[:\s]+(.+)/i);
+                    || lowerText.match(/^(?:set up|create)(?: a| an?)? (?:daily|weekly|recurring) reminder[:\s]+(.+)/i)
+                    || lowerText.match(/^(?:customer|client)(?: scheduled| coming)?(?: at| for) (.+)/i);
     if (remindMatch) {
       const rawTitle = resolvedText
         .replace(/^remind(?:er)?(?: me)? (?:to |about )?/i,'')
@@ -2847,7 +2865,9 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Quick note ────────────────────────────────────────────────────────────
-    const noteMatch = lowerText.match(/^(?:note|jot|capture|save note|quick note)[:\s]+(.+)/i);
+    const noteMatch = lowerText.match(/^(?:note|jot|capture|save note|quick note)[:\s]+(.+)/i)
+                  || lowerText.match(/^material(?:s)? (?:arrived?|in|received?|delivered?)[:\s]+(.+)/i)
+                  || lowerText.match(/^(?:arrived?|received?|got)(?: in)?[:\s]+(.+)/i);
     if (noteMatch) {
       const content = noteMatch[1].trim();
       if (content.length > 1) {
@@ -3126,6 +3146,9 @@ self.addEventListener('fetch', (event) => {
     }
 
     const revenueMatch = lowerText.match(/^(?:log|add|record)(?:\s+revenue)[:\s]+\$?([\d.]+)/i)
+                      || lowerText.match(/^(?:charged?|invoiced?|billed?|collected?)(?: \w+)? \$([\d.]+)(?: today)?/i)
+                      || lowerText.match(/^customer(?: just)? paid(?: \$([\d.]+))?/i)
+                      || lowerText.match(/^(?:payment|deposit)(?: of)? \$([\d.]+)(?: received)?/i)
                       || lowerText.match(/^(?:log|add|record)[:\s]+\$([\d.]+)/i)
                       || lowerText.match(/^i (?:made|earned|got paid|received|collected) \$([\d.]+)(?: today)?$/i)
                       || lowerText.match(/^revenue[:\s]+\$?([\d.]+)/i)
@@ -3438,6 +3461,12 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Bare "done" → complete top in-progress task ──────────────────────────
+    // "customer paid" without amount → prompt
+    if (/^customer(?: just)? paid$/.test(lowerText) || lowerText === 'got paid' || lowerText === 'payment received') {
+      sendReply('How much? Say "customer paid $X" or "I got paid $X" to log it.');
+      return;
+    }
+
     if (lowerText === 'done' || lowerText === 'finished' || lowerText === "i'm done with that" || lowerText === 'completed') {
       try {
         // Try doing tasks first, then top todo
