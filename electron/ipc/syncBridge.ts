@@ -1606,34 +1606,28 @@ self.addEventListener('fetch', (event) => {
 
     // ── Clipboard-aware commands: "explain this" / "fix this" / "review this" ─
     // Must fire EARLY before openAppGuideMatch intercepts words like "this"
-    if (/^(?:explain|fix|debug|improve|refactor|review)(?: this| it| my code)?$/i.test(lowerText)
-     || /^(?:what does this do|what\'s wrong with this|why is this broken)$/i.test(lowerText)) {
+    if (/^(?:explain|fix|debug|improve|refactor|review|summarize|translate|rewrite|format|clean up)(?: this| it| my code| this code| this text| this article)?$/i.test(lowerText)
+     || /^(?:what does this do|what's wrong with this|why is this broken)$/i.test(lowerText)
+     || /^translate this to \w+$/i.test(lowerText)
+     || /^(?:summarize|tldr)(?: this)?$/i.test(lowerText)) {
       try {
         const { execSync: _clipExec } = await import('child_process') as typeof import('child_process');
         const clipTxt = _clipExec('pbpaste', { encoding: 'utf8', timeout: 2000 }).trim();
         if (clipTxt && clipTxt.length > 4) {
-          const action2 = lowerText.startsWith('fix') ? 'Fix any bugs or issues in' :
-                         lowerText.startsWith('explain') || lowerText.includes('what does') ? 'Explain clearly what this code does' :
+          const _toLocale = lowerText.match(/translate (?:this )?to (\w+)/i)?.[1];
+          const action2 = lowerText.startsWith('fix') ? 'Fix bugs in' :
+                         lowerText.startsWith('explain') || lowerText.includes('what does') ? 'Explain what this does' :
                          lowerText.startsWith('improve') ? 'Improve and optimize' :
                          lowerText.startsWith('refactor') ? 'Refactor for best practices' :
                          lowerText.startsWith('debug') || lowerText.includes('wrong') ? 'Find and fix all bugs in' :
+                         lowerText.startsWith('summar') || lowerText.startsWith('tldr') ? 'Summarize this text with key points' :
+                         _toLocale ? 'Translate the following to ' + _toLocale :
+                         lowerText.startsWith('rewrite') ? 'Rewrite and improve this' :
+                         lowerText.startsWith('format') || lowerText.startsWith('clean') ? 'Format and clean up this' :
                          'Review and explain';
           resolvedText = action2 + ':\n\n```\n' + clipTxt.slice(0, 6000) + '\n```';
         }
       } catch { /* fall through to AI */ }
-    }
-
-    // ── Clipboard-aware: "explain this" / "fix this" — fires before openAppGuideMatch ──
-    if (/^(?:explain|fix|debug|improve|refactor|review)(?: this| it| my code)?$/i.test(lowerText)
-     || /^(?:what does this do|what's wrong with this|why is this broken)$/i.test(lowerText)) {
-      try {
-        const { execSync: _clipExec } = await import('child_process') as typeof import('child_process');
-        const _clipTxt = _clipExec('pbpaste', { encoding: 'utf8', timeout: 2000 }).trim();
-        if (_clipTxt && _clipTxt.length > 4) {
-          const _action = lowerText.startsWith('fix') ? 'Fix all bugs and issues in this code' : lowerText.startsWith('explain') || lowerText.includes('what does') ? 'Explain clearly what this code does, line by line if needed' : lowerText.startsWith('improve') ? 'Improve, optimize, and modernize this code' : lowerText.startsWith('refactor') ? 'Refactor this code for clarity, performance, and best practices' : lowerText.startsWith('debug') || lowerText.includes('wrong') ? 'Debug and fix all issues in this code' : 'Review this code and explain what it does';
-          resolvedText = '📋 User asked: ' + lowerText + '\n\n' + _action + ':\n\n```\n' + _clipTxt.slice(0, 6000) + '\n```';
-        }
-      } catch { /* fall through */ }
     }
 
     // ── "open/show [henry panel]" → switch panel via SSE push ──────────────
@@ -2798,6 +2792,23 @@ self.addEventListener('fetch', (event) => {
     // ── Maker Studio: profit / jobs ──────────────────────────────────────────
     // ── Show expenses ──────────────────────────────────────────────────────────
     // ── Show all transactions this month ────────────────────────────────────
+    // ── Best customer / revenue analytics ──────────────────────────────────
+    const bestCustomerMatch = /^(?:who(?:'s| is)(?: my)?|show me my) (?:best|top|biggest) customer/.test(lowerText)
+                            || /^(?:top|best) customers? this month/.test(lowerText);
+    if (bestCustomerMatch) {
+      try {
+        const month5 = new Date().toISOString().slice(0,7);
+        const byCustomer = dbGet<{category:string;total:number}>(
+          "SELECT category, SUM(amount) as total FROM transactions WHERE type='income' AND strftime('%Y-%m',date)=? GROUP BY category ORDER BY total DESC LIMIT 5",
+          month5
+        ) as {category:string;total:number}[];
+        if (!byCustomer.length) { sendReply('No income logged this month yet.'); return; }
+        const lines = byCustomer.map((r,i) => (i+1) + '. ' + r.category + ': $' + r.total.toFixed(0));
+        sendReply('💰 **Top customers this month:**\n\n' + lines.join('\n'));
+      } catch { sendReply('Could not load customer data.'); }
+      return;
+    }
+
     const showTxMatch = /^(?:show|list)(?: all| my)?(?: this month\'s| recent)? transactions?(?: this month)?/.test(lowerText)
                      || lowerText === 'transactions' || lowerText === 'show transactions' || lowerText === 'my transactions';
     if (showTxMatch) {
@@ -3115,6 +3126,8 @@ self.addEventListener('fetch', (event) => {
 
     // ── Quick note ────────────────────────────────────────────────────────────
     const noteMatch = lowerText.match(/^(?:note|jot|capture|save note|quick note)[:\s]+(.+)/i)
+                  || lowerText.match(/^save this as(?: a)? note[:\s]+(.+)/i)
+                  || lowerText.match(/^add (?:a )?note[:\s]+(.+)/i)
                   || lowerText.match(/^material(?:s)? (?:arrived?|in|received?|delivered?)[:\s]+(.+)/i)
                   || lowerText.match(/^(?:arrived?|received?|got)(?: in)?[:\s]+(.+)/i);
     if (noteMatch) {
@@ -3599,7 +3612,8 @@ self.addEventListener('fetch', (event) => {
     // "create invoice for Henderson" — open Word and let AI draft in next turn
     // Skip createDocMatch if this looks like a price calc ("create quote: 10 x at $Y")
     const hasQtyPrice = /\d+\s+.+\s+(?:at|@)\s+\$[\d.]+/.test(lowerText);
-    const createDocMatch = !hasQtyPrice && lowerText.match(/^(?:make|create|write|draft|generate)(?: (?:me|a|an))? (?:invoice|quote|estimate|proposal|letter|contract|report|checklist)(?: for .+)?(?:\s+in word| as (?:a )?word)?/i);
+    const isNoteCmd = /^(?:save this as|note:|#note:|jot|quick note)/.test(lowerText);
+    const createDocMatch = !hasQtyPrice && !isNoteCmd && lowerText.match(/^(?:make|create|write|draft|generate)(?: (?:me|a|an))? (?:invoice|quote|estimate|proposal|letter|contract|report|checklist)(?: for .+)?(?:\s+in word| as (?:a )?word)?/i);
     if (createDocMatch) {
       const docType = lowerText.match(/invoice|quote|estimate|proposal|letter|contract|report|checklist/i)?.[0] || 'document';
       const forWho = lowerText.match(/(?:for|to) ([A-Za-z]+(?:\s+[A-Za-z]+)?)/i)?.[1] || '';
@@ -3989,6 +4003,23 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── System info ────────────────────────────────────────────────────────
+    if (/^(?:how big|what size|size of|how much space)(?: is| does)?(?: my|the)?(?: folder)? ([~\/][\w.\/\s\-]+|desktop|documents|downloads|home)/.test(lowerText) ||
+        /^(?:du|disk usage)(?: of)? ([~\/][\w.\/\s\-]+)/.test(lowerText)) {
+      const pathMatch = lowerText.match(/(?:my |the )?([~\/][\w.\/\s\-]+|desktop|documents|downloads|home)/i);
+      const pathName = pathMatch?.[1]?.toLowerCase() || 'desktop';
+      const resolvedFolder = pathName === 'desktop' ? (process.env.HOME||'') + '/Desktop' :
+                             pathName === 'documents' ? (process.env.HOME||'') + '/Documents' :
+                             pathName === 'downloads' ? (process.env.HOME||'') + '/Downloads' :
+                             pathName === 'home' ? (process.env.HOME||'') : pathName.startsWith('~') ? pathName.replace('~', process.env.HOME||'') : pathName;
+      try {
+        const { execSync: _du } = await import('child_process') as typeof import('child_process');
+        const size = _du('du -sh -d 0 ' + JSON.stringify(resolvedFolder) + ' 2>/dev/null | cut -f1', { encoding:'utf8', shell:'/bin/bash', timeout:4000 }).trim();
+        const count = _du('ls ' + JSON.stringify(resolvedFolder) + ' 2>/dev/null | wc -l | tr -d " "', { encoding:'utf8', shell:'/bin/bash', timeout:3000 }).trim();
+        sendReply('📁 **' + resolvedFolder.split('/').pop() + ':** ' + (size || '?') + ' total · ' + (parseInt(count)-1) + ' items');
+      } catch { sendReply('Could not measure folder size. Try: run: du -sh ~/Desktop'); }
+      return;
+    }
+
     if (/^(?:how much ram|memory usage|how much memory|ram usage|show memory)/.test(lowerText)) {
       try {
         const { execSync: _rm } = await import('child_process') as typeof import('child_process');
@@ -4028,6 +4059,10 @@ self.addEventListener('fetch', (event) => {
 
     // ── Web search (DuckDuckGo instant + Google link) ──────────────────────
     const webSrchMx = lowerText.match(/^(?:search(?: the)? web(?:(?: for)|[:\s])?|google|look up|search for|web search|find online)[:\s]+(.+)/i)
+                   || lowerText.match(/^(?:what\'s|what is)(?: the)? (?:latest|trending|new|current|recent)(?: in| on| about)? (.+)/i)
+                   || lowerText.match(/^(?:latest|recent|trending|current) (?:news|updates?|developments?) (?:in|on|about) (.+)/i)
+                   || lowerText.match(/^(?:what\'s|what is)(?: the)? (?:latest|trending|new|current)(?: in| on| about) (.+)/i)
+                   || lowerText.match(/^(?:latest|recent|trending) (?:news|updates?) (?:in|on|about) (.+)/i)
                    || lowerText.match(/^(?:search web for|web search for)[:\s]+(.+)/i)
                    || lowerText.match(/^(?:latest news on|what\'s the latest on|news about) (.+)/i);
     if (webSrchMx) {
