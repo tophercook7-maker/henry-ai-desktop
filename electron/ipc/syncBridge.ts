@@ -1548,8 +1548,10 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Complete / done task ──────────────────────────────────────────────────
+    const xDoneBlocklist = /^(?:all|i'm|that's|good|mission|nothing|totally|almost|nearly|sign order|laser order|delivery|walnut sign|maple sign|signs? order|habits?|show habits?)/i;
+    const xDoneResult = !xDoneBlocklist.test(lowerText) ? lowerText.match(/^(.{3,45}) done$/i) : null;
     const completeTaskMatch = lowerText.match(/^(?:complete|finish|done|mark done|check off)(?: my)?(?: first| last| top)? task[:\s]*(.*)$/i)
-                        || (!/^(?:all|i'm|that's|good|mission|nothing|totally|almost|nearly)/.test(lowerText) ? lowerText.match(/^(.{3,45}) done$/i) : null)
+                        || xDoneResult
                         || lowerText.match(/^(?:mark|complete|finish)(?: task)?[:\s]+(.+)(?: as)? done$/i)
                         || lowerText.match(/^mark task(?:\s+done)?[:\s]+(.+)/i)
                         || lowerText.match(/^complete task[:\s]+(.+)/i)
@@ -2170,8 +2172,9 @@ self.addEventListener('fetch', (event) => {
     }
 
     // Don't intercept "longest streak" / "habit streaks this week" → goes to habitStreakMatch
-    const habitStatusMatch = (/^(?:what(?:'s| is)?|show|check)(?: my)? habits?(?:\s+(?:status|today|done|this week))?$/.test(lowerText)
-                          || lowerText === 'habits' || lowerText === 'my habits')
+    const habitStatusMatch = (/^(?:what(?:'s| is)?|show|check)(?: my)? habits?(?:\s+(?:status|today|done|this week|not done|pending|remaining|left|missed))?$/.test(lowerText)
+                          || /^(?:what habits?|which habits?)(?: (?:are|have i))?(?:\s+(?:not done|pending|remaining|left|missed|still to do))?$/.test(lowerText)
+                          || lowerText === 'habits' || lowerText === 'my habits' || lowerText === 'habits not done' || lowerText === 'pending habits')
                           && !/streak|longest|best/.test(lowerText);
     if (habitStatusMatch) {
       try {
@@ -2645,6 +2648,29 @@ self.addEventListener('fetch', (event) => {
                      || /^(?:total|lifetime|all.time)(?: (?:revenue|income|earnings?|profit))?$/.test(lowerText)
                      || /^(?:how much)(?: have i)? (?:made|earned|grossed)/.test(lowerText)
                      || lowerText === "revenue" || lowerText === "revenue this month" || lowerText === "my revenue";
+
+    // ── Revenue by week breakdown ──────────────────────────────────────────────
+    const weeklyRevMatch = /^(?:show|what(?:'s| is)?|break(?:down)?)(?: my)? (?:revenue|income|earnings?)(?: by week| this week| weekly| each week| per week)?$/.test(lowerText)
+                        || lowerText === 'weekly revenue' || lowerText === 'revenue by week' || lowerText === 'weekly breakdown';
+    if (weeklyRevMatch) {
+      try {
+        const weeks: {label:string; total:number}[] = [];
+        for (let w = 0; w < 4; w++) {
+          const end = new Date(); end.setDate(end.getDate() - w * 7); end.setHours(23,59,59,999);
+          const start = new Date(end); start.setDate(start.getDate() - 6); start.setHours(0,0,0,0);
+          const total = (dbGetOne<{n:number}>(
+            "SELECT COALESCE(SUM(amount),0) as n FROM transactions WHERE type='income' AND date BETWEEN ? AND ?",
+            start.toISOString().slice(0,10), end.toISOString().slice(0,10)
+          ) as {n:number}|null)?.n || 0;
+          const label = w === 0 ? 'This week' : w === 1 ? 'Last week' : start.toLocaleDateString('en-US',{month:'short',day:'numeric'}) + '–' + end.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+          weeks.push({label, total});
+        }
+        const totalAll = weeks.reduce((s,w) => s + w.total, 0);
+        sendReply('Revenue by week:\n\n' + weeks.map(w => w.label + ': $' + w.total.toFixed(2)).join('\n') + '\n\nTotal (4 weeks): $' + totalAll.toFixed(2));
+      } catch { sendReply('Could not load weekly revenue.'); }
+      return;
+    }
+
     if (profitMatch) {
       try {
         const month = new Date().toISOString().slice(0,7);
@@ -3052,8 +3078,8 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── End of day summary ───────────────────────────────────────────────────
-    const eodMatch = /^(?:end of day|eod|day summary|daily summary|wrap up|wrap up my day|what did i do today|what did i accomplish today|what have i done today|how did my day go|good night|goodnight|heading to bed|time for bed|going to bed|i'm done for the day|i am done for the day|i'm heading to bed|im heading to bed|heading to bed|evening|night|calling it|that's a wrap)/.test(lowerText)
-                  || lowerText === 'evening' || lowerText === 'night' || lowerText === "i'm calling it";
+    const eodMatch = /^(?:end of day|eod|day summary|daily summary|wrap up|wrap up my day|wrap it up|pack it in|clock out|sign off|logging off|done for today|calling it a day|what did i do today|what did i accomplish today|what have i done today|how did my day go|good night|goodnight|heading to bed|time for bed|going to bed|i'm done for the day|i am done for the day|i'm heading to bed|im heading to bed|heading to bed|evening|night|calling it|that's a wrap)/.test(lowerText)
+                  || lowerText === 'evening' || lowerText === 'night' || lowerText === "i'm calling it" || lowerText === 'wrap it up' || lowerText === 'pack it in' || lowerText === 'clock out';
     if (eodMatch) {
       try {
         const today = new Date().toISOString().slice(0,10);
@@ -3482,6 +3508,21 @@ self.addEventListener('fetch', (event) => {
         sendReply('✓ Done: "' + task.title + '"\n\nSay "next" or "what should I focus on" for the next task.');
       } catch { sendReply('Could not complete task.'); }
       return;
+    }
+
+    // ── Quick price calculator ───────────────────────────────────────────────
+    const priceCalcMatch = lowerText.match(/^(?:price|calculate|calc|quote|what(?:'s| is| would)(?: the)? cost):?\s+(\d+)\s+(.+?)\s+(?:at|@)\s+\$([\d.]+)/i)
+                        || lowerText.match(/^(\d+)\s+(.+?)\s+(?:at|@|\×|x)\s+\$([\d.]+)(?:\/(?:each|ea|piece|item))?$/i);
+    if (priceCalcMatch) {
+      const qty = parseInt(priceCalcMatch[1] || '0');
+      const item = (priceCalcMatch[2] || '').trim();
+      const unitPrice = parseFloat(priceCalcMatch[3] || '0');
+      if (qty > 0 && unitPrice > 0) {
+        const total = qty * unitPrice;
+        const margin = total * 0.3; // rough 30% margin estimate
+        sendReply(qty + ' × ' + item + ' @ $' + unitPrice.toFixed(2) + '\n\n💰 Total: $' + total.toFixed(2) + '\n📦 After materials (~30%): ~$' + margin.toFixed(2) + ' profit\n\nSay "log revenue: $' + total.toFixed(0) + '" to record this job.');
+        return;
+      }
     }
 
     // ── "Remember that..." — instant memory save, no AI needed ────────────────
