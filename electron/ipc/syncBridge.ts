@@ -1295,7 +1295,7 @@ self.addEventListener('fetch', (event) => {
 
     // ── Intent resolution — "do it again", "open that", context-aware ──────────
     const ctx = deviceContext.get(deviceId) || {};
-    const resolvedText = resolveIntent(userText, ctx);
+    let resolvedText = resolveIntent(userText, ctx);
 
     // Save last user text regardless
     deviceContext.set(deviceId, { ...ctx, lastUserText: userText });
@@ -1563,6 +1563,38 @@ self.addEventListener('fetch', (event) => {
       return;
     }
 
+    // ── Clipboard-aware commands: "explain this" / "fix this" / "review this" ─
+    // Must fire EARLY before openAppGuideMatch intercepts words like "this"
+    if (/^(?:explain|fix|debug|improve|refactor|review)(?: this| it| my code)?$/i.test(lowerText)
+     || /^(?:what does this do|what\'s wrong with this|why is this broken)$/i.test(lowerText)) {
+      try {
+        const { execSync: _clipExec } = await import('child_process') as typeof import('child_process');
+        const clipTxt = _clipExec('pbpaste', { encoding: 'utf8', timeout: 2000 }).trim();
+        if (clipTxt && clipTxt.length > 4) {
+          const action2 = lowerText.startsWith('fix') ? 'Fix any bugs or issues in' :
+                         lowerText.startsWith('explain') || lowerText.includes('what does') ? 'Explain clearly what this code does' :
+                         lowerText.startsWith('improve') ? 'Improve and optimize' :
+                         lowerText.startsWith('refactor') ? 'Refactor for best practices' :
+                         lowerText.startsWith('debug') || lowerText.includes('wrong') ? 'Find and fix all bugs in' :
+                         'Review and explain';
+          resolvedText = action2 + ':\n\n```\n' + clipTxt.slice(0, 6000) + '\n```';
+        }
+      } catch { /* fall through to AI */ }
+    }
+
+    // ── Clipboard-aware: "explain this" / "fix this" — fires before openAppGuideMatch ──
+    if (/^(?:explain|fix|debug|improve|refactor|review)(?: this| it| my code)?$/i.test(lowerText)
+     || /^(?:what does this do|what's wrong with this|why is this broken)$/i.test(lowerText)) {
+      try {
+        const { execSync: _clipExec } = await import('child_process') as typeof import('child_process');
+        const _clipTxt = _clipExec('pbpaste', { encoding: 'utf8', timeout: 2000 }).trim();
+        if (_clipTxt && _clipTxt.length > 4) {
+          const _action = lowerText.startsWith('fix') ? 'Fix any bugs in' : lowerText.startsWith('explain') || lowerText.includes('what does') ? 'Explain what this code does' : lowerText.startsWith('improve') ? 'Improve and optimize' : lowerText.startsWith('refactor') ? 'Refactor for best practices' : lowerText.startsWith('debug') || lowerText.includes('wrong') ? 'Find and fix all bugs in' : 'Review and explain';
+          resolvedText = _action + ':\n\n```\n' + _clipTxt.slice(0, 6000) + '\n```';
+        }
+      } catch { /* fall through */ }
+    }
+
     // ── "open/show [henry panel]" → switch panel via SSE push ──────────────
     const HENRY_PANELS: Record<string,string> = {
       today:'today', journal:'journal', tasks:'tasks', goals:'goals', habits:'health',
@@ -1590,7 +1622,7 @@ self.addEventListener('fetch', (event) => {
     const openAppGuideMatch = lowerText.match(/^open(?:\s+the)?\s+([a-zA-Z][\w\s]{1,25})(?:\s+app)?$/i);
     if (openAppGuideMatch && !/file|folder|document|\//.test(lowerText)) {
       const _appName = (openAppGuideMatch[1] || '').trim();
-      const _skipWords = ['task','goal','note','habit','bible','chat','henry','my','the','a','up'];
+      const _skipWords = ['task','goal','note','habit','bible','chat','henry','my','the','a','up','this','it','me','code','that','file','more','everything','all'];
       if (!_skipWords.includes(_appName.toLowerCase()) && _appName.length > 1) {
         sendReply('Press **Cmd+Space**, type **"' + _appName + '"**, press Enter.\n\nHenry keeps your hands on the keyboard — no auto-launching.');
         return;
@@ -2337,7 +2369,7 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Universal search ────────────────────────────────────────────────────────
-    const universalSearchMatch = !/^(?:find|show|search)(?: me)?(?: some)? (?:videos?|pictures?|photos?|images?|tutorials?)/i.test(lowerText) && lowerText.match(/^(?:search(?: (?:my|all))?(?: (?:notes?|memory|tasks?|everything|data))?(?:\s+for)?|find(?: everything about| all about| (?:my notes?|tasks?) (?:about|for|with))?)[:\s]+(.+)/i)
+    const universalSearchMatch = !/^(?:find|show|search)(?: me)?(?: some)? (?:videos?|pictures?|photos?|images?|tutorials?)/i.test(lowerText) && !/^search(?: the)? web/i.test(lowerText) && lowerText.match(/^(?:search(?: (?:my|all))?(?: (?:notes?|memory|tasks?|everything|data))?(?:\s+for)?|find(?: everything about| all about| (?:my notes?|tasks?) (?:about|for|with))?)[:\s]+(.+)/i)
                                || lowerText.match(/^(?:look up|show (?:everything|all)(?: about))[:\s]+(.+)/i);
     if (universalSearchMatch) {
       const keyword = (universalSearchMatch[2] || universalSearchMatch[1] || '').trim().toLowerCase();
@@ -3691,6 +3723,106 @@ self.addEventListener('fetch', (event) => {
       return null;
     }
 
+    // ── Clipboard read ─────────────────────────────────────────────────────
+    if (/^(?:what(?:'s| is)(?: in)? my clipboard|read(?: my)? clipboard|clipboard|what did i copy|show clipboard)/.test(lowerText)) {
+      try {
+        const { execSync: _exc } = await import('child_process') as typeof import('child_process');
+        const txt = _exc('pbpaste', { encoding: 'utf8', timeout: 3000 }).trim();
+        if (!txt) { sendReply('Clipboard is empty.'); return; }
+        const prev = txt.length > 2000 ? txt.slice(0,2000) + '\n\n_[' + txt.length + ' chars total — truncated]_' : txt;
+        sendReply('📋 **Clipboard:**\n\n```\n' + prev + '\n```\n\nSay "explain this" or "fix this code" to work with it.');
+      } catch { sendReply('Could not read clipboard.'); }
+      return;
+    }
+
+    // ── Clipboard-aware AI: "explain this" / "fix this" / "review this" ────
+    if (/^(?:explain|fix|debug|improve|refactor|review)(?: this| it| my code)?$/.test(lowerText)
+     || /^(?:what does this do|what's wrong with this|why is this broken)$/.test(lowerText)) {
+      try {
+        const { execSync: _exc2 } = await import('child_process') as typeof import('child_process');
+        const clipTxt = _exc2('pbpaste', { encoding: 'utf8', timeout: 3000 }).trim();
+        if (clipTxt && clipTxt.length > 4) {
+          const action = lowerText.startsWith('fix') ? 'Fix any bugs in' : lowerText.startsWith('explain') ? 'Explain clearly what this does' : lowerText.startsWith('improve') ? 'Improve and optimize' : lowerText.startsWith('refactor') ? 'Refactor for clarity and best practices' : lowerText.startsWith('debug') ? 'Debug and fix all issues in' : 'Review this';
+          // resolvedText is const — mutate via property trick for AI injection
+          resolvedText = action + ':\n\n```\n' + clipTxt.slice(0,6000) + '\n```';
+        }
+      } catch { /* fall through */ }
+    }
+
+    // ── Read file ─────────────────────────────────────────────────────────
+    const readFileMx = resolvedText.match(/^(?:read|show|open|cat|view|explain|analyze|debug)(?: (?:file|the file))?[:\s]+([~\/][\w.\/\s\-~]+(?:\.\w+)?)/i);
+    if (readFileMx) {
+      const rp = (readFileMx[1] || '').trim().replace(/["']/g,'');
+      const ep = rp.startsWith('~') ? rp.replace('~', process.env.HOME||'') : rp;
+      try {
+        const { readFileSync: rfs, statSync: ss } = await import('fs') as typeof import('fs');
+        const stat = ss(ep);
+        if (stat.isDirectory()) {
+          const { readdirSync: rds } = await import('fs') as typeof import('fs');
+          const items = rds(ep).slice(0,40).map(n => { try { return (ss(ep+'/'+n).isDirectory()? '📁 ' : '📄 ') + n; } catch { return '  '+n; } });
+          sendReply('**' + ep + '/**\n\n' + items.join('\n'));
+          return;
+        }
+        if (stat.size > 500000) { sendReply('File too large (>500KB). Try a smaller file.'); return; }
+        const content = rfs(ep, 'utf8');
+        const ext = ep.split('.').pop() || '';
+        const preview = content.length > 8000 ? content.slice(0,8000) + '\n\n_[Truncated — ' + content.length + ' chars]_' : content;
+        sendReply('📄 **' + ep.split('/').pop() + '** (' + (stat.size/1024).toFixed(1) + 'KB)\n\n```' + ext + '\n' + preview + '\n```\n\nSay "explain this file" or "fix bugs in this file" to work with it.');
+      } catch (e: any) { sendReply('Cannot read: ' + ep + '\n' + (e.message||e)); }
+      return;
+    }
+
+    // ── List directory ────────────────────────────────────────────────────
+    const listDirMx = resolvedText.match(/^(?:list|ls|show files|what files)(?: in| at)?[:\s]+([~\/][\w.\/\s\-]+)/i);
+    if (listDirMx) {
+      const rp2 = (listDirMx[1]||'').trim().replace(/["']/g,'');
+      const ep2 = rp2.startsWith('~') ? rp2.replace('~', process.env.HOME||'') : rp2;
+      try {
+        const { readdirSync: rds2, statSync: ss2 } = await import('fs') as typeof import('fs');
+        const items2 = rds2(ep2).slice(0,50).map(n => { try { return (ss2(ep2+'/'+n).isDirectory()? '📁 ' : '📄 ') + n; } catch { return '  '+n; } });
+        sendReply('**' + ep2 + '/**\n\n' + items2.join('\n'));
+      } catch (e: any) { sendReply('Cannot list: ' + ep2 + '\n' + (e.message||e)); }
+      return;
+    }
+
+    // ── System info ────────────────────────────────────────────────────────
+    if (/^(?:system info|what mac|mac info|computer info|hardware info|my computer|show system|what computer do i have)/.test(lowerText)) {
+      try {
+        const { execSync: _exc3 } = await import('child_process') as typeof import('child_process');
+        const hw = _exc3("system_profiler SPHardwareDataType 2>/dev/null | grep -E 'Model Name|Chip|Memory|Serial'", { encoding:'utf8', shell:'/bin/bash', timeout:6000 }).trim();
+        const osV = _exc3('sw_vers', { encoding:'utf8', timeout:3000 }).trim();
+        const disk = _exc3('df -Hl /', { encoding:'utf8', timeout:3000 }).split('\n').slice(1).join('\n').trim();
+        sendReply('💻 **Your Mac**\n\n' + hw + '\n\n' + osV + '\n\n💾 Disk: ' + disk);
+      } catch { sendReply('Could not read system info.'); }
+      return;
+    }
+
+    // ── Web search (DuckDuckGo instant + Google link) ──────────────────────
+    const webSrchMx = lowerText.match(/^(?:search(?: the)? web(?:(?: for)|[:\s])?|google|look up|search for|web search|find online)[:\s]+(.+)/i)
+                   || lowerText.match(/^(?:search web for|web search for)[:\s]+(.+)/i)
+                   || lowerText.match(/^(?:latest news on|what\'s the latest on|news about) (.+)/i);
+    if (webSrchMx) {
+      const q = (webSrchMx[1]||'').trim();
+      if (q.length > 1) {
+        const googleUrl = 'https://www.google.com/search?q=' + encodeURIComponent(q);
+        const ddgUrl = 'https://api.duckduckgo.com/?q=' + encodeURIComponent(q) + '&format=json&no_redirect=1&no_html=1';
+        try {
+          const resp = await fetch(ddgUrl, { signal: AbortSignal.timeout(5000) });
+          const data = await resp.json() as any;
+          const abstract = (data.AbstractText||'').slice(0,500);
+          const answer = data.Answer||'';
+          const topics = ((data.RelatedTopics||[]) as any[]).slice(0,3).map((t:any) => '• ' + (t.Text||'').slice(0,100)).join('\n');
+          let reply = '🔍 **' + q + '**\n\n';
+          if (answer) reply += '**' + answer + '**\n\n';
+          if (abstract) reply += abstract + '\n\n';
+          if (topics) reply += topics + '\n\n';
+          reply += '[Search Google](' + googleUrl + ')';
+          sendReply(reply.trim());
+        } catch { sendReply('🔍 **' + q + '**\n\n[Search Google](' + googleUrl + ') · [DuckDuckGo](https://duckduckgo.com/?q=' + encodeURIComponent(q) + ')'); }
+        return;
+      }
+    }
+
     try {
       const cmdResult = await tryComputerCommand(resolvedText);
       if (cmdResult !== null) {
@@ -3837,6 +3969,8 @@ self.addEventListener('fetch', (event) => {
         "ABSOLUTE RULES: NEVER invent facts. The ONLY facts you know are in 'What you remember'. If not listed, say 'I don't know yet.' Match their energy. Ask one good question max.",
         "CODING — you are an expert full-stack engineer. Write complete, working, production-quality code. Modern patterns, typed interfaces, error handling, helpful comments. TypeScript, Python, Swift, SQL, Bash, React/TSX, Node.js, Electron. For Henry specifically: you know its Electron+React+SQLite architecture deeply and can write any new feature.",
         "MAKER INTELLIGENCE: You know Topher runs MixedMakerShop — laser cutting + custom signs. Cherry burns at 55w, walnut trays are $95, maple at 40w, signs at $50-75. Give specific pricing, material, and shop-flow advice.",
+        "COMPUTER CAPABILITIES: Henry can read local files (say: read file: /path), read clipboard (say: clipboard), list directories, search the web (say: search web for: query), show system info. When users mention a file path, offer to read it. Clipboard content gets injected into AI context automatically when you say explain/fix/debug.",
+        "RESPONSE STYLE: Code always in fenced blocks with language tags. For errors: state problem, root cause, fix. For architecture: use ASCII diagrams. Never pad. Be surgically precise.",
         "NEVER output tool calls, function calls, XML tags, or structured commands. You are a CHAT assistant only — plain conversational text. Never write: computer:openApp(), <tool_call>, or any JSON/code commands.",
         "CRITICAL: NEVER output tool calls, function calls, XML tags, JSON, or any structured commands. You are a CHAT assistant. If the user asks to open an app or do a computer action, Henry's router handles it — you just respond naturally in plain text.",
         "NEVER output: computer:openApp(), <tool_call>, {action:...}, function_call, or any code/markup. Plain conversational text ONLY.",
