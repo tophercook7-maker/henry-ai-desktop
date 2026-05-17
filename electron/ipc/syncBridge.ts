@@ -1,4 +1,16 @@
 import { buildCompanionHtml } from './companionHtml';
+
+// ── Per-session conversation memory (last 6 turns per device) ────────────────
+const __henryCtx__: Map<string, {role:string;content:string}[]> = new Map();
+function addCtx(sessionId: string, role: 'user'|'assistant', content: string) {
+  const hist = __henryCtx__.get(sessionId) || [];
+  hist.push({role, content: content.slice(0, 2000)});  // cap each message at 2KB
+  if (hist.length > 12) hist.splice(0, hist.length - 12);
+  __henryCtx__.set(sessionId, hist);
+}
+function getCtx(sessionId: string): {role:string;content:string}[] {
+  return __henryCtx__.get(sessionId) || [];
+}
 /**
  * Henry Desktop Sync Bridge
  *
@@ -1560,6 +1572,24 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Complete / done task ──────────────────────────────────────────────────
+    // ── "X owes me money" / "client owes me $Y" → create collection task ────
+    const owesMeMatch = lowerText.match(/^(\w+) owes me(?: \$?([\d.]+))?/i)
+                     || lowerText.match(/^(?:collect|follow up)(?: on)?(?: \$?([\d.]+))? (?:from|with) (\w+)/i);
+    if (owesMeMatch) {
+      const client = (owesMeMatch[1] || owesMeMatch[2] || '').trim();
+      const amount = owesMeMatch[2] || owesMeMatch[1] || '';
+      const taskTitle = amount.match(/^[\d.]+$/)
+        ? 'Collect $' + parseFloat(amount).toFixed(0) + ' from ' + client
+        : 'Follow up: ' + client + ' owes payment';
+      try {
+        const id = require('crypto').randomUUID();
+        dbRun("INSERT INTO personal_tasks (id,title,status,priority,created_at) VALUES (?,?,?,?,?)",
+          id, taskTitle, 'todo', 3, new Date().toISOString());
+        sendReply('✅ Task added: "' + taskTitle + '"\n\nSay "what jobs do I have open" to see your list.');
+      } catch { sendReply('Could not add task.'); }
+      return;
+    }
+
     // ── "what jobs do I have open" → open task list ────────────────────────
     if (/^what(?:'s my)?(?: open)? jobs?(?: do i have| are open| are there)?/i.test(lowerText) ||
         /^(?:show|list)(?: my)?(?: open)? jobs?(?:\s+in progress)?/i.test(lowerText)) {
@@ -1968,6 +1998,21 @@ self.addEventListener('fetch', (event) => {
         if (!tasks.length) lines.push("No tasks with due dates this week.\n\nTop open tasks:\n" + noDate.map((t,i) => (i+1) + ". " + t.title).join("\n"));
         sendReply(lines.join("\n\n"));
       } catch { sendReply("Could not load due tasks."); }
+      return;
+    }
+
+    const staleTasksMatch = /^(?:show|what|list)(?: tasks?| me)?(?: (?:i|that))?(?:[ ]haven'?t|[ ]not)(?: touched| updated| worked on)(?: in)?(?: \d+ days?)?/.test(lowerText);
+    if (staleTasksMatch) {
+      try {
+        const cutoff = new Date(Date.now() - 7*24*60*60*1000).toISOString();
+        const stale = dbGet<{title:string;updated_at:string}>(
+          "SELECT title, updated_at FROM personal_tasks WHERE status!='done' AND updated_at < ? ORDER BY updated_at ASC LIMIT 10",
+          cutoff
+        ) as {title:string;updated_at:string}[];
+        if (!stale.length) { sendReply('All your tasks have been touched in the last 7 days.'); return; }
+        const lines = stale.map(t => '• ' + t.title + ' (last: ' + t.updated_at.slice(0,10) + ')');
+        sendReply('📌 Tasks not touched in 7+ days:\n\n' + lines.join('\n') + '\n\nSay "done: [task]" or "delete task: [task]" to clean up.');
+      } catch { sendReply('Could not load stale tasks.'); }
       return;
     }
 
@@ -3564,7 +3609,7 @@ self.addEventListener('fetch', (event) => {
     }
 
     // "export my tasks to word" / "create a word doc with my goals"
-    const exportToOfficeMatch = lowerText.match(/^(?:export|copy|put|add|create)(?: (?:my|a))?(?: (?:tasks?|goals?|notes?|habits?|reminders?|prayer requests?|revenue|health))+(?:\s+(?:to|in|as|into))?(?: (?:a|an?))? (?:word|excel|spreadsheet|doc(?:ument)?)?/i)
+    const exportToOfficeMatch = lowerText.match(/^(?:export|copy|put|add|create)(?: (?:my|a))?(?: (?:tasks?|goals?|notes?|habits?|reminders?|prayer requests?|revenue|health))+(?:\s+(?:to|in|as|into))?(?: (?:a|an?))? (?:word|excel|spreadsheet|doc(?:ument)?|csv|file)?/i)
                              || lowerText.match(/^create(?: a)? (?:word|excel)(?: (?:doc|sheet|file))? (?:with|of|for) (?:my|all)(?: (?:tasks?|goals?|habits?|notes?|revenue|health))/i);
     if (exportToOfficeMatch) {
       const toExcel = /excel|spreadsheet/.test(lowerText);
@@ -3627,10 +3672,16 @@ self.addEventListener('fetch', (event) => {
         const content = lines.join('\n');
         // Show content in chat — no auto-opening apps
         const preview = content.slice(0, 500) + (content.length > 500 ? '\n\n…(' + lines.length + ' total lines)' : '');
-        if (!toExcel) {
-          sendReply('📋 Here\'s your data to paste into Word:\n\n' + preview + '\n\n💡 Say "open word" to launch Word, then paste with Cmd+V.');
-        } else {
-          sendReply('📋 Here\'s your data to paste into Excel:\n\n' + preview + '\n\n💡 Say "open excel" to launch Excel, then paste.');
+        // Write real file to Desktop
+        const ts = new Date().toISOString().slice(0,10);
+        const ext = toExcel ? 'csv' : 'txt';
+        const outPath = (process.env.HOME||'') + '/Desktop/henry_export_' + ts + '.' + ext;
+        try {
+          const { writeFileSync: _wfs } = await import('fs') as typeof import('fs');
+          _wfs(outPath, content, 'utf8');
+          sendReply('✅ Exported to Desktop: **henry_export_' + ts + '.' + ext + '** (' + lines.length + ' lines)\n\n' + preview.slice(0,300));
+        } catch {
+          sendReply('📋 **Henry Export — ' + ts + ':**\n\n' + preview);
         }
       } catch (e) { sendReply('Could not export: ' + e); }
       return;
@@ -3784,6 +3835,21 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Run shell command ──────────────────────────────────────────────────
+    // "run file: X.py" / "execute file: X.py"
+    const runFileMx = lowerText.match(/^(?:run|execute|exec)(?: this)?(?: file)?[:\s]+([~\/][\w.\/\-]+\.(?:py|sh|js|ts|rb|php))$/i);
+    if (runFileMx) {
+      const rawPath = (runFileMx[1]||'').trim();
+      const ep = rawPath.startsWith('~') ? rawPath.replace('~', process.env.HOME||'') : rawPath;
+      const ext = ep.split('.').pop() || '';
+      const runner = ext === 'py' ? 'python3' : ext === 'js' ? 'node' : ext === 'sh' ? 'bash' : 'bash';
+      try {
+        const { execSync: _rf } = await import('child_process') as typeof import('child_process');
+        const out = _rf(runner + ' ' + JSON.stringify(ep), { encoding:'utf8', timeout:10000, shell:'/bin/zsh' }).trim();
+        sendReply('```\n$ ' + runner + ' ' + ep + '\n\n' + (out||'(no output)') + '\n```');
+      } catch (e: any) { sendReply('```\n$ ' + runner + ' ' + ep + '\n\nError: ' + ((e.stderr||e.message||'').toString().slice(0,400)) + '\n```'); }
+      return;
+    }
+
     const shellRunMatch = lowerText.match(/^(?:run|exec|execute|terminal|shell|cmd)[:\s]+(.+)/i);
     if (shellRunMatch) {
       const shellCmd = (shellRunMatch[1] || '').trim();
@@ -4142,9 +4208,16 @@ self.addEventListener('fetch', (event) => {
         recentSummary ? "── RECENT CONVERSATION ──\n" + recentSummary : '',
       ].filter(Boolean).join('\n\n');
 
+      // ── Build context: body.history (companion) OR server-side memory ──────
+      const sessionId = (req.headers['x-device-id'] as string) || (req.socket?.remoteAddress + ':' + (body as any).conversationId) || 'default';
+      const serverCtx = getCtx(sessionId);
+      const clientHistory = (body.history || []).slice(-12);
+      const mergedHistory = clientHistory.length ? clientHistory : serverCtx;
+      addCtx(sessionId, 'user', resolvedText);
+
       const messages2 = [
         { role: 'system', content: systemPrompt2 },
-        ...(body.history || []).slice(-12),
+        ...mergedHistory.slice(-10),
         { role: 'user', content: resolvedText }
       ];
 
