@@ -1890,6 +1890,26 @@ self.addEventListener('fetch', (event) => {
     // ── Action commands — execute directly, no AI needed ────────────────────────
 
     // "add a task: X" / "create a task: X" / "new task: X"
+    // delete duplicates context-aware
+    if (/^(?:delete|remove|clean up) (?:the )?(?:duplicate|those duplicate|duplicates|those tasks)/.test(lowerText)) {
+      try {
+        const _dups2 = dbGet<{id:string;title:string}>(
+          "SELECT id, title FROM personal_tasks WHERE status!='done' AND LOWER(TRIM(title)) IN (SELECT LOWER(TRIM(title)) FROM personal_tasks WHERE status!='done' GROUP BY LOWER(TRIM(title)) HAVING COUNT(*)>1) ORDER BY created_at DESC"
+        ) as {id:string;title:string}[];
+        if (!_dups2.length) { sendReply('No duplicate tasks found!'); return; }
+        const _seen2 = new Map<string,boolean>();
+        const _del2: string[] = [];
+        for (const _t2 of _dups2) {
+          const _k2 = _t2.title.toLowerCase().trim();
+          if (_seen2.has(_k2)) _del2.push(_t2.id);
+          else _seen2.set(_k2, true);
+        }
+        _del2.forEach(id2 => dbRun("UPDATE personal_tasks SET status='done', updated_at=? WHERE id=?", new Date().toISOString(), id2));
+        sendReply('Removed ' + _del2.length + ' duplicate task' + (_del2.length>1?'s':'') + '. Task list cleaned.');
+      } catch { sendReply('Could not clean up duplicates.'); }
+      return;
+    }
+
     // Guard: don't save as task if it looks like a question or query
     const _isQuery = /^(?:i need to (?:know|figure|find|understand|determine|calculate|price|check|see)|what(?:'s| is| should| would)|how (?:much|many|do|should|would|can)|if i|can i|should i|could i|would it|is it|does it|will it|why |when |where )/.test(lowerText);
     const addTaskMatch = !_isQuery && (
@@ -2094,6 +2114,25 @@ self.addEventListener('fetch', (event) => {
                         || lowerText === 'tasks' || lowerText === 'my tasks' || lowerText === 'open tasks'
                         || /^how many (?:open |active )?tasks/.test(lowerText);
     // Separate: count of DONE tasks + list done today
+    // ── Tasks added this week / today / this month ─────────────────────────────
+    const tasksAddedMatch = /^(?:how many|what|show)(?: (?:tasks?|items?))?(?: (?:did i|have i))? (?:add(?:ed)?|create(?:d)?|log(?:ged)?)(?: this week| today| this month| last week)?/.test(lowerText)
+                         || /^(?:tasks?|items?) (?:added|created|logged)(?: this week| today| this month)?$/.test(lowerText);
+    if (tasksAddedMatch) {
+      try {
+        const _period = /this month/.test(lowerText) ? "date('now','start of month')" :
+                        /last week/.test(lowerText) ? "date('now','-14 days')" :
+                        /today/.test(lowerText) ? "date('now','start of day')" :
+                        "date('now','-7 days')";
+        const _added = dbGet<{title:string;created_at:string}>(
+          'SELECT title, created_at FROM personal_tasks WHERE created_at >= ' + _period + ' ORDER BY created_at DESC LIMIT 20'
+        ) as {title:string;created_at:string}[];
+        const _label = /this month/.test(lowerText)?'this month':/last week/.test(lowerText)?'last week':/today/.test(lowerText)?'today':'this week';
+        if (!_added.length) { sendReply('No tasks added ' + _label + '.'); return; }
+        sendReply('📋 **Tasks added ' + _label + ':** (' + _added.length + ')\n\n' + _added.map((t,idx2) => (idx2+1)+'. '+t.title+' _(' + t.created_at.slice(0,10) + ')_').join('\n'));
+      } catch { sendReply('Could not load task history.'); }
+      return;
+    }
+
     const doneTodayMatch = /^(?:what(?: tasks?)? did i (?:complet|finish)|what tasks.*(?:today|done|complet)|tasks? done today|completed today)/.test(lowerText)
                         || lowerText === 'tasks done today' || lowerText === 'completed today';
     if (doneTodayMatch) {
@@ -2411,6 +2450,57 @@ self.addEventListener('fetch', (event) => {
 
     // ── What do you know about me ─────────────────────────────────────────────
     const aboutMeMatch = /^(?:what do you know about me|what do you know about my business|what do you know about my shop|what do you remember|tell me about myself|tell me about my business|what(?:'s| is) in your memory|my memory|show my memory|what have you learned about me|summarize my business|business summary)/.test(lowerText);
+    // ── Consistency check for specific habit ────────────────────────────────────
+    const habitConsistencyMatch = lowerText.match(/^(?:am i consistent(?: at| with)?|how consistent(?: am i)?(?: at| with)?|consistency(?: for| at| with)?) (.+?)(?:\s+habit)?$/i)
+                                || lowerText.match(/^(?:how(?:'?m i| am i) doing(?: with| at| on)) (.+?)(?:\s+habit)?$/i);
+    const worstBestHabitMatch = /^(?:which|what)(?: habit| one)(?: am i)?(?: (?:worst|weakest|missing|skipping|failing|least consistent|best|strongest|most consistent)(?: at| with| on)?)/.test(lowerText)
+                              || /^(?:my (?:worst|best|weakest|strongest|most consistent|least consistent) habit)/.test(lowerText);
+    if (worstBestHabitMatch) {
+      const isBest2 = /best|strongest|most consistent/.test(lowerText);
+      try {
+        const habits2 = dbGet<{id:string;name:string}>("SELECT id, name FROM habits WHERE active=1") as {id:string;name:string}[];
+        const scores2: {name:string;count:number}[] = [];
+        for (const h2 of habits2) {
+          const n2 = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM habit_logs WHERE habit_id=? AND date >= date('now','-7 days')", h2.id) as {n:number}|null)?.n || 0;
+          scores2.push({ name: h2.name, count: n2 });
+        }
+        scores2.sort((a,b) => isBest2 ? b.count-a.count : a.count-b.count);
+        const t2 = scores2[0];
+        if (!t2) { sendReply('No habits found.'); return; }
+        const g2 = t2.count >= 6 ? 'excellent' : t2.count >= 4 ? 'good' : t2.count >= 2 ? 'needs work' : 'not started this week';
+        sendReply((isBest2 ? 'Best' : 'Worst') + ' habit this week: **' + t2.name + '** -- ' + t2.count + '/7 days (' + g2 + ')\n\nSay "habit streaks" to see all.');
+      } catch { sendReply('Could not check habits.'); }
+      return;
+    }
+
+    if (habitConsistencyMatch) {
+      const habitHint = (habitConsistencyMatch[1]||'').trim().toLowerCase();
+      try {
+        const habit = dbGetOne<{id:string;name:string}>(
+          "SELECT id, name FROM habits WHERE LOWER(name) LIKE ? AND active=1 LIMIT 1",
+          '%' + habitHint + '%'
+        ) as {id:string;name:string}|null;
+        if (!habit) { sendReply('No habit found matching "' + habitHint + '". Say "show habits" to see your list.'); return; }
+        const logs = dbGet<{date:string}>(
+          "SELECT date FROM habit_logs WHERE habit_id=? ORDER BY date DESC LIMIT 90",
+          habit.id
+        ) as {date:string}[];
+        const dateSet = new Set(logs.map(l => l.date));
+        // Current streak
+        let streak = 0; const d = new Date();
+        while (dateSet.has(d.toISOString().slice(0,10))) { streak++; d.setDate(d.getDate()-1); }
+        // Last 7 days rate
+        let last7 = 0;
+        for (let i = 0; i < 7; i++) { const dd = new Date(); dd.setDate(dd.getDate()-i); if (dateSet.has(dd.toISOString().slice(0,10))) last7++; }
+        // Last 30 days rate
+        let last30 = 0;
+        for (let i = 0; i < 30; i++) { const dd = new Date(); dd.setDate(dd.getDate()-i); if (dateSet.has(dd.toISOString().slice(0,10))) last30++; }
+        const grade = last7 >= 6 ? 'A 🏆' : last7 >= 4 ? 'B 👍' : last7 >= 2 ? 'C 📈' : 'D — needs work';
+        sendReply('🔥 **' + habit.name + '** consistency:\n\nCurrent streak: **' + streak + '** days\n7-day rate: **' + last7 + '/7** (' + Math.round(last7/7*100) + '%)\n30-day rate: **' + last30 + '/30** (' + Math.round(last30/30*100) + '%)\nGrade: **' + grade + '**');
+      } catch { sendReply('Could not load habit consistency.'); }
+      return;
+    }
+
     if (aboutMeMatch) {
       try {
         const facts = dbGet<{fact:string;category:string;importance:number}>(
@@ -2646,22 +2736,49 @@ self.addEventListener('fetch', (event) => {
         const habits = dbGet<{id:string;name:string}>(
           "SELECT id, name FROM habits WHERE active=1 ORDER BY created_at ASC"
         ) as {id:string;name:string}[];
-        const today = new Date().toISOString().slice(0,10);
-        const lines: string[] = ['Habit streaks this week:\n'];
-        let best = { name: '', streak: 0 };
-        habits.forEach(h => {
+        if (!habits.length) { sendReply('No active habits. Add one: "add habit: X"'); return; }
+
+        const lines: string[] = ['🔥 **Habit Streaks**\n'];
+        let bestStreak = 0; let bestHabit = '';
+
+        for (const h of habits) {
+          // Get all logged dates for this habit, last 90 days
           const logs = dbGet<{date:string}>(
-            "SELECT date FROM habit_logs WHERE habit_id=? AND date >= date('now','-6 days') ORDER BY date ASC",
+            "SELECT date FROM habit_logs WHERE habit_id=? ORDER BY date DESC LIMIT 90",
             h.id
           ) as {date:string}[];
-          const streak = logs.length;
-          if (streak > best.streak) best = { name: h.name, streak };
-          const bar = '🔥'.repeat(streak) + '○'.repeat(Math.max(0, 7 - streak));
-          lines.push(bar + '  ' + h.name + ' (' + streak + '/7)');
-        });
-        if (best.streak > 0) lines.push('\n🏆 Best: ' + best.name + ' — ' + best.streak + ' day' + (best.streak !== 1 ? 's' : ''));
+          const dateSet = new Set(logs.map(l => l.date));
+
+          // Compute current streak
+          let streak = 0;
+          const d = new Date();
+          while (true) {
+            const ds = d.toISOString().slice(0,10);
+            if (dateSet.has(ds)) { streak++; d.setDate(d.getDate()-1); }
+            else break;
+          }
+
+          // Compute best streak
+          let best = 0; let cur = 0;
+          const sorted = [...dateSet].sort();
+          for (let i = 0; i < sorted.length; i++) {
+            if (i === 0) { cur = 1; }
+            else {
+              const prev = new Date(sorted[i-1]);
+              const curr = new Date(sorted[i]);
+              const diff = (curr.getTime()-prev.getTime())/86400000;
+              cur = diff === 1 ? cur+1 : 1;
+            }
+            if (cur > best) best = cur;
+          }
+          if (streak > bestStreak) { bestStreak = streak; bestHabit = h.name; }
+
+          const bar = streak > 0 ? '🔥'.repeat(Math.min(streak,7)) : '○';
+          lines.push(bar + ' **' + h.name + '**: ' + streak + ' day streak (best: ' + best + ')');
+        }
+        if (bestHabit) lines.push('\n🏆 Best right now: **' + bestHabit + '** — ' + bestStreak + ' days!');
         sendReply(lines.join('\n'));
-      } catch { sendReply('Could not load habit streaks.'); }
+      } catch (e) { sendReply('Could not load habit streaks: ' + e); }
       return;
     }
 
@@ -2922,7 +3039,8 @@ self.addEventListener('fetch', (event) => {
       return;
     }
 
-    const profitMatch = /^(?:what.?s my|show my|get my|how much|my)(?: )? (?:profit|revenue|income|earnings?)(?: this month| this week| today| last week| all time| ever| total)?/.test(lowerText)
+    const _skipRevenue = /(?:what should|reinvest|spend on|invest|advice|recommend|suggestion|what next|what do i do|how should i)/.test(lowerText);
+    const profitMatch = !_skipRevenue && /^(?:what.?s my|show my|get my|how much|my)(?: )? (?:profit|revenue|income|earnings?)(?: this month| this week| today| last week| all time| ever| total)?/.test(lowerText)
                      || /^how much did i (?:make|earn|get paid|bring in)(?: last week| this week| today| this month| all time| total| ever)?/.test(lowerText)
                      || /^(?:total|lifetime|all.time)(?: (?:revenue|income|earnings?|profit))?$/.test(lowerText)
                      || /^(?:how much)(?: have i)? (?:made|earned|grossed)/.test(lowerText)
@@ -2978,6 +3096,49 @@ self.addEventListener('fetch', (event) => {
         const totalAll = weeks.reduce((s,w) => s + w.total, 0);
         sendReply('Revenue by week:\n\n' + weeks.map(w => w.label + ': $' + w.total.toFixed(2)).join('\n') + '\n\nTotal (4 weeks): $' + totalAll.toFixed(2));
       } catch { sendReply('Could not load weekly revenue.'); }
+      return;
+    }
+
+    // ── Full business analysis ──────────────────────────────────────────────────
+    const bizAnalysisMatch = /^(?:do a|give me|show)(?: full| complete| detailed| business)? (?:analysis|overview|summary|report|breakdown)(?: of| on| for)?(?: my)?(?: business| month| week| year)?/.test(lowerText)
+                           || lowerText === 'business report' || lowerText === 'full analysis' || lowerText === 'monthly report';
+    if (bizAnalysisMatch) {
+      try {
+        const month5 = new Date().toISOString().slice(0,7);
+        const income = (dbGetOne<{n:number}>("SELECT COALESCE(SUM(amount),0) as n FROM transactions WHERE type='income' AND strftime('%Y-%m',date)=?", month5) as {n:number}|null)?.n||0;
+        const expenses = (dbGetOne<{n:number}>("SELECT COALESCE(SUM(amount),0) as n FROM transactions WHERE type='expense' AND strftime('%Y-%m',date)=?", month5) as {n:number}|null)?.n||0;
+        const openTasks = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM personal_tasks WHERE status!='done'") as {n:number}|null)?.n||0;
+        const doneTasks = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM personal_tasks WHERE status='done' AND date(updated_at) >= date('now','-30 days')") as {n:number}|null)?.n||0;
+        const activeGoals = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM goals WHERE status='active'") as {n:number}|null)?.n||0;
+        const habitsToday = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM habit_logs WHERE date=date('now')") as {n:number}|null)?.n||0;
+        const totalHabits = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM habits WHERE active=1") as {n:number}|null)?.n||0;
+        const net = income - expenses;
+        const margin = income ? Math.round((net/income)*100) : 0;
+        const report = [
+          '📊 **Business Analysis — ' + new Date().toLocaleString('en-US',{month:'long',year:'numeric'}) + '**',
+          '',
+          '💰 **Revenue**',
+          '  Income:   $' + income.toFixed(0),
+          '  Expenses: $' + expenses.toFixed(0),
+          '  Net:      $' + net.toFixed(0) + ' (' + margin + '% margin)',
+          '',
+          '📋 **Tasks**',
+          '  Open:      ' + openTasks,
+          '  Done (30d): ' + doneTasks,
+          '  Completion: ' + (openTasks+doneTasks ? Math.round(doneTasks/(openTasks+doneTasks)*100) : 0) + '%',
+          '',
+          '🎯 **Goals**',
+          '  Active: ' + activeGoals,
+          '',
+          '🔥 **Habits Today**',
+          '  Completed: ' + habitsToday + '/' + totalHabits,
+          '',
+          net < 0 ? '⚠️ Expenses exceed revenue this month — review spending.' :
+          net < 1000 ? '📈 Profitable month — push revenue over $2k next month.' :
+          '🚀 Strong month! Keep Henderson and Wilson jobs coming in.',
+        ];
+        sendReply(report.join('\n'));
+      } catch { sendReply('Could not load business analysis.'); }
       return;
     }
 
@@ -4043,6 +4204,30 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Read file ─────────────────────────────────────────────────────────
+    // ── Henry self-documentation: "show henry's source code for X" ────────────
+    const henrySelfMatch = lowerText.match(/^(?:show|find|read)(?: (?:me|the|henry'?s?))? (?:source(?: code)?|code|handler|function) (?:for|of) (.+)/i);
+    if (henrySelfMatch) {
+      const searchTerm = (henrySelfMatch[1] || '').trim().toLowerCase();
+      try {
+        const { readFileSync: _rsf } = await import('fs') as typeof import('fs');
+        const src = _rsf('/Users/christophercook/Documents/henry-ai-desktop/electron/ipc/syncBridge.ts', 'utf8');
+        // Find the relevant section
+        const lines = src.split('\n');
+        const searchWords = searchTerm.replace(/[^a-z0-9\s]/g,'').split(/\s+/).filter(w => w.length > 3);
+        let bestLine = -1;
+        for (let i = 0; i < lines.length; i++) {
+          const ll = lines[i].toLowerCase();
+          if (searchWords.some(w => ll.includes(w)) && (ll.includes('match') || ll.includes('match') || ll.includes('const') || ll.includes('if ('))) {
+            bestLine = i; break;
+          }
+        }
+        if (bestLine < 0) { sendReply('Could not find code for "' + searchTerm + '" in Henry\'s source. Try: read file: ~/Documents/henry-ai-desktop/electron/ipc/syncBridge.ts'); return; }
+        const snippet = lines.slice(Math.max(0,bestLine-2), bestLine+30).join('\n');
+        sendReply('```typescript\n// syncBridge.ts — line ' + (bestLine+1) + ' (near "' + searchTerm + '")\n\n' + snippet + '\n```');
+      } catch { sendReply('Could not read Henry\'s source. Make sure the repo is at ~/Documents/henry-ai-desktop'); }
+      return;
+    }
+
     // ── Write / create file from chat ────────────────────────────────────────
     const writeFileMx = resolvedText.match(/^(?:write|create|save)(?: (?:a |the )?file)?[:\s]+([~\/][\w.\/\-]+(?:\.\w+)?)\s+(?:with content|content:|with )[:\s]*(.+)/is)
                      || resolvedText.match(/^(?:create|write) file[:\s]+([~\/][\w.\/\-]+(?:\.\w+)?)\n([\s\S]+)/i);
@@ -4326,7 +4511,7 @@ self.addEventListener('fetch', (event) => {
         "ABSOLUTE RULES: (1) NEVER invent facts — only use facts from 'What you remember'. (2) MATH: always show your work, state the formula, then the answer. Double-check arithmetic. (3) CODE: write real, runnable code — no stubs. When asked to run code, say 'python run:' or 'run:' prefix. (4) CONTEXT: if a number/fact was established earlier in the conversation, USE it — do not ask the user to repeat it. (5) One follow-up question max.",
         "CODING: Write complete, production-quality code ALWAYS. No stubs. TypeScript (typed, modern), Python (pythonic, documented), SQL (Henry uses SQLite3 — table schema: personal_tasks(id,title,status,priority,created_at), goals(id,title,status,priority_score), habits(id,name,active), transactions(id,date,amount,type,category), memory_facts(id,fact,category,importance)). For debugging: state the bug, the root cause, then the EXACT fix with line numbers if possible. For architecture: ASCII diagrams + tradeoffs.",
         "MAKER INTELLIGENCE: Topher runs MixedMakerShop. Laser specs: cherry 55w cleanest burn, maple 40w, walnut premium ($95/tray). Signs: $50-75 base, rush +25-40%, corporate +50%. Job math: total_time = qty × (mins_per + cooldown) - cooldown. Pricing floor = (hours × $45/hr) + materials. Always suggest upsells: matching trays with sign orders, custom packaging, bulk discounts for repeat customers.",
-        "COMPUTER CAPABILITIES: Henry can read local files (say: read file: /path), read clipboard (say: clipboard), list directories, search the web (say: search web for: query), show system info. When users mention a file path, offer to read it. Clipboard content gets injected into AI context automatically when you say explain/fix/debug.",
+        "COMPUTER CAPABILITIES: Henry can read local files (say: read file: /path), clipboard, directories (say: list ~/Desktop), search web (say: search web for: query), system info, run Python/shell (say: python run: or run:). HENRY DB PATH: /Users/christophercook/Library/Application Support/henry-ai-desktop/henry-workspace/henry.db -- use this real path when writing Python code that accesses Henry data. Henry source: ~/Documents/henry-ai-desktop/electron/ipc/syncBridge.ts",
         "RESPONSE STYLE: Fenced code blocks with language tags always. Answers follow BLUF (Bottom Line Up Front) — give the answer FIRST, then explain. For math: formula → numbers → answer → interpretation. For debugging: bug → why → fix → prevention. Never say 'Great question' or 'Certainly'. Never add filler. If uncertain, say so briefly and give your best estimate.",
         "NEVER output tool calls, function calls, XML tags, or structured commands. You are a CHAT assistant only — plain conversational text. Never write: computer:openApp(), <tool_call>, or any JSON/code commands.",
         "EXECUTION: When asked to run/execute code, start your reply with 'python run:' or 'run:' so Henry's engine executes it. Never just SHOW code when the user says RUN. Computer actions (open app, read file, etc.) are handled by Henry's local router automatically.",
