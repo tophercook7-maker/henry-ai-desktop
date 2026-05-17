@@ -1382,7 +1382,7 @@ self.addEventListener('fetch', (event) => {
         const knowledgeAnswer = (() => {
       // Version / identity
       if (/^(?:what version|which version|your version|version number|what.*version are you)/.test(lowerText) || lowerText === 'version') {
-        return 'Henry AI v1.7.6 — your personal AI workspace for Mac.\n\n145+ instant local commands, all <20ms, offline-capable.\n\nBuilt open-source by Topher Cook + Claude. Add API keys to unlock 10 free AI providers that auto-failover. Say \'what can you do\' to see everything.';
+        return 'Henry AI v1.7.8 — your personal AI workspace for Mac.\n\n145+ instant local commands, all <20ms, offline-capable.\n\nBuilt open-source by Topher Cook + Claude. Add API keys to unlock 10 free AI providers that auto-failover. Say \'what can you do\' to see everything.';
       }
       if (/^(?:what (?:ai |model |llm )(?:are you|is this)|which model|what model|what.*(?:model|ai) (?:are you|using)|how fast are you|your response time)/.test(lowerText)) {
         const g3 = global as any;
@@ -1549,6 +1549,20 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Complete / done task ──────────────────────────────────────────────────
+    // ── "what jobs do I have open" → open task list ────────────────────────
+    if (/^what(?:'s my)?(?: open)? jobs?(?: do i have| are open| are there)?/i.test(lowerText) ||
+        /^(?:show|list)(?: my)?(?: open)? jobs?(?:\s+in progress)?/i.test(lowerText)) {
+      // Alias: jobs = tasks with "job" or "order" in title
+      try {
+        const allTasks = dbGet<{id:string;title:string;priority:number}>(
+          "SELECT id,title,priority FROM personal_tasks WHERE status!='done' ORDER BY priority DESC, created_at DESC LIMIT 15"
+        ) as {id:string;title:string;priority:number}[];
+        if (!allTasks.length) { sendReply('No open jobs. Add one: "start a new job for [client]"'); return; }
+        sendReply('Open jobs:\n\n' + allTasks.map((t,i) => (i+1) + '. ' + t.title).join('\n'));
+      } catch { sendReply('Could not load jobs.'); }
+      return;
+    }
+
     // ── "open/show [henry panel]" → switch panel via SSE push ──────────────
     const HENRY_PANELS: Record<string,string> = {
       today:'today', journal:'journal', tasks:'tasks', goals:'goals', habits:'health',
@@ -1764,11 +1778,17 @@ self.addEventListener('fetch', (event) => {
 
     // "add a task: X" / "create a task: X" / "new task: X"
     const addTaskMatch = lowerText.match(/^(?:add|create|new) (?:a )?task(?:\s+for\s+(?:tomorrow|today))?[:\s]+(.+)/i)
-                      || lowerText.match(/^task[:\s]+(.+)/i);
+                      || lowerText.match(/^task[:\s]+(.+)/i)
+                      || lowerText.match(/^start(?: a)?(?: new)? job for ([\w\s]+)/i);
     if (addTaskMatch) {
-      const title = resolvedText
-        .replace(/^(?:add|create|new) (?:a )?task(?:\s+for\s+(?:tomorrow|today))?[:\s]+/i,'')
-        .replace(/^task[:\s]+/i,'').trim();
+      // Handle 'start a new job for X' → title = 'New job: X'
+      const isJobStart = /^start(?: a)?(?: new)? job for /i.test(resolvedText);
+      const jobClient = isJobStart ? resolvedText.replace(/^start(?: a)?(?: new)? job for /i,'').trim() : null;
+      const title = jobClient
+        ? 'New job: ' + jobClient
+        : resolvedText
+          .replace(/^(?:add|create|new|start) (?:a )?task(?:\s+for\s+(?:tomorrow|today))?[:\s]+/i,'')
+          .replace(/^task[:\s]+/i,'').trim();
       if (title.length > 1) {
         try {
           const id = require('crypto').randomUUID();
@@ -2233,7 +2253,7 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── What do you know about me ─────────────────────────────────────────────
-    const aboutMeMatch = /^(?:what do you know about me|what do you remember|tell me about myself|what(?:'s| is) in your memory|my memory|show my memory|what have you learned about me)/.test(lowerText);
+    const aboutMeMatch = /^(?:what do you know about me|what do you know about my business|what do you know about my shop|what do you remember|tell me about myself|tell me about my business|what(?:'s| is) in your memory|my memory|show my memory|what have you learned about me|summarize my business|business summary)/.test(lowerText);
     if (aboutMeMatch) {
       try {
         const facts = dbGet<{fact:string;category:string;importance:number}>(
@@ -3300,7 +3320,8 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Multi-task add: "add tasks: A, B, C" ────────────────────────────────
-    const multiTaskMatch = lowerText.match(/^add (?:\d+ )?tasks?[:\s]+(.+)/i);
+    const multiTaskMatch = lowerText.match(/^add (?:\d+ )?tasks?[:\s]+(.+)/i)
+                       || lowerText.match(/^bulk[:\s]+add tasks?[:\s]+(.+)/i);
     if (multiTaskMatch) {
       const rawItems = multiTaskMatch[1];
       // Split on comma or semicolon, but only if there are multiple items
@@ -3439,7 +3460,9 @@ self.addEventListener('fetch', (event) => {
     }
 
     // "create invoice for Henderson" — open Word and let AI draft in next turn
-    const createDocMatch = lowerText.match(/^(?:make|create|write|draft|generate)(?: (?:me|a|an))? (?:invoice|quote|estimate|proposal|letter|contract|report|checklist)(?: for .+)?(?:\s+in word| as (?:a )?word)?/i);
+    // Skip createDocMatch if this looks like a price calc ("create quote: 10 x at $Y")
+    const hasQtyPrice = /\d+\s+.+\s+(?:at|@)\s+\$[\d.]+/.test(lowerText);
+    const createDocMatch = !hasQtyPrice && lowerText.match(/^(?:make|create|write|draft|generate)(?: (?:me|a|an))? (?:invoice|quote|estimate|proposal|letter|contract|report|checklist)(?: for .+)?(?:\s+in word| as (?:a )?word)?/i);
     if (createDocMatch) {
       const docType = lowerText.match(/invoice|quote|estimate|proposal|letter|contract|report|checklist/i)?.[0] || 'document';
       const forWho = lowerText.match(/(?:for|to) ([A-Za-z]+(?:\s+[A-Za-z]+)?)/i)?.[1] || '';
@@ -3547,6 +3570,7 @@ self.addEventListener('fetch', (event) => {
 
     // ── Quick price calculator ───────────────────────────────────────────────
     const priceCalcMatch = lowerText.match(/^(?:price|calculate|calc|quote|what(?:'s| is| would)(?: the)? cost):?\s+(\d+)\s+(.+?)\s+(?:at|@)\s+\$([\d.]+)/i)
+                        || lowerText.match(/^(?:create quote|quote)(?: for \w+)?[:\s]+(\d+)\s+(.+?)\s+(?:at|@)\s+\$([\d.]+)/i)
                         || lowerText.match(/^(\d+)\s+(.+?)\s+(?:at|@|\×|x)\s+\$([\d.]+)(?:\/(?:each|ea|piece|item))?$/i);
     if (priceCalcMatch) {
       const qty = parseInt(priceCalcMatch[1] || '0');
