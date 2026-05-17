@@ -3867,6 +3867,20 @@ self.addEventListener('fetch', (event) => {
     const shellRunMatch = lowerText.match(/^(?:run|exec|execute|terminal|shell|cmd)[:\s]+(.+)/i);
     if (shellRunMatch) {
       const shellCmd = (shellRunMatch[1] || '').trim();
+      // python3 -c ... → use tmpfile for reliable multiline support
+      if (/^python3?\s+-c/.test(shellCmd)) {
+        const pyInner = shellCmd.replace(/^python3?\s+-c\s+/, '').replace(/^["']|["']$/g, '');
+        const tmpPyS = '/tmp/henry_' + Date.now() + '.py';
+        try {
+          const { writeFileSync: _wsf } = await import('fs') as typeof import('fs');
+          const { execSync: _pys } = await import('child_process') as typeof import('child_process');
+          _wsf(tmpPyS, pyInner, 'utf8');
+          const pyOut = _pys('python3 ' + JSON.stringify(tmpPyS), { encoding:'utf8', timeout:12000, shell:'/bin/zsh' }).trim();
+          try { (await import('fs') as typeof import('fs')).unlinkSync(tmpPyS); } catch { /* ok */ }
+          sendReply('```python\n' + pyInner + '\n\n# Output:\n' + (pyOut||'(no output)') + '\n```');
+        } catch (e: any) { sendReply('```\nError: ' + ((e.stderr||e.message||'').toString().slice(0,400)) + '\n```'); }
+        return;
+      }
       if (/^(?:rm -rf|sudo rm|format|fdisk|mkfs|:(){ :|:& };:)/i.test(shellCmd)) {
         sendReply('That command could be destructive. Run it manually in Terminal.');
         return;
@@ -3898,13 +3912,18 @@ self.addEventListener('fetch', (event) => {
     const pyRunMatch = lowerText.match(/^(?:run python|python run|py)[:\s]+(.+)/i)
                     || lowerText.match(/^execute python[:\s]+(.+)/i);
     if (pyRunMatch) {
-      const pyCode = resolvedText.replace(/^(?:run python|python run|py|execute python)[:\s]+/i, '').trim();
+      const pyCode = resolvedText.replace(/^(?:run python|python run|py|execute python)[:\s]+/i, '').replace(/\\n/g, '\n').trim();
+      const tmpPy = '/tmp/henry_' + Date.now() + '.py';
       try {
-        const { execSync: _py } = await import('child_process') as typeof import('child_process');
-        const pyResult = _py('python3 -c ' + JSON.stringify(pyCode), { encoding: 'utf8', timeout: 8000, shell: '/bin/zsh' }).trim();
+        const { writeFileSync: _wpf } = await import('fs') as typeof import('fs');
+        const { execSync: _pyExec } = await import('child_process') as typeof import('child_process');
+        _wpf(tmpPy, pyCode, 'utf8');
+        const pyResult = _pyExec('python3 ' + JSON.stringify(tmpPy), { encoding: 'utf8', timeout: 12000, shell: '/bin/zsh' }).trim();
+        try { (await import('fs') as typeof import('fs')).unlinkSync(tmpPy); } catch { /* ok */ }
         sendReply('```python\n' + pyCode + '\n\n# Output:\n' + (pyResult || '(no output)') + '\n```');
       } catch (e: any) {
-        sendReply('```python\n' + pyCode + '\n\n# Error:\n' + ((e.stderr||e.message||'').toString().slice(0,400)) + '\n```');
+        try { (await import('fs') as typeof import('fs')).unlinkSync(tmpPy); } catch { /* ok */ }
+        sendReply('```python\n' + pyCode + '\n\n# Error:\n' + ((e.stderr||e.message||'').toString().slice(0,500)) + '\n```');
       }
       return;
     }
