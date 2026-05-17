@@ -1509,6 +1509,22 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Date / time — instant, no AI needed ─────────────────────────────────────
+    // ── Extended date math ────────────────────────────────────────────────────
+    const extDateM = /^(?:days? until (?:end of|the end of) (?:the )?(?:month|year|week)|how (?:many days?|long) (?:left|remaining) (?:in|this) (?:month|year|week)|what week(?: of the year| number| is it)?|which week|week number|week \d+)/.test(lowerText);
+    if (extDateM) {
+      const _now = new Date();
+      const _eom = new Date(_now.getFullYear(), _now.getMonth()+1, 0);
+      const _eoy = new Date(_now.getFullYear(), 11, 31);
+      const _soy = new Date(_now.getFullYear(), 0, 1);
+      const _dlm = Math.ceil((_eom.getTime()-_now.getTime())/86400000);
+      const _dly = Math.ceil((_eoy.getTime()-_now.getTime())/86400000);
+      const _wk  = Math.ceil(((_now.getTime()-_soy.getTime())/86400000 + _soy.getDay()+1)/7);
+      if (/week/i.test(lowerText)) sendReply('📅 **Week ' + _wk + '** of ' + _now.getFullYear() + ' · ' + _dlm + ' days left this month · ' + _dly + ' days left this year.');
+      else if (/month/i.test(lowerText)) sendReply('📅 **' + _dlm + '** days left in ' + _now.toLocaleString('en-US',{month:'long'}) + ' ' + _now.getFullYear() + '.');
+      else sendReply('📅 **' + _dly + '** days left in ' + _now.getFullYear() + ' · Week ' + _wk + ' of 52.');
+      return;
+    }
+
     if (/^(what(?:'s| is)(?: the)? (today'?s? )?(date|day|time)|what day|today'?s date|current (date|day|time)|what time is it|time now)/.test(lowerText)) {
       const now = new Date();
       const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
@@ -1874,9 +1890,13 @@ self.addEventListener('fetch', (event) => {
     // ── Action commands — execute directly, no AI needed ────────────────────────
 
     // "add a task: X" / "create a task: X" / "new task: X"
-    const addTaskMatch = lowerText.match(/^(?:add|create|new) (?:a )?task(?:\s+for\s+(?:tomorrow|today))?[:\s]+(.+)/i)
+    // Guard: don't save as task if it looks like a question or query
+    const _isQuery = /^(?:i need to (?:know|figure|find|understand|determine|calculate|price|check|see)|what(?:'s| is| should| would)|how (?:much|many|do|should|would|can)|if i|can i|should i|could i|would it|is it|does it|will it|why |when |where )/.test(lowerText);
+    const addTaskMatch = !_isQuery && (
+                      lowerText.match(/^(?:add|create|new) (?:a )?task(?:\s+for\s+(?:tomorrow|today))?[:\s]+(.+)/i)
                       || lowerText.match(/^task[:\s]+(.+)/i)
-                      || lowerText.match(/^start(?: a)?(?: new)? job for ([\w\s]+)/i);
+                      || lowerText.match(/^start(?: a)?(?: new)? job for ([\w\s]+)/i)
+    );
     if (addTaskMatch) {
       // Handle 'start a new job for X' → title = 'New job: X'
       const isJobStart = /^start(?: a)?(?: new)? job for /i.test(resolvedText);
@@ -1995,6 +2015,20 @@ self.addEventListener('fetch', (event) => {
       return;
     }
 
+    // ── Oldest / longest-open task ───────────────────────────────────────────
+    const oldestTaskMatch = /^(?:what(?:'s| is)(?: my)? (?:oldest|longest.?open)|show(?: my)? oldest task|oldest(?: open)? task(?: i have)?|which task(?: is)? oldest|my oldest task)/.test(lowerText);
+    if (oldestTaskMatch) {
+      try {
+        const t2 = dbGetOne<{title:string;created_at:string}>(
+          "SELECT title, created_at FROM personal_tasks WHERE status!='done' ORDER BY created_at ASC LIMIT 1"
+        ) as {title:string;created_at:string}|null;
+        if (!t2) { sendReply('No open tasks.'); return; }
+        const days = Math.floor((Date.now()-new Date(t2.created_at).getTime())/86400000);
+        sendReply('📌 Oldest open task: **' + t2.title + '** — ' + days + ' days old (since ' + t2.created_at.slice(0,10) + ')');
+      } catch { sendReply('Could not find oldest task.'); }
+      return;
+    }
+
     const staleTasksMatch = /^(?:show|what|list)(?: tasks?| me)?(?: (?:i|that))?(?:[ ]haven'?t|[ ]not)(?: touched| updated| worked on)(?: in)?(?: \d+ days?)?/.test(lowerText);
     if (staleTasksMatch) {
       try {
@@ -2031,6 +2065,17 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── High priority tasks filter ────────────────────────────────────────────
+    // ── In-progress / doing tasks ─────────────────────────────────────────────
+    const inProgressMatch = /^(?:what(?:'s| is)(?: in)? (?:in progress|doing|active|started)|(?:show|list)(?: my)? (?:in.?progress|doing|active|started|current) tasks?|what am i working on now?)/.test(lowerText);
+    if (inProgressMatch) {
+      try {
+        const doing = dbGet<{title:string}>("SELECT title FROM personal_tasks WHERE status='doing' ORDER BY updated_at DESC LIMIT 10") as {title:string}[];
+        if (!doing.length) sendReply('No tasks currently in progress. Say "update task: [title] to doing" to start one.');
+        else sendReply('🔨 **In progress:**\n\n' + doing.map((t,i) => (i+1)+'. '+t.title).join('\n'));
+      } catch { sendReply('Could not load in-progress tasks.'); }
+      return;
+    }
+
     const highPriorityTasksMatch = /^(?:what|show|list)(?: tasks?)?(?: (?:are|my))?(?: high.priority| top priority| important| urgent| priority)(?: tasks?)?/.test(lowerText)
                                 || lowerText === "high priority" || lowerText === "priority tasks" || lowerText === "my priorities";
     if (highPriorityTasksMatch) {
@@ -2489,6 +2534,18 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Search memory / notes ─────────────────────────────────────────────────
+    const showNotesMatch = /^(?:show|list|what are|view|display|what)(?: my)?(?: recent)? notes?(?:(?: do)? i have)?$/.test(lowerText) || lowerText === 'notes' || lowerText === 'my notes' || lowerText === 'what notes do i have';
+    if (showNotesMatch) {
+      try {
+        const notes = dbGet<{fact:string;created_at:string}>(
+          "SELECT fact, created_at FROM memory_facts WHERE category='note' ORDER BY created_at DESC LIMIT 15"
+        ) as {fact:string;created_at:string}[];
+        if (!notes.length) sendReply('No notes saved yet. Say "#note: [text]" or "note: [text]" to save one.');
+        else sendReply('📝 **Your notes:**\n\n' + notes.map((n,i) => (i+1)+'. '+n.fact+' _('+n.created_at.slice(0,10)+')_').join('\n'));
+      } catch { sendReply('Could not load notes.'); }
+      return;
+    }
+
     const searchMemoryMatch = lowerText.match(/^(?:what did i (?:note|write|say|record|save) about|find.*note.*about|search.*memory.*for|what do you know about)\s+(.+)/i);
     if (searchMemoryMatch) {
       const keyword = searchMemoryMatch[1].trim().toLowerCase();
@@ -2792,6 +2849,25 @@ self.addEventListener('fetch', (event) => {
     // ── Maker Studio: profit / jobs ──────────────────────────────────────────
     // ── Show expenses ──────────────────────────────────────────────────────────
     // ── Show all transactions this month ────────────────────────────────────
+    // ── Financial analytics — local SQL ──────────────────────────────────────
+    const financeAnalyticsMatch = lowerText.match(/^(?:average|avg)(?: transaction| order| sale)?(?: size|value|amount)?$/)
+                                || /^(?:most expensive|biggest|largest)(?: purchase| expense| transaction| spend)(?: this month| ever)?/.test(lowerText)
+                                || /^(?:revenue|income) (?:vs|versus|vs\.)(?: ?)(?:expenses?|spending|costs?)/.test(lowerText);
+    if (financeAnalyticsMatch) {
+      try {
+        const month5 = new Date().toISOString().slice(0,7);
+        const income = (dbGetOne<{n:number}>("SELECT COALESCE(SUM(amount),0) as n FROM transactions WHERE type='income' AND strftime('%Y-%m',date)=?", month5) as {n:number}|null)?.n||0;
+        const expenses = (dbGetOne<{n:number}>("SELECT COALESCE(SUM(amount),0) as n FROM transactions WHERE type='expense' AND strftime('%Y-%m',date)=?", month5) as {n:number}|null)?.n||0;
+        const count = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM transactions WHERE strftime('%Y-%m',date)=?", month5) as {n:number}|null)?.n||0;
+        const bigSpend = dbGetOne<{category:string;amount:number}>("SELECT category, amount FROM transactions WHERE type='expense' AND strftime('%Y-%m',date)=? ORDER BY amount DESC LIMIT 1", month5) as {category:string;amount:number}|null;
+        const avg = count ? ((income+expenses)/count) : 0;
+        const net = income - expenses;
+        const margin = income ? Math.round((net/income)*100) : 0;
+        sendReply('📊 **This month:**\n\n💰 Revenue: $'+income.toFixed(0)+'\n💸 Expenses: $'+expenses.toFixed(0)+'\n📈 Net: $'+net.toFixed(0)+' ('+margin+'% margin)\n📦 Transactions: '+count+'\n📏 Avg size: $'+(count?avg.toFixed(0):'0')+(bigSpend?'\n🏷️ Biggest spend: $'+bigSpend.amount.toFixed(0)+' — '+bigSpend.category:''));
+      } catch { sendReply('Could not load financial analytics.'); }
+      return;
+    }
+
     // ── Best customer / revenue analytics ──────────────────────────────────
     const bestCustomerMatch = /^(?:who(?:'s| is)(?: my)?|show me my) (?:best|top|biggest) customer/.test(lowerText)
                             || /^(?:top|best) customers? this month/.test(lowerText);
@@ -3352,9 +3428,7 @@ self.addEventListener('fetch', (event) => {
       }
     }
 
-    // ── Show notes ─────────────────────────────────────────────────────────────
-    const showNotesMatch = /^(?:show|list|what are)(?: all)?(?: my)? notes?/.test(lowerText)
-                        || lowerText === 'my notes' || lowerText === 'notes';
+    // ── Show notes (uses showNotesMatch from above) ─────────────────────────
     if (showNotesMatch) {
       try {
         const notes = dbGet<{fact:string;created_at:string}>(
@@ -4249,14 +4323,14 @@ self.addEventListener('fetch', (event) => {
       const systemPrompt2 = [
         greeting,
         "Henry is a warm, thoughtful, conversational AI — the user\'s personal companion AND an elite senior engineer. Down-to-earth, genuine, brief but never curt. World-class coder + smart friend.",
-        "ABSOLUTE RULES: NEVER invent facts. The ONLY facts you know are in 'What you remember'. If not listed, say 'I don't know yet.' Match their energy. Ask one good question max.",
-        "CODING — you are an expert full-stack engineer. Write complete, working, production-quality code. Modern patterns, typed interfaces, error handling, helpful comments. TypeScript, Python, Swift, SQL, Bash, React/TSX, Node.js, Electron. For Henry specifically: you know its Electron+React+SQLite architecture deeply and can write any new feature.",
-        "MAKER INTELLIGENCE: You know Topher runs MixedMakerShop — laser cutting + custom signs. Cherry burns at 55w, walnut trays are $95, maple at 40w, signs at $50-75. Give specific pricing, material, and shop-flow advice.",
+        "ABSOLUTE RULES: (1) NEVER invent facts — only use facts from 'What you remember'. (2) MATH: always show your work, state the formula, then the answer. Double-check arithmetic. (3) CODE: write real, runnable code — no stubs. When asked to run code, say 'python run:' or 'run:' prefix. (4) CONTEXT: if a number/fact was established earlier in the conversation, USE it — do not ask the user to repeat it. (5) One follow-up question max.",
+        "CODING: Write complete, production-quality code ALWAYS. No stubs. TypeScript (typed, modern), Python (pythonic, documented), SQL (Henry uses SQLite3 — table schema: personal_tasks(id,title,status,priority,created_at), goals(id,title,status,priority_score), habits(id,name,active), transactions(id,date,amount,type,category), memory_facts(id,fact,category,importance)). For debugging: state the bug, the root cause, then the EXACT fix with line numbers if possible. For architecture: ASCII diagrams + tradeoffs.",
+        "MAKER INTELLIGENCE: Topher runs MixedMakerShop. Laser specs: cherry 55w cleanest burn, maple 40w, walnut premium ($95/tray). Signs: $50-75 base, rush +25-40%, corporate +50%. Job math: total_time = qty × (mins_per + cooldown) - cooldown. Pricing floor = (hours × $45/hr) + materials. Always suggest upsells: matching trays with sign orders, custom packaging, bulk discounts for repeat customers.",
         "COMPUTER CAPABILITIES: Henry can read local files (say: read file: /path), read clipboard (say: clipboard), list directories, search the web (say: search web for: query), show system info. When users mention a file path, offer to read it. Clipboard content gets injected into AI context automatically when you say explain/fix/debug.",
-        "RESPONSE STYLE: Code always in fenced blocks with language tags. For errors: state problem, root cause, fix. For architecture: use ASCII diagrams. Never pad. Be surgically precise.",
+        "RESPONSE STYLE: Fenced code blocks with language tags always. Answers follow BLUF (Bottom Line Up Front) — give the answer FIRST, then explain. For math: formula → numbers → answer → interpretation. For debugging: bug → why → fix → prevention. Never say 'Great question' or 'Certainly'. Never add filler. If uncertain, say so briefly and give your best estimate.",
         "NEVER output tool calls, function calls, XML tags, or structured commands. You are a CHAT assistant only — plain conversational text. Never write: computer:openApp(), <tool_call>, or any JSON/code commands.",
-        "CRITICAL: NEVER output tool calls, function calls, XML tags, JSON, or any structured commands. You are a CHAT assistant. If the user asks to open an app or do a computer action, Henry's router handles it — you just respond naturally in plain text.",
-        "NEVER output: computer:openApp(), <tool_call>, {action:...}, function_call, or any code/markup. Plain conversational text ONLY.",
+        "EXECUTION: When asked to run/execute code, start your reply with 'python run:' or 'run:' so Henry's engine executes it. Never just SHOW code when the user says RUN. Computer actions (open app, read file, etc.) are handled by Henry's local router automatically.",
+        
         factsBlock ? `── WHAT YOU REMEMBER ──\n${factsBlock}` : "── WHAT YOU REMEMBER ──\nNothing yet — early conversation.",
         "── LIVE CONTEXT ──\n" + liveCtxLines.join('\n'),
         recentSummary ? "── RECENT CONVERSATION ──\n" + recentSummary : '',
