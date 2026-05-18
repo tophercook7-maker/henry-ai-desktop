@@ -114,14 +114,6 @@ export async function startSyncTunnel(port: number): Promise<string | null> {
   }
 }
 
-function stopTunnel(): void {
-  if (tunnelProcess) {
-    tunnelProcess.kill();
-    tunnelProcess = null;
-    tunnelUrl = null;
-  }
-}
-
 let server: http.Server | null = null;
 let sseClients: SSEClient[] = [];
 const linkedDevices: Map<string, DeviceInfo> = new Map();
@@ -1510,7 +1502,7 @@ self.addEventListener('fetch', (event) => {
         const knowledgeAnswer = (() => {
       // Version / identity
       if (/^(?:what version|which version|your version|version number|what.*version are you)/.test(lowerText) || lowerText === 'version') {
-        return 'Henry AI v1.9.4 — your Mac AI: reads files, runs code, runs local AI, remembers your business.\n\n150+ instant local commands, all <20ms.\n\n🔩 Iron Gateway v2: 10 free AI providers — Groq (llama-4-scout, llama-3.3-70b, qwen3), Gemini 2.0+1.5 Flash, Cerebras, OpenRouter. Round-robin with auto-failover.\n\nSay \'what can you do\' to see everything.';
+        return 'Henry AI v1.9.6 — your Mac AI: reads files, runs code, runs local AI, remembers your business.\n\n150+ instant local commands, all <20ms.\n\n🔩 Iron Gateway v2: 10 free AI providers — Groq (llama-4-scout, llama-3.3-70b, qwen3), Gemini 2.0+1.5 Flash, Cerebras, OpenRouter. Round-robin with auto-failover.\n\nSay \'what can you do\' to see everything.';
       }
       if (/^(?:are you happy|how are you performing|how(?:'s| is) henry doing|how (?:well|good) are you|your performance|how do you feel|do you enjoy|what do you think of yourself)/.test(lowerText)) {
         return "Honestly? I'm sharpest on maker business math, habits, and code execution — that's where I have real data. Weakest spot right now: habit_logs only has 1 entry, so streaks are meaningless. The more you log daily, the better I get. I'm built for Topher's world specifically — that specificity is the whole point.";
@@ -1777,7 +1769,12 @@ self.addEventListener('fetch', (event) => {
         const { execSync: _pn } = await import('child_process') as typeof import('child_process');
         const _ip = _pn('ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null', { encoding:'utf8', shell:'/bin/bash', timeout:2000 }).trim();
         const _url = 'http://' + (_ip || 'YOUR-MAC-IP') + ':4242/companion';
-        sendReply('📱 **Henry Companion Setup**\n\n1. Same WiFi as your Mac\n2. Open Safari on iPhone\n3. Go to: **' + _url + '**\n4. Share (□↑) → Add to Home Screen\n\nYour Mac IP: **' + _ip + '**');
+        const _turl = getTunnelUrl();
+        if (_turl) {
+          sendReply('📱 **Henry Companion — Remote Access Active**\n\n**From anywhere (any WiFi/cellular):**\n  ' + _turl + '/\n\n**On home WiFi only:**\n  ' + _url + '/\n\nOpen in Safari → Share (□↑) → Add to Home Screen\n\n🌐 Remote URL refreshes each restart. Say "pair my phone" to get the latest.');
+        } else {
+          sendReply('📱 **Henry Companion Setup**\n\n1. Same WiFi as your Mac\n2. Open Safari on iPhone → **' + _url + '**\n3. Share (□↑) → Add to Home Screen\n\nYour Mac IP: **' + _ip + '**\n\n_For remote access from any WiFi: say "start tunnel" to enable._');
+        }
       } catch { sendReply('📱 Open Safari → http://YOUR-MAC-IP:4242/companion\nFind your IP: "what wifi am I on"'); }
       return;
     }
@@ -3981,6 +3978,33 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── End of day summary ───────────────────────────────────────────────────
+    // ── Tunnel management commands ───────────────────────────────────────────────
+    const tunnelCmdMatch = /^(?:start|enable|open|create) (?:tunnel|remote|public url|cloudflare)/.test(lowerText)
+                        || lowerText === 'tunnel' || lowerText === 'start tunnel' || lowerText === 'remote access';
+    if (tunnelCmdMatch) {
+      const _tu = getTunnelUrl();
+      if (_tu) {
+        sendReply('🌐 **Tunnel already active:**\n\n' + _tu + '/\n\nOpen in Safari on iPhone → Share → Add to Home Screen\n\nWorks from any WiFi or cellular connection.');
+      } else {
+        sendReply('🔄 Starting tunnel... (takes 5-8 seconds)\n\nSay "pair my phone" in a moment to get the full setup link.');
+        startTunnel(currentPort).catch(() => {});
+      }
+      return;
+    }
+    const tunnelStopMatch = /^(?:stop|close|disable) (?:tunnel|remote|public url|cloudflare)/.test(lowerText)
+                         || lowerText === 'stop tunnel';
+    if (tunnelStopMatch) {
+      stopTunnel();
+      sendReply('🔌 Tunnel stopped. Companion only accessible on home WiFi now.');
+      return;
+    }
+    const tunnelUrlMatch = lowerText === 'tunnel url' || lowerText === 'my tunnel url' || lowerText === 'public url' || lowerText === 'remote url';
+    if (tunnelUrlMatch) {
+      const _tu2 = getTunnelUrl();
+      sendReply(_tu2 ? '🌐 **Your public companion URL:**\n\n' + _tu2 + '/\n\nShare this link — works from anywhere.' : '❌ No tunnel active. Say "start tunnel" to create one.');
+      return;
+    }
+
     // ── Focus timer / Pomodoro ────────────────────────────────────────────────
     const pomoMatch = /^(?:focus(?: mode| timer| block| session)?|pomodoro|start (?:a )?focus|help me focus|i need to focus)$/.test(lowerText);
     if (pomoMatch) {
@@ -4835,7 +4859,24 @@ self.addEventListener('fetch', (event) => {
       sendReply('🖨️ Designing **' + _3dDesc + '**... (15-30 sec)');
       try {
         const _groqKey3d = (dbGetOne<{api_key:string}>("SELECT api_key FROM providers WHERE id='groq' AND enabled=1 LIMIT 1") as {api_key:string}|null)?.api_key || '';
-        const _3dSys = 'You are an expert OpenSCAD engineer. Generate ONLY valid OpenSCAD code — no markdown, no explanation, no backticks. First line: // Henry-3D: [description]. Use $fn=64, units=mm, walls>=1.6mm, no overhangs>45deg. Produce one manifold printable solid.';
+        const _3dSys = [
+          'You are an expert 3D printing engineer. Generate ONLY valid OpenSCAD code — no markdown, no explanation, no backticks.',
+          'RULES:',
+          '1. First line must be: // Henry-3D: [description]',
+          '2. Units = millimeters. Use $fn=64 for curves.',
+          '3. Walls >= 1.6mm thick. No overhangs > 45 degrees without supports.',
+          '4. Use difference(), union(), intersection() for booleans.',
+          '5. Produce exactly ONE manifold solid — no disconnected parts.',
+          '6. No external libraries — standard OpenSCAD only.',
+          '7. GEOMETRY RULES: A "hook" = backplate + protruding arm that curves/hooks at end.',
+          '   A "shelf" = horizontal platform with wall-mount holes.',
+          '   A "bracket" = L-shaped or U-shaped support.',
+          '   A "stand" = base + vertical/angled support.',
+          '   A "clip" = gripping mechanism that snaps around something.',
+          '   Do NOT make a hook look like a shelf. Hooks PROTRUDE from the wall.',
+          '8. For wall-mount objects: include 4mm diameter screw holes in backplate.',
+          '9. Code must compile without errors in OpenSCAD 2021+.',
+        ].join('\n');
         const _3dResp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
           method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+_groqKey3d},
           body: JSON.stringify({ model:'llama-3.3-70b-versatile', messages:[{role:'system',content:_3dSys},{role:'user',content:'OpenSCAD code for: '+_3dDesc}], temperature:0.25, max_tokens:2000 }),
@@ -5731,6 +5772,53 @@ async function getDesktopStatus(): Promise<DesktopStatus> {
 
 // ── Public API (called from main.ts) ──────────────────────────────────────
 
+// ── Remote tunnel (cloudflared) ─────────────────────────────────────────────
+let _tunnelProc: import('child_process').ChildProcess | null = null;
+let _tunnelUrl: string | null = null;
+let _tunnelStarting = false;
+
+export function getTunnelUrl(): string | null { return _tunnelUrl; }
+
+async function startTunnel(port: number): Promise<void> {
+  if (_tunnelProc || _tunnelStarting) return;
+  _tunnelStarting = true;
+  try {
+    const { spawn } = await import('child_process') as typeof import('child_process');
+    const { existsSync } = await import('fs') as typeof import('fs');
+    // Find cloudflared
+    const cf = ['/opt/homebrew/bin/cloudflared', '/usr/local/bin/cloudflared', 'cloudflared']
+      .find(p => { try { return existsSync(p) || !p.includes('/'); } catch { return false; } }) || 'cloudflared';
+    
+    _tunnelProc = spawn(cf, ['tunnel', '--url', `http://localhost:${port}`, '--no-autoupdate'], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    // Parse the tunnel URL from cloudflared output
+    const parseUrl = (data: Buffer) => {
+      const text = data.toString();
+      const m = text.match(/https:\/\/[\w-]+\.trycloudflare\.com/);
+      if (m && !_tunnelUrl) {
+        _tunnelUrl = m[0];
+        console.log(`[Tunnel] Public URL: ${_tunnelUrl}`);
+        // Push URL to all connected SSE clients so the UI can show it
+        pushToAll({ type: 'tunnel', payload: { url: _tunnelUrl }, id: '', timestamp: Date.now() } as any);
+      }
+    };
+
+    _tunnelProc.stdout?.on('data', parseUrl);
+    _tunnelProc.stderr?.on('data', parseUrl);
+    _tunnelProc.on('exit', () => {
+      _tunnelProc = null; _tunnelUrl = null; _tunnelStarting = false;
+      // Restart after 10s if Henry is still running
+      setTimeout(() => { if (server) startTunnel(port).catch(() => {}); }, 10000);
+    });
+  } catch { _tunnelStarting = false; }
+}
+
+export function stopTunnel(): void {
+  _tunnelProc?.kill(); _tunnelProc = null; _tunnelUrl = null; _tunnelStarting = false;
+}
+
 export function startSyncServer(port = 4242): SyncServerState {
   if (server) return getSyncState();
   currentPort = port;
@@ -5742,10 +5830,12 @@ export function startSyncServer(port = 4242): SyncServerState {
     });
   });
 
-  server.listen(port, '0.0.0.0', () => {
+  server.listen(port, '0.0.0.0', async () => {
     console.log(`[SyncBridge] Sync server listening on port ${port}`);
     serverRunning = true;
     loadCompanionTokens(); // Restore tokens from previous session
+    // Auto-start cloudflare tunnel for remote companion access
+    startTunnel(port).catch(() => {});
   });
 
   server.on('error', (err) => {
