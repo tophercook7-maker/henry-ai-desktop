@@ -140,6 +140,7 @@ html,body{height:100%;height:100dvh;min-height:100dvh;background:var(--bg);color
 #screen-bar2 label input{accent-color:var(--accent)}
 #screen-wrap{flex:1;overflow:auto;display:flex;align-items:center;justify-content:center;-webkit-overflow-scrolling:touch}
 #screen-img{max-width:100%;max-height:100%;border-radius:4px;cursor:crosshair;user-select:none;-webkit-user-select:none}
+.kbd-btn{background:var(--s2);border:1px solid var(--border);color:var(--fg);border-radius:8px;padding:6px 10px;font-size:12px;white-space:nowrap;cursor:pointer;flex-shrink:0;font-family:system-ui}
 #screen-ts{font-size:11px;color:var(--muted2);margin-left:auto}
 #screen-status{font-size:11px;color:var(--green)}
 
@@ -297,13 +298,30 @@ html,body{height:100%;height:100dvh;min-height:100dvh;background:var(--bg);color
     <!-- SCREEN -->
     <div class="pane" id="p-screen">
       <div id="screen-bar2">
-        <label><input type="checkbox" id="auto-ref" checked onchange="toggleAutoRef()"> Auto-refresh</label>
+        <label><input type="checkbox" id="auto-ref" checked onchange="toggleAutoRef()"> Live</label>
         <span id="screen-status"></span>
-        <span id="screen-ts" style="margin-left:auto"></span>
-        <button onclick="refreshScreen()" style="background:var(--accent);color:#fff;border:none;border-radius:10px;padding:6px 12px;font-size:12px;cursor:pointer">↻ Refresh</button>
+        <span id="screen-fps" style="font-size:11px;color:var(--muted)"></span>
+        <span id="screen-ts" style="margin-left:auto;font-size:11px;color:var(--muted)"></span>
+        <button onclick="refreshScreen()" style="background:var(--accent);color:#fff;border:none;border-radius:8px;padding:5px 10px;font-size:12px;cursor:pointer">↻</button>
       </div>
-      <div id="screen-wrap">
-        <img id="screen-img" src="" alt="Mac screen" onclick="screenClick(event)" />
+      <div id="screen-wrap" style="position:relative;flex:1;overflow:hidden;background:#000;display:flex;align-items:center;justify-content:center">
+        <img id="screen-img" src="" alt="Mac screen"
+          style="max-width:100%;max-height:100%;object-fit:contain;touch-action:none;user-select:none;-webkit-user-select:none"
+          draggable="false"
+        />
+        <div id="tap-ripple" style="position:absolute;pointer-events:none;display:none;width:36px;height:36px;border-radius:50%;border:2px solid rgba(139,92,246,0.8);transform:translate(-50%,-50%)"></div>
+      </div>
+      <div id="screen-kbd" style="display:flex;gap:6px;padding:8px 10px;background:var(--s1);border-top:1px solid var(--border);overflow-x:auto;flex-shrink:0;-webkit-overflow-scrolling:touch">
+        <button class="kbd-btn" onclick="macKey('space',['command key'])">⌘ Space</button>
+        <button class="kbd-btn" onclick="macKey('tab',['command key'])">⌘ Tab</button>
+        <button class="kbd-btn" onclick="macKey('c',['command key'])">⌘ C</button>
+        <button class="kbd-btn" onclick="macKey('v',['command key'])">⌘ V</button>
+        <button class="kbd-btn" onclick="macKey('z',['command key'])">⌘ Z</button>
+        <button class="kbd-btn" onclick="macKey('a',['command key'])">⌘ A</button>
+        <button class="kbd-btn" onclick="macKey('w',['command key'])">⌘ W</button>
+        <button class="kbd-btn" onclick="macKey('return',[])">↵</button>
+        <button class="kbd-btn" onclick="macKey('escape',[])">Esc</button>
+        <button class="kbd-btn" onclick="macKey('delete',[])">⌫</button>
       </div>
     </div>
 
@@ -491,6 +509,7 @@ window.addEventListener('load', async () => {
   loadToday();
   setInterval(loadToday, 15000);
   refreshScreen();
+  setTimeout(screenAttachTouch, 500);
   checkConn();
   setInterval(checkConn, 8000);
   initConversation();
@@ -594,7 +613,7 @@ function showTab(id) {
   const pane = document.getElementById('p-' + id);
   if (tabBtn) tabBtn.classList.add('on');
   if (pane) pane.classList.add('on');
-  if (id === 'screen') startScreenRefresh();
+  if (id === 'screen') { startScreenRefresh(); setTimeout(screenAttachTouch, 100); }
   else stopScreenRefresh();
   if (id === 'rem') loadReminders();
   if (id === 'tasks') loadTasks();
@@ -895,30 +914,49 @@ function renderReminders(rems) {
   }).join('');
 }
 
-// ── SCREEN ────────────────────────────────────────────────────────────────────
+// ── SCREEN — live stream + touch control ─────────────────────────────────────
+let _scFrameCount = 0; let _scLastTs = 0; let _scFetching = false;
+
 async function refreshScreen() {
+  if (_scFetching) return;
+  _scFetching = true;
   const img = document.getElementById('screen-img');
   const ts = document.getElementById('screen-ts');
   const status = document.getElementById('screen-status');
+  const fps = document.getElementById('screen-fps');
   try {
-    status.textContent = '↻ Loading…';
-    const d = await fetch(BASE + '/sync/mac/screen', { signal: AbortSignal.timeout(8000) }).then(r => r.json());
-    if (d.image) {
-      img.src = d.image;
-      ts.textContent = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    // Use /screen (direct JPEG) for speed — much faster than /sync/mac/screen (PNG/JSON)
+    const url = BASE + '/screen?_=' + Date.now();
+    const resp = await fetch(url, { signal: AbortSignal.timeout(4000) });
+    if (resp.ok) {
+      const blob = await resp.blob();
+      const objUrl = URL.createObjectURL(blob);
+      const old = img.src;
+      img.src = objUrl;
+      if (old.startsWith('blob:')) URL.revokeObjectURL(old);
+      const now = Date.now();
+      if (_scLastTs) {
+        const f = (1000 / (now - _scLastTs)).toFixed(1);
+        fps.textContent = f + ' fps';
+      }
+      _scLastTs = now;
+      _scFrameCount++;
+      ts.textContent = new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
       status.textContent = '● Live';
-      status.style.color = 'var(--green)';
+      status.style.color = '#22c55e';
     }
   } catch {
     status.textContent = '○ Offline';
     status.style.color = 'var(--muted)';
+    fps.textContent = '';
   }
+  _scFetching = false;
 }
 
 function startScreenRefresh() {
   stopScreenRefresh();
   if (document.getElementById('auto-ref').checked) {
-    screenTimer = setInterval(refreshScreen, 3000);
+    screenTimer = setInterval(refreshScreen, 500); // 2fps — fast enough for control
     refreshScreen();
   }
 }
@@ -932,18 +970,139 @@ function toggleAutoRef() {
   else stopScreenRefresh();
 }
 
+// ── Touch tap/scroll on screen ──────────────────────────────────────────────
+let _tapStart = null;
+let _tapMoved = false;
+let _scrollAccumY = 0;
+let _scrollAccumX = 0;
+let _lastScrollSent = 0;
+
+function _screenPt(e, img) {
+  const rect = img.getBoundingClientRect();
+  const touch = e.touches ? e.touches[0] || e.changedTouches[0] : e;
+  return {
+    x: (touch.clientX - rect.left) / rect.width,
+    y: (touch.clientY - rect.top) / rect.height,
+  };
+}
+
+function _showRipple(xPx, yPx) {
+  const r = document.getElementById('tap-ripple');
+  r.style.left = xPx + 'px'; r.style.top = yPx + 'px';
+  r.style.display = 'block';
+  r.style.transition = 'none';
+  r.style.transform = 'translate(-50%,-50%) scale(1)'; r.style.opacity = '1';
+  setTimeout(() => {
+    r.style.transition = 'transform 0.3s ease, opacity 0.3s ease';
+    r.style.transform = 'translate(-50%,-50%) scale(2)'; r.style.opacity = '0';
+    setTimeout(() => r.style.display = 'none', 320);
+  }, 10);
+}
+
+function _doTap(xPct, yPct, imgRect, clientX, clientY, dbl, right) {
+  _showRipple(clientX - imgRect.left, clientY - imgRect.top);
+  fetch(BASE + '/companion/tap', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({x:xPct, y:yPct, double:dbl||false, right:right||false}),
+  }).catch(()=>{});
+}
+
+function _doScroll(xPct, yPct, dy, dx) {
+  const now = Date.now();
+  if (now - _lastScrollSent < 80) return;
+  _lastScrollSent = now;
+  fetch(BASE + '/companion/scroll', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({x:xPct, y:yPct, dy, dx:dx||0}),
+  }).catch(()=>{});
+}
+
+function screenAttachTouch() {
+  const img = document.getElementById('screen-img');
+  if (!img || img.dataset.touchBound) return;
+  img.dataset.touchBound = '1';
+
+  img.addEventListener('touchstart', e => {
+    e.preventDefault();
+    const pt = _screenPt(e, img);
+    _tapStart = {...pt, t:Date.now(), cx:e.touches[0].clientX, cy:e.touches[0].clientY};
+    _tapMoved = false; _scrollAccumY = 0; _scrollAccumX = 0;
+  }, {passive:false});
+
+  img.addEventListener('touchmove', e => {
+    e.preventDefault();
+    if (!_tapStart) return;
+    const pt = _screenPt(e, img);
+    const dx = (pt.x - _tapStart.x) * img.getBoundingClientRect().width;
+    const dy = (pt.y - _tapStart.y) * img.getBoundingClientRect().height;
+    if (Math.abs(dx) > 8 || Math.abs(dy) > 8) _tapMoved = true;
+    if (_tapMoved) {
+      _scrollAccumY += (pt.y - _tapStart.y);
+      _scrollAccumX += (pt.x - _tapStart.x);
+      if (Math.abs(_scrollAccumY) > 0.01 || Math.abs(_scrollAccumX) > 0.01) {
+        _doScroll(pt.x, pt.y, -_scrollAccumY * 8, -_scrollAccumX * 8);
+        _scrollAccumY = 0; _scrollAccumX = 0;
+      }
+      _tapStart = {..._tapStart, ...pt};
+    }
+  }, {passive:false});
+
+  img.addEventListener('touchend', e => {
+    e.preventDefault();
+    if (!_tapStart) return;
+    const ended = e.changedTouches[0];
+    const pt = _screenPt({changedTouches: e.changedTouches, touches: []}, img);
+    const dt = Date.now() - _tapStart.t;
+    if (!_tapMoved && dt < 400) {
+      const rect = img.getBoundingClientRect();
+      _doTap(pt.x, pt.y, rect, ended.clientX, ended.clientY, false, false);
+    }
+    _tapStart = null;
+  }, {passive:false});
+
+  // Long press = right click
+  let longPressTimer = null;
+  img.addEventListener('touchstart', e => {
+    clearTimeout(longPressTimer);
+    longPressTimer = setTimeout(() => {
+      if (!_tapMoved && _tapStart) {
+        const pt = _screenPt(e, img);
+        const rect = img.getBoundingClientRect();
+        const t = e.touches[0];
+        _doTap(pt.x, pt.y, rect, t.clientX, t.clientY, false, true);
+        navigator.vibrate && navigator.vibrate(50);
+      }
+    }, 600);
+  }, {passive:true});
+  img.addEventListener('touchend', () => clearTimeout(longPressTimer), {passive:true});
+  img.addEventListener('touchcancel', () => clearTimeout(longPressTimer), {passive:true});
+
+  // Desktop mouse click fallback
+  img.addEventListener('click', e => {
+    const pt = _screenPt(e, img);
+    const rect = img.getBoundingClientRect();
+    _doTap(pt.x, pt.y, rect, e.clientX, e.clientY, false, false);
+  });
+  img.addEventListener('dblclick', e => {
+    const pt = _screenPt(e, img);
+    const rect = img.getBoundingClientRect();
+    _doTap(pt.x, pt.y, rect, e.clientX, e.clientY, true, false);
+  });
+}
+
+// ── Mac keyboard shortcuts from companion ────────────────────────────────────
+function macKey(key, mods) {
+  fetch(BASE + '/companion/key', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({key, modifiers:mods}),
+  }).catch(()=>{});
+}
+
 function screenClick(e) {
   const img = document.getElementById('screen-img');
+  const pt = _screenPt(e, img);
   const rect = img.getBoundingClientRect();
-  const xPct = (e.clientX - rect.left) / rect.width;
-  const yPct = (e.clientY - rect.top) / rect.height;
-  // Send click to Mac via Henry HQ shell
-  const script = \`osascript -e 'tell application "System Events" to click at {'\${Math.round(xPct*1920)}, \${Math.round(yPct*1080)}}'\`
-  fetch(BASE + '/sync/mac/run', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ command: script }),
-  }).catch(() => {});
+  _doTap(pt.x, pt.y, rect, e.clientX, e.clientY, false, false);
 }
 
 // ── CONTROL ───────────────────────────────────────────────────────────────────

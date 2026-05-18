@@ -599,6 +599,121 @@ async function handleRequest(
     return;
   }
 
+  // ── Companion remote control (tap / scroll / key / type) ──────────────────
+  // ── Screen size cache (for companion control) ───────────────────────────────
+  if (!('__screenW' in (global as any))) {
+    (global as any).__screenW = 1440; (global as any).__screenH = 900;
+    try {
+      const { execSync: _gcss } = await import('child_process') as typeof import('child_process');
+      const _gsi = _gcss("system_profiler SPDisplaysDataType 2>/dev/null | awk '/Resolution/{print $2,$4}' | head -1", {encoding:'utf8',shell:'/bin/bash',timeout:3000}).trim();
+      const _gsm = _gsi.match(/(\d+)\s+(\d+)/);
+      if (_gsm) { (global as any).__screenW = parseInt(_gsm[1]); (global as any).__screenH = parseInt(_gsm[2]); }
+    } catch {}
+  }
+
+  // ── Companion remote control endpoints ───────────────────────────────────────
+  if (path.startsWith('/companion/') && req.method === 'OPTIONS') {
+    res.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET,POST,OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' });
+    res.end(); return;
+  }
+
+  if (path.startsWith('/companion/') && ['tap','scroll','key','type'].some(k => path === '/companion/' + k) && req.method === 'POST') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Content-Type', 'application/json');
+    const { execFile: _ef } = await import('child_process') as typeof import('child_process');
+    const _osa = (appleScript: string): Promise<string> => new Promise((resolve, reject) =>
+      _ef('osascript', ['-e', appleScript], { timeout: 5000 }, (err, stdout) => err ? reject(err) : resolve(stdout))
+    );
+    const _screenSize = async (): Promise<{w:number;h:number}> => {
+      try {
+        // Fast: use NSScreen via osascript JavaScript
+        const out = await _osa('tell application "Finder" to return {bounds of window of desktop}');
+        const m = out.trim().match(/(\d+),\s*(\d+),\s*(\d+),\s*(\d+)/);
+        if (m) return { w: parseInt(m[3]), h: parseInt(m[4]) };
+      } catch {}
+      try {
+        // Fallback: system_profiler (cached after first call)
+        const { execSync: _esx } = await import('child_process') as typeof import('child_process');
+        const si = _esx("system_profiler SPDisplaysDataType 2>/dev/null | awk '/Resolution/{print $2,$4}' | head -1", {encoding:'utf8',shell:'/bin/bash',timeout:2000}).trim();
+        const sm = si.match(/(\d+)\s+(\d+)/);
+        if (sm) return { w: parseInt(sm[1]), h: parseInt(sm[2]) };
+      } catch {}
+      return { w: 1440, h: 900 };
+    };
+    try {
+      const bodyC = await readBody<Record<string,unknown>>(req);
+      if (!bodyC) { res.writeHead(400); res.end('{}'); return; }
+
+      if (path === '/companion/tap') {
+        const w = (global as any).__screenW||1440; const h = (global as any).__screenH||900;
+        const px = Math.round(Number(bodyC.x||0) * w);
+        const py = Math.round(Number(bodyC.y||0) * h);
+        if (bodyC.double === true) {
+          // Double-click via two rapid clicks
+          await _osa('tell application "System Events" to click at {' + px + ', ' + py + '}');
+          await new Promise(r => setTimeout(r, 80));
+          await _osa('tell application "System Events" to click at {' + px + ', ' + py + '}');
+        } else if (bodyC.right === true) {
+          // Right-click via Swift CGEvent for reliability
+          const { execSync: _escr } = await import('child_process') as typeof import('child_process');
+          const { writeFileSync: _wsfr, unlinkSync: _usfr } = await import('fs') as typeof import('fs');
+          const { tmpdir: _tdr } = await import('os') as typeof import('os');
+          const _rtmp = _tdr() + '/henry_rclick_' + Date.now() + '.swift';
+          _wsfr(_rtmp, 'import CoreGraphics\nlet d = CGEventSource(stateID: .hidSystemState)\nlet md = CGEvent(mouseEventSource: d, mouseType: .rightMouseDown, mouseCursorPosition: CGPoint(x:' + px + ',y:' + py + '), mouseButton: .right)!\nlet mu = CGEvent(mouseEventSource: d, mouseType: .rightMouseUp, mouseCursorPosition: CGPoint(x:' + px + ',y:' + py + '), mouseButton: .right)!\nmd.post(tap:.cghidEventTap)\nmu.post(tap:.cghidEventTap)');
+          try { _escr('swift ' + _rtmp, { shell:'/bin/bash', timeout:5000 }); } finally { try { _usfr(_rtmp); } catch {} }
+        } else {
+          await _osa('tell application "System Events" to click at {' + px + ', ' + py + '}');
+        }
+        res.writeHead(200); res.end(JSON.stringify({ ok:true, px, py }));
+
+      } else if (path === '/companion/scroll') {
+        const sw = (global as any).__screenW||1440; const sh = (global as any).__screenH||900;
+        const spx = Math.round(Number(bodyC.x||0.5) * sw);
+        const spy = Math.round(Number(bodyC.y||0.5) * sh);
+        const sdy = -Math.round(Number(bodyC.dy||0) * 5);
+        const sdx = Math.round(Number(bodyC.dx||0) * 5);
+        // Scroll via Swift CGEvent
+        const { execSync: _esc6 } = await import('child_process') as typeof import('child_process');
+        const { writeFileSync: _wsf6, unlinkSync: _usf6 } = await import('fs') as typeof import('fs');
+        const { tmpdir: _td6 } = await import('os') as typeof import('os');
+        const _stmp = _td6() + '/henry_scroll_' + Date.now() + '.swift';
+        const _scode = [
+          'import CoreGraphics',
+          'let ev = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: Int32(' + Math.round(sdy*15) + '), wheel2: Int32(' + Math.round(sdx*15) + '), wheel3: 0)',
+          'ev?.location = CGPoint(x: ' + spx + ', y: ' + spy + ')',
+          'ev?.post(tap: .cghidEventTap)'
+        ].join('\n');
+        _wsf6(_stmp, _scode);
+        try { _esc6('swift ' + _stmp, { shell:'/bin/bash', timeout:5000 }); } finally { try { _usf6(_stmp); } catch {} }
+        res.writeHead(200); res.end(JSON.stringify({ ok:true }));
+
+      } else if (path === '/companion/key') {
+        const rawKey = String(bodyC.key||'');
+        const mods = (Array.isArray(bodyC.modifiers) ? bodyC.modifiers as string[] : [])
+          .filter((m:string) => ['command down','shift down','option down','control down','command key','shift key','option key','control key'].includes(m));
+        const modsNorm = mods.map((m:string) => m.includes(' key') ? m.replace(' key',' down') : m);
+        const usingStr = modsNorm.length ? ' using {' + modsNorm.join(', ') + '}' : '';
+        const keyCodes: Record<string,number> = { return:36, escape:53, delete:51, tab:48, space:49, up:126, down:125, left:123, right:124 };
+        if (keyCodes[rawKey.toLowerCase()] !== undefined) {
+          await _osa('tell application "System Events" to key code ' + keyCodes[rawKey.toLowerCase()] + usingStr);
+        } else {
+          const safeKey = rawKey.slice(0,1).replace(/[^a-zA-Z0-9 ]/,'');
+          if (safeKey) await _osa('tell application "System Events" to keystroke "' + safeKey + '"' + usingStr);
+        }
+        res.writeHead(200); res.end(JSON.stringify({ ok:true }));
+
+      } else if (path === '/companion/type') {
+        const safeText = String(bodyC.text||'').slice(0,200).replace(/["\\]/g,'');
+        if (safeText) await _osa('tell application "System Events" to keystroke "' + safeText + '"');
+        res.writeHead(200); res.end(JSON.stringify({ ok:true }));
+      }
+    } catch (e) {
+      console.error('[companion/control]', String(e).slice(0,200));
+      res.writeHead(200); res.end(JSON.stringify({ ok:false, error:String(e).slice(0,100) }));
+    }
+    return;
+  }
+
   // ── PWA Static Assets ─────────────────────────────────────────────────────
   if (path === '/manifest.json' && req.method === 'GET') {
     const manifest = {
@@ -1395,7 +1510,7 @@ self.addEventListener('fetch', (event) => {
         const knowledgeAnswer = (() => {
       // Version / identity
       if (/^(?:what version|which version|your version|version number|what.*version are you)/.test(lowerText) || lowerText === 'version') {
-        return 'Henry AI v1.9.0 — your Mac AI: reads files, runs code, runs local AI, remembers your business.\n\n150+ instant local commands, all <20ms.\n\n🔩 Iron Gateway v2: 10 free AI providers — Groq (llama-4-scout, llama-3.3-70b, qwen3), Gemini 2.0+1.5 Flash, Cerebras, OpenRouter. Round-robin with auto-failover.\n\nSay \'what can you do\' to see everything.';
+        return 'Henry AI v1.9.1 — your Mac AI: reads files, runs code, runs local AI, remembers your business.\n\n150+ instant local commands, all <20ms.\n\n🔩 Iron Gateway v2: 10 free AI providers — Groq (llama-4-scout, llama-3.3-70b, qwen3), Gemini 2.0+1.5 Flash, Cerebras, OpenRouter. Round-robin with auto-failover.\n\nSay \'what can you do\' to see everything.';
       }
       if (/^(?:are you happy|how are you performing|how(?:'s| is) henry doing|how (?:well|good) are you|your performance|how do you feel|do you enjoy|what do you think of yourself)/.test(lowerText)) {
         return "Honestly? I'm sharpest on maker business math, habits, and code execution — that's where I have real data. Weakest spot right now: habit_logs only has 1 entry, so streaks are meaningless. The more you log daily, the better I get. I'm built for Topher's world specifically — that specificity is the whole point.";
@@ -2189,6 +2304,18 @@ self.addEventListener('fetch', (event) => {
       return;
     }
 
+    // ── 'top 3 priorities' — instant local ─────────────────────────────────
+    const top3Match2 = /^(?:give me|show me|what are)(?: my)? top (?:3|three|5|five|10|ten) (?:priorities|tasks?|things?)/.test(lowerText)
+                    || /^(?:top (?:3|three|5|five|10|ten)(?: priorities?| tasks?)?|my top tasks?)$/.test(lowerText);
+    if (top3Match2) {
+      const n2 = lowerText.match(/(?:5|five)/) ? 5 : lowerText.match(/(?:10|ten)/) ? 10 : 3;
+      const topN = dbGet<{title:string;priority:number}>("SELECT title, priority FROM personal_tasks WHERE status!='done' ORDER BY priority DESC, created_at DESC LIMIT ?", n2) as {title:string;priority:number}[];
+      if (!topN.length) { sendReply('No open tasks.'); return; }
+      const topLines = topN.map((t,i) => (i+1)+'. '+(t.priority>=3?'🔴':t.priority===2?'🟡':'⚪')+' '+t.title);
+      sendReply('**Your top ' + n2 + ':**\n\n' + topLines.join('\n'));
+      return;
+    }
+
     const highPriorityTasksMatch = /^(?:what|show|list)(?: tasks?)?(?: (?:are|my))?(?: high.priority| top priority| important| urgent| priority)(?: tasks?)?/.test(lowerText)
                                 || lowerText === "high priority" || lowerText === "priority tasks" || lowerText === "my priorities";
     const noPriorityMatch = /^(?:show|list|what|find)(?: me)?(?: all| my)? tasks?(?: that)?(?: have| with)? (?:no|zero|0|without|missing)(?: (?:a |any ))? *priority(?: set)?/.test(lowerText)
@@ -2518,6 +2645,17 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Habit streak / status ─────────────────────────────────────────────────
+    const habitsCountMatch2 = /^how many habits(?: have i|did i)?(?: done| completed?)?(?: today)?$/.test(lowerText)
+                           || lowerText === 'habits today' || lowerText === 'habits done today';
+    if (habitsCountMatch2) {
+      const _hcd = new Date().toISOString().slice(0,10);
+      const _hcn = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM habit_logs WHERE date=?", _hcd) as {n:number}|null)?.n||0;
+      const _hct = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM habits WHERE active=1") as {n:number}|null)?.n||0;
+      const _hcp = _hct ? Math.round(_hcn/_hct*100) : 0;
+      sendReply('🔥 **Habits today:** ' + _hcn + '/' + _hct + ' (' + _hcp + '%)' + (_hcn===_hct && _hct>0 ? '\n\nAll done! 🏆' : _hcn===0 ? '\n\nNone yet. Say "prayer done" to start.' : ''));
+      return;
+    }
+
     // Habit count ("how many habits done today") - separate from status list
     if (/^how many habits(?: (?:have i|did i|are))? (?:done|completed?|finished?)(?: today)?$/.test(lowerText)) {
       try {
@@ -3116,10 +3254,9 @@ self.addEventListener('fetch', (event) => {
 
     // ── Best customer / revenue analytics ──────────────────────────────────
     // ── 'has X paid' / 'did X pay' → check transactions ────────────────────────
-    const paymentCheckMatch = lowerText.match(/^(?:has|did) (.+?) (?:paid?|sent?|paid me|paid yet|sent payment|settled)(?: yet| up)?$/i)
-                           || lowerText.match(/^(?:check if|confirm) (.+?) (?:paid?|sent payment)/i);
+    const paymentCheckMatch = lowerText.match(/^(?:(?:has|did) (.+?) (?:paid?|sent?|paid me|paid yet|sent payment|settled)(?: yet| up)?|(?:check if|confirm) (.+?) (?:paid?|sent payment))$/i);
     if (paymentCheckMatch) {
-      const _cname = (paymentCheckMatch[1] || '').trim().toLowerCase();
+      const _cname = ((paymentCheckMatch[1] || paymentCheckMatch[2] || '') as string).trim().toLowerCase();
       try {
         const _pmts = dbGet<{date:string;amount:number;category:string}>(
           "SELECT date, amount, category FROM transactions WHERE type='income' AND (LOWER(category) LIKE ? OR LOWER(category) LIKE ?) ORDER BY date DESC LIMIT 5",
@@ -3267,6 +3404,27 @@ self.addEventListener('fetch', (event) => {
           topTask ? '\n▶️ Top priority: **' + topTask.title + '**' : '',
         ].filter(Boolean);
         sendReply(report.join('\n'));
+      } catch { sendReply('Could not load daily review.'); }
+      return;
+    }
+
+    // ── Daily review → instant combined DB snapshot ─────────────────────────────
+    const _drm = /^(?:daily review|day review|review my day|end of day review|morning review|how(?:'?s| is) my day going|check in today|daily check.?in)/.test(lowerText);
+    if (_drm) {
+      try {
+        const _drt = new Date().toISOString().slice(0,10);
+        const _hDone = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM habit_logs WHERE date=?", _drt) as {n:number}|null)?.n||0;
+        const _hTot  = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM habits WHERE active=1") as {n:number}|null)?.n||0;
+        const _tDone = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM personal_tasks WHERE status='done' AND date(updated_at)=?", _drt) as {n:number}|null)?.n||0;
+        const _tProg = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM personal_tasks WHERE status='doing'") as {n:number}|null)?.n||0;
+        const _rev   = (dbGetOne<{n:number}>("SELECT COALESCE(SUM(amount),0) as n FROM transactions WHERE type='income' AND date=?", _drt) as {n:number}|null)?.n||0;
+        const _top   = (dbGetOne<{title:string}>("SELECT title FROM personal_tasks WHERE status='todo' ORDER BY priority DESC, created_at DESC LIMIT 1") as {title:string}|null)?.title||'';
+        const _tm = new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
+        const _dr = ['📋 **Daily Review — ' + _tm + '**','','🔥 Habits: **' + _hDone + '/' + _hTot + '**',
+          '✅ Tasks done today: **' + _tDone + '**', _tProg ? '🔨 In progress: **' + _tProg + '**' : '',
+          _rev > 0 ? '💰 Revenue today: **$' + _rev.toFixed(0) + '**' : '',
+          _top ? '\n▶️ Top priority: **' + _top + '**' : '',].filter(Boolean);
+        sendReply(_dr.join('\n'));
       } catch { sendReply('Could not load daily review.'); }
       return;
     }
@@ -3553,6 +3711,24 @@ self.addEventListener('fetch', (event) => {
         } catch { sendReply('Could not save to memory.'); }
         return;
       }
+    }
+
+    // ── 'remember: X' → save to memory_facts ──────────────────────────────────
+    const _rsm2 = lowerText.match(/^(?:remember(?: that| this)?|save this fact|store this|note this down|keep this in mind)[:\s]+(.+)/i)
+                           || lowerText.match(/^(?:i want you to remember|don'?t forget)[:\s]+(.+)/i);
+    if (_rsm2) {
+      const _rfact = (_rsm2[1] || '').trim();
+      if (_rfact.length > 2) {
+        const _rid = require('crypto').randomUUID();
+        const _rcat = /dpi|watt|laser|material|wood|cherry|walnut|maple|engrav/i.test(_rfact) ? 'laser' :
+                      /client|customer|henderson|wilson|paid|owes|job|order/i.test(_rfact) ? 'client' :
+                      /habit|exercise|prayer|bible|water|run/i.test(_rfact) ? 'habit' :
+                      /price|cost|rate|dollar|revenue|income/i.test(_rfact) ? 'business' : 'general';
+        try { dbRun("INSERT INTO memory_facts (id,fact,category,importance,created_at) VALUES (?,?,?,?,?)", _rid, _rfact, _rcat, 3, new Date().toISOString()); }
+        catch { sendReply('Could not save to memory.'); return; }
+        sendReply('🧠 Saved: "' + _rfact + '" _(category: ' + _rcat + ')_');
+      }
+      return;
     }
 
     // ── Quick note ────────────────────────────────────────────────────────────
