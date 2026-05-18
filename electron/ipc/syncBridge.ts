@@ -1662,12 +1662,13 @@ self.addEventListener('fetch', (event) => {
 
     // ── Habit fast-path: intercept "mark X done" before task handler ──────────
     {
-      const hkws = ['prayer','praying','bible','exercise','journal','water','run','jog','walk'];
+      const hkws = ['prayer','praying','bible','exercise','gym','journal','water','run','jog','walk','stretch','cold shower','gratitude','meditation','reading','read'];
       const hasHKW = hkws.some((k: string) => lowerText.includes(k));
       const naturalHabitDone = /^(?:went for a?|did (?:my|the|a)|drank|finished|completed)(?: (?:my|a|the))? (?:run|jog|walk|bible|reading|journal|water|prayer|exercise|meditation)/i.test(lowerText)
                              || /^(?:i (?:prayed|exercised|ran|jogged|walked|meditated|journaled|drank|read (?:my )?bible))/i.test(lowerText);
       const habitWordDone = /^(?:prayer(?:ed)?|bible|exercise(?:d)?|journal(?:ed)?|water|run|jog|walk)(?: done| today)?$/i.test(lowerText);
-      if ((hasHKW || naturalHabitDone) && (/^(?:mark|done|check|finish|complete)/.test(lowerText) || naturalHabitDone || habitWordDone)) {
+      const _hasDoneWord = /(?:done|complete[d]?|check(?:ed)?|finish(?:ed)?|logg?(?:ed)?)$/.test(lowerText.trim());
+      if ((hasHKW || naturalHabitDone) && (/^(?:mark|done|check|finish|complete|log)/.test(lowerText) || naturalHabitDone || habitWordDone || _hasDoneWord)) {
         let hk = hkws.find((k: string) => lowerText.includes(k)) || '';
         if (hk === 'praying') hk = 'prayer';
         if (hk === 'run' || hk === 'jog' || hk === 'walk') hk = 'exercise';
@@ -2049,6 +2050,20 @@ self.addEventListener('fetch', (event) => {
         } catch (e) { sendReply('Could not update goal: ' + e); }
         return;
       }
+    }
+
+    // ── Show active goals — instant local ──────────────────────────────────────
+    const showGoalsMatch = /^(?:show|list|what are)(?: my)?(?: active| current| open)? goals?$/.test(lowerText)
+                        || lowerText === 'goals' || lowerText === 'my goals';
+    if (showGoalsMatch) {
+      try {
+        const _glist = dbGet<{title:string;priority_score:number;status:string}>(
+          "SELECT title, priority_score, status FROM goals WHERE status='active' ORDER BY priority_score DESC LIMIT 15"
+        ) as {title:string;priority_score:number;status:string}[];
+        if (!_glist.length) { sendReply('No active goals. Add one: "add goal: [title]"'); return; }
+        sendReply('\uD83C\uDFAF **Active Goals (' + _glist.length + '):**\n\n' + _glist.map((g,i) => (i+1)+'. '+g.title).join('\n'));
+      } catch { sendReply('Could not load goals.'); }
+      return;
     }
 
     const addGoalMatch = lowerText.match(/^(?:add|create|new|set) (?:a )?goal[:\s]+(.+)/i)
@@ -4021,6 +4036,38 @@ self.addEventListener('fetch', (event) => {
     // ── Generate weekly report email ────────────────────────────────────────────
     const weeklyEmailMatch = /^(?:generate|write|create|draft)(?: a| me a)?(?: weekly| week)? (?:report|summary|update|email|recap)(?: email)?/.test(lowerText)
                            || lowerText === 'weekly report email' || lowerText === 'business report email';
+    // ── Quote email generator — local template ─────────────────────────────────
+    const quoteEmailMatch = /^(?:write|draft|create|generate)(?: me)?(?: a)? (?:quote|estimate|bid|proposal)(?: email| message)?(?:(?: for| to) (.+))?$/.test(lowerText);
+    if (quoteEmailMatch) {
+      const _qm = lowerText.match(/(?:for|to) (.+)$/i);
+      const _client = _qm ? _qm[1].trim() : 'client';
+      const _topTask = dbGetOne<{title:string}>("SELECT title FROM personal_tasks WHERE status!='done' AND LOWER(title) LIKE ? LIMIT 1", '%quote%') as {title:string}|null;
+      sendReply([
+        'Subject: Custom Laser Engraving Quote — MixedMakerShop',
+        '',
+        'Hi ' + (_client.charAt(0).toUpperCase() + _client.slice(1)) + ',',
+        '',
+        'Thank you for reaching out! Here\'s your quote for the custom laser work:',
+        '',
+        '  • [Item description] — $[price]',
+        '  • Rush fee (if applicable) — +25-40%',
+        '  • Estimated completion: [X business days]',
+        '',
+        'Total: $[total]',
+        '',
+        'To confirm, I\'ll need:',
+        '  1. Final design file (AI, SVG, or PDF)',
+        '  2. 50% deposit to begin',
+        '',
+        'Reply to this email or text me to move forward.',
+        '',
+        'Topher Cook',
+        'MixedMakerShop',
+        '[phone] | mixedmakershop.com',
+      ].join('\n'));
+      return;
+    }
+
     if (weeklyEmailMatch) {
       try {
         const month5 = new Date().toISOString().slice(0,7);
