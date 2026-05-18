@@ -511,7 +511,42 @@ window.addEventListener('load', async () => {
   refreshScreen();
   setTimeout(screenAttachTouch, 500);
   checkConn();
-  setInterval(checkConn, 8000);
+  setInterval(checkConn, 10000);
+
+  // ── IRONCLAD: Wake Lock — prevent screen sleep ──────────────────────────────
+  let _wakeLock = null;
+  async function _acquireWakeLock() {
+    if (!('wakeLock' in navigator)) return;
+    try {
+      _wakeLock = await navigator.wakeLock.request('screen');
+      _wakeLock.addEventListener('release', () => setTimeout(_acquireWakeLock, 2000));
+    } catch {}
+  }
+  _acquireWakeLock();
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') { _acquireWakeLock(); checkConn(); }
+  });
+
+  // ── IRONCLAD: No-sleep audio trick for iOS ───────────────────────────────────
+  let _noSleepStarted = false;
+  function _startNoSleep() {
+    if (_noSleepStarted) return; _noSleepStarted = true;
+    try {
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const buf = ctx.createBuffer(1, 1, 22050);
+      const src = ctx.createBufferSource();
+      src.buffer = buf; src.loop = true;
+      src.connect(ctx.destination); src.start(0);
+    } catch {}
+  }
+  document.addEventListener('touchstart', _startNoSleep, {once:true, passive:true});
+  document.addEventListener('click', _startNoSleep, {once:true});
+
+  // ── IRONCLAD: Heartbeat keepalive — fire every 12s ──────────────────────────
+  setInterval(() => {
+    if (!_connOk) return;
+    fetch(BASE + '/sync/health', {cache:'no-store', signal: AbortSignal.timeout(3000)}).catch(() => {});
+  }, 12000);
   initConversation();
 });
 
@@ -596,12 +631,28 @@ function updateLayout() {
 window.addEventListener('resize', updateLayout);
 
 // ── Connectivity ──────────────────────────────────────────────────────────────
+let _reconnAttempts = 0; let _connOk = false;
 async function checkConn() {
   const dot = document.getElementById('conn-dot');
+  const bar = document.getElementById('conn-bar');
   try {
-    const r = await fetch(BASE + '/sync/health', { signal: AbortSignal.timeout(3000) });
-    dot.className = r.ok ? 'ok' : 'err';
-  } catch { dot.className = 'err'; }
+    const r = await fetch(BASE + '/sync/health', { signal: AbortSignal.timeout(4000), cache:'no-store' });
+    if (r.ok) {
+      _connOk = true; _reconnAttempts = 0;
+      dot.className = 'ok';
+      if (bar) { bar.style.background = 'var(--green)'; bar.title = 'Henry online'; }
+      // Resume screen refresh if it was paused
+      if (document.getElementById('auto-ref')?.checked && !screenTimer) startScreenRefresh();
+    } else throw new Error('not ok');
+  } catch {
+    _connOk = false; _reconnAttempts++;
+    dot.className = 'err';
+    if (bar) { bar.style.background = '#ef4444'; bar.title = 'Henry offline — reconnecting...'; }
+    stopScreenRefresh();
+    // Exponential backoff reconnect: 2s, 4s, 8s, max 15s
+    const delay = Math.min(2000 * Math.pow(1.5, _reconnAttempts - 1), 15000);
+    setTimeout(checkConn, delay);
+  }
 }
 
 // ── Tab switching ─────────────────────────────────────────────────────────────

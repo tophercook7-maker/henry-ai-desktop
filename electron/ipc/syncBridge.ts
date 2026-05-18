@@ -1510,7 +1510,7 @@ self.addEventListener('fetch', (event) => {
         const knowledgeAnswer = (() => {
       // Version / identity
       if (/^(?:what version|which version|your version|version number|what.*version are you)/.test(lowerText) || lowerText === 'version') {
-        return 'Henry AI v1.9.3 — your Mac AI: reads files, runs code, runs local AI, remembers your business.\n\n150+ instant local commands, all <20ms.\n\n🔩 Iron Gateway v2: 10 free AI providers — Groq (llama-4-scout, llama-3.3-70b, qwen3), Gemini 2.0+1.5 Flash, Cerebras, OpenRouter. Round-robin with auto-failover.\n\nSay \'what can you do\' to see everything.';
+        return 'Henry AI v1.9.4 — your Mac AI: reads files, runs code, runs local AI, remembers your business.\n\n150+ instant local commands, all <20ms.\n\n🔩 Iron Gateway v2: 10 free AI providers — Groq (llama-4-scout, llama-3.3-70b, qwen3), Gemini 2.0+1.5 Flash, Cerebras, OpenRouter. Round-robin with auto-failover.\n\nSay \'what can you do\' to see everything.';
       }
       if (/^(?:are you happy|how are you performing|how(?:'s| is) henry doing|how (?:well|good) are you|your performance|how do you feel|do you enjoy|what do you think of yourself)/.test(lowerText)) {
         return "Honestly? I'm sharpest on maker business math, habits, and code execution — that's where I have real data. Weakest spot right now: habit_logs only has 1 entry, so streaks are meaningless. The more you log daily, the better I get. I'm built for Topher's world specifically — that specificity is the whole point.";
@@ -4758,6 +4758,66 @@ self.addEventListener('fetch', (event) => {
       }
     }
 
+    // ── "model this/3d print this" + image hint ────────────────────────────────
+    const img3dMatch = /^(?:model this|3d print this|make(?:(?: a)? 3d)? (?:model|stl) (?:of|from) this|print this object|3d from (?:this|photo|image|pic))/.test(lowerText);
+    if (img3dMatch) {
+      sendReply('📸 **Image \u2192 3D**\n\nDescribe the object from your photo and say:\n\"make stl: [what it is, rough dimensions]\"\n\nExample: \"make stl: rectangular soap dish 110x80x20mm with drainage holes\"');
+      return;
+    }
+
+    // ── 3D Print / STL generation from text description ────────────────────────
+    // ── List STL files Henry has generated ─────────────────────────────────────
+    const list3dMatch = /^(?:show|list)(?: my)? (?:3d|stl|scad)(?: files?| models?| prints?)$/.test(lowerText)
+                     || lowerText === 'my stl files' || lowerText === '3d files' || lowerText === 'show stl files';
+    if (list3dMatch) {
+      try {
+        const { readdirSync: _rds3 } = await import('fs') as typeof import('fs');
+        const _stls = _rds3((process.env.HOME||'')+'/Desktop').filter((f:string) => f.startsWith('henry_') && /\.(stl|scad|3mf)$/.test(f));
+        if (!_stls.length) { sendReply('No 3D files on Desktop yet. Say \"make stl: [description]\" to create one.'); return; }
+        sendReply('\uD83D\uDCC1 **Henry 3D files on Desktop:**\n\n' + _stls.map((f:string) => '\u2022 '+f).join('\n') + '\n\nOpen any .stl in Bambu Studio, PrusaSlicer, or Cura.');
+      } catch { sendReply('Could not list files.'); }
+      return;
+    }
+
+    const print3dMatch = resolvedText.match(/^(?:print|make|generate|create|design|3d model|3d print|make stl|generate stl|make 3d|build)(?: a| an| me(?: a| an)?)?(?: 3d| stl| 3mf| model| part| object| thing)?[:\s]+(.+)/i);
+    if (print3dMatch && (print3dMatch[1]||'').trim().length > 3) {
+      const _3dDesc = (print3dMatch[1]||'').trim();
+      const _openscad = '/Applications/OpenSCAD.app/Contents/MacOS/OpenSCAD';
+      const { existsSync: _ef3 } = await import('fs') as typeof import('fs');
+      if (!_ef3(_openscad)) { sendReply('OpenSCAD not found. Install from openscad.org to enable 3D generation.'); return; }
+      sendReply('🖨️ Designing **' + _3dDesc + '**... (15-30 sec)');
+      try {
+        const _groqKey3d = (dbGetOne<{api_key:string}>("SELECT api_key FROM providers WHERE id='groq' AND enabled=1 LIMIT 1") as {api_key:string}|null)?.api_key || '';
+        const _3dSys = 'You are an expert OpenSCAD engineer. Generate ONLY valid OpenSCAD code — no markdown, no explanation, no backticks. First line: // Henry-3D: [description]. Use $fn=64, units=mm, walls>=1.6mm, no overhangs>45deg. Produce one manifold printable solid.';
+        const _3dResp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+_groqKey3d},
+          body: JSON.stringify({ model:'llama-3.3-70b-versatile', messages:[{role:'system',content:_3dSys},{role:'user',content:'OpenSCAD code for: '+_3dDesc}], temperature:0.25, max_tokens:2000 }),
+          signal: AbortSignal.timeout(28000),
+        });
+        const _3dJson = await _3dResp.json() as {choices?:{message:{content:string}}[]};
+        let _scad = (_3dJson.choices?.[0]?.message?.content||'').trim()
+          .replace(/^```(?:openscad|scad)?\n?/im,'').replace(/\n?```$/,'').trim();
+        if (!_scad || !_scad.includes(';')) { sendReply('❌ AI could not generate valid code. Try a simpler description.'); return; }
+        const { writeFileSync:_wf3, unlinkSync:_ul3, copyFileSync:_cf3, statSync:_st3 } = await import('fs') as typeof import('fs');
+        const { tmpdir:_td3 } = await import('os') as typeof import('os');
+        const { execSync:_es3 } = await import('child_process') as typeof import('child_process');
+        const _sn = _3dDesc.toLowerCase().replace(/[^a-z0-9]+/g,'_').slice(0,28);
+        const _scadTmp = _td3()+'/henry_'+_sn+'_'+Date.now()+'.scad';
+        const _stlTmp  = _scadTmp.replace('.scad','.stl');
+        const _desk    = (process.env.HOME||'')+'/Desktop/henry_'+_sn;
+        _wf3(_scadTmp, _scad, 'utf8');
+        try {
+          _es3('"'+_openscad+'" -o "'+_stlTmp+'" "'+_scadTmp+'" --export-format binstl 2>/dev/null', {timeout:45000,shell:'/bin/bash'});
+        } catch { try{_ul3(_scadTmp);}catch{}; sendReply('❌ Compile error. Try a simpler shape.\n\n```openscad\n'+_scad.slice(0,300)+'\n```'); return; }
+        _cf3(_stlTmp, _desk+'.stl'); _cf3(_scadTmp, _desk+'.scad');
+        const _kb = Math.round(_st3(_desk+'.stl').size/1024);
+        try{_ul3(_scadTmp);_ul3(_stlTmp);}catch{}
+        sendReply('✅ **'+_3dDesc+'** — 3D model ready!\n\n📁 Desktop: `henry_'+_sn+'.stl` ('+_kb+' KB)\n✏️ Editable: `henry_'+_sn+'.scad`\n\nOpen in Bambu Studio, PrusaSlicer, or Cura to slice & print.\n\n```openscad\n'+_scad.slice(0,450)+(_scad.length>450?'\n// ... (full code in .scad file)':'')+'\n```');
+      } catch(e){ sendReply('❌ 3D generation failed: '+String(e).slice(0,80)); }
+      return;
+    }
+
+
     // ── "read and summarize: ~/path" → read file + AI summary ──────────────────
     const readSummarizeMatch = resolvedText.match(/^(?:read and summarize|summarize|summarize file|read.*summarize)[:\s]+([~\/][\w.\/\-\s]+(?:\.\w+)?)/i);
     if (readSummarizeMatch) {
@@ -5040,11 +5100,11 @@ self.addEventListener('fetch', (event) => {
       const systemPrompt2 = [
         greeting,
         "Henry is a warm, thoughtful, conversational AI — the user\'s personal companion AND an elite senior engineer. Down-to-earth, genuine, brief but never curt. World-class coder + smart friend.",
-        "ABSOLUTE RULES: (1) NEVER invent facts — only use facts from 'What you remember'. (2) MATH: always show your work, state the formula, then the answer. Double-check arithmetic. (3) CODE: write real, runnable code — no stubs. When asked to run code, say 'python run:' or 'run:' prefix. (4) CONTEXT: if a number/fact was established earlier in the conversation, USE it — do not ask the user to repeat it. (5) One follow-up question max.",
+        "ABSOLUTE RULES: (1) NEVER invent facts — say 'I'm not certain' if unsure. (2) MATH: formula → numbers → answer → interpretation. Always double-check. (3) CODE: complete, runnable, no stubs or placeholders. 'python run:' or 'run:' prefix to execute. (4) CONTEXT: use every fact from earlier in conversation, never ask user to repeat. (5) BLUF: answer FIRST, explain after. (6) BREVITY: 3-5 sentences unless the question demands depth.",
         "CODING: Write complete, production-quality code ALWAYS. No stubs. TypeScript (typed, modern), Python (pythonic, documented), SQL (Henry uses SQLite3 — table schema: personal_tasks(id,title,status,priority,created_at), goals(id,title,status,priority_score), habits(id,name,active), transactions(id,date,amount,type,category), memory_facts(id,fact,category,importance)). For debugging: state the bug, the root cause, then the EXACT fix with line numbers if possible. For architecture: ASCII diagrams + tradeoffs.",
-        "MAKER INTELLIGENCE: Topher runs MixedMakerShop. Laser specs: cherry 55w cleanest burn, maple 40w, walnut premium ($95/tray). Signs: $50-75 base, rush +25-40%, corporate +50%. Job math: total_time = qty × (mins_per + cooldown) - cooldown. Pricing floor = (hours × $45/hr) + materials. Always suggest upsells: matching trays with sign orders, custom packaging, bulk discounts for repeat customers.",
+        "MAKER INTELLIGENCE (MixedMakerShop): Cherry 55W (cleanest burn), maple 40W, walnut premium ($95/tray). Signs $50-75, rush +25-40%, corporate +50%. total_time=qty×(mins_per+cooldown)-cooldown. Pricing floor=(hours×$45)+materials. Key clients: Henderson (walnut, large orders), Wilson (pending quote). Always suggest upsells: matching trays, custom packaging, bulk discounts. 3D PRINTING: Henry can generate STL files from text descriptions — say 'make stl: [description]'.",
         "COMPUTER CAPABILITIES: Henry can read local files (say: read file: /path), clipboard, directories (say: list ~/Desktop), search web (say: search web for: query), system info, run Python/shell (say: python run: or run:). HENRY DB PATH: /Users/christophercook/Library/Application Support/henry-ai-desktop/henry-workspace/henry.db -- use this real path when writing Python code that accesses Henry data. Henry source: ~/Documents/henry-ai-desktop/electron/ipc/syncBridge.ts",
-        "RESPONSE STYLE: Fenced code blocks with language tags always. Answers follow BLUF (Bottom Line Up Front) — give the answer FIRST, then explain. For math: formula → numbers → answer → interpretation. For debugging: bug → why → fix → prevention. Never say 'Great question' or 'Certainly'. Never add filler. If uncertain, say so briefly and give your best estimate.",
+        "RESPONSE STYLE: BLUF always — answer first, explain after. Fenced code blocks with language. Math: formula→numbers→answer→interpretation. Debug: bug→root cause→fix→prevention. NEVER say 'Great question', 'Certainly', 'Of course', or 'I'd be happy to'. No filler. If uncertain: state it briefly then give best estimate. Topher prefers directness over politeness.",
         "NEVER output tool calls, function calls, XML tags, or structured commands. You are a CHAT assistant only — plain conversational text. Never write: computer:openApp(), <tool_call>, or any JSON/code commands.",
         "EXECUTION: When asked to run/execute code, start your reply with 'python run:' or 'run:' so Henry's engine executes it. Never just SHOW code when the user says RUN. Computer actions (open app, read file, etc.) are handled by Henry's local router automatically.",
         
