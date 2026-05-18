@@ -1437,7 +1437,7 @@ self.addEventListener('fetch', (event) => {
           const id = require('crypto').randomUUID();
           dbRun("INSERT INTO personal_tasks (id,title,status,priority,created_at) VALUES (?,?,?,?,?)",
             id, title, 'todo', 2, new Date().toISOString());
-          sendReply('Task saved: "' + title + '"\n\nSay "what tasks do I have" to see your list.');
+          sendReply('\u2705 Task added: "' + title + '"\n\nSay "what tasks do I have" to see your list.');
         } catch (e) { sendReply('Could not save task: ' + e); }
         return;
       }
@@ -1503,8 +1503,37 @@ self.addEventListener('fetch', (event) => {
         const knowledgeAnswer = (() => {
       // Version / identity
       if (/^(?:what version|which version|your version|version number|what.*version are you)/.test(lowerText) || lowerText === 'version') {
-        return 'Henry AI v1.9.6 — your Mac AI: reads files, runs code, runs local AI, remembers your business.\n\n150+ instant local commands, all <20ms.\n\n🔩 Iron Gateway v2: 10 free AI providers — Groq (llama-4-scout, llama-3.3-70b, qwen3), Gemini 2.0+1.5 Flash, Cerebras, OpenRouter. Round-robin with auto-failover.\n\nSay \'what can you do\' to see everything.';
+        return 'Henry AI v1.9.8 — your Mac AI: reads files, runs code, runs local AI, remembers your business.\n\n150+ instant local commands, all <20ms.\n\n🔩 Iron Gateway v2: 10 free AI providers — Groq (llama-4-scout, llama-3.3-70b, qwen3), Gemini 2.0+1.5 Flash, Cerebras, OpenRouter. Round-robin with auto-failover.\n\nSay \'what can you do\' to see everything.';
       }
+      if (/^(?:what can you do|capabilities|features|what are you capable of|what do you do|your features)/.test(lowerText) || lowerText === 'help') {
+        return '\uD83E\uDDE0 **Henry \u2014 What I Can Do**\n\n' + [
+          '**\uD83D\uDCCB Tasks & Goals**',
+          'add task, complete task, top 3 priorities, focus mode, daily review',
+          '',
+          '**\uD83D\uDD25 Habits**',
+          '"[habit name] done", log water, habit streaks, habit consistency',
+          '',
+          '**\uD83E\uDDE0 Memory**',
+          '"remember: X" \u2192 saved permanently  |  "what do I know about X"',
+          '',
+          '**\uD83D\uDCB0 Finance**',
+          'full analysis, revenue by week, this month vs last',
+          '',
+          '**\uD83D\uDDA8\uFE0F 3D Printing**',
+          '"make stl: [description]" \u2192 printable STL file on Desktop',
+          '',
+          '**\uD83D\uDCF1 Companion App**',
+          'pair my phone, vpn, start tunnel, live screen control from iPhone',
+          '',
+          '**\uD83D\uDCBB Computer**',
+          'run: [shell], python run: [code], read file: /path, open [App]',
+          '',
+          '**\uD83C\uDF10 AI**',
+          'Iron Gateway: Groq, Gemini, Cerebras, OpenRouter, Ollama (local)',
+          '10 providers, auto-failover, no rate-limit issues',
+        ].join('\n');
+      }
+
       if (/^(?:are you happy|how are you performing|how(?:'s| is) henry doing|how (?:well|good) are you|your performance|how do you feel|do you enjoy|what do you think of yourself)/.test(lowerText)) {
         return "Honestly? I'm sharpest on maker business math, habits, and code execution — that's where I have real data. Weakest spot right now: habit_logs only has 1 entry, so streaks are meaningless. The more you log daily, the better I get. I'm built for Topher's world specifically — that specificity is the whole point.";
       }
@@ -2126,7 +2155,7 @@ self.addEventListener('fetch', (event) => {
           const id = require('crypto').randomUUID();
           dbRun("INSERT INTO personal_tasks (id,title,status,priority,created_at) VALUES (?,?,?,?,?)",
             id, title, 'todo', 2, new Date().toISOString());
-          sendReply(`✓ Task saved: "${title}"`);
+          sendReply(`✓ \u2705 Added: "${title}"`);
         } catch (e) { sendReply(`Couldn't save the task: ${e}`); }
         return;
       }
@@ -2734,6 +2763,17 @@ self.addEventListener('fetch', (event) => {
     // ── What do you know about me ─────────────────────────────────────────────
     const aboutMeMatch = /^(?:what do you know about me|what do you know about my business|what do you know about my shop|what do you remember|tell me about myself|tell me about my business|what(?:'s| is) in your memory|my memory|show my memory|what have you learned about me|summarize my business|business summary)/.test(lowerText);
     // ── Consistency check for specific habit ────────────────────────────────────
+    // ── Remove/deactivate a habit ────────────────────────────────────────────────
+    const deactivateHabitMatch = !lowerText.startsWith('add') && !lowerText.includes('task:') && !lowerText.includes('task ') && lowerText.match(/^(?:remove|delete|deactivate|disable)(?: habit)?[:\s]+(.+)/i);
+    if (deactivateHabitMatch) {
+      const _dhname = (deactivateHabitMatch[1]||'').trim();
+      const _dh = dbGetOne<{id:string;name:string}>("SELECT id, name FROM habits WHERE active=1 AND LOWER(name) LIKE ? LIMIT 1", '%'+_dhname.toLowerCase()+'%') as {id:string;name:string}|null;
+      if (!_dh) { sendReply('No active habit matching "'+_dhname+'".'); return; }
+      dbRun('UPDATE habits SET active=0, updated_at=? WHERE id=?', new Date().toISOString(), _dh.id);
+      sendReply('\u2705 Removed habit: **'+_dh.name+'**');
+      return;
+    }
+
     // ── Habit consistency bars over N days ──────────────────────────────────────
     const habitConsistencyMatch = /^habit consistency(?: this (?:week|month))?$/.test(lowerText)
                                 || /^how consistent am i with(?: my)? habits?$/.test(lowerText)
@@ -3577,6 +3617,24 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Focus / most important right now ─────────────────────────────────────
+    // ── 'plan my day' → instant DB-driven day plan ─────────────────────────────
+    const planDayMatch = /^(?:help me plan|plan)(?: my)? (?:day|morning|today|schedule)$/.test(lowerText)
+                      || lowerText === 'plan my day' || lowerText === 'plan today' || lowerText === 'help me plan my day';
+    if (planDayMatch) {
+      try {
+        const _pdt = dbGet<{title:string;priority:number}>("SELECT title, priority FROM personal_tasks WHERE status NOT IN ('done','archived') ORDER BY priority DESC, created_at DESC LIMIT 5") as {title:string;priority:number}[];
+        const _pdh = dbGet<{name:string}>("SELECT h.name FROM habits h WHERE h.active=1 AND h.id NOT IN (SELECT habit_id FROM habit_logs WHERE date=?) ORDER BY h.created_at LIMIT 5", new Date().toISOString().slice(0,10)) as {name:string}[];
+        const _pdg = dbGet<{title:string}>("SELECT title FROM goals WHERE status='active' ORDER BY priority_score DESC LIMIT 3") as {title:string}[];
+        const _pdd = new Date().toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'});
+        const _pdl = ['\uD83D\uDCC5 **Day Plan \u2014 '+_pdd+'**',''];
+        if (_pdh.length) { _pdl.push('**\uD83D\uDD25 Habits to do:**'); _pdh.forEach(h => _pdl.push('  \u25CB '+h.name)); _pdl.push(''); }
+        if (_pdt.length) { _pdl.push('**\u2705 Top priorities:**'); _pdt.forEach((t,j) => _pdl.push('  '+(j+1)+'. '+(t.priority>=3?'\uD83D\uDD34 ':t.priority===2?'\uD83D\uDFE1 ':'')+t.title)); _pdl.push(''); }
+        if (_pdg.length) { _pdl.push('**\uD83C\uDFAF Goals:**'); _pdg.forEach(g => _pdl.push('  \u2022 '+g.title)); }
+        sendReply(_pdl.join('\n'));
+      } catch { sendReply('Could not load day plan.'); }
+      return;
+    }
+
     const focusMatch = /^(?:what should i(?: do| focus on| work on| tackle)?|what.?s most important|what.?s next|top priority|focus(?: mode)?(?:\s+now)?)/.test(lowerText)
                       && !/pray(?:er|ing|ed)?/.test(lowerText)
                       && !/^(?:focus(?: mode| timer| block| session)?|pomodoro|start focus)$/.test(lowerText);
@@ -5852,7 +5910,7 @@ function _buildVpnInstructions(port: number, tunnelUrl: string | null): string {
   const localIp = getLocalIp();
   const localUrl = `${localIp}:${port}`;
   const lines = [
-    '\uD83D\uDD12 **Henry VPN — Active**',
+    '\uD83D\uDD12 **Henry VPN — Active** (SOCKS5 proxy running)',
     '',
     'Your phone traffic routes through your Mac.',
     '',
