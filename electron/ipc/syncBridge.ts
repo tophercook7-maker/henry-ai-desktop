@@ -1355,9 +1355,10 @@ self.addEventListener('fetch', (event) => {
         { name: 'Gemini 2.0 Flash + 1.5 Flash', key: gemKey2 },
         { name: 'Cerebras (llama-4-scout)', key: cerKey2 },
         { name: 'OpenRouter (:free models)', key: orKey2 },
+        { name: 'Ollama (local qwen2.5-coder)', key: 'local-ollama' },
       ];
       for (const p of provStatus) {
-        const hasKey = p.key.length > 5;
+        const hasKey = p.key === 'local-ollama' || p.key.length > 5;
         // Check if any subprovider from this family is rate-limited
         const rlName = Object.keys(rlStore2).find(k => k.toLowerCase().includes(p.name.split('/')[0].toLowerCase()));
         const isRL = rlName && rlStore2[rlName] > now3;
@@ -1394,7 +1395,13 @@ self.addEventListener('fetch', (event) => {
         const knowledgeAnswer = (() => {
       // Version / identity
       if (/^(?:what version|which version|your version|version number|what.*version are you)/.test(lowerText) || lowerText === 'version') {
-        return 'Henry AI v1.8.1 — your Mac AI: reads files, runs code, remembers your business, manages your day.\n\n150+ instant local commands, all <20ms.\n\n🔩 Iron Gateway v2: 10 free AI providers — Groq (llama-4-scout, llama-3.3-70b, qwen3), Gemini 2.0+1.5 Flash, Cerebras, OpenRouter. Round-robin with auto-failover.\n\nSay \'what can you do\' to see everything.';
+        return 'Henry AI v1.8.8 — your Mac AI: reads files, runs code, runs local AI, remembers your business.\n\n150+ instant local commands, all <20ms.\n\n🔩 Iron Gateway v2: 10 free AI providers — Groq (llama-4-scout, llama-3.3-70b, qwen3), Gemini 2.0+1.5 Flash, Cerebras, OpenRouter. Round-robin with auto-failover.\n\nSay \'what can you do\' to see everything.';
+      }
+      if (/^(?:are you happy|how are you performing|how(?:'s| is) henry doing|how (?:well|good) are you|your performance|how do you feel|do you enjoy|what do you think of yourself)/.test(lowerText)) {
+        return "Honestly? I'm sharpest on maker business math, habits, and code execution — that's where I have real data. Weakest spot right now: habit_logs only has 1 entry, so streaks are meaningless. The more you log daily, the better I get. I'm built for Topher's world specifically — that specificity is the whole point.";
+      }
+      if (/^(?:what would make you smarter|how can you improve|what do you need to improve|how could you be better|your weaknesses|what(?:'s| is) missing from you|what are you missing)/.test(lowerText)) {
+        return "Three things: (1) More habit data — I only have 1 log entry, so streaks and patterns mean nothing yet. Log daily for a week and I can really advise you. (2) Client-tagged transactions — 'Henderson', 'Wilson' as categories would let me show real per-client revenue, not just totals. (3) Use me BEFORE decisions, not after — I reason better with context than in retrospect.";
       }
       if (/^(?:how does(?: henry'?s?)? iron gateway|explain iron gateway|what is iron gateway|iron gateway explained|how does.*ai.*work|what providers|which providers|what ai providers)/.test(lowerText)) {
         return '🔩 **Iron Gateway v2** — Henry\'s free AI engine:\n\n' +
@@ -1646,6 +1653,19 @@ self.addEventListener('fetch', (event) => {
       } catch { /* fall through to AI */ }
     }
 
+    // ── Companion phone setup / pairing ──────────────────────────────────────
+    const pairPhoneMatch = /^(?:pair|connect|setup|show|get)(?: my)?(?: phone| mobile| companion| device|iphone)(?: app)?$/.test(lowerText)
+                        || lowerText === 'companion' || lowerText === 'pair phone' || lowerText === 'my phone';
+    if (pairPhoneMatch) {
+      try {
+        const { execSync: _pn } = await import('child_process') as typeof import('child_process');
+        const _ip = _pn('ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null', { encoding:'utf8', shell:'/bin/bash', timeout:2000 }).trim();
+        const _url = 'http://' + (_ip || 'YOUR-MAC-IP') + ':4242/companion';
+        sendReply('📱 **Henry Companion Setup**\n\n1. Same WiFi as your Mac\n2. Open Safari on iPhone\n3. Go to: **' + _url + '**\n4. Share (□↑) → Add to Home Screen\n\nYour Mac IP: **' + _ip + '**');
+      } catch { sendReply('📱 Open Safari → http://YOUR-MAC-IP:4242/companion\nFind your IP: "what wifi am I on"'); }
+      return;
+    }
+
     // ── "open/show [henry panel]" → switch panel via SSE push ──────────────
     const HENRY_PANELS: Record<string,string> = {
       today:'today', journal:'journal', tasks:'tasks', goals:'goals', habits:'health',
@@ -1682,6 +1702,28 @@ self.addEventListener('fetch', (event) => {
 
     const xDoneBlocklist = /^(?:all|i'm|that's|good|mission|nothing|totally|almost|nearly|sign order|laser order|delivery|walnut sign|maple sign|signs? order|habits?|show habits?)/i;
     const xDoneResult = !xDoneBlocklist.test(lowerText) ? lowerText.match(/^(.{3,45}) done$/i) : null;
+    // ── Update task status: "update task: X to doing/done" ─────────────────────
+    const taskUpdateMatch2 = lowerText.match(/^(?:update|change|set|move)(?: task)?[:\s]+(.+?)\s+to\s+(doing|in progress|done|complete|completed|finished|todo|to do|pending)/i)
+                         || lowerText.match(/^(?:start working on|i(?:'m| am) working on|begin)[:\s]+(.+)/i);
+    if (taskUpdateMatch2) {
+      const _rawT2 = (taskUpdateMatch2[1] || '').trim();
+      const _rawS2 = (taskUpdateMatch2[2] || '').toLowerCase();
+      const _newS2 = lowerText.match(/start working|i'm? working|begin/i) ? 'doing' :
+                    _rawS2.includes('done') || _rawS2.includes('complete') || _rawS2.includes('finish') ? 'done' :
+                    _rawS2.includes('todo') || _rawS2.includes('pending') ? 'todo' : 'doing';
+      try {
+        const _ut2 = dbGetOne<{id:string;title:string}>(
+          "SELECT id, title FROM personal_tasks WHERE LOWER(title) LIKE ? AND status!='done' LIMIT 1",
+          '%' + _rawT2.toLowerCase() + '%'
+        ) as {id:string;title:string}|null;
+        if (!_ut2) { sendReply('No open task matching "' + _rawT2 + '". Say "status" to see tasks.'); return; }
+        dbRun("UPDATE personal_tasks SET status=?, updated_at=? WHERE id=?", _newS2, new Date().toISOString(), _ut2.id);
+        const _ue2 = _newS2 === 'done' ? '✅' : _newS2 === 'doing' ? '🔨' : '📋';
+        sendReply(_ue2 + ' **' + _ut2.title + '** → ' + _newS2);
+      } catch { sendReply('Could not update task.'); }
+      return;
+    }
+
     const completeTaskMatch = lowerText.match(/^(?:complete|finish|done|mark done|check off)(?: my)?(?: first| last| top)? task[:\s]*(.*)$/i)
                         || xDoneResult
                         || lowerText.match(/^(?:mark|complete|finish)(?: task)?[:\s]+(.+)(?: as)? done$/i)
@@ -2035,6 +2077,44 @@ self.addEventListener('fetch', (event) => {
       return;
     }
 
+    // ── Bulk delete/archive tasks by keyword ────────────────────────────────────
+    const bulkDeleteMatch = !/delete the duplicate/.test(lowerText) &&
+      (lowerText.match(/^(?:delete|remove|archive|clear)(?: all)? tasks?(?: that)?(?: with| containing| (?:named|called|titled))? ['"]?(.+?)['"]?(?: in (?:the )?title)?$/i)
+       || lowerText.match(/^(?:delete|remove|archive) tasks? (?:with|containing) ['"]?(.+?)['"]?$/i));
+    if (bulkDeleteMatch) {
+      const _kw = ((bulkDeleteMatch as RegExpMatchArray)[1] || '').trim().toLowerCase();
+      if (_kw.length > 0) {
+        try {
+          const _bm = dbGet<{id:string;title:string}>(
+            "SELECT id, title FROM personal_tasks WHERE LOWER(title) LIKE ? AND status!='done'",
+            '%' + _kw + '%'
+          ) as {id:string;title:string}[];
+          if (!_bm.length) { sendReply('No open tasks found containing "' + _kw + '"'); return; }
+          _bm.forEach(t => dbRun("UPDATE personal_tasks SET status='done', updated_at=? WHERE id=?", new Date().toISOString(), t.id));
+          const _preview = _bm.slice(0,5).map(t => '• ' + t.title).join('\n');
+          sendReply('🗑️ Archived ' + _bm.length + ' task' + (_bm.length>1?'s':'') + ' containing "' + _kw + '":\n\n' + _preview + (_bm.length>5 ? '\n• ... and ' + (_bm.length-5) + ' more' : ''));
+        } catch { sendReply('Could not delete tasks.'); }
+        return;
+      }
+    }
+
+    // ── "what's been delayed / stuck" — oldest open tasks by age ───────────────
+    const delayedLongestMatch = /^(?:what(?:'s| has)(?: been)? (?:delayed|stuck|stalled|sitting|waiting|pending)(?: the)? (?:longest|most|forever)|which tasks?(?: have)? been (?:open|waiting|pending) (?:the )?longest|oldest(?: open)? tasks?|most delayed)/.test(lowerText);
+    if (delayedLongestMatch) {
+      try {
+        const delayed = dbGet<{title:string;created_at:string}>(
+          "SELECT title, created_at FROM personal_tasks WHERE status!='done' ORDER BY created_at ASC LIMIT 8"
+        ) as {title:string;created_at:string}[];
+        if (!delayed.length) { sendReply('No open tasks.'); return; }
+        const lines = delayed.map(t => {
+          const days = Math.floor((Date.now()-new Date(t.created_at).getTime())/86400000);
+          return '• **' + t.title + '** — ' + days + ' days old';
+        });
+        sendReply('⏳ **Longest-waiting tasks:**\n\n' + lines.join('\n') + '\n\nSay "delete task: [title]" to clean up old ones.');
+      } catch { sendReply('Could not load delayed tasks.'); }
+      return;
+    }
+
     // ── Oldest / longest-open task ───────────────────────────────────────────
     const oldestTaskMatch = /^(?:what(?:'s| is)(?: my)? (?:oldest|longest.?open)|show(?: my)? oldest task|oldest(?: open)? task(?: i have)?|which task(?: is)? oldest|my oldest task)/.test(lowerText);
     if (oldestTaskMatch) {
@@ -2098,6 +2178,20 @@ self.addEventListener('fetch', (event) => {
 
     const highPriorityTasksMatch = /^(?:what|show|list)(?: tasks?)?(?: (?:are|my))?(?: high.priority| top priority| important| urgent| priority)(?: tasks?)?/.test(lowerText)
                                 || lowerText === "high priority" || lowerText === "priority tasks" || lowerText === "my priorities";
+    const noPriorityMatch = /^(?:show|list|what|find)(?: me)?(?: all| my)? tasks?(?: that)?(?: have| with)? (?:no|zero|0|without|missing)(?: (?:a |any ))? *priority(?: set)?/.test(lowerText)
+                        || /^tasks? (?:with|having) no priority/.test(lowerText)
+                        || lowerText === 'unprioritized tasks' || lowerText === 'tasks with no priority';
+    if (noPriorityMatch) {
+      try {
+        const np = dbGet<{title:string}>(
+          "SELECT title FROM personal_tasks WHERE status!='done' AND (priority IS NULL OR priority=0 OR priority=2) ORDER BY created_at DESC LIMIT 15"
+        ) as {title:string}[];
+        if (!np.length) { sendReply('All open tasks have priority set.'); return; }
+        sendReply('🔲 **Tasks with no priority set:** (' + np.length + ')\n\n' + np.map((t,i) => (i+1)+'. '+t.title).join('\n') + '\n\nSay "set task: [title] to high" to prioritize.');
+      } catch { sendReply('Could not load tasks.'); }
+      return;
+    }
+
     if (highPriorityTasksMatch) {
       try {
         const tasks = dbGet<{title:string;priority:number}>(
@@ -2966,6 +3060,26 @@ self.addEventListener('fetch', (event) => {
     // ── Maker Studio: profit / jobs ──────────────────────────────────────────
     // ── Show expenses ──────────────────────────────────────────────────────────
     // ── Show all transactions this month ────────────────────────────────────
+    // ── "average job size" / "avg revenue per job" — local SQL ─────────────────
+    const avgJobMatch = /^(?:what(?:'?s| is)(?: my)? average (?:job|order|transaction|sale|invoice)(?: size| value)?|avg(?:erage)?(?:job| job|order|transaction|invoice)|average (?:job|ticket|deal|order|transaction) (?:size|value)|my average (?:job|order|transaction)(?: size)?)/.test(lowerText)
+                     || /^how much (?:do I|does each|is each)(?: job| order| transaction| sale)? (?:average|avg|typically|usually)(?: bring in| make| cost| pay)?/.test(lowerText);
+    if (avgJobMatch) {
+      try {
+        const month5 = new Date().toISOString().slice(0,7);
+        const incomeAvg = dbGetOne<{avg:number;count:number}>(
+          "SELECT AVG(amount) as avg, COUNT(*) as count FROM transactions WHERE type='income'"
+        ) as {avg:number;count:number}|null;
+        const monthAvg = dbGetOne<{avg:number}>(
+          "SELECT AVG(amount) as avg FROM transactions WHERE type='income' AND strftime('%Y-%m',date)=?"
+          , month5) as {avg:number}|null;
+        const biggest = dbGetOne<{amount:number;category:string}>(
+          "SELECT amount, category FROM transactions WHERE type='income' ORDER BY amount DESC LIMIT 1"
+        ) as {amount:number;category:string}|null;
+        sendReply('📊 **Job/Transaction Sizes:**\n\nAll-time avg: **$' + (incomeAvg?.avg||0).toFixed(0) + '** (' + (incomeAvg?.count||0) + ' jobs)\nThis month avg: **$' + (monthAvg?.avg||0).toFixed(0) + '**\nLargest single job: **$' + (biggest?.amount||0).toFixed(0) + '** — ' + (biggest?.category||'unknown'));
+      } catch { sendReply('Could not load job analytics.'); }
+      return;
+    }
+
     // ── Financial analytics — local SQL ──────────────────────────────────────
     const financeAnalyticsMatch = lowerText.match(/^(?:average|avg)(?: transaction| order| sale)?(?: size|value|amount)?$/)
                                 || /^(?:most expensive|biggest|largest)(?: purchase| expense| transaction| spend)(?: this month| ever)?/.test(lowerText)
@@ -3190,7 +3304,8 @@ self.addEventListener('fetch', (event) => {
 
     // ── Focus / most important right now ─────────────────────────────────────
     const focusMatch = /^(?:what should i(?: do| focus on| work on| tackle)?|what.?s most important|what.?s next|top priority|focus(?: mode)?(?:\s+now)?)/.test(lowerText)
-                      && !/pray(?:er|ing|ed)?/.test(lowerText);
+                      && !/pray(?:er|ing|ed)?/.test(lowerText)
+                      && !/^(?:focus(?: mode| timer| block| session)?|pomodoro|start focus)$/.test(lowerText);
     if (focusMatch) {
       try {
         const today = new Date().toISOString().slice(0,10);
@@ -3551,8 +3666,90 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── End of day summary ───────────────────────────────────────────────────
+    // ── Focus timer / Pomodoro ────────────────────────────────────────────────
+    const pomoMatch = /^(?:focus(?: mode| timer| block| session)?|pomodoro|start (?:a )?focus|help me focus|i need to focus)$/.test(lowerText);
+    if (pomoMatch) {
+      const _mins = lowerText.match(/(\d+)\s*(?:min|minute)/)?.[1] || '25';
+      const _topTask = dbGetOne<{title:string}>(
+        "SELECT title FROM personal_tasks WHERE status!='done' ORDER BY priority DESC, created_at DESC LIMIT 1"
+      ) as {title:string}|null;
+      const _focusTask = _topTask?.title || 'your top priority task';
+      sendReply('🎯 **Focus Mode: ' + _mins + ' minutes**\n\nTask: **' + _focusTask + '**\n\n1. Close Slack, email, social\n2. Work ONLY on this task\n3. Come back after ' + _mins + ' min\n\n_Started at ' + new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'}) + '_\n\nSay \'done\' when finished.');
+      return;
+    }
+
     const eodMatch = /^(?:end of day|eod|day summary|daily summary|wrap up|wrap up my day|wrap it up|pack it in|clock out|sign off|logging off|done for today|calling it a day|what did i do today|what did i accomplish today|what have i done today|how did my day go|good night|goodnight|heading to bed|time for bed|going to bed|i'm done for the day|i am done for the day|i'm heading to bed|im heading to bed|heading to bed|evening|night|calling it|that's a wrap)/.test(lowerText)
                   || lowerText === 'evening' || lowerText === 'night' || lowerText === "i'm calling it" || lowerText === 'wrap it up' || lowerText === 'pack it in' || lowerText === 'clock out';
+    // ── Weekly accomplishment summary ─────────────────────────────────────────
+    const weekAccomplishMatch = /^(?:what(?: did| have) i(?: accomplished?| done| completed?| finished?)(?:(?: this)?(?:(?: the)?)? week| this week| this month)?|(?:what(?:'?s| is) my)? (?:weekly|week)? (?:summary|accomplishment|progress|wins?))/.test(lowerText)
+                              || lowerText === 'week summary' || lowerText === 'what did I do this week';
+    if (weekAccomplishMatch) {
+      try {
+        const done = dbGet<{title:string;updated_at:string}>(
+          "SELECT title, updated_at FROM personal_tasks WHERE status='done' AND updated_at >= date('now','-7 days') ORDER BY updated_at DESC LIMIT 10"
+        ) as {title:string;updated_at:string}[];
+        const incomeWeek = (dbGetOne<{n:number}>("SELECT COALESCE(SUM(amount),0) as n FROM transactions WHERE type='income' AND date >= date('now','-7 days')") as {n:number}|null)?.n||0;
+        const habitsWeek = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM habit_logs WHERE date >= date('now','-7 days')") as {n:number}|null)?.n||0;
+        const goalsAdded = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM goals WHERE created_at >= date('now','-7 days')") as {n:number}|null)?.n||0;
+        const lines = ['📅 **This week:**', ''];
+        if (done.length) { lines.push('✅ **Tasks completed:** ' + done.length); done.slice(0,5).forEach(t => lines.push('  • ' + t.title)); }
+        else lines.push('✅ Tasks completed: 0');
+        if (incomeWeek > 0) lines.push('\n💰 Revenue logged: $' + incomeWeek.toFixed(0));
+        lines.push('🔥 Habit check-ins: ' + habitsWeek);
+        if (goalsAdded > 0) lines.push('🎯 New goals set: ' + goalsAdded);
+        if (done.length === 0 && incomeWeek === 0) lines.push('\n💡 Log your accomplishments with "delivery done" or "customer paid $X" to track your week.');
+        sendReply(lines.join('\n'));
+      } catch { sendReply('Could not load weekly accomplishments.'); }
+      return;
+    }
+
+    // ── Generate weekly report email ────────────────────────────────────────────
+    const weeklyEmailMatch = /^(?:generate|write|create|draft)(?: a| me a)?(?: weekly| week)? (?:report|summary|update|email|recap)(?: email)?/.test(lowerText)
+                           || lowerText === 'weekly report email' || lowerText === 'business report email';
+    if (weeklyEmailMatch) {
+      try {
+        const month5 = new Date().toISOString().slice(0,7);
+        const week7  = "date('now','-7 days')";
+        const income  = (dbGetOne<{n:number}>("SELECT COALESCE(SUM(amount),0) as n FROM transactions WHERE type='income' AND date>="+week7) as {n:number}|null)?.n||0;
+        const expenses= (dbGetOne<{n:number}>("SELECT COALESCE(SUM(amount),0) as n FROM transactions WHERE type='expense' AND date>="+week7) as {n:number}|null)?.n||0;
+        const doneWk  = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM personal_tasks WHERE status='done' AND updated_at>="+week7) as {n:number}|null)?.n||0;
+        const openWk  = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM personal_tasks WHERE status!='done'") as {n:number}|null)?.n||0;
+        const habWk   = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM habit_logs WHERE date>="+week7) as {n:number}|null)?.n||0;
+        const topGoal = dbGetOne<{title:string}>("SELECT title FROM goals WHERE status='active' ORDER BY priority_score DESC LIMIT 1") as {title:string}|null;
+        const now = new Date(); const ds = now.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
+        const email = [
+          'Subject: MixedMakerShop — Weekly Update (' + ds + ')',
+          '',
+          'Hi [Client/Team],',
+          '',
+          'Quick update on MixedMakerShop for the week:',
+          '',
+          '💰 REVENUE',
+          '  Income this week:   $' + income.toFixed(0),
+          '  Expenses this week: $' + expenses.toFixed(0),
+          '  Net:                $' + (income-expenses).toFixed(0),
+          '',
+          '✅ WORK COMPLETED',
+          '  Tasks finished: ' + doneWk,
+          '  Open tasks remaining: ' + openWk,
+          '',
+          '🔥 HABITS',
+          '  Check-ins logged this week: ' + habWk,
+          '',
+          '🎯 TOP FOCUS',
+          '  ' + (topGoal?.title || 'No active goals set'),
+          '',
+          'Best,',
+          'Topher Cook — MixedMakerShop',
+        ].join('\n');
+        const filePath = (process.env.HOME||'') + '/Desktop/henry_weekly_report_' + now.toISOString().slice(0,10) + '.txt';
+        const { writeFileSync: _wfe } = await import('fs') as typeof import('fs');
+        _wfe(filePath, email, 'utf8');
+        sendReply('📧 **Weekly report saved to Desktop:**\n\`henry_weekly_report_' + now.toISOString().slice(0,10) + '.txt\`\n\n' + email.slice(0,500));
+      } catch { sendReply('Could not generate report.'); }
+      return;
+    }
+
     if (eodMatch) {
       try {
         const today = new Date().toISOString().slice(0,10);
@@ -4245,6 +4442,22 @@ self.addEventListener('fetch', (event) => {
       }
     }
 
+    // ── "read and summarize: ~/path" → read file + AI summary ──────────────────
+    const readSummarizeMatch = resolvedText.match(/^(?:read and summarize|summarize|summarize file|read.*summarize)[:\s]+([~\/][\w.\/\-\s]+(?:\.\w+)?)/i);
+    if (readSummarizeMatch) {
+      const _rsp = (readSummarizeMatch[1]||'').trim().replace(/["']/g,'');
+      const _rse = _rsp.startsWith('~') ? _rsp.replace('~', process.env.HOME||'') : _rsp;
+      try {
+        const { readFileSync: _rsf2, statSync: _ss2 } = await import('fs') as typeof import('fs');
+        const _stat2 = _ss2(_rse);
+        if (_stat2.size > 200000) { sendReply('File too large to summarize (>200KB). Try a smaller file.'); return; }
+        const _content2 = _rsf2(_rse, 'utf8');
+        // Inject into resolvedText for AI summarization
+        resolvedText = 'Summarize this file concisely with key points and action items:\n\nFile: ' + _rse.split('/').pop() + '\n\n' + _content2.slice(0, 8000);
+        // Fall through to AI
+      } catch (e: any) { sendReply('Cannot read: ' + _rse + '\n' + (e.message||e)); return; }
+    }
+
     const readFileMx = resolvedText.match(/^(?:read|show|open|cat|view|explain|analyze|debug)(?: (?:file|the file))?[:\s]+([~\/][\w.\/\s\-~]+(?:\.\w+)?)/i);
     if (readFileMx) {
       const rp = (readFileMx[1] || '').trim().replace(/["']/g,'');
@@ -4431,7 +4644,10 @@ self.addEventListener('fetch', (event) => {
           path: '/api/v1/chat/completions', model: 'google/gemma-3-27b-it:free', key: openrouterKey },
         { name: 'OpenRouter/deepseek-r1', hostname: 'openrouter.ai',
           path: '/api/v1/chat/completions', model: 'deepseek/deepseek-r1:free', key: openrouterKey },
-      ].filter(p => p.key.length > 5); // Only include providers with valid keys
+        // Ollama (local — always available when running)
+        { name: 'Ollama/qwen2.5-coder', hostname: '127.0.0.1',
+          path: '/api/chat', model: 'qwen2.5-coder:7b', key: 'local-ollama' },
+      ].filter(p => p.key.length > 4); // Only include providers with valid keys
 
       if (providers.length === 0) {
         sendReply('No AI providers configured. Add a Groq API key in Settings.');
@@ -4547,6 +4763,24 @@ self.addEventListener('fetch', (event) => {
 
         const prov = availableProviders[idx];
         const isGemini = prov.hostname.includes('generativelanguage');
+        const isOllama = prov.key === 'local-ollama';
+        if (isOllama) {
+          const _oMsgs = messages2.map((m: any) => ({ role: m.role, content: m.content }));
+          fetch('http://127.0.0.1:11434/api/chat', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model: prov.model, messages: _oMsgs, stream: false, options: { temperature: 0.4, num_predict: 1200 } }),
+            signal: AbortSignal.timeout(30000)
+          })
+          .then(r => r.ok ? r.json() as Promise<{ message?: { content?: string } }> : Promise.reject(r.status))
+          .then((od: { message?: { content?: string } }) => {
+            const ot = od.message?.content?.trim();
+            if (ot && ot.length > 0) finishReply(ot);
+            else tryProvider(idx + 1);
+          })
+          .catch(() => tryProvider(idx + 1));
+          return;
+        }
+
 
         // Build request body based on provider
         let postBody2: string;

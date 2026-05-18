@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import ReactMarkdown from 'react-markdown';
 import hljs from 'highlight.js';
 import type { Message } from '../../types';
 
@@ -120,8 +119,49 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
   );
 }
 
-const markdownComponents: React.ComponentProps<typeof ReactMarkdown>['components'] = {
-  code(props) {
+// Simple markdown renderer — no external deps
+function HenryMarkdown({ content }: { content: string }) {
+  // Split by code blocks first
+  const parts = content.split(/(```[\s\S]*?```)/);
+  return (
+    <div className="henry-md">
+      {parts.map((part, i) => {
+        if (part.startsWith('```')) {
+          const lines = part.slice(3).split('\n');
+          const lang = lines[0].trim() || 'text';
+          const code = lines.slice(1).join('\n').replace(/```$/, '').trim();
+          return (
+            <pre key={i} className="bg-gray-900 rounded p-3 my-2 overflow-x-auto text-xs font-mono">
+              <code>{code}</code>
+            </pre>
+          );
+        }
+        // Inline rendering: bold, italic, headers
+        return (
+          <div key={i} style={{whiteSpace:'pre-wrap',wordBreak:'break-word'}}>
+            {part.split('\n').map((line, j) => {
+              if (line.startsWith('### ')) return <h3 key={j} className="font-bold text-sm mt-2">{line.slice(4)}</h3>;
+              if (line.startsWith('## '))  return <h2 key={j} className="font-bold text-base mt-2">{line.slice(3)}</h2>;
+              if (line.startsWith('# '))   return <h1 key={j} className="font-bold text-lg mt-2">{line.slice(2)}</h1>;
+              if (line.startsWith('• ') || line.startsWith('- ') || line.startsWith('* ')) {
+                return <div key={j} className="ml-3">{'• ' + line.slice(2)}</div>;
+              }
+              if (/^\d+\.\s/.test(line)) return <div key={j} className="ml-3">{line}</div>;
+              // Inline bold **text** and *italic*
+              const rendered = line.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                                   .replace(/\*(.+?)\*/g, '<em>$1</em>')
+                                   .replace(/`(.+?)`/g, '<code class="bg-gray-800 px-1 rounded text-xs font-mono">$1</code>');
+              return <p key={j} dangerouslySetInnerHTML={{ __html: rendered || '&nbsp;' }} />;
+            })}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+const _markdownComponents_unused = {
+  code(props: { children?: React.ReactNode; className?: string }) {
     const { children, className } = props as { children?: React.ReactNode; className?: string };
     const raw = String(children ?? '').replace(/\n$/, '');
     const langMatch = /^language-(\w+)/.exec(className || '');
@@ -135,10 +175,10 @@ const markdownComponents: React.ComponentProps<typeof ReactMarkdown>['components
     }
     return <CodeBlock language={langMatch?.[1] || ''} code={raw} />;
   },
-  pre(props) {
+  pre(props: { children?: React.ReactNode }) {
     return <>{props.children}</>;
   },
-  a(props) {
+  a(props: { children?: React.ReactNode; href?: string }) {
     return (
       <a
         href={props.href}
@@ -151,6 +191,7 @@ const markdownComponents: React.ComponentProps<typeof ReactMarkdown>['components
     );
   },
 };
+
 
 function formatTime(iso: string): string {
   try {
@@ -233,7 +274,7 @@ export default function MessageBubble({
           {isUser ? (
             <p className="whitespace-pre-wrap">{content}</p>
           ) : content ? (
-            <ReactMarkdown components={markdownComponents}>{content}</ReactMarkdown>
+            <HenryMarkdown content={content} />
           ) : isStreaming ? (
             <p className="text-henry-text-muted text-sm italic">Thinking…</p>
           ) : null}
