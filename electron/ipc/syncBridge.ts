@@ -1510,7 +1510,7 @@ self.addEventListener('fetch', (event) => {
         const knowledgeAnswer = (() => {
       // Version / identity
       if (/^(?:what version|which version|your version|version number|what.*version are you)/.test(lowerText) || lowerText === 'version') {
-        return 'Henry AI v1.9.1 — your Mac AI: reads files, runs code, runs local AI, remembers your business.\n\n150+ instant local commands, all <20ms.\n\n🔩 Iron Gateway v2: 10 free AI providers — Groq (llama-4-scout, llama-3.3-70b, qwen3), Gemini 2.0+1.5 Flash, Cerebras, OpenRouter. Round-robin with auto-failover.\n\nSay \'what can you do\' to see everything.';
+        return 'Henry AI v1.9.3 — your Mac AI: reads files, runs code, runs local AI, remembers your business.\n\n150+ instant local commands, all <20ms.\n\n🔩 Iron Gateway v2: 10 free AI providers — Groq (llama-4-scout, llama-3.3-70b, qwen3), Gemini 2.0+1.5 Flash, Cerebras, OpenRouter. Round-robin with auto-failover.\n\nSay \'what can you do\' to see everything.';
       }
       if (/^(?:are you happy|how are you performing|how(?:'s| is) henry doing|how (?:well|good) are you|your performance|how do you feel|do you enjoy|what do you think of yourself)/.test(lowerText)) {
         return "Honestly? I'm sharpest on maker business math, habits, and code execution — that's where I have real data. Weakest spot right now: habit_logs only has 1 entry, so streaks are meaningless. The more you log daily, the better I get. I'm built for Topher's world specifically — that specificity is the whole point.";
@@ -2721,6 +2721,34 @@ self.addEventListener('fetch', (event) => {
     // ── What do you know about me ─────────────────────────────────────────────
     const aboutMeMatch = /^(?:what do you know about me|what do you know about my business|what do you know about my shop|what do you remember|tell me about myself|tell me about my business|what(?:'s| is) in your memory|my memory|show my memory|what have you learned about me|summarize my business|business summary)/.test(lowerText);
     // ── Consistency check for specific habit ────────────────────────────────────
+    // ── Habit consistency bars over N days ──────────────────────────────────────
+    const habitConsistencyMatch = /^habit consistency(?: this (?:week|month))?$/.test(lowerText)
+                                || /^how consistent am i with(?: my)? habits?$/.test(lowerText)
+                                || /^(?:show|what(?:'?s| is))(?: my)? habit consistency/.test(lowerText)
+                                || /^habit consistency over(?: the)? (?:last )?\d+ days?$/.test(lowerText);
+    if (habitConsistencyMatch) {
+      const _hcmDaysRx = lowerText.match(/(\d+)\s*day/);
+      const _hcmDays = _hcmDaysRx ? parseInt(_hcmDaysRx[1]) : lowerText.includes('month') ? 30 : 7;
+      try {
+        const _hcmHabits = dbGet<{id:string;name:string;icon:string}>(
+          "SELECT id, name, icon FROM habits WHERE active=1 LIMIT 14"
+        ) as {id:string;name:string;icon:string}[];
+        if (!_hcmHabits.length) { sendReply('No active habits tracked yet.'); return; }
+        const _hcmFromD = new Date(); _hcmFromD.setDate(_hcmFromD.getDate() - _hcmDays);
+        const _hcmFrom = _hcmFromD.toISOString().slice(0,10);
+        const _hcmLines = _hcmHabits.map(hab => {
+          const _lg = (dbGetOne<{n:number}>("SELECT COUNT(DISTINCT date) as n FROM habit_logs WHERE habit_id=? AND date>=?", hab.id, _hcmFrom) as {n:number}|null)?.n||0;
+          const _p = Math.round(_lg/_hcmDays*100);
+          const _filled = Math.round(_p/10);
+          const _bar = String.fromCodePoint(0x2593).repeat(_filled) + String.fromCodePoint(0x2591).repeat(10-_filled);
+          const _g = _p>=90?'A':_p>=70?'B':_p>=50?'C':_p>=30?'D':'F';
+          return _bar + ' ' + _g + ' ' + _p + '%  ' + (hab.icon||'') + ' ' + hab.name;
+        });
+        sendReply('\uD83D\uDCCA **Habit consistency (last ' + _hcmDays + ' days):**\n\n' + _hcmLines.join('\n'));
+      } catch { sendReply('Could not load habit data.'); }
+      return;
+    }
+
     const worstBestHabitMatch = /^(?:which|what)(?: habit| one)(?: am i)?(?: (?:worst|weakest|missing|skipping|failing|least consistent|best|strongest|most consistent)(?: at| with| on)?)/.test(lowerText)
                               || /^(?:my (?:worst|best|weakest|strongest|most consistent|least consistent) habit)/.test(lowerText);
     if (worstBestHabitMatch) {
@@ -2878,7 +2906,7 @@ self.addEventListener('fetch', (event) => {
     }
 
     const searchMemoryMatch = lowerText.match(/^(?:what did i (?:note|write|say|record|save) about|find.*note.*about|search.*memory.*for|what do you know about|what do i know about|tell me what you know about|what.?s in memory about)\s+(.+)/i)
-                              || lowerText.match(/^(?:show|list)(?: all)?(?: my)?\s+(laser|client|habit|business|general)\s+(?:settings?|facts?|notes?|info)?/i)
+                              || lowerText.match(/^(?:show|list)(?: all)?(?: my)?\s+(laser|client|business|general)\s+(?:settings?|facts?|notes?|info)?/i)
                               || lowerText.match(/^what\s+(laser|client|habit|business)\s+(?:settings?|facts?)\s+do i (?:have|know)/i);
     if (searchMemoryMatch) {
       const keyword = searchMemoryMatch[1].trim().toLowerCase();
