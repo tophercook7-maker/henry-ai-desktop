@@ -1395,7 +1395,7 @@ self.addEventListener('fetch', (event) => {
         const knowledgeAnswer = (() => {
       // Version / identity
       if (/^(?:what version|which version|your version|version number|what.*version are you)/.test(lowerText) || lowerText === 'version') {
-        return 'Henry AI v1.8.8 — your Mac AI: reads files, runs code, runs local AI, remembers your business.\n\n150+ instant local commands, all <20ms.\n\n🔩 Iron Gateway v2: 10 free AI providers — Groq (llama-4-scout, llama-3.3-70b, qwen3), Gemini 2.0+1.5 Flash, Cerebras, OpenRouter. Round-robin with auto-failover.\n\nSay \'what can you do\' to see everything.';
+        return 'Henry AI v1.9.0 — your Mac AI: reads files, runs code, runs local AI, remembers your business.\n\n150+ instant local commands, all <20ms.\n\n🔩 Iron Gateway v2: 10 free AI providers — Groq (llama-4-scout, llama-3.3-70b, qwen3), Gemini 2.0+1.5 Flash, Cerebras, OpenRouter. Round-robin with auto-failover.\n\nSay \'what can you do\' to see everything.';
       }
       if (/^(?:are you happy|how are you performing|how(?:'s| is) henry doing|how (?:well|good) are you|your performance|how do you feel|do you enjoy|what do you think of yourself)/.test(lowerText)) {
         return "Honestly? I'm sharpest on maker business math, habits, and code execution — that's where I have real data. Weakest spot right now: habit_logs only has 1 entry, so streaks are meaningless. The more you log daily, the better I get. I'm built for Topher's world specifically — that specificity is the whole point.";
@@ -2098,6 +2098,19 @@ self.addEventListener('fetch', (event) => {
       }
     }
 
+    // ── "who do I owe a follow up" → follow-up tasks ────────────────────────────
+    const followupMatch = /^(?:who(?: do i| should i)? (?:owe|need to|should) (?:a |to )?follow.?up(?: to)?|what follow.?ups do i have|show.*follow.?ups?|pending follow.?ups?)/i.test(lowerText);
+    if (followupMatch) {
+      try {
+        const fups = dbGet<{title:string;updated_at:string}>(
+          "SELECT title, updated_at FROM personal_tasks WHERE status!='done' AND (LOWER(title) LIKE '%follow%' OR LOWER(title) LIKE '%call%' OR LOWER(title) LIKE '%email%' OR LOWER(title) LIKE '%contact%' OR LOWER(title) LIKE '%reach out%' OR LOWER(title) LIKE '%check in%') ORDER BY priority DESC, created_at ASC LIMIT 10"
+        ) as {title:string;updated_at:string}[];
+        if (!fups.length) { sendReply('No follow-up tasks found. Add one: "add task: follow up with X"'); return; }
+        sendReply('📞 **Follow-ups needed:**\n\n' + fups.map((t,i) => (i+1)+'. '+t.title).join('\n'));
+      } catch { sendReply('Could not load follow-ups.'); }
+      return;
+    }
+
     // ── "what's been delayed / stuck" — oldest open tasks by age ───────────────
     const delayedLongestMatch = /^(?:what(?:'s| has)(?: been)? (?:delayed|stuck|stalled|sitting|waiting|pending)(?: the)? (?:longest|most|forever)|which tasks?(?: have)? been (?:open|waiting|pending) (?:the )?longest|oldest(?: open)? tasks?|most delayed)/.test(lowerText);
     if (delayedLongestMatch) {
@@ -2730,13 +2743,15 @@ self.addEventListener('fetch', (event) => {
       return;
     }
 
-    const searchMemoryMatch = lowerText.match(/^(?:what did i (?:note|write|say|record|save) about|find.*note.*about|search.*memory.*for|what do you know about)\s+(.+)/i);
+    const searchMemoryMatch = lowerText.match(/^(?:what did i (?:note|write|say|record|save) about|find.*note.*about|search.*memory.*for|what do you know about|what do i know about|tell me what you know about|what.?s in memory about)\s+(.+)/i);
     if (searchMemoryMatch) {
       const keyword = searchMemoryMatch[1].trim().toLowerCase();
       try {
         const results = dbGet<{fact:string;category:string}>(
-          "SELECT fact, category FROM memory_facts WHERE LOWER(fact) LIKE ? ORDER BY importance DESC, created_at DESC LIMIT 5",
-          '%' + keyword + '%'
+          "SELECT fact, category FROM memory_facts WHERE LOWER(fact) LIKE ? OR LOWER(category) LIKE ? OR LOWER(category) = ? ORDER BY importance DESC, created_at DESC LIMIT 10",
+          '%' + keyword + '%', '%' + keyword + '%',
+          // Map common topics to category names
+          (/laser|dpi|watt|burn|engrav|setting/i.test(keyword) ? 'laser' : /client|customer|hendersone|wilson/i.test(keyword) ? 'client' : /habit|exercise|pray|water/i.test(keyword) ? 'habit' : keyword)
         ) as {fact:string;category:string}[];
         if (!results.length) {
           sendReply('Nothing in memory about "' + keyword + '". Say "remember that I [fact]" to save something.');
@@ -3100,6 +3115,24 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Best customer / revenue analytics ──────────────────────────────────
+    // ── 'has X paid' / 'did X pay' → check transactions ────────────────────────
+    const paymentCheckMatch = lowerText.match(/^(?:has|did) (.+?) (?:paid?|sent?|paid me|paid yet|sent payment|settled)(?: yet| up)?$/i)
+                           || lowerText.match(/^(?:check if|confirm) (.+?) (?:paid?|sent payment)/i);
+    if (paymentCheckMatch) {
+      const _cname = (paymentCheckMatch[1] || '').trim().toLowerCase();
+      try {
+        const _pmts = dbGet<{date:string;amount:number;category:string}>(
+          "SELECT date, amount, category FROM transactions WHERE type='income' AND (LOWER(category) LIKE ? OR LOWER(category) LIKE ?) ORDER BY date DESC LIMIT 5",
+          '%' + _cname + '%', '%' + _cname.split(' ')[0] + '%'
+        ) as {date:string;amount:number;category:string}[];
+        if (!_pmts.length) { sendReply('No payments recorded from **' + _cname + '** yet.\nLog one: "charged ' + _cname + ' $X"'); return; }
+        const _ptotal = _pmts.reduce((s,p) => s+p.amount, 0);
+        const _plines = _pmts.map(p => '• $' + p.amount.toFixed(0) + ' — ' + p.date.slice(0,10));
+        sendReply('💰 Payments from **' + _cname + '**:\n\n' + _plines.join('\n') + '\n\nTotal: **$' + _ptotal.toFixed(0) + '**');
+      } catch { sendReply('Could not check payments.'); }
+      return;
+    }
+
     const bestCustomerMatch = /^(?:who(?:'s| is)(?: my)?|show me my) (?:best|top|biggest) customer/.test(lowerText)
                             || /^(?:top|best) customers? this month/.test(lowerText);
     if (bestCustomerMatch) {
@@ -3210,6 +3243,31 @@ self.addEventListener('fetch', (event) => {
         const totalAll = weeks.reduce((s,w) => s + w.total, 0);
         sendReply('Revenue by week:\n\n' + weeks.map(w => w.label + ': $' + w.total.toFixed(2)).join('\n') + '\n\nTotal (4 weeks): $' + totalAll.toFixed(2));
       } catch { sendReply('Could not load weekly revenue.'); }
+      return;
+    }
+
+    // ── Daily review → combined DB snapshot ─────────────────────────────────────
+    const dailyReviewMatch = /^(?:daily review|day review|review my day|end of day review|morning review|how(?:'?s| is) my day|check in|daily check.?in)/.test(lowerText);
+    if (dailyReviewMatch) {
+      try {
+        const today = new Date().toISOString().slice(0,10);
+        const habitsToday = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM habit_logs WHERE date=?", today) as {n:number}|null)?.n||0;
+        const totalHabits = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM habits WHERE active=1") as {n:number}|null)?.n||0;
+        const tasksDoneToday = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM personal_tasks WHERE status='done' AND date(updated_at)=?", today) as {n:number}|null)?.n||0;
+        const inProgress = (dbGetOne<{n:number}>("SELECT COUNT(*) as n FROM personal_tasks WHERE status='doing'") as {n:number}|null)?.n||0;
+        const revenueToday = (dbGetOne<{n:number}>("SELECT COALESCE(SUM(amount),0) as n FROM transactions WHERE type='income' AND date=?", today) as {n:number}|null)?.n||0;
+        const topTask = dbGetOne<{title:string}>("SELECT title FROM personal_tasks WHERE status='todo' ORDER BY priority DESC, created_at DESC LIMIT 1") as {title:string}|null;
+        const timeNow = new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
+        const report = [
+          '📋 **Daily Review — ' + timeNow + '**', '',
+          '🔥 Habits: **' + habitsToday + '/' + totalHabits + '** done today',
+          '✅ Tasks completed today: **' + tasksDoneToday + '**',
+          inProgress ? '🔨 In progress: **' + inProgress + '** task(s)' : '',
+          revenueToday > 0 ? '💰 Revenue today: **$' + revenueToday.toFixed(0) + '**' : '',
+          topTask ? '\n▶️ Top priority: **' + topTask.title + '**' : '',
+        ].filter(Boolean);
+        sendReply(report.join('\n'));
+      } catch { sendReply('Could not load daily review.'); }
       return;
     }
 
@@ -3472,6 +3530,27 @@ self.addEventListener('fetch', (event) => {
             sendReply('⏰ Reminder: "' + content + '"');
           }
         } catch (e) { sendReply('Could not save: ' + e); }
+        return;
+      }
+    }
+
+    // ── "remember: X" / "remember that X" → save to memory_facts ─────────────
+    const rememberSaveMatch = lowerText.match(/^(?:remember(?: that| this)?|save this fact|store this|note this down|keep this in mind)[:\s]+(.+)/i)
+                           || lowerText.match(/^(?:i want you to remember|don'?t forget)[:\s]+(.+)/i);
+    if (rememberSaveMatch) {
+      const fact = (rememberSaveMatch[1] || '').trim();
+      if (fact.length > 2) {
+        try {
+          const id5 = require('crypto').randomUUID();
+          // Auto-detect category from content
+          const _cat = /dpi|watt|laser|material|wood|cherry|walnut|maple|engrav/i.test(fact) ? 'laser' :
+                       /client|customer|henderson|wilson|paid|owes|job|order/i.test(fact) ? 'client' :
+                       /habit|exercise|prayer|bible|water|run/i.test(fact) ? 'habit' :
+                       /price|cost|rate|dollar|revenue|income/i.test(fact) ? 'business' : 'general';
+          dbRun("INSERT INTO memory_facts (id,fact,category,importance,created_at) VALUES (?,?,?,?,?)",
+            id5, fact, _cat, 3, new Date().toISOString());
+          sendReply('🧠 Saved to memory: "' + fact + '" _(category: ' + _cat + ')_');
+        } catch { sendReply('Could not save to memory.'); }
         return;
       }
     }
