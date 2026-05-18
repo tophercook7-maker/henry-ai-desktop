@@ -1,4 +1,5 @@
 import { buildCompanionHtml } from './companionHtml';
+import { startProxy, stopProxy, getProxyPort, isProxyRunning } from './proxyServer';
 
 // ── Per-session conversation memory (last 6 turns per device) ────────────────
 const __henryCtx__: Map<string, {role:string;content:string}[]> = new Map();
@@ -904,7 +905,7 @@ self.addEventListener('fetch', (event) => {
       const pkg = require('../../package.json') as { version?: string };
       appVersion = pkg.version || appVersion;
     } catch { /* ignore */ }
-    jsonResponse(res, 200, { ok: true, version: appVersion, paired: !!validateToken(req) });
+    jsonResponse(res, 200, { ok: true, version: appVersion, paired: !!validateToken(req), tunnelUrl: _tunnelUrl || null, proxyPort: isProxyRunning() ? getProxyPort() : 0 });
     return;
   }
 
@@ -3978,6 +3979,51 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── End of day summary ───────────────────────────────────────────────────
+    // ── VPN / Proxy commands ─────────────────────────────────────────────────────
+    const vpnMatch = /^(?:(?:start|enable|connect)(?: to)?(?: my)? (?:vpn|proxy|socks5?)|vpn on|proxy on|route (?:my )?(?:phone|iphone|traffic) through (?:mac|henry)|henry vpn)/.test(lowerText)
+                  || lowerText === 'vpn' || lowerText === 'start vpn' || lowerText === 'enable vpn' || lowerText === 'proxy status';
+    if (vpnMatch) {
+      const _pp = getProxyPort();
+      const _tu = getTunnelUrl();
+      const _proxyOk = isProxyRunning();
+      if (!_proxyOk) {
+        startProxy(1080).then(pp => {
+          const _tu2 = getTunnelUrl();
+          sendReply(_buildVpnInstructions(pp, _tu2));
+        }).catch(() => sendReply('Could not start proxy. Restart Henry and try again.'));
+      } else {
+        sendReply(_buildVpnInstructions(_pp, _tu));
+      }
+      return;
+    }
+    // ── Add-ons status — show what's bundled vs what needs installing ────────────
+    const addonsMatch = /^(?:henry )?(?:addons?|add-ons?|tools?|dependencies|what(?:(?: does)? henry need| is installed)|install addons?|check (?:tools|addons?|installs?))/.test(lowerText);
+    if (addonsMatch) {
+      const { existsSync: _aef } = await import('fs') as typeof import('fs');
+      const checks = [
+        { name: 'cloudflared (tunnel)',  path: CLOUDFLARED_BIN,  note: 'Remote companion access' },
+        { name: 'openscad (3D print)',   path: OPENSCAD_BIN,     note: 'STL/3D model generation' },
+        { name: 'python3',               path: '/Library/Frameworks/Python.framework/Versions/3.14/bin/python3', note: 'Code execution' },
+        { name: 'ffmpeg',               path: '/opt/homebrew/bin/ffmpeg', note: 'Audio/video (optional)' },
+      ];
+      const lines = checks.map(ch => {
+        const found = _aef(ch.path);
+        return (found ? '\u2705' : '\u274C') + ' **' + ch.name + '** — ' + (found ? 'bundled/installed' : 'not found') + '  _(' + ch.note + ')_';
+      });
+      lines.push('');
+      lines.push('SOCKS5 Proxy: ' + (isProxyRunning() ? '\uD83D\uDFE2 running on port ' + getProxyPort() : '\uD83D\uDD34 stopped'));
+      lines.push('Tunnel: ' + (_tunnelUrl ? '\uD83D\uDFE2 ' + _tunnelUrl : '\uD83D\uDD34 not running'));
+      sendReply('\u{1F9F0} **Henry Add-ons Status**\n\n' + lines.join('\n'));
+      return;
+    }
+
+    const vpnOffMatch = /^(?:stop|disable|off)(?: the)?(?: vpn| proxy|socks)/.test(lowerText) || lowerText === 'vpn off' || lowerText === 'stop vpn';
+    if (vpnOffMatch) {
+      stopProxy();
+      sendReply('🔌 VPN proxy stopped. Your phone no longer routes through your Mac.');
+      return;
+    }
+
     // ── Tunnel management commands ───────────────────────────────────────────────
     const tunnelCmdMatch = /^(?:start|enable|open|create) (?:tunnel|remote|public url|cloudflare)/.test(lowerText)
                         || lowerText === 'tunnel' || lowerText === 'start tunnel' || lowerText === 'remote access';
@@ -4853,9 +4899,7 @@ self.addEventListener('fetch', (event) => {
     const print3dMatch = resolvedText.match(/^(?:print|make|generate|create|design|3d model|3d print|make stl|generate stl|make 3d|build)(?: a| an| me(?: a| an)?)?(?: 3d| stl| 3mf| model| part| object| thing)?[:\s]+(.+)/i);
     if (print3dMatch && (print3dMatch[1]||'').trim().length > 3) {
       const _3dDesc = (print3dMatch[1]||'').trim();
-      const _openscad = '/Applications/OpenSCAD.app/Contents/MacOS/OpenSCAD';
-      const { existsSync: _ef3 } = await import('fs') as typeof import('fs');
-      if (!_ef3(_openscad)) { sendReply('OpenSCAD not found. Install from openscad.org to enable 3D generation.'); return; }
+      const _openscad = OPENSCAD_BIN;
       sendReply('🖨️ Designing **' + _3dDesc + '**... (15-30 sec)');
       try {
         const _groqKey3d = (dbGetOne<{api_key:string}>("SELECT api_key FROM providers WHERE id='groq' AND enabled=1 LIMIT 1") as {api_key:string}|null)?.api_key || '';
@@ -5772,6 +5816,69 @@ async function getDesktopStatus(): Promise<DesktopStatus> {
 
 // ── Public API (called from main.ts) ──────────────────────────────────────
 
+// ── Bundled binary resolver ──────────────────────────────────────────────────
+function getBundledBin(name: string, fallbacks: string[] = []): string {
+  const { existsSync } = require('fs') as typeof import('fs');
+  const { app } = require('electron') as typeof import('electron');
+  // 1. Check inside the installed Electron app's Resources/bin/
+  try {
+    const resourcePath = app.isPackaged
+      ? require('path').join(process.resourcesPath, 'bin', name)
+      : require('path').join(__dirname, '../../resources/bin', name);
+    if (existsSync(resourcePath)) return resourcePath;
+  } catch {}
+  // 2. Check common fallback paths
+  for (const fb of fallbacks) {
+    if (existsSync(fb)) return fb;
+  }
+  // 3. Return the name and hope it's on PATH
+  return name;
+}
+
+// Resolve bundled binaries once at startup
+const CLOUDFLARED_BIN = getBundledBin('cloudflared', [
+  '/opt/homebrew/bin/cloudflared', '/usr/local/bin/cloudflared'
+]);
+const OPENSCAD_BIN = getBundledBin('openscad', [
+  '/Applications/OpenSCAD.app/Contents/MacOS/OpenSCAD',
+  '/usr/local/bin/openscad'
+]);
+
+console.log('[Henry] cloudflared:', CLOUDFLARED_BIN);
+console.log('[Henry] openscad:', OPENSCAD_BIN);
+
+// ── VPN instruction builder ──────────────────────────────────────────────────
+function _buildVpnInstructions(port: number, tunnelUrl: string | null): string {
+  const localIp = getLocalIp();
+  const localUrl = `${localIp}:${port}`;
+  const lines = [
+    '\uD83D\uDD12 **Henry VPN — Active**',
+    '',
+    'Your phone traffic routes through your Mac.',
+    '',
+  ];
+  if (tunnelUrl) {
+    // Extract hostname from tunnel URL for proxy config
+    const tuHost = tunnelUrl.replace('https://', '').replace('http://', '').replace('/', '');
+    lines.push('**Setup (any WiFi or cellular):**');
+    lines.push('1. iPhone → Settings → WiFi → tap your network → Configure Proxy');
+    lines.push('2. Select **Manual**');
+    lines.push('3. Server: `' + tuHost + '`  Port: `80`');
+    lines.push('');
+    lines.push('_Note: Cloudflare quick tunnels only forward HTTP. For full VPN, use home WiFi:_');
+    lines.push('');
+  }
+  lines.push('**Setup (home WiFi — full traffic routing):**');
+  lines.push('1. iPhone → Settings → WiFi → tap your network name');
+  lines.push('2. Scroll down → Configure Proxy → **Manual**');
+  lines.push('3. Server: `' + localIp + '`  Port: `' + port + '`');
+  lines.push('4. Leave Authentication blank → tap Save');
+  lines.push('');
+  lines.push('All your phone traffic now exits through your Mac IP.');
+  lines.push('Say "stop vpn" to disconnect.');
+  return lines.join('\n');
+}
+
 // ── Remote tunnel (cloudflared) ─────────────────────────────────────────────
 let _tunnelProc: import('child_process').ChildProcess | null = null;
 let _tunnelUrl: string | null = null;
@@ -5786,8 +5893,7 @@ async function startTunnel(port: number): Promise<void> {
     const { spawn } = await import('child_process') as typeof import('child_process');
     const { existsSync } = await import('fs') as typeof import('fs');
     // Find cloudflared
-    const cf = ['/opt/homebrew/bin/cloudflared', '/usr/local/bin/cloudflared', 'cloudflared']
-      .find(p => { try { return existsSync(p) || !p.includes('/'); } catch { return false; } }) || 'cloudflared';
+    const cf = CLOUDFLARED_BIN;
     
     _tunnelProc = spawn(cf, ['tunnel', '--url', `http://localhost:${port}`, '--no-autoupdate'], {
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -5836,6 +5942,11 @@ export function startSyncServer(port = 4242): SyncServerState {
     loadCompanionTokens(); // Restore tokens from previous session
     // Auto-start cloudflare tunnel for remote companion access
     startTunnel(port).catch(() => {});
+    // Auto-start SOCKS5 proxy for VPN/routing
+    startProxy(1080).then(pp => {
+      console.log(`[Henry] SOCKS5 proxy on port ${pp}`);
+      pushToAll({ type: 'proxy', payload: { port: pp }, id: '', timestamp: Date.now() } as any);
+    }).catch(() => {});
   });
 
   server.on('error', (err) => {
@@ -5849,6 +5960,8 @@ export function stopSyncServer(): void {
   server?.close();
   server = null;
   sseClients = [];
+  stopProxy();
+  stopTunnel();
   console.log('[SyncBridge] Sync server stopped');
 }
 

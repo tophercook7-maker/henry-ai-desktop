@@ -328,6 +328,24 @@ html,body{height:100%;height:100dvh;min-height:100dvh;background:var(--bg);color
     <!-- CONTROL -->
     <div class="pane" id="p-ctrl">
       <div id="ctrl-pane">
+        <!-- VPN/Proxy section -->
+        <div class="ctrl-sec" style="color:#a78bfa">Henry VPN</div>
+        <div style="padding:0 14px 12px;font-size:13px;color:var(--muted);line-height:1.6">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <span>Proxy:</span>
+            <span id="vpn-status" style="color:var(--muted);font-family:monospace;font-size:12px">checking...</span>
+            <button onclick="henryVPN()" style="margin-left:auto;background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:5px 12px;font-size:12px;cursor:pointer">Enable</button>
+            <button onclick="henryVPNOff()" style="background:var(--s2);color:var(--muted);border:1px solid var(--border);border-radius:8px;padding:5px 10px;font-size:12px;cursor:pointer">Stop</button>
+          </div>
+          <div id="vpn-instructions" style="display:none;background:var(--s2);border-radius:8px;padding:10px;margin-top:6px;font-size:12px;line-height:1.8">
+            <b>iPhone Setup:</b><br>
+            Settings → WiFi → [your network] → ⓘ<br>
+            Configure Proxy → <b>Manual</b><br>
+            Server: <code id="vpn-server">—</code><br>
+            Port: <code id="vpn-port">—</code><br>
+            <button onclick="document.getElementById('vpn-instructions').style.display='none'" style="margin-top:8px;background:none;border:none;color:var(--muted);cursor:pointer;font-size:11px">dismiss</button>
+          </div>
+        </div>
         <div class="ctrl-sec">Quick Launch</div>
         <div class="app-grid" id="app-grid"></div>
 
@@ -512,6 +530,23 @@ window.addEventListener('load', async () => {
   setTimeout(screenAttachTouch, 500);
   checkConn();
   setInterval(checkConn, 10000);
+  // Check proxy status on load
+  fetch(BASE + '/sync/health', {cache:'no-store'})
+    .then(r => r.json())
+    .then(d => {
+      const pp = d.proxyPort;
+      const st = document.getElementById('vpn-status');
+      if (st) st.textContent = pp ? 'SOCKS5 :' + pp : 'not running';
+      if (st && pp) st.style.color = '#22c55e';
+      const tu = d.tunnelUrl;
+      if (tu) {
+        window.__HENRY_TUNNEL__ = tu;
+        const el = document.getElementById('tunnel-url-display');
+        const banner = document.getElementById('tunnel-banner');
+        if (el) { el.textContent = tu + '/'; el.setAttribute('href', tu + '/'); }
+        if (banner) banner.style.display = 'block';
+      }
+    }).catch(() => {});
 
   // ── IRONCLAD: Wake Lock — prevent screen sleep ──────────────────────────────
   let _wakeLock = null;
@@ -1142,6 +1177,42 @@ function screenAttachTouch() {
 }
 
 // ── Mac keyboard shortcuts from companion ────────────────────────────────────
+function henryVPN() {
+  sendPrompt('vpn');
+  // Get current connection info and show instructions
+  fetch(BASE + '/sync/health', {cache:'no-store'})
+    .then(r => r.json())
+    .then(d => {
+      const port = d.proxyPort || 1080;
+      const ip = window.location.hostname !== '127.0.0.1' ? window.location.hostname : null;
+      const tunnel = d.tunnelUrl;
+      const el = document.getElementById('vpn-instructions');
+      const srv = document.getElementById('vpn-server');
+      const prt = document.getElementById('vpn-port');
+      const st = document.getElementById('vpn-status');
+      if (el && srv && prt && st) {
+        if (tunnel) {
+          srv.textContent = tunnel.replace('https://','').replace('/','');
+          prt.textContent = '80';
+        } else if (ip) {
+          srv.textContent = ip;
+          prt.textContent = String(port);
+        } else {
+          srv.textContent = 'your-mac-local-ip';
+          prt.textContent = String(port);
+        }
+        el.style.display = 'block';
+        if (port) { st.textContent = 'SOCKS5 :' + port; st.style.color = '#22c55e'; }
+      }
+    }).catch(() => {});
+}
+function henryVPNOff() {
+  sendPrompt('stop vpn');
+  const el = document.getElementById('vpn-status');
+  if (el) { el.textContent = 'stopped'; el.style.color = 'var(--muted)'; }
+  document.getElementById('vpn-instructions') && (document.getElementById('vpn-instructions').style.display='none');
+}
+
 function macKey(key, mods) {
   fetch(BASE + '/companion/key', {
     method:'POST', headers:{'Content-Type':'application/json'},
