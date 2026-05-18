@@ -1781,6 +1781,30 @@ self.addEventListener('fetch', (event) => {
       return;
     }
 
+    // ── "open Finder/Chrome/Terminal" → launch app ─────────────────────────────
+    const _knownApps: Record<string,string> = {
+      'finder':'Finder','chrome':'Google Chrome','safari':'Safari',
+      'terminal':'Terminal','vscode':'Visual Studio Code','code':'Visual Studio Code',
+      'slack':'Slack','zoom':'Zoom','mail':'Mail','calendar':'Calendar',
+      'notes':'Notes','spotify':'Spotify','music':'Music','photos':'Photos',
+      'xcode':'Xcode','cursor':'Cursor','arc':'Arc','brave':'Brave Browser',
+      'activity monitor':'Activity Monitor','calculator':'Calculator',
+      'messages':'Messages','facetime':'FaceTime','system settings':'System Settings',
+    };
+    const _appLaunchMatch = lowerText.match(/^(?:open|launch|start)(?: the| app)?\s+(.+)/i);
+    if (_appLaunchMatch) {
+      const _appReq = (_appLaunchMatch[1]||'').trim().toLowerCase();
+      const _appKey = Object.keys(_knownApps).find(k => _appReq.includes(k));
+      if (_appKey) {
+        try {
+          const { execSync: _eal } = await import('child_process') as typeof import('child_process');
+          _eal('open -a "' + _knownApps[_appKey] + '"', { timeout: 3000 });
+          sendReply('🚀 Opened **' + _knownApps[_appKey] + '**');
+        } catch { sendReply('Could not open ' + _knownApps[_appKey] + '. Is it installed?'); }
+        return;
+      }
+    }
+
     // ── "open/show [henry panel]" → switch panel via SSE push ──────────────
     const HENRY_PANELS: Record<string,string> = {
       today:'today', journal:'journal', tasks:'tasks', goals:'goals', habits:'health',
@@ -1790,7 +1814,8 @@ self.addEventListener('fetch', (event) => {
       'task panel':'tasks', 'goal panel':'goals', 'journal panel':'journal',
     };
     const panelSwitchM = lowerText.match(/^(?:open|go to|show me?|switch to|navigate to|take me to)(?: (?:the|my|henry))?\s+([\w\s]{2,20})(?:\s+panel|\s+tab|\s+view)?$/i);
-    if (panelSwitchM) {
+    const _panelNames = ['today','journal','finance','goals','settings','tasks','habits','memory','chat','home'];
+    if (panelSwitchM && _panelNames.some(p => panelSwitchM[1].toLowerCase().includes(p))) {
       const hint = (panelSwitchM[1] || '').trim().toLowerCase();
       const panelKey = HENRY_PANELS[hint];
       if (panelKey) {
@@ -2696,8 +2721,6 @@ self.addEventListener('fetch', (event) => {
     // ── What do you know about me ─────────────────────────────────────────────
     const aboutMeMatch = /^(?:what do you know about me|what do you know about my business|what do you know about my shop|what do you remember|tell me about myself|tell me about my business|what(?:'s| is) in your memory|my memory|show my memory|what have you learned about me|summarize my business|business summary)/.test(lowerText);
     // ── Consistency check for specific habit ────────────────────────────────────
-    const habitConsistencyMatch = lowerText.match(/^(?:am i consistent(?: at| with)?|how consistent(?: am i)?(?: at| with)?|consistency(?: for| at| with)?) (.+?)(?:\s+habit)?$/i)
-                                || lowerText.match(/^(?:how(?:'?m i| am i) doing(?: with| at| on)) (.+?)(?:\s+habit)?$/i);
     const worstBestHabitMatch = /^(?:which|what)(?: habit| one)(?: am i)?(?: (?:worst|weakest|missing|skipping|failing|least consistent|best|strongest|most consistent)(?: at| with| on)?)/.test(lowerText)
                               || /^(?:my (?:worst|best|weakest|strongest|most consistent|least consistent) habit)/.test(lowerText);
     if (worstBestHabitMatch) {
@@ -2718,33 +2741,6 @@ self.addEventListener('fetch', (event) => {
       return;
     }
 
-    if (habitConsistencyMatch) {
-      const habitHint = (habitConsistencyMatch[1]||'').trim().toLowerCase();
-      try {
-        const habit = dbGetOne<{id:string;name:string}>(
-          "SELECT id, name FROM habits WHERE LOWER(name) LIKE ? AND active=1 LIMIT 1",
-          '%' + habitHint + '%'
-        ) as {id:string;name:string}|null;
-        if (!habit) { sendReply('No habit found matching "' + habitHint + '". Say "show habits" to see your list.'); return; }
-        const logs = dbGet<{date:string}>(
-          "SELECT date FROM habit_logs WHERE habit_id=? ORDER BY date DESC LIMIT 90",
-          habit.id
-        ) as {date:string}[];
-        const dateSet = new Set(logs.map(l => l.date));
-        // Current streak
-        let streak = 0; const d = new Date();
-        while (dateSet.has(d.toISOString().slice(0,10))) { streak++; d.setDate(d.getDate()-1); }
-        // Last 7 days rate
-        let last7 = 0;
-        for (let i = 0; i < 7; i++) { const dd = new Date(); dd.setDate(dd.getDate()-i); if (dateSet.has(dd.toISOString().slice(0,10))) last7++; }
-        // Last 30 days rate
-        let last30 = 0;
-        for (let i = 0; i < 30; i++) { const dd = new Date(); dd.setDate(dd.getDate()-i); if (dateSet.has(dd.toISOString().slice(0,10))) last30++; }
-        const grade = last7 >= 6 ? 'A 🏆' : last7 >= 4 ? 'B 👍' : last7 >= 2 ? 'C 📈' : 'D — needs work';
-        sendReply('🔥 **' + habit.name + '** consistency:\n\nCurrent streak: **' + streak + '** days\n7-day rate: **' + last7 + '/7** (' + Math.round(last7/7*100) + '%)\n30-day rate: **' + last30 + '/30** (' + Math.round(last30/30*100) + '%)\nGrade: **' + grade + '**');
-      } catch { sendReply('Could not load habit consistency.'); }
-      return;
-    }
 
     if (aboutMeMatch) {
       try {
@@ -2881,7 +2877,9 @@ self.addEventListener('fetch', (event) => {
       return;
     }
 
-    const searchMemoryMatch = lowerText.match(/^(?:what did i (?:note|write|say|record|save) about|find.*note.*about|search.*memory.*for|what do you know about|what do i know about|tell me what you know about|what.?s in memory about)\s+(.+)/i);
+    const searchMemoryMatch = lowerText.match(/^(?:what did i (?:note|write|say|record|save) about|find.*note.*about|search.*memory.*for|what do you know about|what do i know about|tell me what you know about|what.?s in memory about)\s+(.+)/i)
+                              || lowerText.match(/^(?:show|list)(?: all)?(?: my)?\s+(laser|client|habit|business|general)\s+(?:settings?|facts?|notes?|info)?/i)
+                              || lowerText.match(/^what\s+(laser|client|habit|business)\s+(?:settings?|facts?)\s+do i (?:have|know)/i);
     if (searchMemoryMatch) {
       const keyword = searchMemoryMatch[1].trim().toLowerCase();
       try {
@@ -3362,6 +3360,25 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Revenue by week breakdown ──────────────────────────────────────────────
+    // ── Revenue month-vs-month ──────────────────────────────────────────────────
+    const revenueVsLastMonthMatch = /^(?:what(?:'?s| is)(?: my)? revenue this month vs last|month.?(?:over|vs|versus).?month|compare this month|mom revenue|this month vs last)/.test(lowerText);
+    if (revenueVsLastMonthMatch) {
+      try {
+        const _nm  = new Date().toISOString().slice(0,7);
+        const _pd  = new Date(); _pd.setMonth(_pd.getMonth()-1);
+        const _pm  = _pd.toISOString().slice(0,7);
+        const _ti  = (dbGetOne<{n:number}>("SELECT COALESCE(SUM(amount),0) as n FROM transactions WHERE type='income'  AND strftime('%Y-%m',date)=?", _nm) as {n:number}|null)?.n||0;
+        const _te  = (dbGetOne<{n:number}>("SELECT COALESCE(SUM(amount),0) as n FROM transactions WHERE type='expense' AND strftime('%Y-%m',date)=?", _nm) as {n:number}|null)?.n||0;
+        const _pi  = (dbGetOne<{n:number}>("SELECT COALESCE(SUM(amount),0) as n FROM transactions WHERE type='income'  AND strftime('%Y-%m',date)=?", _pm) as {n:number}|null)?.n||0;
+        const _pe  = (dbGetOne<{n:number}>("SELECT COALESCE(SUM(amount),0) as n FROM transactions WHERE type='expense' AND strftime('%Y-%m',date)=?", _pm) as {n:number}|null)?.n||0;
+        const _d = _ti - _pi;
+        const _pct = _pi > 0 ? Math.round(_d/_pi*100) : 0;
+        const _arr = _d > 0 ? '📈 +' : _d < 0 ? '📉 ' : '➡️ ';
+        sendReply('📅 **Month vs Month**\n\n**' + _pm + ':** $' + _pi.toFixed(0) + ' in / $' + _pe.toFixed(0) + ' out\n**' + _nm + ':** $' + _ti.toFixed(0) + ' in / $' + _te.toFixed(0) + ' out\n\n' + _arr + '$' + Math.abs(_d).toFixed(0) + ' (' + (_d>0?'+':'') + _pct + '%) vs last month');
+      } catch { sendReply('Could not load monthly data.'); }
+      return;
+    }
+
     const weeklyRevMatch = /^(?:show|what(?:'s| is)?|break(?:down)?)(?: my)? (?:revenue|income|earnings?)(?: by week| this week| weekly| each week| per week)?$/.test(lowerText)
                         || lowerText === 'weekly revenue' || lowerText === 'revenue by week' || lowerText === 'weekly breakdown';
     if (weeklyRevMatch) {
@@ -3958,6 +3975,21 @@ self.addEventListener('fetch', (event) => {
       return;
     }
 
+    // ── "clean up tasks" / "archive done tasks" ─────────────────────────────────
+    const taskCleanupMatch = /^(?:clean up|cleanup|archive|clear)(?: all)?(?: my)?(?: done| completed?| finished?)?(?: tasks?)?$/.test(lowerText)
+                          || lowerText === 'archive done' || lowerText === 'clear done tasks';
+    if (taskCleanupMatch) {
+      try {
+        const _cdone = dbGet<{id:string;title:string}>(
+          "SELECT id, title FROM personal_tasks WHERE status='done'"
+        ) as {id:string;title:string}[];
+        if (!_cdone.length) { sendReply('No completed tasks to archive.'); return; }
+        _cdone.forEach(t => dbRun("UPDATE personal_tasks SET status='archived', updated_at=? WHERE id=?", new Date().toISOString(), t.id));
+        sendReply('🗑️ Archived **' + _cdone.length + '** completed task' + (_cdone.length>1?'s':'') + '. Task list is clean.');
+      } catch { sendReply('Could not archive tasks.'); }
+      return;
+    }
+
     // ── Generate weekly report email ────────────────────────────────────────────
     const weeklyEmailMatch = /^(?:generate|write|create|draft)(?: a| me a)?(?: weekly| week)? (?:report|summary|update|email|recap)(?: email)?/.test(lowerText)
                            || lowerText === 'weekly report email' || lowerText === 'business report email';
@@ -4026,8 +4058,9 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Add a new habit ────────────────────────────────────────────────────────
-    const addHabitMatch = lowerText.match(/^(?:add|create|new)(?: a)? habit[:\s]+(.+)/i)
-                       || lowerText.match(/^habit[:\s]+(.+)/i);
+    const _habitKW = /^(?:consistency|streak|log|stats?|count|check|track|report|today|done|summary|show|list)/.test(lowerText.replace(/^habit[:\s]+/i,'').trim());
+    const addHabitMatch = !_habitKW && (lowerText.match(/^(?:add|create|new)(?: a)? habit[:\s]+(.+)/i)
+                       || lowerText.match(/^habit[:\s]+(.+)/i));
     if (addHabitMatch) {
       const name = addHabitMatch[1].trim();
       if (name.length > 1) {
