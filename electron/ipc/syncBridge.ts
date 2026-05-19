@@ -1503,7 +1503,7 @@ self.addEventListener('fetch', (event) => {
         const knowledgeAnswer = (() => {
       // Version / identity
       if (/^(?:what version|which version|your version|version number|what.*version are you)/.test(lowerText) || lowerText === 'version') {
-        return 'Henry AI v1.9.8 — your Mac AI: reads files, runs code, runs local AI, remembers your business.\n\n150+ instant local commands, all <20ms.\n\n🔩 Iron Gateway v2: 10 free AI providers — Groq (llama-4-scout, llama-3.3-70b, qwen3), Gemini 2.0+1.5 Flash, Cerebras, OpenRouter. Round-robin with auto-failover.\n\nSay \'what can you do\' to see everything.';
+        return 'Henry AI v2.0.0 — your Mac AI: reads files, runs code, runs local AI, remembers your business.\n\n150+ instant local commands, all <20ms.\n\n🔩 Iron Gateway v2: 10 free AI providers — Groq (llama-4-scout, llama-3.3-70b, qwen3), Gemini 2.0+1.5 Flash, Cerebras, OpenRouter. Round-robin with auto-failover.\n\nSay \'what can you do\' to see everything.';
       }
       if (/^(?:what can you do|capabilities|features|what are you capable of|what do you do|your features)/.test(lowerText) || lowerText === 'help') {
         return '\uD83E\uDDE0 **Henry \u2014 What I Can Do**\n\n' + [
@@ -1690,7 +1690,7 @@ self.addEventListener('fetch', (event) => {
                              || /^(?:i (?:prayed|exercised|ran|jogged|walked|meditated|journaled|drank|read (?:my )?bible))/i.test(lowerText);
       const habitWordDone = /^(?:prayer(?:ed)?|bible|exercise(?:d)?|journal(?:ed)?|water|run|jog|walk)(?: done| today)?$/i.test(lowerText);
       const _hasDoneWord = /(?:done|complete[d]?|check(?:ed)?|finish(?:ed)?|logg?(?:ed)?)$/.test(lowerText.trim());
-      if ((hasHKW || naturalHabitDone) && (/^(?:mark|done|check|finish|complete|log)/.test(lowerText) || naturalHabitDone || habitWordDone || _hasDoneWord)) {
+      if (!lowerText.match(/^(?:add|create|new)(?: a)? habit/i) && (hasHKW || naturalHabitDone) && (/^(?:mark|done|check|finish|complete|log)/.test(lowerText) || naturalHabitDone || habitWordDone || _hasDoneWord)) {
         let hk = hkws.find((k: string) => lowerText.includes(k)) || '';
         if (hk === 'praying') hk = 'prayer';
         if (hk === 'run' || hk === 'jog' || hk === 'walk') hk = 'exercise';
@@ -1717,8 +1717,7 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Maker job completion phrases ──────────────────────────────────────────
-    const makerJobDone = /^(?:delivery|order|job|sign(?:s)?|tray(?:s)?) (?:done|complete|ready|made|finished|shipped)$/.test(lowerText)
-                      || /^(?:made|cut|engraved|finished)(?: \d+)?(?: (?:walnut|maple|cherry|oak|sign|tray))? (?:sign|tray|board|piece|order)(?:s)?(?:(?: today)| for .+)?$/.test(lowerText);
+    const makerJobDone = false; // disabled - was too broad, matched normal tasks
     if (makerJobDone) {
       const qty = lowerText.match(/(\d+)/)?.[1];
       const product = lowerText.match(/(?:walnut|maple|cherry|oak|sign|tray|board)/i)?.[0] || 'order';
@@ -2614,9 +2613,10 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Log health ─────────────────────────────────────────────────────────────
-    const healthLogMatch = lowerText.match(/^log(?:ged)? (\d+(?:\.\d+)?)\s*(oz|glasses?|steps?|mins?|minutes?|hours?|hrs?|h\b|calories?|cal|lbs?|kg)\s*(?:of\s+)?(.+)?$/i)
+    const _isAddHabit = !!lowerText.match(/^(?:add|create|new)(?: a)? habit/i);
+    const healthLogMatch = !_isAddHabit && (lowerText.match(/^log(?:ged)? (\d+(?:\.\d+)?)\s*(oz|glasses?|steps?|mins?|minutes?|hours?|hrs?|h\b|calories?|cal|lbs?|kg)\s*(?:of\s+)?(.+)?$/i)
                         || lowerText.match(/^(?:log|add|record)\s+(.+)\s+(water|steps|exercise|sleep|calories)$/i)
-                        || lowerText.match(/^log\s+(water|sleep|steps?|exercise|calories?)\s+(\d+(?:\.\d+)?)(h\b|hrs?|oz|steps?|mins?|cal)?/i);
+                        || lowerText.match(/^log\s+(water|sleep|steps?|exercise|calories?)\s+(\d+(?:\.\d+)?)(h\b|hrs?|oz|steps?|mins?|cal)?/i));
     if (healthLogMatch) {
       try {
         const today = new Date().toISOString().slice(0,10);
@@ -2957,11 +2957,18 @@ self.addEventListener('fetch', (event) => {
       return;
     }
 
-    const searchMemoryMatch = lowerText.match(/^(?:what did i (?:note|write|say|record|save) about|find.*note.*about|search.*memory.*for|what do you know about|what do i know about|tell me what you know about|what.?s in memory about)\s+(.+)/i)
+    const searchMemoryMatch = lowerText.match(/^(?:what did i (?:note|write|say|record|save) about|find.*note.*about|search.*memory.*for|what do you know about|what do i know about|tell me what you know about|what.?s in memory about|what do i know)\s*(.+)?/i)
                               || lowerText.match(/^(?:show|list)(?: all)?(?: my)?\s+(laser|client|business|general)\s+(?:settings?|facts?|notes?|info)?/i)
                               || lowerText.match(/^what\s+(laser|client|habit|business)\s+(?:settings?|facts?)\s+do i (?:have|know)/i);
     if (searchMemoryMatch) {
-      const keyword = searchMemoryMatch[1].trim().toLowerCase();
+      const keyword = (searchMemoryMatch[1] || '').trim().toLowerCase();
+      if (!keyword) {
+        // "what do I know" with no keyword — show all
+        const _allFacts = dbGet<{fact:string}>("SELECT fact FROM memory_facts ORDER BY created_at DESC LIMIT 20") as {fact:string}[];
+        if (!_allFacts.length) { sendReply('Memory is empty. Say \"remember: [fact]\" to save something.'); }
+        else { sendReply('📚 **Everything I know about you (' + _allFacts.length + ' facts):**\n\n' + _allFacts.map((f,i) => (i+1)+'. '+f.fact).join('\n')); }
+        return;
+      }
       try {
         const results = dbGet<{fact:string;category:string}>(
           "SELECT fact, category FROM memory_facts WHERE LOWER(fact) LIKE ? OR LOWER(category) LIKE ? OR LOWER(category) = ? ORDER BY importance DESC, created_at DESC LIMIT 10",
@@ -2970,7 +2977,13 @@ self.addEventListener('fetch', (event) => {
           (/laser|dpi|watt|burn|engrav|setting/i.test(keyword) ? 'laser' : /client|customer|/i.test(keyword) ? 'client' : /habit|exercise|pray|water/i.test(keyword) ? 'habit' : keyword)
         ) as {fact:string;category:string}[];
         if (!results.length) {
-          sendReply('Nothing in memory about "' + keyword + '". Say "remember that I [fact]" to save something.');
+          // Show all memory if nothing matched — maybe keyword is different from saved words
+          const allFacts = dbGet<{fact:string}>("SELECT fact FROM memory_facts ORDER BY created_at DESC LIMIT 10") as {fact:string}[];
+          if (allFacts.length) {
+            sendReply('Nothing matching "' + keyword + '". Here\'s everything I have stored:\n\n' + allFacts.map((f,i) => (i+1)+'. '+f.fact).join('\n'));
+          } else {
+            sendReply('Memory is empty. Say "remember: [fact]" to save something.');
+          }
         } else {
           sendReply('Found ' + results.length + ' memory item' + (results.length > 1 ? 's' : '') + ' about "' + keyword + '":\n\n' +
             results.map((r,i) => (i+1) + '. ' + r.fact).join('\n'));
