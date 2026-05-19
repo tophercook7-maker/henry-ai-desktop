@@ -3888,16 +3888,11 @@ self.addEventListener('fetch', (event) => {
         const goals = dbGet<{title:string}>(
           "SELECT title FROM goals WHERE status!='done' ORDER BY priority_score DESC LIMIT 2"
         ) as {title:string}[];
-        const pray = dbGet<{title:string}>(
-          "SELECT title FROM prayer_requests WHERE status='active' ORDER BY created_at DESC LIMIT 2"
-        ) as {title:string}[];
-
         const lines = [`Good morning, Topher! ${dayName}, ${month} ${now.getDate()}.\n`];
         if (rems.length) lines.push('⏰ Reminders: ' + rems.map(r => r.title).join(', '));
         if (habits.length) lines.push('○ Habits to do: ' + habits.map(h => h.icon + ' ' + h.name).join(', '));
         if (tasks.length) lines.push('✓ Top tasks: ' + tasks.map(t => t.title).join(', '));
         if (goals.length) lines.push('◎ Active goals: ' + goals.map(g => g.title).join(', '));
-        if (pray.length) lines.push('🙏 Prayer requests: ' + pray.map(p => p.title).join(', '));
         lines.push('\nHave a great day!');
         sendReply(lines.join('\n'));
       } catch { sendReply('Good morning, Topher! Could not load your full brief right now.'); }
