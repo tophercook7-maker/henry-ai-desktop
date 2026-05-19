@@ -5519,18 +5519,25 @@ self.addEventListener('fetch', (event) => {
   // Live Mac screenshot → returns { image: 'data:image/png;base64,...' }
   if (path === '/sync/mac/screen' && req.method === 'GET') {
     try {
-      const { execSync } = await import('child_process');
-      const os = await import('os');
-      const fs = await import('fs');
-      const path_mod = await import('path');
-      const tmp = path_mod.default.join(os.default.tmpdir(), `henry_companion_${Date.now()}.png`);
-      execSync(`screencapture -x -m "${tmp}"`, { timeout: 3000 });
-      const buf = fs.default.readFileSync(tmp);
-      fs.default.unlinkSync(tmp);
-      const b64 = buf.toString('base64');
-      jsonResponse(res, 200, { image: `data:image/png;base64,${b64}`, ts: Date.now() });
+      const { execSync: _scx } = await import('child_process');
+      const _scos = await import('os');
+      const _scfs = await import('fs');
+      const _scp = await import('path');
+      // Capture as JPEG directly (much smaller than PNG)
+      const _tmp = _scp.default.join(_scos.default.tmpdir(), `hs_${Date.now()}.jpg`);
+      // -x = no sound, -t jpg = JPEG, scale to 1280 wide max via sips
+      _scx(`screencapture -x -t jpg "${_tmp}" && sips -Z 1280 "${_tmp}" --out "${_tmp}" 2>/dev/null || true`, { timeout: 4000, shell: '/bin/bash' });
+      const _buf = _scfs.default.readFileSync(_tmp);
+      try { _scfs.default.unlinkSync(_tmp); } catch {}
+      res.writeHead(200, {
+        'Content-Type': 'image/jpeg',
+        'Cache-Control': 'no-store',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': '*',
+      });
+      res.end(_buf);
     } catch (e) {
-      jsonResponse(res, 500, { error: String(e) });
+      jsonResponse(res, 503, { error: 'Screenshot failed. Enable Screen Recording in System Settings > Privacy.' });
     }
     return;
   }
