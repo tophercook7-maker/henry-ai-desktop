@@ -1,759 +1,283 @@
 /**
- * Henry AI Companion — iPad / iPhone web app
- * Served by the sync server at http://MAC_IP:4242
- *
- * iPad landscape: Chat pinned left (360px) + tabbed panel right
- * iPad portrait / iPhone: bottom tabs, full screen
- *
- * Tabs: Chat · Today · Screen · Control · Capture
- * Features: voice input, live habits, screenshot stream, shell runner,
- *            AI chat with streaming, quick capture, touch-to-click screen
+ * Henry AI Companion — clean rewrite v2
+ * All JS at module level — no closure scope issues.
+ * No TypeScript syntax in browser script blocks.
  */
 
 export function buildCompanionHtml(macName: string): string {
+  const escaped = macName.replace(/`/g, '\\`');
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover,interactive-widget=resizes-content">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Henry AI">
-<meta name="application-name" content="Henry AI">
-<meta name="theme-color" content="#07070f">
-<meta name="description" content="Your personal AI assistant — Henry AI companion">
-<meta name="msapplication-TileColor" content="#7c3aed">
-<link rel="manifest" href="/manifest.json">
-<link rel="apple-touch-icon" href="/icon-192.png">
-<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+<meta name="theme-color" content="#0a0a0f">
 <title>Henry AI</title>
 <style>
-:root{
-  --bg:#07070f;--s1:#0f0f1a;--s2:#16162a;--s3:#1e1e32;
-  --safe-top: env(safe-area-inset-top, 0px);
-  --safe-bottom: env(safe-area-inset-bottom, 0px);
-  --safe-left: env(safe-area-inset-left, 0px);
-  --safe-right: env(safe-area-inset-right, 0px);
-  --border:rgba(255,255,255,.08);--accent:#7c3aed;--accent2:#6d28d9;
-  --green:#22c55e;--red:#ef4444;--blue:#3b82f6;--yellow:#f59e0b;
-  --text:#e8e8f0;--muted:rgba(232,232,240,.45);--muted2:rgba(232,232,240,.25);
-  --safe-top:env(safe-area-inset-top,0px);
-  --safe-bot:env(safe-area-inset-bottom,0px);
-  --font:-apple-system,BlinkMacSystemFont,'SF Pro Display',sans-serif;
-}
+:root{--bg:#0a0a0f;--s1:#111118;--s2:#1a1a24;--border:rgba(255,255,255,.08);--text:#e8e8f0;--muted:rgba(232,232,240,.45);--accent:#7c3aed;--accent2:#6d28d9;--green:#22c55e;--red:#ef4444;--safe-top:env(safe-area-inset-top,0px);--safe-bot:env(safe-area-inset-bottom,0px)}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-html,body{height:100%;height:100dvh;min-height:100dvh;background:var(--bg);color:var(--text);font-family:var(--font);overflow:hidden}
-
-/* ── LAYOUT ─────────────────────────────────────────────────── */
-#app{display:flex;height:100%;height:100dvh;padding-top:var(--safe-top);min-height:0}
-#chat-col{display:flex;flex-direction:column;width:360px;flex-shrink:0;min-height:0;border-right:1px solid var(--border)}
+html,body{height:100%;height:100dvh;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,sans-serif;overflow:hidden}
+#tunnel-bar{height:3px;background:var(--accent);flex-shrink:0;transition:background .4s}
+#app{display:flex;height:calc(100% - 3px);height:calc(100dvh - 3px);min-height:0}
+#chat-col{display:flex;flex-direction:column;width:320px;flex-shrink:0;border-right:1px solid var(--border);min-height:0}
 #right-col{flex:1;display:flex;flex-direction:column;min-height:0;overflow:hidden}
-
-/* Phone: single column */
 @media(max-width:767px){
   #app{flex-direction:column}
-  #chat-col{width:100%;flex:1;border-right:none;display:none}
+  #chat-col,#right-col{width:100%;border:none}
+  #chat-col{display:none;flex:1}
   #chat-col.active{display:flex}
-  #right-col{flex:1;display:none}
+  #right-col{display:none;flex:1}
   #right-col.active{display:flex}
 }
-
-/* ── TAB BAR ─────────────────────────────────────────────────── */
-#tabs{display:flex;background:var(--s1);border-bottom:1px solid var(--border);flex-shrink:0;padding:0 4px}
-#tabs button{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:10px 4px 8px;background:none;border:none;color:var(--muted);font-size:10px;font-family:var(--font);cursor:pointer;transition:.15s;border-bottom:2px solid transparent;font-weight:600;letter-spacing:.02em}
-#tabs button .ti{font-size:18px;line-height:1}
-#tabs button.on{color:var(--accent);border-bottom-color:var(--accent)}
-#tabs button:active{opacity:.7}
-
-/* ── PANES ─────────────────────────────────────────────────── */
-.pane{display:none;flex-direction:column;flex:1;overflow:hidden}
+/* tabs */
+#nav-tabs{display:flex;background:var(--s1);border-bottom:1px solid var(--border);flex-shrink:0}
+#nav-tabs button{flex:1;padding:10px 4px 8px;background:none;border:none;border-bottom:2px solid transparent;color:var(--muted);font-size:10px;font-weight:700;letter-spacing:.04em;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;font-family:inherit}
+#nav-tabs button .icon{font-size:18px;line-height:1}
+#nav-tabs button.on{color:var(--accent);border-bottom-color:var(--accent)}
+/* panes */
+.pane{display:none;flex-direction:column;flex:1;overflow:hidden;min-height:0}
 .pane.on{display:flex}
-
-/* ── CHAT ─────────────────────────────────────────────────── */
-#chat-header{display:flex;align-items:center;gap:10px;padding:14px 16px 10px;border-bottom:1px solid var(--border);flex-shrink:0}
-#chat-header .logo{font-size:20px;color:var(--accent)}
-#chat-header .mac-name{font-weight:700;font-size:15px;flex:1}
-#conn-dot{width:8px;height:8px;border-radius:50%;background:var(--muted2);transition:.3s;flex-shrink:0}
+/* chat */
+#chat-hdr{display:flex;align-items:center;gap:10px;padding:14px 14px 10px;border-bottom:1px solid var(--border);flex-shrink:0}
+#chat-hdr .logo{font-size:20px;color:var(--accent)}
+#chat-hdr .mac{font-weight:700;font-size:14px;flex:1}
+#conn-dot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex-shrink:0;transition:.3s}
 #conn-dot.ok{background:var(--green);box-shadow:0 0 6px var(--green)}
 #conn-dot.err{background:var(--red)}
-
-#msgs{flex:1;min-height:0;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;-webkit-overflow-scrolling:touch}
+#msgs{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;min-height:0;-webkit-overflow-scrolling:touch}
 #msgs::-webkit-scrollbar{display:none}
-
 .msg{max-width:88%;display:flex;flex-direction:column;gap:2px}
 .msg.u{align-self:flex-end;align-items:flex-end}
 .msg.h{align-self:flex-start;align-items:flex-start}
-.msg.s{align-self:center;align-items:center}
 .bubble{padding:10px 14px;border-radius:18px;font-size:14px;line-height:1.5;word-break:break-word;white-space:pre-wrap}
-.msg.u .bubble{background:var(--accent);color:#fff;border-bottom-right-radius:5px}
-.msg.h .bubble{background:var(--s2);color:var(--text);border-bottom-left-radius:5px;border:1px solid var(--border)}
-.msg.s .bubble{background:var(--s1);color:var(--muted);font-size:12px;border:1px solid var(--border);border-radius:12px}
-.msg time{font-size:10px;color:var(--muted2);padding:0 4px}
-
-#quick-row{display:flex;gap:6px;padding:8px 12px;overflow-x:auto;flex-shrink:0;scrollbar-width:none}
+.msg.u .bubble{background:var(--accent);color:#fff;border-bottom-right-radius:4px}
+.msg.h .bubble{background:var(--s2);border:1px solid var(--border);border-bottom-left-radius:4px}
+.msg time{font-size:10px;color:var(--muted);padding:0 4px}
+#quick-row{display:flex;gap:6px;padding:6px 10px;overflow-x:auto;flex-shrink:0;scrollbar-width:none}
 #quick-row::-webkit-scrollbar{display:none}
-.qb{background:var(--s2);border:1px solid var(--border);border-radius:20px;padding:6px 12px;font-size:12px;color:var(--text);cursor:pointer;white-space:nowrap;flex-shrink:0;font-family:var(--font)}
-.qb:active{background:var(--accent);color:#fff;border-color:var(--accent)}
-
+.qb{background:var(--s2);border:1px solid var(--border);border-radius:20px;padding:5px 12px;font-size:12px;color:var(--text);cursor:pointer;white-space:nowrap;flex-shrink:0}
 #input-bar{display:flex;align-items:flex-end;gap:8px;padding:10px 12px;padding-bottom:calc(10px + var(--safe-bot));border-top:1px solid var(--border);background:var(--s1);flex-shrink:0}
-#msg-in{flex:1;background:var(--s2);border:1px solid var(--border);border-radius:22px;padding:10px 16px;font-size:15px;color:var(--text);outline:none;resize:none;font-family:var(--font);max-height:120px;overflow-y:auto;line-height:1.4;-webkit-overflow-scrolling:touch}
-#msg-in::placeholder{color:var(--muted2)}
-#msg-in:focus{border-color:rgba(124,58,237,.5)}
-#mic-btn,#send-btn{width:42px;height:42px;border-radius:50%;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;transition:.2s}
-#mic-btn{background:var(--s2);color:var(--muted)}
-#mic-btn.on{background:var(--red);color:#fff;animation:pulse .8s infinite}
-#send-btn{background:var(--accent);color:#fff}
-#send-btn:active{background:var(--accent2)}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
-
-/* ── TODAY ─────────────────────────────────────────────────── */
-#today-pane{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px;gap:12px;display:flex;flex-direction:column}
-.card{background:var(--s1);border:1px solid var(--border);border-radius:20px;overflow:hidden}
-.card-head{display:flex;align-items:center;gap:8px;padding:14px 16px 8px;font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
-.card-head .ch-icon{font-size:16px}
-
-/* Habits */
-.habit-row{display:flex;align-items:center;gap:12px;padding:10px 16px;border-top:1px solid var(--border)}
-.habit-check{width:34px;height:34px;border-radius:50%;border:2px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:16px;cursor:pointer;transition:.2s;flex-shrink:0}
+#msg-in{flex:1;background:var(--s2);border:1px solid var(--border);border-radius:20px;padding:9px 14px;font-size:15px;color:var(--text);outline:none;resize:none;font-family:inherit;max-height:100px;overflow-y:auto;line-height:1.4;-webkit-overflow-scrolling:touch}
+#msg-in::placeholder{color:var(--muted)}
+#send-btn{width:40px;height:40px;border-radius:50%;border:none;background:var(--accent);color:#fff;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+/* today */
+#today-pane{overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px;-webkit-overflow-scrolling:touch}
+.card{background:var(--s1);border:1px solid var(--border);border-radius:18px;overflow:hidden}
+.card-hdr{display:flex;align-items:center;gap:8px;padding:12px 14px 6px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.habit-row{display:flex;align-items:center;gap:10px;padding:9px 14px;border-top:1px solid var(--border)}
+.habit-check{width:32px;height:32px;border-radius:50%;border:2px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:15px;cursor:pointer;flex-shrink:0;transition:.2s}
 .habit-check.done{border-color:var(--green);background:rgba(34,197,94,.12);color:var(--green)}
-.habit-check.done::after{content:'✓';font-weight:800}
-.habit-name{flex:1;font-size:14px;font-weight:500}
-.habit-streak{font-size:11px;color:var(--accent);font-weight:700}
-
-/* Tasks */
-.task-row{display:flex;align-items:center;gap:10px;padding:10px 16px;border-top:1px solid var(--border)}
-.task-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);flex-shrink:0}
-.task-title{flex:1;font-size:14px}
-.task-pri{font-size:11px;color:var(--muted)}
-
-/* Reminders */
-.rem-row{display:flex;align-items:center;gap:10px;padding:10px 16px;border-top:1px solid var(--border)}
-.rem-icon{font-size:16px;flex-shrink:0}
-.rem-title{flex:1;font-size:14px}
-.rem-time{font-size:11px;color:var(--yellow)}
-
-/* ── SCREEN ─────────────────────────────────────────────────── */
-#screen-pane{display:flex;flex-direction:column;background:#000}
-#screen-bar2{display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--s1);border-bottom:1px solid var(--border);flex-shrink:0}
-#screen-bar2 label{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);cursor:pointer}
-#screen-bar2 label input{accent-color:var(--accent)}
-#screen-wrap{flex:1;overflow:auto;display:flex;align-items:center;justify-content:center;-webkit-overflow-scrolling:touch}
-#screen-img{max-width:100%;max-height:100%;border-radius:4px;cursor:crosshair;user-select:none;-webkit-user-select:none}
-.kbd-btn{background:var(--s2);border:1px solid var(--border);color:var(--fg);border-radius:8px;padding:6px 10px;font-size:12px;white-space:nowrap;cursor:pointer;flex-shrink:0;font-family:system-ui}
-#screen-ts{font-size:11px;color:var(--muted2);margin-left:auto}
-#screen-status{font-size:11px;color:var(--green)}
-
-/* ── CONTROL ─────────────────────────────────────────────────── */
-#ctrl-pane{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px;gap:12px;display:flex;flex-direction:column}
-.ctrl-sec{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);padding:4px 0 8px}
-.app-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
-.app-btn{display:flex;flex-direction:column;align-items:center;gap:5px;padding:12px 6px;background:var(--s2);border:1px solid var(--border);border-radius:16px;cursor:pointer;transition:.15s}
-.app-btn:active{background:rgba(124,58,237,.2);border-color:var(--accent)}
-.app-btn .ai{font-size:24px}
-.app-btn .al{font-size:10px;color:var(--muted);text-align:center}
-.action-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
-.act-btn{display:flex;align-items:center;gap:8px;padding:12px 14px;background:var(--s2);border:1px solid var(--border);border-radius:14px;cursor:pointer;font-size:13px;color:var(--text);transition:.15s}
-.act-btn:active{background:rgba(124,58,237,.15);border-color:var(--accent)}
-.act-btn .ai2{font-size:18px;flex-shrink:0}
-#shell-bar{display:flex;gap:8px;padding:0}
-#shell-in{flex:1;background:var(--s2);border:1px solid var(--border);border-radius:12px;padding:10px 14px;font-size:14px;color:var(--text);outline:none;font-family:'SF Mono',monospace}
-#shell-in::placeholder{color:var(--muted2)}
-#shell-in:focus{border-color:rgba(124,58,237,.5)}
-#shell-run{padding:10px 16px;background:var(--accent);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:600;cursor:pointer}
-#shell-out{background:var(--s2);border:1px solid var(--border);border-radius:12px;padding:12px 14px;font-size:12px;font-family:'SF Mono',monospace;color:var(--green);min-height:60px;white-space:pre-wrap;word-break:break-all;max-height:180px;overflow-y:auto}
-
-/* ── BIBLE ──────────────────────────────────────────────────── */
-.health-btn{background:var(--s2);border:1px solid var(--border);border-radius:14px;padding:16px 10px;color:var(--text);font-size:15px;cursor:pointer;font-family:inherit;line-height:1.4;text-align:center;transition:background .15s;-webkit-tap-highlight-color:transparent}
-.health-btn:active{background:var(--accent);color:#fff;border-color:var(--accent)}
-#bible-pane{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px;gap:12px;display:flex;flex-direction:column}
-#bible-search-bar{display:flex;gap:8px}
-#bible-ref-in{flex:1;background:var(--s2);border:1px solid var(--border);border-radius:12px;padding:11px 14px;font-size:15px;color:var(--text);outline:none;font-family:var(--font)}
-#bible-ref-in::placeholder{color:var(--muted2)}
-#bible-ref-in:focus{border-color:rgba(124,58,237,.5)}
-#bible-look-btn{padding:11px 16px;background:var(--accent);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:600;cursor:pointer}
-#bible-result{background:var(--s1);border:1px solid var(--border);border-radius:16px;padding:18px;display:none}
-#bible-result.show{display:block}
-#bible-ref-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--accent);margin-bottom:8px}
-#bible-text{font-size:16px;line-height:1.7;color:var(--text)}
-.bible-qr{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:4px}
-.bq{background:var(--s2);border:1px solid var(--border);border-radius:20px;padding:5px 12px;font-size:12px;color:var(--text);cursor:pointer}
-.bq:active{background:var(--accent);color:#fff;border-color:var(--accent)}
-#study-result{background:var(--s1);border:1px solid rgba(124,58,237,.3);border-radius:16px;padding:16px;display:none;font-size:13px;line-height:1.6;color:var(--text)}
-#study-result.show{display:block}
-#study-bar{display:flex;gap:8px}
-#study-prompt-in{flex:1;background:var(--s2);border:1px solid var(--border);border-radius:12px;padding:10px 14px;font-size:14px;color:var(--text);outline:none;font-family:var(--font)}
-#study-prompt-in:focus{border-color:rgba(124,58,237,.5)}
-
-/* ── CAPTURE ─────────────────────────────────────────────────── */
-#cap-pane{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px;gap:12px;display:flex;flex-direction:column}
-#cap-in{width:100%;background:var(--s2);border:1px solid var(--border);border-radius:16px;padding:16px;font-size:15px;color:var(--text);outline:none;resize:none;font-family:var(--font);min-height:140px;line-height:1.6}
-#cap-in::placeholder{color:var(--muted2)}
-#cap-in:focus{border-color:rgba(124,58,237,.5)}
-.cap-btns{display:flex;gap:8px}
-.cap-btn{flex:1;padding:13px;background:var(--s2);border:1px solid var(--border);border-radius:14px;font-size:13px;font-weight:600;color:var(--text);cursor:pointer;text-align:center;transition:.15s}
-.cap-btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
-.cap-btn:active{opacity:.75}
-#cap-result{background:var(--s1);border:1px solid var(--border);border-radius:16px;padding:16px;font-size:13px;line-height:1.6;color:var(--text);display:none}
-#cap-result.show{display:block}
-.result-section{margin-bottom:12px}
-.result-section h4{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--accent);margin-bottom:6px}
-.result-section p{font-size:13px;color:var(--muted);line-height:1.5}
-
-/* ── PAIR SCREEN ─────────────────────────────────────────────── */
-#pair-screen{position:fixed;inset:0;z-index:200;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;padding:40px 28px;text-align:center}
-#pair-screen h1{font-size:28px;font-weight:900;letter-spacing:-.02em}
-#pair-screen p{font-size:15px;color:var(--muted);line-height:1.6;max-width:280px}
-.pair-ip{font-size:28px;font-weight:900;color:var(--accent);font-family:'SF Mono',monospace;letter-spacing:.04em}
-.pair-btn{padding:16px 32px;background:var(--accent);color:#fff;border:none;border-radius:16px;font-size:16px;font-weight:700;cursor:pointer;width:100%;max-width:280px}
-
-/* ── BOTTOM NAV (phone) ──────────────────────────────────────── */
-#bottom-nav{display:none;flex-shrink:0;background:var(--s1);border-top:1px solid var(--border);padding-bottom:var(--safe-bot)}
-@media(max-width:767px){
-  #bottom-nav{display:flex}
-  #bottom-nav button{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 4px;background:none;border:none;font-size:10px;font-weight:600;color:var(--muted);cursor:pointer;font-family:var(--font)}
-  #bottom-nav button .bi{font-size:20px}
-  #bottom-nav button.on{color:var(--accent)}
-}
+.habit-name{font-size:13px;flex:1}
+.task-row{display:flex;align-items:center;gap:10px;padding:9px 14px;border-top:1px solid var(--border)}
+.task-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.task-title{font-size:13px;flex:1}
+/* screen */
+#screen-img{width:100%;height:100%;object-fit:contain;display:block;cursor:crosshair;touch-action:none}
+#screen-wrap{flex:1;position:relative;background:#000;overflow:hidden;min-height:0}
+#screen-hdr{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--border);flex-shrink:0;font-size:12px;color:var(--muted)}
+#screen-hdr .fps{margin-left:auto;font-family:monospace;font-size:11px}
+/* bottom nav (phone only) */
+#bottom-nav{display:none;background:var(--s1);border-top:1px solid var(--border);padding:0 0 var(--safe-bot);flex-shrink:0}
+@media(max-width:767px){#bottom-nav{display:flex}}
+#bottom-nav button{flex:1;padding:8px 4px 6px;background:none;border:none;color:var(--muted);font-size:9px;font-weight:700;letter-spacing:.04em;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;font-family:inherit}
+#bottom-nav button .bi{font-size:20px;line-height:1}
+#bottom-nav button.on{color:var(--accent)}
+/* control */
+#control-pane{overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px;-webkit-overflow-scrolling:touch}
+.ctrl-sec{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);padding:4px 0}
+.ctrl-row{display:flex;flex-wrap:wrap;gap:8px}
+.ctrl-btn{background:var(--s2);border:1px solid var(--border);border-radius:10px;padding:8px 14px;font-size:13px;cursor:pointer;color:var(--text);font-family:inherit}
+.ctrl-btn:active{background:var(--accent);color:#fff}
+/* loading placeholder */
+.loading-msg{padding:14px;color:var(--muted);font-size:13px}
 </style>
 </head>
 <body>
 
-<div id="pair-screen" style="padding-top: max(44px, env(safe-area-inset-top, 44px))">
-  <div style="font-size:48px">◉</div>
-  <h1>Henry AI</h1>
-  <p>Connected to <strong style="color:var(--text)">${macName}</strong></p>
-  <div id="ps-ip" class="pair-ip"></div>
-  <p style="font-size:13px">Open this address on your iPad or iPhone</p>
-  <button class="pair-btn" onclick="hidePair()">Open Companion →</button>
-</div>
+<div id="tunnel-bar"></div>
 
-<!-- Offline indicator (shown when Mac unreachable) -->
-<div id="offline-bar" style="display:none;position:fixed;top:0;left:0;right:0;z-index:1000;background:#ef4444;color:#fff;text-align:center;padding:8px 16px;font-size:12px;font-weight:600;padding-top:max(8px,env(safe-area-inset-top,8px))">
-  ⚡ Reconnecting to Henry on your Mac…
-</div>
-
-<div id="app" style="display:none">
-  <!-- CHAT COLUMN (always visible on iPad) -->
-  <div id="chat-col">
-    <div id="chat-header">
+<div id="app">
+  <!-- CHAT COLUMN -->
+  <div id="chat-col" class="active">
+    <div id="chat-hdr">
       <span class="logo">◉</span>
-      <span class="mac-name">Henry — ${macName}</span>
+      <span class="mac">${escaped}</span>
       <div id="conn-dot"></div>
     </div>
-    <div id="msgs">
-      <div class="msg h"><div class="bubble">Hi! I'm Henry. Chat with me, control your Mac, or tap a tab to see your day. What do you need?</div><time>${new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}</time></div>
-    </div>
+    <div id="msgs"></div>
     <div id="quick-row">
-      <button class="qb" onclick="q('take a screenshot')">📸 Screenshot</button>
-      <button class="qb" onclick="q('what apps are running')">📱 Apps</button>
-      <button class="qb" onclick="q('open Finder')">📁 Finder</button>
-      <button class="qb" onclick="q('mute the mac')">🔇 Mute</button>
-      <button class="qb" onclick="q('check disk space')">💾 Disk</button>
-      <button class="qb" onclick="q('lock the screen')">🔒 Lock</button>
-      <button class="qb" onclick="q('what did I capture today')">⊕ Today's captures</button>
+      <button class="qb" onclick="sendQ('gm')">☀️ GM</button>
+      <button class="qb" onclick="sendQ('status')">📊 Status</button>
+      <button class="qb" onclick="sendQ('plan my day')">📅 Plan day</button>
+      <button class="qb" onclick="sendQ('habit consistency')">🔥 Habits</button>
+      <button class="qb" onclick="sendQ('show my goals')">🎯 Goals</button>
+      <button class="qb" onclick="sendQ('do a full analysis')">💰 Finance</button>
     </div>
     <div id="input-bar">
-      <textarea id="msg-in" placeholder="Message Henry…" rows="1" oninput="autoGrow(this)" onkeydown="inputKey(event)"></textarea>
-      <button id="mic-btn" onclick="toggleMic()" title="Voice input">🎙</button>
-      <button id="send-btn" onclick="sendMsg()">↑</button>
+      <textarea id="msg-in" rows="1" placeholder="Message Henry…"></textarea>
+      <button id="send-btn">↑</button>
     </div>
   </div>
 
-  <!-- RIGHT COLUMN (tabbed) -->
-  <div id="right-col">
-    <div id="tabs">
-      <button class="on" onclick="showTab('today')" id="t-today"><span class="ti">⌂</span>Today</button>
-      <button onclick="showTab('screen')" id="t-screen"><span class="ti">📺</span>Screen</button>
-      <button onclick="showTab('ctrl')" id="t-ctrl"><span class="ti">⌘</span>Control</button>
-      <button onclick="showTab('cap')" id="t-cap"><span class="ti">⊕</span>Capture</button>
-      <button onclick="showTab('bible')" id="t-bible"><span class="ti">✝</span>Bible</button>
+  <!-- RIGHT COLUMN -->
+  <div id="right-col" class="active">
+    <div id="nav-tabs">
+      <button class="on" id="t-today" onclick="showPane('today')"><span class="icon">📅</span>Today</button>
+      <button id="t-screen" onclick="showPane('screen')"><span class="icon">🖥</span>Screen</button>
+      <button id="t-control" onclick="showPane('control')"><span class="icon">⌘</span>Control</button>
     </div>
 
-    <!-- TODAY -->
+    <!-- TODAY PANE -->
     <div class="pane on" id="p-today">
       <div id="today-pane">
-        <div id="today-date" style="font-size:22px;font-weight:900;padding:4px 0 8px"></div>
-
-        <!-- Habits -->
-        <div class="card" id="habits-card">
-          <div class="card-head"><span class="ch-icon">✓</span>Habits Today<span id="habit-prog" style="margin-left:auto;font-size:11px;color:var(--accent)"></span></div>
-          <div id="habit-list"><div style="padding:16px;color:var(--muted);font-size:13px">Loading…</div></div>
+        <div id="today-date" style="font-size:20px;font-weight:900;padding:2px 0 6px"></div>
+        <div class="card">
+          <div class="card-hdr">✓ Habits Today <span id="habit-prog" style="margin-left:auto;color:var(--accent)"></span></div>
+          <div id="habit-list"><div class="loading-msg">Loading…</div></div>
         </div>
-
-        <!-- Tasks -->
-        <div class="card" id="tasks-card">
-          <div class="card-head"><span class="ch-icon">☐</span>Open Tasks</div>
-          <div id="task-list"><div style="padding:16px;color:var(--muted);font-size:13px">Loading…</div></div>
+        <div class="card">
+          <div class="card-hdr">☐ Open Tasks</div>
+          <div id="task-list"><div class="loading-msg">Loading…</div></div>
         </div>
-
-        <!-- Reminders -->
-        <div class="card" id="rem-card">
-          <div class="card-head"><span class="ch-icon">◎</span>Reminders Due</div>
-          <div id="rem-list"><div style="padding:16px;color:var(--muted);font-size:13px">Loading…</div></div>
+        <div class="card">
+          <div class="card-hdr">◎ Reminders</div>
+          <div id="rem-list"><div class="loading-msg">Loading…</div></div>
         </div>
       </div>
     </div>
 
-    <!-- SCREEN -->
+    <!-- SCREEN PANE -->
     <div class="pane" id="p-screen">
-      <div id="screen-bar2">
-        <label><input type="checkbox" id="auto-ref" checked onchange="toggleAutoRef()"> Live</label>
-        <span id="screen-status"></span>
-        <span id="screen-fps" style="font-size:11px;color:var(--muted)"></span>
-        <span id="screen-ts" style="margin-left:auto;font-size:11px;color:var(--muted)"></span>
-        <button onclick="refreshScreen()" style="background:var(--accent);color:#fff;border:none;border-radius:8px;padding:5px 10px;font-size:12px;cursor:pointer">↻</button>
+      <div id="screen-hdr">
+        <span>Live Mac Screen</span>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-left:auto">
+          <input type="checkbox" id="auto-ref" checked onchange="toggleScreenRefresh()"> Auto
+        </label>
+        <span class="fps" id="fps-counter">—</span>
       </div>
-      <div id="screen-wrap" style="position:relative;flex:1;overflow:hidden;background:#000;display:flex;align-items:center;justify-content:center">
-        <img id="screen-img" src="" alt="Mac screen"
-          style="max-width:100%;max-height:100%;object-fit:contain;touch-action:none;user-select:none;-webkit-user-select:none"
-          draggable="false"
-        />
-        <div id="tap-ripple" style="position:absolute;pointer-events:none;display:none;width:36px;height:36px;border-radius:50%;border:2px solid rgba(139,92,246,0.8);transform:translate(-50%,-50%)"></div>
-      </div>
-      <div id="screen-kbd" style="display:flex;gap:6px;padding:8px 10px;background:var(--s1);border-top:1px solid var(--border);overflow-x:auto;flex-shrink:0;-webkit-overflow-scrolling:touch">
-        <button class="kbd-btn" onclick="macKey('space',['command key'])">⌘ Space</button>
-        <button class="kbd-btn" onclick="macKey('tab',['command key'])">⌘ Tab</button>
-        <button class="kbd-btn" onclick="macKey('c',['command key'])">⌘ C</button>
-        <button class="kbd-btn" onclick="macKey('v',['command key'])">⌘ V</button>
-        <button class="kbd-btn" onclick="macKey('z',['command key'])">⌘ Z</button>
-        <button class="kbd-btn" onclick="macKey('a',['command key'])">⌘ A</button>
-        <button class="kbd-btn" onclick="macKey('w',['command key'])">⌘ W</button>
-        <button class="kbd-btn" onclick="macKey('return',[])">↵</button>
-        <button class="kbd-btn" onclick="macKey('escape',[])">Esc</button>
-        <button class="kbd-btn" onclick="macKey('delete',[])">⌫</button>
+      <div id="screen-wrap">
+        <img id="screen-img" src="" alt="" draggable="false">
       </div>
     </div>
 
-    <!-- CONTROL -->
-    <div class="pane" id="p-ctrl">
-      <div id="ctrl-pane">
-        <!-- VPN/Proxy section -->
-        <div class="ctrl-sec" style="color:#a78bfa">Henry VPN</div>
-        <div style="padding:0 14px 12px;font-size:13px;color:var(--muted);line-height:1.6">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-            <span>Proxy:</span>
-            <span id="vpn-status" style="color:var(--muted);font-family:monospace;font-size:12px">checking...</span>
-            <button onclick="henryVPN()" style="margin-left:auto;background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:5px 12px;font-size:12px;cursor:pointer">Enable</button>
-            <button onclick="henryVPNOff()" style="background:var(--s2);color:var(--muted);border:1px solid var(--border);border-radius:8px;padding:5px 10px;font-size:12px;cursor:pointer">Stop</button>
-          </div>
-          <div id="vpn-instructions" style="display:none;background:var(--s2);border-radius:8px;padding:10px;margin-top:6px;font-size:12px;line-height:1.8">
-            <b>iPhone Setup:</b><br>
-            Settings → WiFi → [your network] → ⓘ<br>
-            Configure Proxy → <b>Manual</b><br>
-            Server: <code id="vpn-server">—</code><br>
-            Port: <code id="vpn-port">—</code><br>
-            <button onclick="document.getElementById('vpn-instructions').style.display='none'" style="margin-top:8px;background:none;border:none;color:var(--muted);cursor:pointer;font-size:11px">dismiss</button>
-          </div>
+    <!-- CONTROL PANE -->
+    <div class="pane" id="p-control">
+      <div id="control-pane">
+        <div class="ctrl-sec">VPN & Tunnel</div>
+        <div class="ctrl-row">
+          <button class="ctrl-btn" onclick="sendQ('vpn')">🔒 VPN Setup</button>
+          <button class="ctrl-btn" onclick="sendQ('pair my phone')">📱 Pair</button>
+          <button class="ctrl-btn" onclick="sendQ('tunnel url')">🌐 Tunnel URL</button>
         </div>
-        <div class="ctrl-sec">Quick Launch</div>
-        <div class="app-grid" id="app-grid"></div>
-
-        <div class="ctrl-sec" style="margin-top:4px">System Actions</div>
-        <div class="action-grid" id="action-grid"></div>
-
-        <div class="ctrl-sec" style="margin-top:4px">Shell</div>
-        <div class="shell-bar" style="display:flex;gap:8px">
-          <input id="shell-in" placeholder="$ run any command…" onkeydown="if(event.key==='Enter')runShell()">
-          <button id="shell-run" onclick="runShell()">Run</button>
+        <div class="ctrl-sec">Keyboard</div>
+        <div class="ctrl-row">
+          <button class="ctrl-btn" onclick="macKey('space','meta')">⌘ Space</button>
+          <button class="ctrl-btn" onclick="macKey('Tab','meta')">⌘ Tab</button>
+          <button class="ctrl-btn" onclick="macKey('c','meta')">⌘ C</button>
+          <button class="ctrl-btn" onclick="macKey('v','meta')">⌘ V</button>
+          <button class="ctrl-btn" onclick="macKey('z','meta')">⌘ Z</button>
+          <button class="ctrl-btn" onclick="macKey('Return','')">↵ Enter</button>
+          <button class="ctrl-btn" onclick="macKey('Escape','')">Esc</button>
+          <button class="ctrl-btn" onclick="macKey('Backspace','')">⌫</button>
         </div>
-        <pre id="shell-out">Ready.</pre>
-      </div>
-    </div>
-
-    <!-- CAPTURE -->
-    <div class="pane" id="p-cap">
-      <div id="cap-pane">
-        <p style="font-size:13px;color:var(--muted);line-height:1.6">Paste or type anything — an idea, article, email, note. Henry extracts what matters.</p>
-        <textarea id="cap-in" placeholder="Paste text, type an idea, or speak…"></textarea>
-        <div class="cap-btns">
-          <button class="cap-btn" onclick="capMic()">🎙 Speak</button>
-          <button class="cap-btn primary" onclick="processCapture()">⚡ Process</button>
+        <div class="ctrl-sec">Apps</div>
+        <div class="ctrl-row">
+          <button class="ctrl-btn" onclick="sendQ('open Finder')">📁 Finder</button>
+          <button class="ctrl-btn" onclick="sendQ('open Terminal')">💻 Terminal</button>
+          <button class="ctrl-btn" onclick="sendQ('open Chrome')">🌐 Chrome</button>
+          <button class="ctrl-btn" onclick="sendQ('open Safari')">🧭 Safari</button>
+          <button class="ctrl-btn" onclick="sendQ('open Cursor')">⚡ Cursor</button>
+          <button class="ctrl-btn" onclick="sendQ('open Slack')">💬 Slack</button>
         </div>
-        <div id="cap-result"></div>
+        <div class="ctrl-sec">Henry</div>
+        <div class="ctrl-row">
+          <button class="ctrl-btn" onclick="sendQ('henry addons')">🧰 Addons</button>
+          <button class="ctrl-btn" onclick="sendQ('what can you do')">❓ Help</button>
+          <button class="ctrl-btn" onclick="loadToday()">🔄 Refresh</button>
+        </div>
       </div>
     </div>
   </div>
 </div>
 
-    <!-- Tasks pane -->
-    <div id="p-tasks" style="display:none;flex-direction:column;height:100%;overflow:hidden">
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--border);font-weight:700;font-size:15px">
-        <span>✓ Tasks</span>
-        <button onclick="showAddTask()" style="background:var(--accent);border:none;color:#fff;border-radius:99px;padding:4px 14px;font-size:12px;font-weight:700;cursor:pointer">+ Add</button>
-      </div>
-      <div id="add-task-row" style="display:none;padding:12px 16px;gap:8px;flex-wrap:wrap">
-        <input id="task-in" placeholder="New task…" onkeydown="if(event.key==='Enter')addTask()" style="flex:1;min-width:0;background:var(--s2);border:1px solid var(--border);border-radius:12px;padding:10px 14px;color:var(--text);font-size:14px;outline:none"/>
-        <button onclick="addTask()" style="background:var(--accent);border:none;color:#fff;border-radius:12px;padding:10px 18px;font-size:13px;font-weight:700;cursor:pointer;flex-shrink:0">Add</button>
-      </div>
-      <div id="task-list-pane" style="flex:1;overflow-y:auto;padding:8px 0"></div>
-    </div>
-
-    <!-- Reminders pane -->
-    <div id="p-rem" style="display:none;flex-direction:column;height:100%;overflow:hidden">
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--border);font-weight:700;font-size:15px">
-        <span>⏰ Reminders</span>
-        <button onclick="showAddReminder()" style="background:var(--accent);border:none;color:#fff;border-radius:99px;padding:4px 14px;font-size:12px;font-weight:700;cursor:pointer">+ Add</button>
-      </div>
-      <div id="add-rem-row" style="display:none;padding:12px 16px;gap:8px;flex-wrap:wrap">
-        <input id="rem-in" placeholder="Remind me to…" onkeydown="if(event.key==='Enter')addReminder()" style="flex:1;min-width:0;background:var(--s2);border:1px solid var(--border);border-radius:12px;padding:10px 14px;color:var(--text);font-size:14px;outline:none"/>
-        <button onclick="addReminder()" style="background:var(--accent);border:none;color:#fff;border-radius:12px;padding:10px 18px;font-size:13px;font-weight:700;cursor:pointer;flex-shrink:0">Add</button>
-      </div>
-      <div id="rem-list-pane" style="flex:1;overflow-y:auto;padding:8px 0"></div>
-    </div>
-
-    <!-- Journal pane -->
-    <div id="p-jnl" style="display:none;flex-direction:column;height:100%;overflow:hidden">
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--border);font-weight:700;font-size:15px">
-        <span>📔 Journal</span>
-        <span id="jnl-date" style="font-size:12px;font-weight:400;color:var(--muted)"></span>
-      </div>
-      <div style="padding:16px;flex:1;display:flex;flex-direction:column;gap:10px">
-        <textarea id="jnl-in" placeholder="Write anything…" style="flex:1;min-height:140px;background:var(--s2);border:1px solid var(--border);border-radius:14px;padding:14px;color:var(--text);font-size:15px;line-height:1.6;resize:none;outline:none;font-family:inherit"></textarea>
-        <div style="display:flex;gap:8px">
-          <select id="jnl-mood" style="background:var(--s2);border:1px solid var(--border);border-radius:10px;padding:8px 12px;color:var(--text);font-size:14px;outline:none">
-            <option value="">Mood…</option>
-            <option value="😊">😊 Good</option><option value="🙏">🙏 Grateful</option>
-            <option value="💪">💪 Motivated</option><option value="😴">😴 Tired</option>
-            <option value="😤">😤 Frustrated</option><option value="😌">😌 Peaceful</option>
-          </select>
-          <button onclick="saveJournal()" style="flex:1;background:var(--accent);border:none;color:#fff;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer">Save entry</button>
-        </div>
-        <div id="jnl-status" style="font-size:12px;color:var(--muted);text-align:center"></div>
-      </div>
-    </div>
-
-    <!-- Health pane -->
-    <div id="p-health" style="display:none;flex-direction:column;height:100%;overflow:hidden">
-      <div style="padding:14px 16px;border-bottom:1px solid var(--border);font-weight:700;font-size:15px">❤️ Health Log</div>
-      <div style="padding:16px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
-        <button class="health-btn" onclick="logHealth('water',8,'oz')">💧 Water<br/><span style="font-size:11px;opacity:.6">+8 oz</span></button>
-        <button class="health-btn" onclick="logHealth('steps',1000,'steps')">👟 Steps<br/><span style="font-size:11px;opacity:.6">+1,000</span></button>
-        <button class="health-btn" onclick="logHealth('exercise',30,'min')">🏃 Exercise<br/><span style="font-size:11px;opacity:.6">30 min</span></button>
-        <button class="health-btn" onclick="logHealth('sleep',7,'hrs')">😴 Sleep<br/><span style="font-size:11px;opacity:.6">7 hrs</span></button>
-        <button class="health-btn" onclick="logHealth('calories',500,'cal')">🍽 Calories<br/><span style="font-size:11px;opacity:.6">+500</span></button>
-        <button class="health-btn" onclick="promptHealthLog()">📝 Custom<br/><span style="font-size:11px;opacity:.6">any value</span></button>
-      </div>
-      <div id="health-status" style="padding:12px 16px;font-size:13px;color:var(--muted);text-align:center"></div>
-    </div>
-
-<!-- Goals pane -->
-    <div id="p-goals" style="display:none;flex-direction:column;height:100%;overflow:hidden">
-      <div style="padding:14px 16px;border-bottom:1px solid var(--border);font-weight:700;font-size:15px">◎ Goals</div>
-      <div id="goals-list-pane" style="flex:1;overflow-y:auto;padding:8px 0">
-        <div style="padding:24px;color:var(--muted);text-align:center;font-size:14px">Loading…</div>
-      </div>
-    </div>
-
-
-<!-- PHONE: Bible pane -->
-<div id="p-bible" style="display:none;flex-direction:column;height:100%;overflow:hidden">
-  <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--border);font-weight:700;font-size:15px">
-    <span>✝ Bible</span>
-    <span style="font-size:11px;color:var(--muted);font-weight:400" id="bible-status">KJV</span>
-  </div>
-  <!-- Search bar -->
-  <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;gap:8px">
-    <input id="bible-ref-in" placeholder="John 3:16 or topic..." style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:8px 14px;font-size:14px;color:var(--text);outline:none" onkeydown="if(event.key==='Enter')lookupVerse(this.value)"/>
-    <button onclick="lookupVerse(document.getElementById('bible-ref-in').value)" style="background:var(--accent);color:#fff;border:none;border-radius:12px;padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer">Go</button>
-  </div>
-  <!-- Result -->
-  <div id="bible-result" style="flex:1;overflow-y:auto;padding:16px">
-    <div style="color:var(--muted);text-align:center;padding:32px 16px;font-size:14px">
-      Enter a verse reference (John 3:16) or a topic (perseverance, hope, strength) to search.
-      <br><br>
-      <span style="font-size:12px;opacity:0.7">Requires Bible downloaded in the Scripture panel on your Mac.</span>
-    </div>
-  </div>
-  <!-- Saved verse display -->
-  <div id="bible-verse-display" style="display:none;padding:16px;background:var(--surface);border-top:1px solid var(--border)">
-    <div id="bible-ref-label" style="font-size:11px;color:var(--accent);font-weight:700;margin-bottom:6px"></div>
-    <div id="bible-text" style="font-size:14px;color:var(--text);line-height:1.6;font-style:italic"></div>
-  </div>
-</div>
-
-<!-- PHONE: bottom nav -->
+<!-- PHONE BOTTOM NAV -->
 <div id="bottom-nav">
-  <button class="on" onclick="phoneTo('chat')" id="bn-chat"><span class="bi">◉</span>Chat</button>
-  <button onclick="phoneTo('today')" id="bn-today"><span class="bi">⌂</span>Today</button>
-  <button onclick="phoneTo('tasks')" id="bn-tasks"><span class="bi">✓</span>Tasks</button>
-  <button onclick="phoneTo('rem')" id="bn-rem"><span class="bi">⏰</span>Remind</button>
-  <button onclick="phoneTo('jnl')" id="bn-jnl"><span class="bi">📔</span>Journal</button>
-  <button onclick="phoneTo('health')" id="bn-health"><span class="bi">❤️</span>Health</button>
-  <button onclick="phoneTo('goals')" id="bn-goals"><span class="bi">◎</span>Goals</button>
-  <button onclick="phoneTo('bible')" id="bn-bible"><span class="bi">✝</span>Bible</button>
+  <button class="on" id="bn-chat" onclick="phoneNav('chat')"><span class="bi">◉</span>Chat</button>
+  <button id="bn-today" onclick="phoneNav('today')"><span class="bi">📅</span>Today</button>
+  <button id="bn-screen" onclick="phoneNav('screen')"><span class="bi">🖥</span>Screen</button>
+  <button id="bn-control" onclick="phoneNav('control')"><span class="bi">⌘</span>Control</button>
 </div>
 
 <script>
-// ── State ─────────────────────────────────────────────────────────────────────
-const BASE = location.origin;
-let companionConvId = localStorage.getItem('henry:companion_conv_id') || '';
-let lastHistoryTs = 0; // debounce history saves
-let isIpad = window.innerWidth >= 768;
-let screenTimer = null;
-let busy = false;
-let recognition = null;
-let habitsData = [];
-let habitLogsData = [];
+// ── Constants ─────────────────────────────────────────────────────────────────
+var BASE = location.origin;
+var busy = false;
+var screenTimer = null;
+var _connOk = false;
+var _scFrameTs = 0;
 
-// ── Init ──────────────────────────────────────────────────────────────────────
-window.addEventListener('load', async () => {
-  updateDate();
-  setInterval(updateDate, 60000);
-  buildAppGrid();
-  buildActionGrid();
-
-  // Auto-hide pair screen if we're already at the Henry sync server URL
-  // (i.e., the user opened http://192.168.x.x:4242 directly — no pairing needed)
-  const isHenryServer = location.port === '4242' || location.hostname === '127.0.0.1';
-  const isMobile = /iPad|iPhone|Android|Mobile/.test(navigator.userAgent);
-
-  if (isHenryServer) {
-    // Already at the companion URL — skip pairing, go straight in
-    hidePair();
-  } else if (!isMobile) {
-    // Desktop browser not at server URL — show the connect URL
-    const ips = await fetch(BASE + '/sync/state-internal', {
-      headers: { 'X-Henry-Internal': 'true' }
-    }).then(r => r.json()).then(d => d.localIPs || []).catch(() => []);
-    if (ips.length) {
-      document.getElementById('ps-ip').textContent = 'http://' + ips[0] + ':4242';
-    }
-    document.getElementById('pair-screen').style.display = 'flex';
-  } else {
-    hidePair();
-  }
-
-  loadToday();
-  setInterval(loadToday, 15000);
-  refreshScreen();
-  setTimeout(screenAttachTouch, 500);
-  checkConn();
-  setInterval(checkConn, 10000);
-  // Check proxy status on load
-  fetch(BASE + '/sync/health', {cache:'no-store'})
-    .then(r => r.json())
-    .then(d => {
-      const pp = d.proxyPort;
-      const st = document.getElementById('vpn-status');
-      if (st) st.textContent = pp ? 'SOCKS5 :' + pp : 'not running';
-      if (st && pp) st.style.color = '#22c55e';
-      const tu = d.tunnelUrl;
-      if (tu) {
-        window.__HENRY_TUNNEL__ = tu;
-        const el = document.getElementById('tunnel-url-display');
-        const banner = document.getElementById('tunnel-banner');
-        if (el) { el.textContent = tu + '/'; el.setAttribute('href', tu + '/'); }
-        if (banner) banner.style.display = 'block';
-      }
-    }).catch(() => {});
-
-  // ── IRONCLAD: Wake Lock — prevent screen sleep ──────────────────────────────
-  let _wakeLock = null;
-  async function _acquireWakeLock() {
-    if (!('wakeLock' in navigator)) return;
-    try {
-      _wakeLock = await navigator.wakeLock.request('screen');
-      _wakeLock.addEventListener('release', () => setTimeout(_acquireWakeLock, 2000));
-    } catch {}
-  }
-  _acquireWakeLock();
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') { _acquireWakeLock(); checkConn(); }
-  });
-
-  // ── IRONCLAD: No-sleep audio trick for iOS ───────────────────────────────────
-  let _noSleepStarted = false;
-  function _startNoSleep() {
-    if (_noSleepStarted) return; _noSleepStarted = true;
-    try {
-      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const buf = ctx.createBuffer(1, 1, 22050);
-      const src = ctx.createBufferSource();
-      src.buffer = buf; src.loop = true;
-      src.connect(ctx.destination); src.start(0);
-    } catch {}
-  }
-  document.addEventListener('touchstart', _startNoSleep, {once:true, passive:true});
-  document.addEventListener('click', _startNoSleep, {once:true});
-
-  // ── IRONCLAD: Heartbeat keepalive — fire every 12s ──────────────────────────
-  setInterval(() => {
-    if (!_connOk) return;
-    fetch(BASE + '/sync/health', {cache:'no-store', signal: AbortSignal.timeout(3000)}).catch(() => {});
-  }, 12000);
-  initConversation();
-});
-
-function hidePair() {
-  document.getElementById('pair-screen').style.display = 'none';
-  document.getElementById('app').style.display = 'flex';
-  updateLayout();
-}
-
-async function initConversation() {
-  try {
-    // Always fetch from server - never trust stale localStorage
-    const d = await fetch(BASE + '/sync/chat/conversation_id').then(r => r.json());
-    if (d.conversation_id) {
-      companionConvId = d.conversation_id;
-      localStorage.setItem('henry:companion_conv_id', companionConvId);
-    }
-    if (companionConvId) await loadChatHistory();
-  } catch { /* offline - use cached id */ }
-}
-
-async function loadChatHistory() {
-  if (!companionConvId) return;
-  try {
-    const d = await fetch(BASE + '/sync/chat/history?limit=40').then(r => r.json());
-    if (!d.messages || !d.messages.length) return;
-    companionConvId = d.conversation_id || companionConvId;
-    const msgs = document.getElementById('msgs');
-    if (!msgs) return;
-    // Only load if chat is empty (don't duplicate messages)
-    if (msgs.children.length > 0) return;
-    d.messages.forEach(function(msg) {
-      addMsg(msg.role === 'user' ? 'u' : 'h', msg.content);
-    });
-  } catch { /* offline */ }
-}
-
-async function saveMsgToHistory(role, content, model) {
-  if (!companionConvId || !content) return;
-  const now = Date.now();
-  if (now - lastHistoryTs < 300) return; // debounce
-  lastHistoryTs = now;
-  try {
-    await fetch(BASE + '/sync/chat/save', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        conversation_id: companionConvId,
-        messages: [{
-          id: crypto.randomUUID(),
-          role,
-          content,
-          model: model || 'companion',
-          provider: 'companion',
-        }],
-      }),
-    });
-  } catch { /* offline — message still shows locally */ }
-}
-
+// ── Date display ──────────────────────────────────────────────────────────────
 function updateDate() {
-  const el = document.getElementById('today-date');
-  if (el) el.textContent = new Date().toLocaleDateString('en-US', {
-    weekday: 'long', month: 'long', day: 'numeric'
-  });
+  var el = document.getElementById('today-date');
+  if (el) el.textContent = new Date().toLocaleDateString('en-US', {weekday:'long',month:'long',day:'numeric'});
 }
 
-function updateLayout() {
-  isIpad = window.innerWidth >= 768;
-  const chatCol = document.getElementById('chat-col');
-  const rightCol = document.getElementById('right-col');
-  if (isIpad) {
-    chatCol.classList.remove('active');
-    rightCol.classList.remove('active');
-    chatCol.style.display = '';
-    rightCol.style.display = '';
-  } else {
-    // Default phone: show chat
-    phoneTo('chat');
-  }
-}
-window.addEventListener('resize', updateLayout);
-
-// ── Connectivity ──────────────────────────────────────────────────────────────
-let _reconnAttempts = 0; let _connOk = false;
-async function checkConn() {
-  const dot = document.getElementById('conn-dot');
-  const bar = document.getElementById('conn-bar');
-  try {
-    const r = await fetch(BASE + '/sync/health', { signal: AbortSignal.timeout(4000), cache:'no-store' });
-    if (r.ok) {
-      _connOk = true; _reconnAttempts = 0;
-      dot.className = 'ok';
-      if (bar) { bar.style.background = 'var(--green)'; bar.title = 'Henry online'; }
-      // Resume screen refresh if it was paused
-      if (document.getElementById('auto-ref')?.checked && !screenTimer) startScreenRefresh();
-    } else throw new Error('not ok');
-  } catch {
-    _connOk = false; _reconnAttempts++;
-    dot.className = 'err';
-    if (bar) { bar.style.background = '#ef4444'; bar.title = 'Henry offline — reconnecting...'; }
-    stopScreenRefresh();
-    // Exponential backoff reconnect: 2s, 4s, 8s, max 15s
-    const delay = Math.min(2000 * Math.pow(1.5, _reconnAttempts - 1), 15000);
-    setTimeout(checkConn, delay);
-  }
-}
-
-// ── Tab switching ─────────────────────────────────────────────────────────────
-function showTab(id) {
-  trackUsage('tab:' + id);
-  document.querySelectorAll('#tabs button').forEach(b => b.classList.remove('on'));
-  document.querySelectorAll('#right-col .pane').forEach(p => p.classList.remove('on'));
-  const tabBtn = document.getElementById('t-' + id);
-  const pane = document.getElementById('p-' + id);
-  if (tabBtn) tabBtn.classList.add('on');
-  if (pane) pane.classList.add('on');
-  if (id === 'screen') { startScreenRefresh(); setTimeout(screenAttachTouch, 100); }
+// ── Tab navigation ────────────────────────────────────────────────────────────
+function showPane(id) {
+  document.querySelectorAll('#nav-tabs button').forEach(function(b) { b.classList.remove('on'); });
+  document.querySelectorAll('.pane').forEach(function(p) { p.classList.remove('on'); });
+  var tb = document.getElementById('t-' + id);
+  var pn = document.getElementById('p-' + id);
+  if (tb) tb.classList.add('on');
+  if (pn) pn.classList.add('on');
+  if (id === 'screen') startScreenRefresh();
   else stopScreenRefresh();
-  if (id === 'rem') loadReminders();
-  if (id === 'tasks') loadTasks();
-  if (id === 'goals') loadGoals();
-  if (id === 'fin') loadFinance();
-  if (id === 'jnl') initJournal();
 }
 
-function phoneTo(id) {
-  document.querySelectorAll('#bottom-nav button').forEach(b => b.classList.remove('on'));
-  const bnBtn = document.getElementById('bn-' + id);
-  if (bnBtn) bnBtn.classList.add('on');
-  const chatCol = document.getElementById('chat-col');
-  const rightCol = document.getElementById('right-col');
-  // Phone-only panes (tasks/rem/jnl/health) — toggle display directly
-  const phoneOnlyPanes = ['tasks','rem','jnl','health','goals','bible'];
-  if (phoneOnlyPanes.includes(id)) {
-    chatCol.classList.remove('active'); rightCol.classList.remove('active');
-    phoneOnlyPanes.forEach(pid => {
-      const el = document.getElementById('p-' + pid);
-      if (el) el.style.display = 'none';
-    });
-    const pane = document.getElementById('p-' + id);
-    if (pane) pane.style.display = 'flex';
-    stopScreenRefresh();
-    if (id === 'rem') loadReminders();
-    if (id === 'tasks') loadTasks();
-    if (id === 'goals') loadGoalsPaneFn();
-    if (id === 'bible') initBible();
-    if (id === 'jnl') initJournal();
-  } else if (id === 'chat') {
-    phoneOnlyPanes.forEach(pid => { const el = document.getElementById('p-' + pid); if (el) el.style.display = 'none'; });
-    chatCol.classList.add('active'); rightCol.classList.remove('active');
+function phoneNav(id) {
+  document.querySelectorAll('#bottom-nav button').forEach(function(b) { b.classList.remove('on'); });
+  var bn = document.getElementById('bn-' + id);
+  if (bn) bn.classList.add('on');
+  var isWide = window.innerWidth >= 768;
+  if (isWide) { showPane(id); return; }
+  var chatCol = document.getElementById('chat-col');
+  var rightCol = document.getElementById('right-col');
+  if (id === 'chat') {
+    if (chatCol) chatCol.classList.add('active');
+    if (rightCol) rightCol.classList.remove('active');
   } else {
-    phoneOnlyPanes.forEach(pid => { const el = document.getElementById('p-' + pid); if (el) el.style.display = 'none'; });
-    chatCol.classList.remove('active'); rightCol.classList.add('active');
-    showTab(id);
+    if (chatCol) chatCol.classList.remove('active');
+    if (rightCol) rightCol.classList.add('active');
+    showPane(id);
   }
 }
+
+// ── Layout init ───────────────────────────────────────────────────────────────
+function initLayout() {
+  var isWide = window.innerWidth >= 768;
+  var chatCol = document.getElementById('chat-col');
+  var rightCol = document.getElementById('right-col');
+  if (isWide) {
+    if (chatCol) { chatCol.classList.add('active'); chatCol.style.display = ''; }
+    if (rightCol) { rightCol.classList.add('active'); rightCol.style.display = ''; }
+  }
+}
+window.addEventListener('resize', initLayout);
 
 // ── Chat ──────────────────────────────────────────────────────────────────────
-function msgTime() {
-  return new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-}
-
 function addMsg(role, text) {
-  const msgs = document.getElementById('msgs');
-  const d = document.createElement('div');
+  var msgs = document.getElementById('msgs');
+  if (!msgs) return;
+  var d = document.createElement('div');
   d.className = 'msg ' + role;
-  const bubble = document.createElement('div');
+  var bubble = document.createElement('div');
   bubble.className = 'bubble';
   bubble.textContent = text;
-  const t = document.createElement('time');
-  t.textContent = msgTime();
+  var t = document.createElement('time');
+  t.textContent = new Date().toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit'});
   d.appendChild(bubble);
   d.appendChild(t);
   msgs.appendChild(d);
@@ -761,1056 +285,233 @@ function addMsg(role, text) {
   return bubble;
 }
 
-// Build conversation history from the DOM — last 16 messages —
-// so Henry remembers what we just talked about.
-function buildHistory() {
-  const out = [];
-  const nodes = document.querySelectorAll('#msgs .msg');
-  for (const n of nodes) {
-    const isUser = n.classList.contains('u');
-    const isHenry = n.classList.contains('h');
-    if (!isUser && !isHenry) continue;
-    const bubble = n.querySelector('.bubble');
-    if (!bubble) continue;
-    const txt = (bubble.textContent || '').trim();
-    // Skip the placeholder “…” bubble that's currently waiting for a response
-    if (!txt || txt === '…') continue;
-    // Skip error placeholders so Henry doesn't try to respond to them
-    if (txt.startsWith('⚠')) continue;
-    out.push({ role: isUser ? 'user' : 'assistant', content: txt });
-  }
-  // Drop the very last user message (we send it as text separately) and trim to 16
-  if (out.length && out[out.length - 1].role === 'user') out.pop();
-  return out.slice(-16);
-}
-
-// ── Henry learns from interactions ───────────────────────────────────────────
-const featureGaps = JSON.parse(localStorage.getItem('henry:feature_gaps') || '[]');
-const usageCounts = JSON.parse(localStorage.getItem('henry:usage_counts') || '{}');
-
-function trackUsage(feature) {
-  usageCounts[feature] = (usageCounts[feature] || 0) + 1;
-  localStorage.setItem('henry:usage_counts', JSON.stringify(usageCounts));
-}
-
-function logGap(query, reason) {
-  const existing = featureGaps.find(g => g.query === query);
-  if (existing) { existing.count++; existing.lastSeen = new Date().toISOString(); }
-  else featureGaps.push({ id: Date.now().toString(), query: query.slice(0,100), failReason: reason, count: 1, firstSeen: new Date().toISOString(), lastSeen: new Date().toISOString() });
-  featureGaps.sort((a,b) => b.count - a.count);
-  localStorage.setItem('henry:feature_gaps', JSON.stringify(featureGaps.slice(0,30)));
-}
-
-function learnPref(key, value) {
-  // Save to both localStorage and Henry's DB via /sync/learn
-  fetch(BASE + '/sync/learn', {
-    method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ type: 'memory', key, value }),
-  }).catch(() => {});
-}
-
-async function sendMsg() {
-  const inp = document.getElementById('msg-in');
-  const text = inp.value.trim();
+function sendMsg() {
+  var inp = document.getElementById('msg-in');
+  var text = inp ? inp.value.trim() : '';
   if (!text || busy) return;
-  inp.value = ''; inp.style.height = '';
+  inp.value = '';
+  inp.style.height = '';
   addMsg('u', text);
-  saveMsgToHistory('user', text, null);
   busy = true;
-  const bubble = addMsg('h', '…');
-  try {
-    const history = buildHistory();
-    const r = await fetch(BASE + '/sync/prompt', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, source: 'companion', history }),
-      signal: AbortSignal.timeout(45000),
-    });
-    if (!r.ok) {
-      bubble.textContent = r.status === 401
-        ? '⚠ Henry AI is not connected. Make sure you opened Henry on your Mac and try again.'
-        : '⚠ Error ' + r.status + '. Is Henry running on your Mac?';
-    } else {
-      const d = await r.json();
-      const replyText = d.reply || d.response || d.text || d.content || JSON.stringify(d);
-    bubble.textContent = replyText;
-    saveMsgToHistory('assistant', replyText, d.model || null);
-    // Self-learning: detect when Henry can't do something and log it
-    const failPhrases = ["I can't", "I don't have", "I'm not able", "I cannot", "not supported", "don't support"];
-    if (failPhrases.some(p => replyText.includes(p))) {
-      logGap(text.slice(0,80), 'AI indicated inability');
-    }
-    // Track usage by question type
-    const lower = text.toLowerCase();
-    if (lower.includes('task') || lower.includes('todo')) trackUsage('chat:tasks');
-    else if (lower.includes('remind')) trackUsage('chat:reminders');
-    else if (lower.includes('bible') || lower.includes('verse')) trackUsage('chat:bible');
-    else if (lower.includes('remember') || lower.includes('save')) trackUsage('chat:memory');
-    else trackUsage('chat:general');
-    }
-  } catch (e) {
-    bubble.textContent = '⚠ Connection error — is Henry running?';
-  }
-  busy = false;
-  document.getElementById('msgs').scrollTop = 9999;
+  var bubble = addMsg('h', '…');
+  fetch(BASE + '/sync/prompt', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({text: text})
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (bubble) bubble.textContent = d.reply || d.response || 'No response';
+    busy = false;
+  })
+  .catch(function(e) {
+    if (bubble) bubble.textContent = '⚠ ' + (e.message || 'Error');
+    busy = false;
+  });
 }
 
-function q(text) {
-  document.getElementById('msg-in').value = text;
+function sendQ(text) {
+  var inp = document.getElementById('msg-in');
+  if (inp) inp.value = text;
   sendMsg();
 }
 
-function inputKey(e) {
-  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMsg(); }
-}
+function sendPrompt(text) { sendQ(text); }
 
-function autoGrow(el) {
-  el.style.height = 'auto';
-  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
-}
-
-// ── Voice Input ───────────────────────────────────────────────────────────────
-let micActive = false;
-
-function toggleMic() {
-  micActive ? stopMic() : startMic();
-}
-
-function startMic() {
-  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-    alert('Voice input not available in this browser. Try Safari.');
-    return;
-  }
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  recognition = new SR();
-  recognition.continuous = false;
-  recognition.interimResults = true;
-  recognition.lang = 'en-US';
-  recognition.onstart = () => {
-    micActive = true;
-    document.getElementById('mic-btn').classList.add('on');
-    document.getElementById('mic-btn').textContent = '🔴';
-  };
-  recognition.onresult = (e) => {
-    const t = Array.from(e.results).map(r => r[0].transcript).join('');
-    document.getElementById('msg-in').value = t;
-    autoGrow(document.getElementById('msg-in'));
-  };
-  recognition.onend = () => {
-    micActive = false;
-    document.getElementById('mic-btn').classList.remove('on');
-    document.getElementById('mic-btn').textContent = '🎙';
-    if (document.getElementById('msg-in').value.trim()) sendMsg();
-  };
-  recognition.onerror = () => {
-    micActive = false;
-    document.getElementById('mic-btn').classList.remove('on');
-    document.getElementById('mic-btn').textContent = '🎙';
-  };
-  recognition.start();
-}
-
-function stopMic() {
-  if (recognition) recognition.stop();
-}
-
-// ── TODAY ─────────────────────────────────────────────────────────────────────
-async function loadToday() {
-  try {
-    const d = await fetch(BASE + '/sync/mac/today').then(r => r.json());
-    habitsData = d.habits || [];
-    habitLogsData = d.habitLogs || [];
-    renderHabits(habitsData, habitLogsData);
-    renderTasks(d.tasks || []);
-    renderReminders(d.reminders || []);
-    renderFocusCard(d, habitsData, habitLogsData);
-  } catch { /* offline */ }
-}
-
-function renderFocusCard(data, habits, logs) {
-  const bodyEl = document.getElementById('focus-body');
-  const tagEl = document.getElementById('focus-tag');
-  if (!bodyEl) return;
-  const today = new Date().toISOString().slice(0,10);
-  const rems = (data.reminders || []).filter(r => !r.done);
-  const tasks = (data.tasks || []);
-  const undoneHabits = habits.filter(h => !logs.find(l => l.habit_id === h.id && l.count >= h.target_per_day));
-  // Priority: reminders > tasks > habits
-  if (rems.length) {
-    bodyEl.textContent = rems[0].title;
-    if (tagEl) tagEl.textContent = 'Reminder';
-  } else if (tasks.length) {
-    bodyEl.textContent = tasks[0].title;
-    if (tagEl) tagEl.textContent = 'Task';
-  } else if (undoneHabits.length) {
-    bodyEl.textContent = undoneHabits[0].icon + ' ' + undoneHabits[0].name;
-    if (tagEl) tagEl.textContent = 'Habit';
-  } else {
-    bodyEl.textContent = 'All caught up! Great work today.';
-    if (tagEl) { tagEl.textContent = ''; tagEl.style.display = 'none'; }
-  }
+// ── Today data ────────────────────────────────────────────────────────────────
+var _todayLoaded = false;
+function loadToday() {
+  fetch(BASE + '/sync/mac/today', {cache: 'no-store'})
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      _todayLoaded = true;
+      renderHabits(d.habits || [], d.habitLogs || []);
+      renderTasks(d.tasks || []);
+      renderReminders(d.reminders || []);
+    })
+    .catch(function() {
+      // Server not ready yet — retry in 1 second
+      if (!_todayLoaded) setTimeout(loadToday, 1000);
+    });
 }
 
 function renderHabits(habits, logs) {
-  const el = document.getElementById('habit-list');
-  const prog = document.getElementById('habit-prog');
-  if (!habits.length) { el.innerHTML = '<div style="padding:14px 16px;color:var(--muted);font-size:13px">No habits set up yet — open Henry to add some</div>'; return; }
-  const done = habits.filter(h => logs.find(l => l.habit_id === h.id && l.count >= h.target_per_day)).length;
-  prog.textContent = done + '/' + habits.length;
-  el.innerHTML = habits.map(h => {
-    const log = logs.find(l => l.habit_id === h.id);
-    const isDone = log && log.count >= h.target_per_day;
-    return \`<div class="habit-row">
-      <div class="habit-check \${isDone ? 'done' : ''}" onclick="toggleHabit('\${h.id}',\${isDone})">\${isDone ? '' : h.icon}</div>
-      <span class="habit-name">\${h.name}</span>
-      \${isDone ? '<span class="habit-streak">✓ Done</span>' : ''}
-    </div>\`;
+  var el = document.getElementById('habit-list');
+  var prog = document.getElementById('habit-prog');
+  if (!el) return;
+  if (!habits.length) {
+    el.innerHTML = '<div class="loading-msg">No habits set up yet</div>';
+    return;
+  }
+  var done = habits.filter(function(h) {
+    return logs.find(function(l) { return l.habit_id === h.id; });
+  }).length;
+  if (prog) prog.textContent = done + '/' + habits.length;
+  el.innerHTML = habits.map(function(h) {
+    var isDone = !!logs.find(function(l) { return l.habit_id === h.id; });
+    return '<div class="habit-row">' +
+      '<div class="habit-check ' + (isDone ? 'done' : '') + '" onclick="toggleHabit(\\'' + h.id + '\\',' + isDone + ')">' +
+      (isDone ? '✓' : (h.icon || '○')) + '</div>' +
+      '<span class="habit-name">' + h.name + '</span></div>';
   }).join('');
-}
-
-async function toggleHabit(id, wasDone) {
-  try {
-    await fetch(BASE + '/sync/mac/habit-toggle', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ habit_id: id, date: new Date().toISOString().slice(0, 10) }),
-    });
-    await loadToday();
-  } catch { /* offline */ }
 }
 
 function renderTasks(tasks) {
-  const el = document.getElementById('task-list');
-  if (!tasks.length) { el.innerHTML = '<div style="padding:14px 16px;color:var(--muted);font-size:13px">All clear ✓</div>'; return; }
-  el.innerHTML = tasks.slice(0, 6).map(t => \`
-    <div class="task-row">
-      <div class="task-dot" style="background:\${t.priority >= 3 ? '#ef4444' : t.priority === 2 ? '#f59e0b' : 'var(--accent)'}"></div>
-      <span class="task-title">\${t.title}</span>
-      <span class="task-pri">\${t.priority >= 3 ? 'High' : t.priority === 2 ? 'Med' : 'Low'}</span>
-    </div>
-  \`).join('');
-}
-
-function renderReminders(rems) {
-  const el = document.getElementById('rem-list');
-  if (!rems.length) { el.innerHTML = '<div style="padding:14px 16px;color:var(--muted);font-size:13px">Nothing due</div>'; return; }
-  el.innerHTML = rems.slice(0, 5).map(r => {
-    const t = r.due_at ? new Date(r.due_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '';
-    return \`<div class="rem-row"><span class="rem-icon">◎</span><span class="rem-title">\${r.title}</span>\${t ? '<span class="rem-time">'+t+'</span>' : ''}</div>\`;
+  var el = document.getElementById('task-list');
+  if (!el) return;
+  if (!tasks.length) { el.innerHTML = '<div class="loading-msg">All clear ✓</div>'; return; }
+  el.innerHTML = tasks.slice(0, 8).map(function(t) {
+    var col = t.priority >= 3 ? '#ef4444' : t.priority === 2 ? '#f59e0b' : 'var(--accent)';
+    return '<div class="task-row">' +
+      '<div class="task-dot" style="background:' + col + '"></div>' +
+      '<span class="task-title">' + t.title + '</span></div>';
   }).join('');
 }
 
-// ── SCREEN — live stream + touch control ─────────────────────────────────────
-let _scFrameCount = 0; let _scLastTs = 0; let _scFetching = false;
-
-async function refreshScreen() {
-  if (_scFetching) return;
-  _scFetching = true;
-  const img = document.getElementById('screen-img');
-  const ts = document.getElementById('screen-ts');
-  const status = document.getElementById('screen-status');
-  const fps = document.getElementById('screen-fps');
-  try {
-    // Use /screen (direct JPEG) for speed — much faster than /sync/mac/screen (PNG/JSON)
-    const url = BASE + '/screen?_=' + Date.now();
-    const resp = await fetch(url, { signal: AbortSignal.timeout(4000) });
-    if (resp.ok) {
-      const blob = await resp.blob();
-      const objUrl = URL.createObjectURL(blob);
-      const old = img.src;
-      img.src = objUrl;
-      if (old.startsWith('blob:')) URL.revokeObjectURL(old);
-      const now = Date.now();
-      if (_scLastTs) {
-        const f = (1000 / (now - _scLastTs)).toFixed(1);
-        fps.textContent = f + ' fps';
-      }
-      _scLastTs = now;
-      _scFrameCount++;
-      ts.textContent = new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-      status.textContent = '● Live';
-      status.style.color = '#22c55e';
-    }
-  } catch {
-    status.textContent = '○ Offline';
-    status.style.color = 'var(--muted)';
-    fps.textContent = '';
-  }
-  _scFetching = false;
+function renderReminders(rems) {
+  var el = document.getElementById('rem-list');
+  if (!el) return;
+  if (!rems.length) { el.innerHTML = '<div class="loading-msg">Nothing due</div>'; return; }
+  el.innerHTML = rems.slice(0, 5).map(function(r) {
+    return '<div class="task-row"><span style="margin-right:6px">◎</span><span class="task-title">' + r.title + '</span></div>';
+  }).join('');
 }
 
+function toggleHabit(id, wasDone) {
+  fetch(BASE + '/sync/mac/habit-toggle', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({habit_id: id, date: new Date().toISOString().slice(0, 10)})
+  }).then(function() { loadToday(); }).catch(function() {});
+}
+
+// ── Screen stream ─────────────────────────────────────────────────────────────
 function startScreenRefresh() {
-  stopScreenRefresh();
-  if (document.getElementById('auto-ref').checked) {
-    screenTimer = setInterval(refreshScreen, 500); // 2fps — fast enough for control
-    refreshScreen();
-  }
+  if (screenTimer) return;
+  fetchScreen();
+  screenTimer = setInterval(fetchScreen, 700);
 }
 
 function stopScreenRefresh() {
   if (screenTimer) { clearInterval(screenTimer); screenTimer = null; }
 }
 
-function toggleAutoRef() {
-  if (document.getElementById('auto-ref').checked) startScreenRefresh();
-  else stopScreenRefresh();
+function toggleScreenRefresh() {
+  var cb = document.getElementById('auto-ref');
+  if (cb && cb.checked) startScreenRefresh(); else stopScreenRefresh();
 }
 
-// ── Touch tap/scroll on screen ──────────────────────────────────────────────
-let _tapStart = null;
-let _tapMoved = false;
-let _scrollAccumY = 0;
-let _scrollAccumX = 0;
-let _lastScrollSent = 0;
-
-function _screenPt(e, img) {
-  const rect = img.getBoundingClientRect();
-  const touch = e.touches ? e.touches[0] || e.changedTouches[0] : e;
-  return {
-    x: (touch.clientX - rect.left) / rect.width,
-    y: (touch.clientY - rect.top) / rect.height,
-  };
-}
-
-function _showRipple(xPx, yPx) {
-  const r = document.getElementById('tap-ripple');
-  r.style.left = xPx + 'px'; r.style.top = yPx + 'px';
-  r.style.display = 'block';
-  r.style.transition = 'none';
-  r.style.transform = 'translate(-50%,-50%) scale(1)'; r.style.opacity = '1';
-  setTimeout(() => {
-    r.style.transition = 'transform 0.3s ease, opacity 0.3s ease';
-    r.style.transform = 'translate(-50%,-50%) scale(2)'; r.style.opacity = '0';
-    setTimeout(() => r.style.display = 'none', 320);
-  }, 10);
-}
-
-function _doTap(xPct, yPct, imgRect, clientX, clientY, dbl, right) {
-  _showRipple(clientX - imgRect.left, clientY - imgRect.top);
-  fetch(BASE + '/companion/tap', {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({x:xPct, y:yPct, double:dbl||false, right:right||false}),
-  }).catch(()=>{});
-}
-
-function _doScroll(xPct, yPct, dy, dx) {
-  const now = Date.now();
-  if (now - _lastScrollSent < 80) return;
-  _lastScrollSent = now;
-  fetch(BASE + '/companion/scroll', {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({x:xPct, y:yPct, dy, dx:dx||0}),
-  }).catch(()=>{});
-}
-
-function screenAttachTouch() {
-  const img = document.getElementById('screen-img');
-  if (!img || img.dataset.touchBound) return;
-  img.dataset.touchBound = '1';
-
-  img.addEventListener('touchstart', e => {
-    e.preventDefault();
-    const pt = _screenPt(e, img);
-    _tapStart = {...pt, t:Date.now(), cx:e.touches[0].clientX, cy:e.touches[0].clientY};
-    _tapMoved = false; _scrollAccumY = 0; _scrollAccumX = 0;
-  }, {passive:false});
-
-  img.addEventListener('touchmove', e => {
-    e.preventDefault();
-    if (!_tapStart) return;
-    const pt = _screenPt(e, img);
-    const dx = (pt.x - _tapStart.x) * img.getBoundingClientRect().width;
-    const dy = (pt.y - _tapStart.y) * img.getBoundingClientRect().height;
-    if (Math.abs(dx) > 8 || Math.abs(dy) > 8) _tapMoved = true;
-    if (_tapMoved) {
-      _scrollAccumY += (pt.y - _tapStart.y);
-      _scrollAccumX += (pt.x - _tapStart.x);
-      if (Math.abs(_scrollAccumY) > 0.01 || Math.abs(_scrollAccumX) > 0.01) {
-        _doScroll(pt.x, pt.y, -_scrollAccumY * 8, -_scrollAccumX * 8);
-        _scrollAccumY = 0; _scrollAccumX = 0;
+function fetchScreen() {
+  var img = document.getElementById('screen-img');
+  if (!img) return;
+  var t0 = Date.now();
+  fetch(BASE + '/sync/mac/screen', {cache: 'no-store'})
+    .then(function(r) { return r.blob(); })
+    .then(function(blob) {
+      var url = URL.createObjectURL(blob);
+      var old = img.src;
+      img.src = url;
+      if (old && old.startsWith('blob:')) URL.revokeObjectURL(old);
+      var fps = document.getElementById('fps-counter');
+      if (fps) fps.textContent = Math.round(1000 / (Date.now() - t0)) + ' fps';
+      // Touch-to-click
+      if (!img._touch) {
+        img._touch = true;
+        img.addEventListener('click', function(e) { sendScreenClick(e, img); });
       }
-      _tapStart = {..._tapStart, ...pt};
-    }
-  }, {passive:false});
-
-  img.addEventListener('touchend', e => {
-    e.preventDefault();
-    if (!_tapStart) return;
-    const ended = e.changedTouches[0];
-    const pt = _screenPt({changedTouches: e.changedTouches, touches: []}, img);
-    const dt = Date.now() - _tapStart.t;
-    if (!_tapMoved && dt < 400) {
-      const rect = img.getBoundingClientRect();
-      _doTap(pt.x, pt.y, rect, ended.clientX, ended.clientY, false, false);
-    }
-    _tapStart = null;
-  }, {passive:false});
-
-  // Long press = right click
-  let longPressTimer = null;
-  img.addEventListener('touchstart', e => {
-    clearTimeout(longPressTimer);
-    longPressTimer = setTimeout(() => {
-      if (!_tapMoved && _tapStart) {
-        const pt = _screenPt(e, img);
-        const rect = img.getBoundingClientRect();
-        const t = e.touches[0];
-        _doTap(pt.x, pt.y, rect, t.clientX, t.clientY, false, true);
-        navigator.vibrate && navigator.vibrate(50);
-      }
-    }, 600);
-  }, {passive:true});
-  img.addEventListener('touchend', () => clearTimeout(longPressTimer), {passive:true});
-  img.addEventListener('touchcancel', () => clearTimeout(longPressTimer), {passive:true});
-
-  // Desktop mouse click fallback
-  img.addEventListener('click', e => {
-    const pt = _screenPt(e, img);
-    const rect = img.getBoundingClientRect();
-    _doTap(pt.x, pt.y, rect, e.clientX, e.clientY, false, false);
-  });
-  img.addEventListener('dblclick', e => {
-    const pt = _screenPt(e, img);
-    const rect = img.getBoundingClientRect();
-    _doTap(pt.x, pt.y, rect, e.clientX, e.clientY, true, false);
-  });
+    })
+    .catch(function() {});
 }
 
-// ── Mac keyboard shortcuts from companion ────────────────────────────────────
-function henryVPN() {
-  sendPrompt('vpn');
-  // Get current connection info and show instructions
-  fetch(BASE + '/sync/health', {cache:'no-store'})
-    .then(r => r.json())
-    .then(d => {
-      const port = d.proxyPort || 1080;
-      const ip = window.location.hostname !== '127.0.0.1' ? window.location.hostname : null;
-      const tunnel = d.tunnelUrl;
-      const el = document.getElementById('vpn-instructions');
-      const srv = document.getElementById('vpn-server');
-      const prt = document.getElementById('vpn-port');
-      const st = document.getElementById('vpn-status');
-      if (el && srv && prt && st) {
-        if (tunnel) {
-          srv.textContent = tunnel.replace('https://','').replace('/','');
-          prt.textContent = '80';
-        } else if (ip) {
-          srv.textContent = ip;
-          prt.textContent = String(port);
-        } else {
-          srv.textContent = 'your-mac-local-ip';
-          prt.textContent = String(port);
-        }
-        el.style.display = 'block';
-        if (port) { st.textContent = 'SOCKS5 :' + port; st.style.color = '#22c55e'; }
-      }
-    }).catch(() => {});
-}
-function henryVPNOff() {
-  sendPrompt('stop vpn');
-  const el = document.getElementById('vpn-status');
-  if (el) { el.textContent = 'stopped'; el.style.color = 'var(--muted)'; }
-  document.getElementById('vpn-instructions') && (document.getElementById('vpn-instructions').style.display='none');
+function sendScreenClick(e, img) {
+  var rect = img.getBoundingClientRect();
+  var natW = img.naturalWidth || 1440;
+  var natH = img.naturalHeight || 900;
+  var scaleX = natW / rect.width;
+  var scaleY = natH / rect.height;
+  var x = Math.round((e.clientX - rect.left) * scaleX);
+  var y = Math.round((e.clientY - rect.top) * scaleY);
+  fetch(BASE + '/sync/mac/open-app', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({action: 'click', x: x, y: y})
+  }).catch(function() {});
 }
 
-function macKey(key, mods) {
-  fetch(BASE + '/companion/key', {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({key, modifiers:mods}),
-  }).catch(()=>{});
+// ── Keyboard shortcuts ────────────────────────────────────────────────────────
+function macKey(key, mod) {
+  fetch(BASE + '/sync/mac/open-app', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({action: 'key', key: key, modifiers: mod})
+  }).catch(function() {});
 }
 
-function screenClick(e) {
-  const img = document.getElementById('screen-img');
-  const pt = _screenPt(e, img);
-  const rect = img.getBoundingClientRect();
-  _doTap(pt.x, pt.y, rect, e.clientX, e.clientY, false, false);
-}
-
-// ── CONTROL ───────────────────────────────────────────────────────────────────
-const APPS = [
-  { icon: '📁', name: 'Finder' }, { icon: '⌨️', name: 'Terminal' },
-  { icon: '🌐', name: 'Chrome' }, { icon: '📧', name: 'Mail' },
-  { icon: '📅', name: 'Calendar' }, { icon: '📝', name: 'Notes' },
-  { icon: '🎵', name: 'Music' }, { icon: '⚙️', name: 'System Preferences' },
-  { icon: '💻', name: 'VS Code' }, { icon: '💬', name: 'Slack' },
-  { icon: '📷', name: 'Photos' }, { icon: '🧭', name: 'Safari' },
-];
-
-const ACTIONS = [
-  { icon: '🔇', label: 'Mute Mac', cmd: "osascript -e 'set volume output muted true'" },
-  { icon: '🔊', label: 'Unmute', cmd: "osascript -e 'set volume output muted false'" },
-  { icon: '📸', label: 'Screenshot', cmd: "screencapture ~/Desktop/HenryCapture_$(date +%Y%m%d_%H%M%S).png" },
-  { icon: '🔒', label: 'Lock Screen', cmd: "pmset displaysleepnow" },
-  { icon: '🧹', label: 'Empty Trash', cmd: "osascript -e 'tell application Finder to empty trash'" },
-  { icon: '📋', label: 'Show Clipboard', cmd: "pbpaste | head -5" },
-  { icon: '🔄', label: 'Restart Dock', cmd: "killall Dock" },
-  { icon: '📡', label: 'Show IP', cmd: "curl -s ifconfig.me" },
-];
-
-function buildAppGrid() {
-  document.getElementById('app-grid').innerHTML = APPS.map(a =>
-    \`<div class="app-btn" onclick="openApp('\${a.name}')"><span class="ai">\${a.icon}</span><span class="al">\${a.name.split(' ')[0]}</span></div>\`
-  ).join('');
-}
-
-function buildActionGrid() {
-  document.getElementById('action-grid').innerHTML = ACTIONS.map(a =>
-    \`<div class="act-btn" onclick="runCmd(this.dataset.cmd)" data-cmd="\${a.cmd.replace(/"/g,'&quot;')}"><span class="ai2">\${a.icon}</span>\${a.label}</div>\`
-  ).join('');
-}
-
-async function openApp(name) {
-  const out = document.getElementById('shell-out');
-  out.textContent = 'Opening ' + name + '…';
-  try {
-    await fetch(BASE + '/sync/mac/open-app', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ app: name }),
+// ── Connection check ──────────────────────────────────────────────────────────
+function checkConn() {
+  var dot = document.getElementById('conn-dot');
+  var bar = document.getElementById('tunnel-bar');
+  fetch(BASE + '/sync/health', {cache: 'no-store', signal: AbortSignal.timeout(4000)})
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      _connOk = true;
+      if (dot) { dot.className = 'ok'; }
+      if (bar) bar.style.background = d.tunnelUrl ? 'var(--accent)' : 'var(--green)';
+    })
+    .catch(function() {
+      _connOk = false;
+      if (dot) dot.className = 'err';
+      if (bar) bar.style.background = 'var(--red)';
     });
-    out.textContent = '✓ Opened ' + name;
-  } catch { out.textContent = '⚠ Failed to open ' + name; }
 }
 
-async function runCmd(cmd) {
-  const out = document.getElementById('shell-out');
-  out.textContent = '$ ' + cmd.slice(0, 60) + (cmd.length > 60 ? '...' : '') + '\\n...';
-  try {
-    const d = await fetch(BASE + '/sync/mac/run', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ command: cmd }),
-    }).then(r => r.json());
-    out.textContent = '$ ' + cmd + '\\n' + (d.output || '(done)');
-  } catch { out.textContent = '⚠ Error'; }
+// ── Wake lock ─────────────────────────────────────────────────────────────────
+var _wakeLock = null;
+function acquireWakeLock() {
+  if (!navigator.wakeLock) return;
+  navigator.wakeLock.request('screen').then(function(wl) {
+    _wakeLock = wl;
+    wl.addEventListener('release', function() { setTimeout(acquireWakeLock, 2000); });
+  }).catch(function() {});
 }
+document.addEventListener('visibilitychange', function() {
+  if (document.visibilityState === 'visible') { acquireWakeLock(); checkConn(); }
+});
 
-async function runShell() {
-  const inp = document.getElementById('shell-in');
-  const cmd = inp.value.trim();
-  if (!cmd) return;
-  inp.value = '';
-  await runCmd(cmd);
-}
+// ── Heartbeat ─────────────────────────────────────────────────────────────────
+setInterval(function() {
+  if (_connOk) fetch(BASE + '/sync/health', {cache:'no-store'}).catch(function(){});
+}, 15000);
 
-// ── CAPTURE ───────────────────────────────────────────────────────────────────
-let capMicRec = null;
-
-function capMic() {
-  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-    alert('Voice not available. Try Safari on iOS.');
-    return;
-  }
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  capMicRec = new SR();
-  capMicRec.continuous = false;
-  capMicRec.interimResults = true;
-  capMicRec.lang = 'en-US';
-  capMicRec.onresult = (e) => {
-    const t = Array.from(e.results).map(r => r[0].transcript).join('');
-    document.getElementById('cap-in').value = t;
-  };
-  capMicRec.onend = () => {};
-  capMicRec.start();
-}
-
-async function processCapture() {
-  const text = document.getElementById('cap-in').value.trim();
-  if (!text) return;
-  const result = document.getElementById('cap-result');
-  result.className = 'show';
-  result.innerHTML = '<div style="color:var(--muted);font-size:13px">⚡ Processing with Henry AI…</div>';
-  try {
-    const d = await fetch(BASE + '/sync/capture-and-process', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, source: 'companion-ipad' }),
-    }).then(r => r.json());
-    const sections = [];
-    if (d.ideas?.length) sections.push({ title: '💡 Ideas', items: d.ideas });
-    if (d.prospects?.length) sections.push({ title: '🎯 Prospects', items: d.prospects });
-    if (d.tasks?.length) sections.push({ title: '✅ Tasks', items: d.tasks });
-    if (d.insights?.length) sections.push({ title: '🔍 Insights', items: d.insights });
-    if (d.quotes?.length) sections.push({ title: '💬 Quotes', items: d.quotes });
-    if (!sections.length) { result.innerHTML = '<div style="color:var(--muted);font-size:13px">Captured and saved to Henry.</div>'; return; }
-    result.innerHTML = sections.map(s => \`
-      <div class="result-section">
-        <h4>\${s.title}</h4>
-        \${s.items.map(i => '<p>' + (typeof i === 'string' ? i : JSON.stringify(i)) + '</p>').join('')}
-      </div>
-    \`).join('');
-  } catch {
-    result.innerHTML = '<div style="color:var(--red)">⚠ Error processing. Is Henry running?</div>';
-  }
-}
-
-// ── BIBLE ─────────────────────────────────────────────────────────────────────
-let currentVerseText = '';
-let currentVerseRef = '';
-
-async function lookupVerse(ref) {
-  if (!ref || !ref.trim()) return;
-  const resultEl = document.getElementById('bible-result');
-  const refLabel = document.getElementById('bible-ref-label');
-  const textEl = document.getElementById('bible-text');
-  resultEl.className = 'show';
-  refLabel.textContent = ref.trim().toUpperCase();
-  textEl.textContent = 'Looking up…';
-  try {
-    const r = await fetch(BASE + '/sync/mac/bible?ref=' + encodeURIComponent(ref.trim()));
-    const d = await r.json();
-    if (d.found && d.text) {
-      textEl.textContent = d.text;
-      refLabel.textContent = (d.reference || ref.trim()).toUpperCase();
-      currentVerseText = d.text;
-      currentVerseRef = d.reference || ref.trim();
-    } else {
-      textEl.textContent = d.error || '⚠ Verse not found. Try "John 3:16" or "Psalm 23:1".';
-    }
-  } catch {
-    textEl.textContent = '⚠ Could not reach Henry. Make sure Henry is open on your Mac and you are on the same WiFi.';
-  }
-}
-
-async function studyPassage() {
-  const prompt = document.getElementById('study-prompt-in').value.trim();
-  if (!prompt || !currentVerseText) return;
-  studyWith(prompt);
-}
-
-// ── SWIPE NAV (free — CSS touch events) ──────────────────────────────────────
-let touchStartX = 0;
-let touchStartY = 0;
-const phoneOrder = ['chat','today','tasks','rem','jnl','health','bible'];
-
-document.addEventListener('touchstart', e => {
-  touchStartX = e.touches[0].clientX;
-  touchStartY = e.touches[0].clientY;
-}, { passive: true });
-
-document.addEventListener('touchend', e => {
-  if (!document.getElementById('chat-col').classList.contains('active') && 
-      !document.getElementById('right-col').classList.contains('active')) return; // iPad: no swipe
-  const dx = e.changedTouches[0].clientX - touchStartX;
-  const dy = e.changedTouches[0].clientY - touchStartY;
-  if (Math.abs(dx) < 60 || Math.abs(dy) > Math.abs(dx) * 0.8) return; // too short or too vertical
-  const active = document.querySelector('#bottom-nav button.on');
-  if (!active) return;
-  const currentId = active.id.replace('bn-','');
-  const idx = phoneOrder.indexOf(currentId);
-  if (dx < 0 && idx < phoneOrder.length - 1) phoneTo(phoneOrder[idx + 1]); // swipe left = next
-  if (dx > 0 && idx > 0) phoneTo(phoneOrder[idx - 1]); // swipe right = prev
-}, { passive: true });
-
-// ── PULL TO REFRESH (free) ────────────────────────────────────────────────────
-let pullStartY = 0;
-let pulling = false;
-const pullEl = (() => {
-  const d = document.createElement('div');
-  d.style.cssText = 'position:fixed;top:0;left:0;right:0;height:40px;background:var(--accent);color:#fff;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;transform:translateY(-100%);transition:transform .2s;z-index:999';
-  d.textContent = '↓ Pull to refresh';
-  document.body.appendChild(d);
-  return d;
-})();
-
-document.addEventListener('touchstart', e => { pullStartY = e.touches[0].clientY; }, { passive: true });
-document.addEventListener('touchmove', e => {
-  const dy = e.touches[0].clientY - pullStartY;
-  if (dy > 60 && window.scrollY === 0) {
-    pullEl.style.transform = 'translateY(0)';
-    pullEl.textContent = '↑ Release to refresh';
-    pulling = true;
-  }
-}, { passive: true });
-document.addEventListener('touchend', () => {
-  if (pulling) {
-    pulling = false;
-    pullEl.style.transform = 'translateY(-100%)';
-    pullEl.textContent = '↓ Pull to refresh';
-    loadToday();
-    const active = document.querySelector('#bottom-nav button.on');
-    if (active) {
-      const id = active.id.replace('bn-','');
-      if (id === 'tasks') loadTasks();
-      if (id === 'rem') loadReminders();
-      if (id === 'goals') loadGoals();
-    }
-  }
-}, { passive: true });
-
-// ── JOURNAL ──────────────────────────────────────────────────────────────────
-async function initJournal() {
-  const d = document.getElementById('jnl-date');
-  if (d) d.textContent = new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-  // Load today's entry if it exists
-  try {
-    const today = new Date().toISOString().slice(0, 10);
-    const data = await fetch(BASE + '/sync/mac/today').then(r => r.json());
-    const entry = (data.journalToday);
-    if (entry && entry.content) {
-      const inp = document.getElementById('jnl-in');
-      const mood = document.getElementById('jnl-mood');
-      const status = document.getElementById('jnl-status');
-      if (inp && !inp.value) {
-        inp.value = entry.content;
-        if (mood && entry.mood) mood.value = entry.mood;
-        if (status) { status.textContent = 'Loaded today\'s entry'; status.style.color = 'var(--accent)'; }
-      }
-    }
-  } catch { /* offline */ }
-}
-
-async function saveJournal() {
-  const content = document.getElementById('jnl-in').value.trim();
-  if (!content) return;
-  const mood = document.getElementById('jnl-mood').value;
-  const status = document.getElementById('jnl-status');
-  status.textContent = 'Saving…';
-  try {
-    const r = await fetch(BASE + '/sync/mac/journal/create', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content, mood, title: 'From companion' }),
+// ── Input auto-grow ───────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', function() {
+  var inp = document.getElementById('msg-in');
+  if (inp) {
+    inp.addEventListener('input', function() {
+      inp.style.height = '';
+      inp.style.height = Math.min(inp.scrollHeight, 100) + 'px';
     });
-    if (r.ok) {
-      document.getElementById('jnl-in').value = '';
-      document.getElementById('jnl-mood').value = '';
-      status.textContent = '✓ Saved to journal';
-      setTimeout(() => { status.textContent = ''; }, 3000);
-    } else {
-      status.textContent = 'Save failed';
-    }
-  } catch { status.textContent = 'Could not reach Henry'; }
-}
-
-// ── REMINDER QUICK-ADD ───────────────────────────────────────────────────────
-function showAddReminder() {
-  const row = document.getElementById('add-rem-row');
-  row.style.display = row.style.display === 'none' ? 'flex' : 'none';
-  if (row.style.display === 'flex') document.getElementById('rem-in').focus();
-}
-
-async function addReminder() {
-  const inp = document.getElementById('rem-in');
-  const title = inp.value.trim();
-  if (!title) return;
-  try {
-    await fetch(BASE + '/sync/mac/reminders/create', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title }),
+    inp.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMsg(); }
     });
-    inp.value = '';
-    document.getElementById('add-rem-row').style.display = 'none';
-    await loadReminders();
-  } catch { alert('Could not add reminder'); }
-}
-
-async function doneReminder(id) {
-  try {
-    await fetch(BASE + '/sync/mac/reminders/done', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id }),
-    });
-    await loadReminders();
-  } catch { /* ignore */ }
-}
-
-// ── HEALTH LOGGING ───────────────────────────────────────────────────────────
-async function logHealth(category, value, unit) {
-  const status = document.getElementById('health-status');
-  status.textContent = 'Logging…';
-  try {
-    const r = await fetch(BASE + '/sync/mac/health/log', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ category, value }),
-    });
-    if (r.ok) {
-      status.textContent = '✓ Logged ' + value + ' ' + unit + ' ' + category;
-      setTimeout(() => { status.textContent = ''; }, 3000);
-    }
-  } catch { status.textContent = 'Could not reach Henry'; }
-}
-
-async function promptHealthLog() {
-  const cats = ['water','exercise','sleep','weight','mood','calories','steps'];
-  const cat = prompt('Category: ' + cats.join(', '));
-  if (!cat) return;
-  const val = prompt('Value:');
-  if (val === null) return;
-  await logHealth(cat.trim(), parseFloat(val) || 0, '');
-}
-
-// ── REMINDERS ──────────────────────────────────────────────────────────────────
-async function loadReminders() {
-  try {
-    const d = await fetch(BASE + '/sync/mac/reminders').then(r => r.json());
-    const rems = (d.reminders || []).filter(r => !r.done);
-    const remCount = document.getElementById('rem-count');
-    if (remCount) remCount.textContent = String(rems.length);
-    const elRem = document.getElementById('rem-list');
-    const elRemPane = document.getElementById('rem-list-pane');
-    const html = !rems.length
-      ? '<div style="padding:32px 16px;color:var(--muted);text-align:center;font-size:14px">No reminders yet.<br><br><span style="font-size:12px">Say \"remind me to...\" in chat to add one.</span></div>'
-      : rems.map(r => {
-        const now = new Date();
-        const due = r.due_at ? new Date(r.due_at) : null;
-        const isOverdue = due && due < now;
-        const isToday = due && due.toDateString() === now.toDateString();
-        const timeStr = due ? due.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '';
-        const dateStr = due
-          ? (isToday ? 'Today, ' + timeStr : due.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) + (timeStr ? ' · ' + timeStr : ''))
-          : 'No time set';
-        return '<div style="display:flex;align-items:flex-start;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border)">'
-          + '<button onclick="doneReminder('' + r.id + '',this)" style="width:22px;height:22px;border-radius:50%;border:2px solid '+(isOverdue?'#ef4444':'var(--accent)')+';background:none;cursor:pointer;flex-shrink:0;margin-top:1px"></button>'
-          + '<div style="flex:1;min-width:0">'
-          + '<div style="font-size:14px;color:var(--text);font-weight:500">' + r.title + '</div>'
-          + '<div style="font-size:11px;margin-top:2px;color:' + (isOverdue ? '#ef4444' : (isToday ? 'var(--accent)' : 'var(--muted)')) + '">'
-          + (isOverdue ? '⚠ Overdue · ' : '') + dateStr + '</div>'
-          + '</div></div>';
-      }).join('');
-    if (elRem) elRem.innerHTML = html;
-    if (elRemPane) elRemPane.innerHTML = html;
-  } catch { /* offline */ }
-}
-
-async function doneReminder(id, btn) {
-  btn.style.background = 'var(--accent)';
-  btn.innerHTML = '✓';
-  btn.style.color = '#fff';
-  btn.style.fontSize = '12px';
-  btn.disabled = true;
-  try {
-    await fetch(BASE + '/sync/mac/reminders/done', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ id }),
-    });
-    setTimeout(loadReminders, 600);
-  } catch { /* ignore */ }
-}
-
-
-// ── TASKS ────────────────────────────────────────────────────────────────────
-async function loadTasks() {
-  try {
-    const d = await fetch(BASE + '/sync/mac/tasks').then(r => r.json());
-    const tasks = d.tasks || [];
-    // Update today card list AND dedicated pane
-    const elToday = document.getElementById('task-list');
-    const elPane = document.getElementById('task-list-pane');
-    if (!tasks.length) {
-      if (elToday) elToday.innerHTML = '<div class="empty-msg">No open tasks</div>';
-      if (elPane) elPane.innerHTML = '<div style="padding:24px;color:var(--muted);text-align:center;font-size:14px">No open tasks</div>';
-      return;
-    }
-    const el = elToday || elPane;
-    if (!el) return;
-    const html = tasks.map(t => {
-      const priColor = t.priority >= 3 ? '#ef4444' : t.priority === 2 ? '#f59e0b' : '#6b7280';
-      return '<div class="task-row2"><div class="task-check" title="Mark done" data-tid="' + t.id + '" onclick="completeTaskEl(this)"></div><div class="task-pri-dot" style="background:' + priColor + '"></div><span style="flex:1;font-size:14px;color:var(--text)">' + t.title + '</span></div>';
-    }).join('');
-    if (elToday) elToday.innerHTML = html;
-    if (elPane) elPane.innerHTML = html;
-  } catch (e) {
-    document.getElementById('task-list').innerHTML = '<div class="empty-msg">Could not reach Henry. Is it running?</div>';
   }
-}
+  var sb = document.getElementById('send-btn');
+  if (sb) sb.addEventListener('click', sendMsg);
 
-function showAddTask() {
-  const row = document.getElementById('add-task-row');
-  row.style.display = row.style.display === 'none' ? 'flex' : 'none';
-  if (row.style.display === 'flex') document.getElementById('task-in').focus();
-}
+  // Init
+  updateDate();
+  setInterval(updateDate, 60000);
+  initLayout();
+  // Poll until data lands (server may take a moment on startup)
+  loadToday(); // try immediately
+  setInterval(loadToday, 15000); // then every 15s
+  checkConn();
+  setInterval(checkConn, 10000);
+  acquireWakeLock();
 
-async function addTask() {
-  const inp = document.getElementById('task-in');
-  const title = inp.value.trim();
-  if (!title) return;
-  try {
-    await fetch(BASE + '/sync/mac/tasks/create', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, priority: 2 }),
-    });
-    inp.value = '';
-    document.getElementById('add-task-row').style.display = 'none';
-    await loadTasks();
-  } catch { alert('Could not add task'); }
-}
-
-function completeTaskEl(el) {
-  el.textContent = '✓';
-  el.style.background = 'var(--accent)';
-  el.style.borderColor = 'var(--accent)';
-  completeTask(el.dataset.tid);
-}
-
-async function completeTask(id) {
-  try {
-    await fetch(BASE + '/sync/mac/tasks/complete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id }),
-    });
-    await loadTasks();
-  } catch { /* ignore */ }
-}
-
-// ── GOALS ────────────────────────────────────────────────────────────────────
-async function initBible() {
-  const statusEl = document.getElementById('bible-status');
-  const resultEl = document.getElementById('bible-result');
-  // Check if bible is downloaded
-  try {
-    const r = await fetch(BASE + '/sync/mac/bible?ref=John+3:16');
-    const d = await r.json();
-    if (d.found) {
-      if (statusEl) statusEl.textContent = 'KJV Downloaded';
-      if (resultEl) resultEl.innerHTML = '<div style="color:var(--muted);text-align:center;padding:32px 16px;font-size:14px">Bible downloaded! Enter a verse (John 3:16) or topic to search.</div>';
-    } else {
-      if (statusEl) statusEl.textContent = 'Not downloaded';
-      if (resultEl) resultEl.innerHTML = '<div style="color:var(--muted);text-align:center;padding:32px 16px;font-size:14px">Bible not downloaded yet.<br><br>Open Henry on your Mac → Scripture panel → tap <strong>Download KJV Free</strong>.<br><br>Then all 31,000 verses are available here.</div>';
-    }
-  } catch {
-    if (resultEl) resultEl.innerHTML = '<div style="color:var(--muted);text-align:center;padding:32px 16px;font-size:14px">Could not reach Henry. Make sure Henry is open on your Mac.</div>';
-  }
-}
-
-async function lookupVerse(ref) {
-  if (!ref || !ref.trim()) return;
-  const resultEl = document.getElementById('bible-result');
-  const display = document.getElementById('bible-verse-display');
-  const refLabel = document.getElementById('bible-ref-label');
-  const textEl = document.getElementById('bible-text');
-  if (resultEl) resultEl.innerHTML = '<div style="color:var(--muted);text-align:center;padding:24px">Looking up…</div>';
-  try {
-    const r = await fetch(BASE + '/sync/mac/bible?ref=' + encodeURIComponent(ref.trim()));
-    const d = await r.json();
-    if (d.found && d.text) {
-      if (refLabel) refLabel.textContent = (d.reference || ref).toUpperCase();
-      if (textEl) textEl.textContent = d.text;
-      if (display) display.style.display = 'block';
-      if (resultEl) resultEl.innerHTML = '<div style="padding:8px 0;color:var(--muted);font-size:12px">Found! See below.</div>';
-    } else if (!d.found && d.error && d.error.includes('not downloaded')) {
-      if (resultEl) resultEl.innerHTML = '<div style="color:var(--muted);text-align:center;padding:24px;font-size:13px">Bible not downloaded yet.<br>Open Henry on your Mac → Scripture panel → Download KJV Free.</div>';
-    } else {
-      if (resultEl) resultEl.innerHTML = '<div style="color:var(--muted);text-align:center;padding:24px;font-size:13px">Verse not found. Try a different reference or topic.</div>';
-    }
-  } catch {
-    if (resultEl) resultEl.innerHTML = '<div style="color:var(--muted);text-align:center;padding:24px;font-size:13px">Could not reach Henry. Make sure Henry is running on your Mac.</div>';
-  }
-}
-
-async function loadGoalsPaneFn() {
-  const pane = document.getElementById('goals-list-pane');
-  if (!pane) return;
-  try {
-    const d = await fetch(BASE + '/sync/mac/goals').then(r => r.json());
-    const goals = d.goals || [];
-    if (!goals.length) {
-      pane.innerHTML = '<div style="padding:32px 16px;color:var(--muted);text-align:center;font-size:14px">No active goals yet.<br><br><span style="font-size:12px">Open Henry on your Mac and add your first goal in the Goals panel.</span></div>';
-      return;
-    }
-    const now = new Date();
-    pane.innerHTML = goals.map(g => {
-      const score = Math.round((g.priority_score || 0) * 10);
-      const pct = Math.min(100, score);
-      let dateHtml = '';
-      if (g.target_date) {
-        const td = new Date(g.target_date);
-        const overdue = td < now && g.status !== 'done';
-        const fmt = td.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
-        dateHtml = '<div style="font-size:10px;margin-top:4px;color:' + (overdue ? '#f97316' : 'var(--muted)') + '">' + (overdue ? '⚠ Overdue · ' : '📅 ') + fmt + '</div>';
-      }
-      return '<div style="padding:14px 16px;border-bottom:1px solid var(--border)">' +
-        '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">' +
-        '<div style="font-size:14px;color:var(--text);font-weight:600;flex:1">' + g.title + '</div>' +
-        '<button onclick="markGoalDone(' + JSON.stringify(g.id) + ', this)" style="font-size:10px;padding:3px 8px;border:1px solid var(--border);border-radius:20px;background:none;color:var(--muted);cursor:pointer;flex-shrink:0">Done</button>' +
-        '</div>' +
-        (g.summary ? '<div style="font-size:12px;color:var(--muted);margin:4px 0 6px">' + g.summary.slice(0, 80) + '</div>' : '') +
-        '<div style="height:3px;background:var(--border);border-radius:2px;overflow:hidden;margin-top:6px"><div style="height:3px;background:var(--accent);border-radius:2px;width:' + pct + '%"></div></div>' +
-        dateHtml +
-        '</div>';
-    }).join('');
-  } catch { if (pane) pane.innerHTML = '<div style="padding:24px;color:var(--muted);text-align:center;font-size:14px">Could not reach Henry</div>'; }
-}
-
-async function markGoalDone(id, btn) {
-  btn.textContent = '\u2713';
-  btn.style.color = '#22c55e';
-  btn.disabled = true;
-  try {
-    await fetch(BASE + '/sync/mac/goals', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({action:'update', id, updates:{status:'done'}}),
-    });
-    setTimeout(() => loadGoalsPaneFn(), 800);
-  } catch { btn.textContent = 'Done'; btn.disabled = false; }
-}
-
-async function loadGoals() {
-  try {
-    const d = await fetch(BASE + '/sync/mac/goals').then(r => r.json());
-    const goals = d.goals || [];
-    document.getElementById('goals-count').textContent = String(goals.length);
-    const el = document.getElementById('goals-list');
-    if (!goals.length) { el.innerHTML = '<div class="empty-msg">No active goals</div>'; return; }
-    el.innerHTML = goals.map(g => {
-      const score = Math.round((g.priority_score || 0) * 10);
-      return '<div class="goal-row"><div class="goal-title">' + g.title + '</div>' + (g.summary ? '<div style="font-size:12px;color:var(--muted);margin-bottom:6px">' + g.summary.slice(0,80) + '</div>' : '') + '<div class="goal-bar-wrap"><div class="goal-bar" style="width:' + score + '%"></div></div><div style="font-size:10px;color:var(--muted);margin-top:3px">Priority: ' + score + '/10</div></div>';
-    }).join('');
-  } catch (e) {
-    document.getElementById('goals-list').innerHTML = '<div class="empty-msg">Could not reach Henry. Is it running?</div>';
-  }
-}
-
-// ── FINANCE ──────────────────────────────────────────────────────────────────
-async function loadFinance() {
-  try {
-    const d = await fetch(BASE + '/sync/mac/finance').then(r => r.json());
-    const recent = d.trends || [];
-    const latest = recent[recent.length - 1] || {};
-    const sumEl = document.getElementById('fin-summary');
-    sumEl.innerHTML = [
-      { label: 'Income', amount: latest.income || 0, cls: 'pos' },
-      { label: 'Expenses', amount: latest.expenses || 0, cls: 'neg' },
-      { label: 'Net', amount: (latest.income || 0) - (latest.expenses || 0), cls: ((latest.income||0)-(latest.expenses||0)) >= 0 ? 'pos' : 'neg' },
-    ].map(c => '<div class="fin-card"><div class="fin-card-label">' + c.label + '</div><div class="fin-card-amount ' + c.cls + '">$' + Math.abs(c.amount).toFixed(0) + '</div></div>').join('');
-    document.getElementById('fin-list').innerHTML = recent.slice(-3).reverse().map(m =>
-      '<div style="padding:10px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between"><span style="font-size:13px;color:var(--muted)">' + m.month + '</span><span style="font-size:13px;color:' + (m.net >= 0 ? '#22c55e' : '#ef4444') + ';font-weight:700">' + (m.net >= 0 ? '+' : '') + '$' + m.net.toFixed(0) + '</span></div>'
-    ).join('');
-  } catch { /* ignore */ }
-}
-
-async function studyWith(prompt) {
-  if (!currentVerseText) {
-    document.getElementById('study-result').className = 'show';
-    document.getElementById('study-result').textContent = 'Look up a verse first, then ask your question.';
-    return;
-  }
-  const result = document.getElementById('study-result');
-  result.className = 'show';
-  result.textContent = 'Henry is studying…';
-
-  try {
-    const r = await fetch(BASE + '/sync/prompt', {
-      signal: AbortSignal.timeout(25000),
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-   text: 'Study this passage: "' + currentVerseRef + '" ' + currentVerseText + ' Question: ' + prompt,
-      }),
-    });
-    const d = await r.json();
-    result.textContent = d.reply || d.response || d.text || 'No response';
-  } catch {
-    result.textContent = '⚠ Could not reach Henry.';
-  }
-}
+  // Greet
+  addMsg('h', 'Hi! I\\'m Henry. Chat with me, or tap a tab to see your day.');
+});
 </script>
 </body></html>`;
 }
