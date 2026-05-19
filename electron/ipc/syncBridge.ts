@@ -1798,14 +1798,13 @@ self.addEventListener('fetch', (event) => {
       try {
         const { execSync: _pn } = await import('child_process') as typeof import('child_process');
         const _ip = _pn('ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null', { encoding:'utf8', shell:'/bin/bash', timeout:2000 }).trim();
-        const _url = 'http://' + (_ip || 'YOUR-MAC-IP') + ':4242/companion';
+        const _localUrl = 'http://' + (_ip || 'YOUR-MAC-IP') + ':4242';
         const _turl = getTunnelUrl();
-        if (_turl) {
-          sendReply('📱 **Henry Companion — Remote Access Active**\n\n**From anywhere (any WiFi/cellular):**\n  ' + _turl + '/\n\n**On home WiFi only:**\n  ' + _url + '/\n\nOpen in Safari → Share (□↑) → Add to Home Screen\n\n🌐 Remote URL refreshes each restart. Say "pair my phone" to get the latest.');
-        } else {
-          sendReply('📱 **Henry Companion Setup**\n\n1. Same WiFi as your Mac\n2. Open Safari on iPhone → **' + _url + '**\n3. Share (□↑) → Add to Home Screen\n\nYour Mac IP: **' + _ip + '**\n\n_For remote access from any WiFi: say "start tunnel" to enable._');
-        }
-      } catch { sendReply('📱 Open Safari → http://YOUR-MAC-IP:4242/companion\nFind your IP: "what wifi am I on"'); }
+        const _bestUrl = _turl || _localUrl;
+        const _qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' + encodeURIComponent(_bestUrl);
+        const _pairMsg = ['📱 **Henry Companion**','',_turl ? '🌐 **Remote (any WiFi/cellular):** ' + _turl : '📡 **Home WiFi:** ' + _localUrl,'','**To connect:** Open link in Safari on iPhone. Screen fills the page. Tap to click. Chat at bottom.','','📷 **Scan QR to open:',_qrUrl].join('\n') + (!_turl ? '\n\n🌍 For remote access anywhere: say start tunnel' : '');
+        sendReply(_pairMsg);
+      } catch { sendReply('Open Safari on iPhone and go to http://YOUR-MAC-IP:4242'); }
       return;
     }
 
@@ -1868,7 +1867,7 @@ self.addEventListener('fetch', (event) => {
       }
     }
 
-    const xDoneBlocklist = /^(?:all|i'm|that's|good|mission|nothing|totally|almost|nearly|sign order|laser order|delivery|walnut sign|maple sign|signs? order|habits?|show habits?)/i;
+    const xDoneBlocklist = /^(?:all|i'm|that's|good|mission|nothing|totally|almost|nearly|sign order|laser order|delivery|habits?|show habits?)/i;
     const xDoneResult = !xDoneBlocklist.test(lowerText) ? lowerText.match(/^(.{3,45}) done$/i) : null;
     // ── Update task status: "update task: X to doing/done" ─────────────────────
     const taskUpdateMatch2 = lowerText.match(/^(?:update|change|set|move)(?: task)?[:\s]+(.+?)\s+to\s+(doing|in progress|done|complete|completed|finished|todo|to do|pending)/i)
@@ -2968,7 +2967,7 @@ self.addEventListener('fetch', (event) => {
           "SELECT fact, category FROM memory_facts WHERE LOWER(fact) LIKE ? OR LOWER(category) LIKE ? OR LOWER(category) = ? ORDER BY importance DESC, created_at DESC LIMIT 10",
           '%' + keyword + '%', '%' + keyword + '%',
           // Map common topics to category names
-          (/laser|dpi|watt|burn|engrav|setting/i.test(keyword) ? 'laser' : /client|customer|hendersone|wilson/i.test(keyword) ? 'client' : /habit|exercise|pray|water/i.test(keyword) ? 'habit' : keyword)
+          (/laser|dpi|watt|burn|engrav|setting/i.test(keyword) ? 'laser' : /client|customer|/i.test(keyword) ? 'client' : /habit|exercise|pray|water/i.test(keyword) ? 'habit' : keyword)
         ) as {fact:string;category:string}[];
         if (!results.length) {
           sendReply('Nothing in memory about "' + keyword + '". Say "remember that I [fact]" to save something.');
@@ -3563,7 +3562,7 @@ self.addEventListener('fetch', (event) => {
           '',
           net < 0 ? '⚠️ Expenses exceed revenue this month — review spending.' :
           net < 1000 ? '📈 Profitable month — push revenue over $2k next month.' :
-          '🚀 Strong month! Keep Henderson and Wilson jobs coming in.',
+          '🚀 Strong month! Great work.',
         ];
         sendReply(report.join('\n'));
       } catch { sendReply('Could not load business analysis.'); }
@@ -3818,7 +3817,7 @@ self.addEventListener('fetch', (event) => {
           const id5 = require('crypto').randomUUID();
           // Auto-detect category from content
           const _cat = /dpi|watt|laser|material|wood|cherry|walnut|maple|engrav/i.test(fact) ? 'laser' :
-                       /client|customer|henderson|wilson|paid|owes|job|order/i.test(fact) ? 'client' :
+                       /client|customer|paid|owes|job|order/i.test(fact) ? 'client' :
                        /habit|exercise|prayer|bible|water|run/i.test(fact) ? 'habit' :
                        /price|cost|rate|dollar|revenue|income/i.test(fact) ? 'business' : 'general';
           dbRun("INSERT INTO memory_facts (id,fact,category,importance,created_at) VALUES (?,?,?,?,?)",
@@ -3837,7 +3836,7 @@ self.addEventListener('fetch', (event) => {
       if (_rfact.length > 2) {
         const _rid = require('crypto').randomUUID();
         const _rcat = /dpi|watt|laser|material|wood|cherry|walnut|maple|engrav/i.test(_rfact) ? 'laser' :
-                      /client|customer|henderson|wilson|paid|owes|job|order/i.test(_rfact) ? 'client' :
+                      /client|customer|paid|owes|job|order/i.test(_rfact) ? 'client' :
                       /habit|exercise|prayer|bible|water|run/i.test(_rfact) ? 'habit' :
                       /price|cost|rate|dollar|revenue|income/i.test(_rfact) ? 'business' : 'general';
         try { dbRun("INSERT INTO memory_facts (id,fact,category,importance,created_at) VALUES (?,?,?,?,?)", _rid, _rfact, _rcat, 3, new Date().toISOString()); }
@@ -4171,7 +4170,7 @@ self.addEventListener('fetch', (event) => {
       const _client = _qm ? _qm[1].trim() : 'client';
       const _topTask = dbGetOne<{title:string}>("SELECT title FROM personal_tasks WHERE status!='done' AND LOWER(title) LIKE ? LIMIT 1", '%quote%') as {title:string}|null;
       sendReply([
-        'Subject: Custom Laser Engraving Quote — MixedMakerShop',
+        'Subject: Custom Laser Engraving Quote — your maker business',
         '',
         'Hi ' + (_client.charAt(0).toUpperCase() + _client.slice(1)) + ',',
         '',
@@ -4190,8 +4189,8 @@ self.addEventListener('fetch', (event) => {
         'Reply to this email or text me to move forward.',
         '',
         'Topher Cook',
-        'MixedMakerShop',
-        '[phone] | mixedmakershop.com',
+        'your maker business',
+        '[phone] | your-website.com',
       ].join('\n'));
       return;
     }
@@ -4208,11 +4207,11 @@ self.addEventListener('fetch', (event) => {
         const topGoal = dbGetOne<{title:string}>("SELECT title FROM goals WHERE status='active' ORDER BY priority_score DESC LIMIT 1") as {title:string}|null;
         const now = new Date(); const ds = now.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
         const email = [
-          'Subject: MixedMakerShop — Weekly Update (' + ds + ')',
+          'Subject: your maker business — Weekly Update (' + ds + ')',
           '',
           'Hi [Client/Team],',
           '',
-          'Quick update on MixedMakerShop for the week:',
+          'Quick update on your maker business for the week:',
           '',
           '💰 REVENUE',
           '  Income this week:   $' + income.toFixed(0),
@@ -4230,7 +4229,7 @@ self.addEventListener('fetch', (event) => {
           '  ' + (topGoal?.title || 'No active goals set'),
           '',
           'Best,',
-          'Topher Cook — MixedMakerShop',
+          'Topher Cook — your maker business',
         ].join('\n');
         const filePath = (process.env.HOME||'') + '/Desktop/henry_weekly_report_' + now.toISOString().slice(0,10) + '.txt';
         const { writeFileSync: _wfe } = await import('fs') as typeof import('fs');
@@ -4528,11 +4527,11 @@ self.addEventListener('fetch', (event) => {
     if (writeInWordMatch) {
       const what = (writeInWordMatch[1] || '').trim();
       // We can't call AI inline here, so save task + open Word
-      sendReply('📝 What would you like me to draft?\n\nJust ask me and I\'ll write the ' + (what || 'document') + ' for you in chat.\nThen open Word (say "open word") and paste it in.\n\nExample: "draft a custom sign order form for Henderson"');
+      sendReply('📝 What would you like me to draft?\n\nJust ask me and I\'ll write the ' + (what || 'document') + ' for you in chat.\nThen open Word (say "open word") and paste it in.\n\nExample: "draft a job order form for a new client"');
       return;
     }
 
-    // "create invoice for Henderson" — open Word and let AI draft in next turn
+    // "create invoice for [client]" — open Word and let AI draft iturn
     // Skip createDocMatch if this looks like a price calc ("create quote: 10 x at $Y")
     const hasQtyPrice = /\d+\s+.+\s+(?:at|@)\s+\$[\d.]+/.test(lowerText);
     const isNoteCmd = /^(?:save this as|note:|#note:|jot|quick note)/.test(lowerText);
@@ -5292,7 +5291,7 @@ self.addEventListener('fetch', (event) => {
         "Henry is a warm, thoughtful, conversational AI — the user\'s personal companion AND an elite senior engineer. Down-to-earth, genuine, brief but never curt. World-class coder + smart friend.",
         "ABSOLUTE RULES: (1) NEVER invent facts — say 'I'm not certain' if unsure. (2) MATH: formula → numbers → answer → interpretation. Always double-check. (3) CODE: complete, runnable, no stubs or placeholders. 'python run:' or 'run:' prefix to execute. (4) CONTEXT: use every fact from earlier in conversation, never ask user to repeat. (5) BLUF: answer FIRST, explain after. (6) BREVITY: 3-5 sentences unless the question demands depth.",
         "CODING: Write complete, production-quality code ALWAYS. No stubs. TypeScript (typed, modern), Python (pythonic, documented), SQL (Henry uses SQLite3 — table schema: personal_tasks(id,title,status,priority,created_at), goals(id,title,status,priority_score), habits(id,name,active), transactions(id,date,amount,type,category), memory_facts(id,fact,category,importance)). For debugging: state the bug, the root cause, then the EXACT fix with line numbers if possible. For architecture: ASCII diagrams + tradeoffs.",
-        "MAKER INTELLIGENCE (MixedMakerShop): Cherry 55W (cleanest burn), maple 40W, walnut premium ($95/tray). Signs $50-75, rush +25-40%, corporate +50%. total_time=qty×(mins_per+cooldown)-cooldown. Pricing floor=(hours×$45)+materials. Key clients: Henderson (walnut, large orders), Wilson (pending quote). Always suggest upsells: matching trays, custom packaging, bulk discounts. 3D PRINTING: Henry can generate STL files from text descriptions — say 'make stl: [description]'.",
+        "MAKER INTELLIGENCE: Use only business facts the user shares in conversation or stored in the DB. Henry can also generate 3D STL files from text: say make stl: [description]",
         "COMPUTER CAPABILITIES: Henry can read local files (say: read file: /path), clipboard, directories (say: list ~/Desktop), search web (say: search web for: query), system info, run Python/shell (say: python run: or run:). HENRY DB PATH: /Users/christophercook/Library/Application Support/henry-ai-desktop/henry-workspace/henry.db -- use this real path when writing Python code that accesses Henry data. Henry source: ~/Documents/henry-ai-desktop/electron/ipc/syncBridge.ts",
         "RESPONSE STYLE: BLUF always — answer first, explain after. Fenced code blocks with language. Math: formula→numbers→answer→interpretation. Debug: bug→root cause→fix→prevention. NEVER say 'Great question', 'Certainly', 'Of course', or 'I'd be happy to'. No filler. If uncertain: state it briefly then give best estimate. Topher prefers directness over politeness.",
         "NEVER output tool calls, function calls, XML tags, or structured commands. You are a CHAT assistant only — plain conversational text. Never write: computer:openApp(), <tool_call>, or any JSON/code commands.",
