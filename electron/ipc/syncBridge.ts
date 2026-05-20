@@ -1684,7 +1684,7 @@ self.addEventListener('fetch', (event) => {
 
     // ── Habit fast-path: intercept "mark X done" before task handler ──────────
     {
-      const hkws = ['prayer','praying','bible','exercise','gym','journal','water','run','jog','walk','stretch','cold shower','gratitude','meditation','reading','read'];
+      const hkws = ['prayer','praying','bible','exercise','gym','journal','water','run','jog','walk','stretch','cold shower','gratitude','meditation','meditat','reading','read'];
       const hasHKW = hkws.some((k: string) => lowerText.includes(k));
       const naturalHabitDone = /^(?:went for a?|did (?:my|the|a)|drank|finished|completed)(?: (?:my|a|the))? (?:run|jog|walk|bible|reading|journal|water|prayer|exercise|meditation)/i.test(lowerText)
                              || /^(?:i (?:prayed|exercised|ran|jogged|walked|meditated|journaled|drank|read (?:my )?bible))/i.test(lowerText);
@@ -1890,14 +1890,18 @@ self.addEventListener('fetch', (event) => {
       return;
     }
 
-    const completeTaskMatch = lowerText.match(/^(?:complete|finish|done|mark done|check off)(?: my)?(?: first| last| top)? task[:\s]*(.*)$/i)
-                        || xDoneResult
-                        || lowerText.match(/^(?:mark|complete|finish)(?: task)?[:\s]+(.+)(?: as)? done$/i)
-                        || lowerText.match(/^mark task(?:\s+done)?[:\s]+(.+)/i)
-                        || lowerText.match(/^complete task[:\s]+(.+)/i)
-                        || lowerText.match(/^finish task[:\s]+(.+)/i)
-                        || lowerText.match(/^i (?:finished|completed|done|wrapped up|knocked out)(?: the)? (.+?)(?:\s+(?:task|job|todo|project))?$/i)
-                        || lowerText.match(/^(?:just )?(?:finished|completed|did|done with)(?: the)? (.+)/i);
+    // completeTaskMatch - only if 'task' keyword is present, or starts with done/complete + non-habit text
+    const _habitWords = ['prayer','bible','exercise','journal','water','run','walk','stretch','meditat','cold shower','gratitude','read','gym'];
+    const _looksLikeHabit = _habitWords.some(hw => lowerText.includes(hw));
+    const completeTaskMatch = !_looksLikeHabit && (
+      xDoneResult
+      || lowerText.match(/^(?:complete|finish|done|mark done|check off)(?: my)?(?: first| last| top)? task[:\s]*(.*)$/i)
+      || lowerText.match(/^(?:mark|complete|finish)(?: task)?[:\s]+(.+)(?: as)? done$/i)
+      || lowerText.match(/^mark task(?:\s+done)?[:\s]+(.+)/i)
+      || lowerText.match(/^complete task[:\s]+(.+)/i)
+      || lowerText.match(/^finish task[:\s]+(.+)/i)
+      || lowerText.match(/^i (?:finished|completed|done|wrapped up|knocked out)(?: the)? (.+?)(?:\s+(?:task|job|todo|project))?$/i)
+    );
     if (completeTaskMatch) {
       try {
         const ctm = Array.isArray(completeTaskMatch) ? completeTaskMatch : null;
@@ -1945,17 +1949,11 @@ self.addEventListener('fetch', (event) => {
         try {
           // Try exact first, then fuzzy on any word
           const words = hint.split(/\s+/).filter(w => w.length > 3);
-          let g = dbGetOne<{id:string;title:string}>(
-            "SELECT id, title FROM goals WHERE LOWER(title) LIKE ? AND status='active' LIMIT 1",
-            '%' + hint + '%'
-          ) as {id:string;title:string}|null;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          let g: any = dbGetOne("SELECT id, title FROM goals WHERE LOWER(title) LIKE ? AND status='active' LIMIT 1", '%' + hint + '%');
           if (!g && words.length) {
-            for (const w of words) {
-              g = dbGetOne<{id:string;title:string}>(
-                "SELECT id, title FROM goals WHERE LOWER(title) LIKE ? AND status='active' LIMIT 1",
-                '%' + w + '%'
-              ) as {id:string;title:string}|null;
-              if (g) break;
+            for (let _wi = 0; _wi < words.length && !g; _wi++) {
+              g = dbGetOne("SELECT id, title FROM goals WHERE LOWER(title) LIKE ? AND status='active' LIMIT 1", '%' + words[_wi] + '%');
             }
           }
           if (!g) { sendReply('No active goal matching "' + hint + '". Say "what goals do I have" to see your list.'); return; }
@@ -2905,8 +2903,8 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Universal search ────────────────────────────────────────────────────────
-    const universalSearchMatch = !/^(?:find|show|search)(?: me)?(?: some)? (?:videos?|pictures?|photos?|images?|tutorials?)/i.test(lowerText) && !/^search(?: the)? web/i.test(lowerText) && lowerText.match(/^(?:search(?: (?:my|all))?(?: (?:notes?|memory|tasks?|everything|data))?(?:\s+for)?|find(?: everything about| all about| (?:my notes?|tasks?) (?:about|for|with))?)[:\s]+(.+)/i)
-                               || lowerText.match(/^(?:look up|show (?:everything|all)(?: about))[:\s]+(.+)/i);
+    const universalSearchMatch = !/^(?:find|show|search)(?: me)?(?: some)? (?:videos?|pictures?|photos?|images?|tutorials?)/i.test(lowerText) && !/^search(?: the)? web/i.test(lowerText) && !/^search for:/i.test(lowerText) && !/^look up:/i.test(lowerText) && lowerText.match(/^(?:search(?: (?:my|all))?(?: (?:notes?|memory|tasks?|everything|data))?(?:\s+for)?|find(?: everything about| all about| (?:my notes?|tasks?) (?:about|for|with))?)[:\s]+(.+)/i)
+                               || lowerText.match(/^(?:show (?:everything|all)(?: about))[:\s]+(.+)/i);
     if (universalSearchMatch) {
       const keyword = (universalSearchMatch[2] || universalSearchMatch[1] || '').trim().toLowerCase();
       if (keyword.length > 2) {
@@ -2957,6 +2955,29 @@ self.addEventListener('fetch', (event) => {
       return;
     }
 
+    // ── Web search: 'search for X' / 'look up X' ─────────────────────────────────
+    const webSearchMatch = lowerText.match(/^(?:search(?:(?: the)?(?: web)?(?: for)?|:)|look up|google|find out about|latest on|news on|news about)[:\s]+(.+)/i)
+                        || (lowerText.match(/^(?:what is|who is|what are|where is|how do|when did)\s+(.+)/i) && lowerText.length > 10 && lowerText.length < 120);
+    if (webSearchMatch) {
+      const _wq = (Array.isArray(webSearchMatch) ? webSearchMatch[1] || webSearchMatch[2] : '').trim();
+      if (_wq.length > 2) {
+        sendReply('\uD83D\uDD0D Looking up: **' + _wq + '**...');
+        try {
+          const _wgk = (dbGetOne<{api_key:string}>("SELECT api_key FROM providers WHERE id='groq' AND enabled=1 LIMIT 1") as {api_key:string}|null)?.api_key || '';
+          const _wr = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+_wgk},
+            body: JSON.stringify({ model:'llama-3.3-70b-versatile', messages:[
+              {role:'system',content:'Answer factually and concisely. Today is '+new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})+'. State facts directly, no preamble.'},
+              {role:'user',content:_wq}
+            ], temperature:0.2, max_tokens:500 }),
+            signal: AbortSignal.timeout(15000),
+          });
+          const _wj = await _wr.json() as {choices?:{message:{content:string}}[]};
+          sendReply((_wj.choices?.[0]?.message?.content||'').trim() || 'Could not find an answer.');
+        } catch { sendReply('Search failed. Try again.'); }
+        return;
+      }
+    }
     const searchMemoryMatch = lowerText.match(/^(?:what did i (?:note|write|say|record|save) about|find.*note.*about|search.*memory.*for|what do you know about|what do i know about|tell me what you know about|what.?s in memory about|what do i know)\s*(.+)?/i)
                               || lowerText.match(/^(?:show|list)(?: all)?(?: my)?\s+(laser|client|business|general)\s+(?:settings?|facts?|notes?|info)?/i)
                               || lowerText.match(/^what\s+(laser|client|habit|business)\s+(?:settings?|facts?)\s+do i (?:have|know)/i);
@@ -4117,6 +4138,22 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Focus timer / Pomodoro ────────────────────────────────────────────────
+    // ── Timer: "set a timer for X minutes" / "remind me in X min" ─────────────────
+    const timerMatch = lowerText.match(/^(?:set a? timer(?: for)?|remind me in|alarm in|timer)\s+(\d+)\s*(?:min(?:ute)?s?|hr?|hours?|sec(?:ond)?s?)?/i);
+    if (timerMatch) {
+      const _tNum = parseInt(timerMatch[1]);
+      const _tUnit = (timerMatch[0].includes('hr') || timerMatch[0].includes('hour')) ? 'hour' : (timerMatch[0].includes('sec') ? 'second' : 'minute');
+      const _tMs = _tUnit === 'hour' ? _tNum*3600000 : _tUnit === 'second' ? _tNum*1000 : _tNum*60000;
+      const _tLabel = _tNum + ' ' + _tUnit + (_tNum !== 1 ? 's' : '');
+      sendReply('⏱️ Timer set for **' + _tLabel + '**. I\'ll let you know.');
+      setTimeout(() => {
+        const { execSync: _tExec } = require('child_process') as typeof import('child_process');
+        try { _tExec('osascript -e \'display notification "Timer done!" with title "Henry" sound name "Ping"\'', {timeout:3000}); } catch {}
+        sendReply('⏰ **' + _tLabel + ' timer done!**');
+      }, Math.min(_tMs, 3600000));
+      return;
+    }
+
     const pomoMatch = /^(?:focus(?: mode| timer| block| session)?|pomodoro|start (?:a )?focus|help me focus|i need to focus)$/.test(lowerText);
     if (pomoMatch) {
       const _mins = lowerText.match(/(\d+)\s*(?:min|minute)/)?.[1] || '25';
@@ -4128,7 +4165,7 @@ self.addEventListener('fetch', (event) => {
       return;
     }
 
-    const eodMatch = /^(?:end of day|eod|day summary|daily summary|wrap up|wrap up my day|wrap it up|pack it in|clock out|sign off|logging off|done for today|calling it a day|what did i do today|what did i accomplish today|what have i done today|how did my day go|good night|goodnight|heading to bed|time for bed|going to bed|i'm done for the day|i am done for the day|i'm heading to bed|im heading to bed|heading to bed|evening|night|calling it|that's a wrap)/.test(lowerText)
+    const eodMatch = /^(?:end of day|eod|day summary|daily summary|wrap up|wrap up my day|wrap it up|pack it in|clock out|sign off|logging off|done for today|calling it a day|what did i do today|what did i accomplish today|what have i done today|how did my day go|good night|goodnight|gn|heading to bed|time for bed|going to bed|i'm done for the day|i am done for the day|i'm heading to bed|im heading to bed|heading to bed|evening wrap|night|calling it|that's a wrap)/.test(lowerText)
                   || lowerText === 'evening' || lowerText === 'night' || lowerText === "i'm calling it" || lowerText === 'wrap it up' || lowerText === 'pack it in' || lowerText === 'clock out';
     // ── Weekly accomplishment summary ─────────────────────────────────────────
     const weekAccomplishMatch = /^(?:what(?: did| have) i(?: accomplished?| done| completed?| finished?)(?:(?: this)?(?:(?: the)?)? week| this week| this month)?|(?:what(?:'?s| is) my)? (?:weekly|week)? (?:summary|accomplishment|progress|wins?))/.test(lowerText)
@@ -5013,6 +5050,7 @@ self.addEventListener('fetch', (event) => {
       } catch(e){ sendReply('❌ 3D generation failed: '+String(e).slice(0,80)); }
       return;
     }
+
 
 
     // ── "read and summarize: ~/path" → read file + AI summary ──────────────────
