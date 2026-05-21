@@ -1451,6 +1451,129 @@ self.addEventListener('fetch', (event) => {
     //        "follow up with X in N days" → schedule; "run: X" → shell
     // ════════════════════════════════════════════════════════════════════════
 
+    // ── Natural Language Business Router ───────────────────────────────────
+    // Understands free-form business talk without requiring special syntax
+    {
+      // "finished/completed the X job" or "done with X for Y"
+      const _nlDoneM = !lowerText.match(/^(?:habit|exercise|bible|journal|prayer|water|meditat|cold shower|stretch|read|run|walk)/i) &&
+        lowerText.match(/^(?:i(?:'ve)?\s+)?(?:finished|completed|done with|wrapped up)(?: the)?(?: (?:job|work|project))? (?:for\s+|on\s+)?(.{3,50})$/i);
+      if (_nlDoneM) {
+        const _hint = (_nlDoneM[1]||'').trim();
+        const _ndJob = dbGetOne("SELECT id,job_number,title,client_name FROM jobs WHERE status NOT IN ('complete','invoiced','paid','cancelled') AND (LOWER(title) LIKE ? OR LOWER(client_name) LIKE ?) LIMIT 1",
+          '%' + _hint.split(' ')[0] + '%', '%' + _hint.split(' ')[0] + '%') as any;
+        if (_ndJob) {
+          dbRun("UPDATE jobs SET status='complete',completed_date=?,invoice_amount=CASE WHEN invoice_amount=0 THEN bid_amount ELSE invoice_amount END,updated_at=? WHERE id=?",
+            new Date().toISOString().slice(0,10), new Date().toISOString(), _ndJob.id);
+          sendReply('Job **' + _ndJob.job_number + '** marked complete \u2014 ' + _ndJob.client_name + ': ' + _ndJob.title + '\n\nSay "send invoice for ' + _ndJob.job_number + '" or just say "bill ' + _ndJob.client_name + '".');
+          return;
+        }
+      }
+
+      // "bill [client]" / "send [client] their invoice" / "invoice [client]"
+      const _nlBillM = lowerText.match(/^(?:bill|invoice|send (?:an? )?invoice (?:to|for)|send .+? (?:their|the|an?) invoice)[:\s]+(.+)/i)
+                    || lowerText.match(/^(?:bill|send invoice to|invoice)\s+(\w[\w\s]{1,25})$/i);
+      if (_nlBillM) {
+        const _billHint = (_nlBillM[1]||_nlBillM[2]||'').trim();
+        const _billJob = dbGetOne("SELECT id,job_number,title,client_name,bid_amount,invoice_amount FROM jobs WHERE status IN ('complete') AND LOWER(client_name) LIKE ? ORDER BY updated_at DESC LIMIT 1",
+          '%' + _billHint.split(' ')[0].toLowerCase() + '%') as any;
+        if (_billJob) {
+          const _bAmt = _billJob.invoice_amount || _billJob.bid_amount;
+          const _bNum = 'INV-' + _billJob.job_number + '-' + new Date().toISOString().slice(2,10).replace(/-/g,'');
+          const _bizN = (dbGetOne("SELECT value FROM settings WHERE key='business_name'") as any)?.value || 'My Business';
+          const _terms = (dbGetOne("SELECT value FROM settings WHERE key='payment_terms'") as any)?.value || 'Due on receipt';
+          const _mats = dbGet("SELECT material FROM job_materials WHERE job_id=?", _billJob.id) as any[];
+          const _logs = dbGet("SELECT note FROM job_log WHERE job_id=? ORDER BY created_at", _billJob.id) as any[];
+          let _txt = 'INVOICE\n' + '='.repeat(48) + '\n' + _bizN + '\nInvoice #: ' + _bNum + '\nDate: ' + new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}) + '\n\nBILL TO:\n' + _billJob.client_name + '\n\nJOB: ' + _billJob.title + '\n\n' + '-'.repeat(48) + '\n' + _billJob.title.slice(0,35).padEnd(38) + '$' + _bAmt.toFixed(2) + '\n';
+          if (_mats.length) { _txt += '\nMaterials: ' + _mats.map((m: any) => m.material).join(', ') + '\n'; }
+          _txt += '-'.repeat(48) + '\nTOTAL DUE: $' + _bAmt.toFixed(2) + '\n\nPayment Terms: ' + _terms;
+          if (_logs.length) { _txt += '\n\nWork Performed:\n' + _logs.map((l: any) => '- ' + l.note).join('\n'); }
+          const _bpath = require('os').homedir() + '/Desktop/' + _bNum + '.txt';
+          require('fs').writeFileSync(_bpath, _txt, 'utf8');
+          dbRun("UPDATE jobs SET status='invoiced',invoiced_date=?,invoice_amount=?,invoice_sent=1,updated_at=? WHERE id=?", new Date().toISOString().slice(0,10), _bAmt, new Date().toISOString(), _billJob.id);
+          sendReply('Invoice **' + _bNum + '** sent to Desktop!\n' + _billJob.client_name + ': ' + _billJob.title + '\nAmount: **$' + _bAmt.toFixed(2) + '**\n\nWhen they pay: say "' + _billJob.client_name.split(' ')[0] + ' paid" or "got paid $' + _bAmt.toFixed(0) + '"');
+          return;
+        }
+      }
+
+      // "[Client] paid" / "[Client] paid me" / "got payment from [client]" / "[client] sent $X"
+      const _nlPaidM = lowerText.match(/^(?:got paid|got payment|received payment|payment from|collected from)[:\s]+(.+?)(?:\s+\$?([\d,]+))?$/i)
+                    || lowerText.match(/^(\w[\w\s]{1,25})\s+(?:paid(?: me)?|paid up|settled up|sent (?:the )?(?:money|payment|check)|came through)(?:\s+\$?([\d,]+))?$/i);
+      if (_nlPaidM) {
+        const _npName = (_nlPaidM[1]||'').trim();
+        const _npAmt = parseFloat((_nlPaidM[2]||'0').replace(/,/g,'')) || 0;
+        // Find invoiced job for this client
+        const _npJob = dbGetOne("SELECT * FROM jobs WHERE status IN ('invoiced','complete') AND LOWER(client_name) LIKE ? ORDER BY invoiced_date DESC LIMIT 1",
+          '%' + _npName.split(' ')[0].toLowerCase() + '%') as any;
+        if (_npJob && _npName.length > 1) {
+          const _ppaid = _npAmt || _npJob.invoice_amount || _npJob.bid_amount;
+          dbRun("UPDATE jobs SET status='paid',paid_amount=?,paid_date=?,updated_at=? WHERE id=?", _ppaid, new Date().toISOString().slice(0,10), new Date().toISOString(), _npJob.id);
+          dbRun("INSERT INTO transactions (id,type,amount,category,description,date,created_at) VALUES (?,?,?,?,?,?,?)",
+            Date.now().toString(36)+Math.random().toString(36).slice(2), 'income', _ppaid, _npJob.client_name,
+            _npJob.title + ' (' + _npJob.job_number + ')', new Date().toISOString().slice(0,10), new Date().toISOString());
+          dbRun("UPDATE contacts SET revenue_total=revenue_total+?,updated_at=? WHERE LOWER(name) LIKE ?", _ppaid, new Date().toISOString(), '%' + _npJob.client_name.split(' ')[0].toLowerCase() + '%');
+          sendReply('\u2705 **$' + _ppaid.toFixed(2) + ' received from ' + _npJob.client_name + '**\n' + _npJob.job_number + ': ' + _npJob.title + '\nLogged to income.');
+          return;
+        }
+      }
+
+      // "start a job for X" / "X needs Y done" / "new job — X for Y"
+      const _nlJobM = lowerText.match(/^(?:start(?:ing)?|new|got a|picking up|have a|add) (?:a )?job(?:[:\s]+| for | with )(.{5,80})/i)
+                   || lowerText.match(/^(?:create|add) (?:a )?(?:new )?(?:job|project|work order)[:\s]+(.{5,80})/i);
+      if (_nlJobM) {
+        const _njDesc = (_nlJobM[1]||'').trim();
+        // Extract client from "for X" or "with X"
+        const _njFor = _njDesc.match(/\bfor\s+([A-Z][\w\s]{1,25}?)(?:\s*[|,]|\s*\$|\s*-|$)/i) ||
+                       _njDesc.match(/\bwith\s+([A-Z][\w\s]{1,25}?)(?:\s*[|,]|\s*\$|\s*-|$)/i);
+        const _njClient = _njFor ? _njFor[1].trim() : '';
+        const _njAmt = parseFloat((_njDesc.match(/\$([\d,]+)/)||['','0'])[1].replace(/,/g,'')) || 0;
+        const _njTitle = _njDesc.replace(/\bfor\s+[A-Z][\w\s]{1,25}/i,'').replace(/\$[\d,]+/,'').replace(/\|.*/,'').trim() || _njDesc.slice(0,50);
+        const _njcCap = _njClient ? _njClient.split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ') : '';
+        const _njNum = 'J-' + Date.now().toString().slice(-5);
+        const _njId = Date.now().toString(36) + Math.random().toString(36).slice(2);
+        dbRun('INSERT INTO jobs (id,job_number,client_name,title,status,bid_amount,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)',
+          _njId, _njNum, _njcCap || 'TBD', _njTitle, 'bid', _njAmt, new Date().toISOString(), new Date().toISOString());
+        const _njLines = ['Job **' + _njNum + '** created!', '', '**' + _njTitle + '**'];
+        if (_njcCap) _njLines.push('Client: ' + _njcCap);
+        if (_njAmt > 0) _njLines.push('Bid: $' + _njAmt.toFixed(2));
+        _njLines.push('', 'Add details anytime: materials, schedule, work notes.\nSay "' + _njNum + '" to see the full job.');
+        sendReply(_njLines.join('\n'));
+        return;
+      }
+
+      // "tell me about [client]" / "what do I have for [client]" / "what's [client's] status"
+      const _nlClientM = lowerText.match(/^(?:tell me about|what(?:'s| is) (?:going on with|the status (?:of|with|for)|up with)|pull up|what do i have (?:for|on)|show me everything (?:for|on|about)|what have we done for|client history for)[:\s]+(.+)/i)
+                      || lowerText.match(/^(?:show|get)(?: everything| all)? (?:for|on|about) (.+)/i);
+      if (_nlClientM) {
+        const _ncHint = (_nlClientM[1]||_nlClientM[2]||'').trim();
+        const _ncC = dbGetOne("SELECT id,name,email,phone,revenue_total,notes FROM contacts WHERE LOWER(name) LIKE ? LIMIT 1",
+          '%' + _ncHint.split(' ')[0].toLowerCase() + '%') as any;
+        if (_ncC) {
+          const _ncJ = dbGet("SELECT job_number,title,status,bid_amount,invoice_amount,paid_amount FROM jobs WHERE LOWER(client_name) LIKE ? ORDER BY created_at DESC LIMIT 8",
+            '%' + _ncC.name.split(' ')[0].toLowerCase() + '%') as any[];
+          const _ncT = dbGet("SELECT description,amount,date FROM transactions WHERE LOWER(category) LIKE ? ORDER BY date DESC LIMIT 5",
+            '%' + _ncC.name.split(' ')[0].toLowerCase() + '%') as any[];
+          const _ncM = dbGet("SELECT fact FROM memory_facts WHERE LOWER(fact) LIKE ? ORDER BY created_at DESC LIMIT 5",
+            '%' + _ncC.name.split(' ')[0].toLowerCase() + '%') as any[];
+          const _ncLines = ['**' + _ncC.name + '**'];
+          if (_ncC.email) _ncLines.push(_ncC.email); if (_ncC.phone) _ncLines.push(_ncC.phone);
+          if (_ncC.revenue_total > 0) _ncLines.push('Total paid: $' + _ncC.revenue_total.toFixed(2));
+          if (_ncC.notes) _ncLines.push(_ncC.notes);
+          if (_ncJ.length) {
+            _ncLines.push('', '**Jobs:**');
+            for (const j of _ncJ) {
+              const _a = j.paid_amount>0 ? '$'+j.paid_amount.toFixed(0)+' paid' : j.invoice_amount>0 ? '$'+j.invoice_amount.toFixed(0)+' invoiced' : '$'+j.bid_amount.toFixed(0)+' bid';
+              _ncLines.push('  ' + j.job_number + ' [' + j.status + '] ' + j.title.slice(0,32) + ' ' + _a);
+            }
+          }
+          if (_ncT.length) { _ncLines.push('','**Recent payments:**'); for (const t of _ncT) _ncLines.push('  $'+t.amount.toFixed(2)+' — '+t.description.slice(0,35)+' ('+t.date+')'); }
+          if (_ncM.length) { _ncLines.push('','**Notes:**'); for (const m of _ncM) _ncLines.push('  • '+m.fact); }
+          const _ncOwe = _ncJ.filter(j => ['invoiced','complete'].includes(j.status)).reduce((s: number,j: any) => s+(j.invoice_amount-j.paid_amount), 0);
+          if (_ncOwe > 0) _ncLines.push('', '⚠️ Outstanding: $' + _ncOwe.toFixed(2));
+          sendReply(_ncLines.join('\n')); return;
+        }
+      }
+    }
+
     // P1: Jobs table (not personal tasks)
     if (/^(?:show|list|my|all|open|active)(?: my)?(?: open| active| all)? jobs?$/i.test(lowerText) || lowerText === 'jobs') {
       const _pj = dbGet("SELECT job_number,client_name,title,status,bid_amount,invoice_amount,paid_amount FROM jobs WHERE status!='cancelled' ORDER BY created_at DESC LIMIT 25") as any[];
@@ -1851,9 +1974,9 @@ self.addEventListener('fetch', (event) => {
 
     // ── Complete / done task ──────────────────────────────────────────────────
     // ── "X owes me money" / "client owes me $Y" → create collection task ────
-    const owesMeMatch = lowerText.match(/^(\w+) owes me(?: \$?([\d.]+))?/i)
+    const owesMeMatch = !['who','what','how','when','where','anyone','nobody','someone'].includes((lowerText.match(/^(\w+)/) || ['',''])[1]) && lowerText.match(/^(\w+) owes me(?: \$?([\d.]+))?/i)
                      || lowerText.match(/^(?:collect|follow up)(?: on)?(?: \$?([\d.]+))? (?:from|with) (\w+)/i);
-    if (owesMeMatch && (lowerText.includes(' owes') || lowerText.includes("hasn't paid") || lowerText.includes('owes me'))) {
+    if (owesMeMatch && !['who','what','anyone'].some(w => lowerText.startsWith(w)) && (lowerText.includes(' owes') || lowerText.includes("hasn't paid") || lowerText.includes('owes me'))) {
       const client = (owesMeMatch[1] || owesMeMatch[2] || '').trim();
       const amount = owesMeMatch[2] || owesMeMatch[1] || '';
       const taskTitle = amount.match(/^[\d.]+$/)
@@ -5682,7 +5805,8 @@ self.addEventListener('fetch', (event) => {
       const systemPrompt2 = [
         greeting,
         "Henry is a warm, thoughtful, conversational AI — the user\'s personal companion AND an elite senior engineer. Down-to-earth, genuine, brief but never curt. World-class coder + smart friend.",
-        "ABSOLUTE RULES: (1) NEVER invent facts — say 'I'm not certain' if unsure. (2) MATH: formula → numbers → answer → interpretation. Always double-check. (3) CODE: complete, runnable, no stubs or placeholders. 'python run:' or 'run:' prefix to execute. (4) CONTEXT: use every fact from earlier in conversation, never ask user to repeat. (5) BLUF: answer FIRST, explain after. (6) BREVITY: 3-5 sentences unless the question demands depth.",
+        "ABSOLUTE RULES: (1) NEVER invent ANY facts — no client names, jobs, prices not told to you. DB may be empty, say so. (2) ACT naturally — when user says something business-related in plain English, understand their intent and act on it. Never ask them to retype in a special format. (3) BLUF: act or answer first. (4) BREVITY: 1-3 sentences for simple tasks. (5) NO FAKE SYNTAX: never output computer:openApp() or similar.",
+        "WHAT HENRY CAN DO AUTOMATICALLY (no special syntax needed):\n  Income: 'I got paid $350 by Bob' or 'Bob paid me' or 'collected $200 today'\n  Expense: 'spent $45 on supplies' or 'bought pipe fittings $30'\n  New job: 'start a job for Karen, ceiling fan install, $175' or 'Karen needs a faucet fixed'\n  Complete job: 'finished the bathroom job for Dave' or 'done with Karen's job'\n  Invoice: 'send Karen her invoice' or 'bill Dave for the plumbing job'\n  Paid: 'Dave paid me' or 'got payment from Karen $400'\n  Client: 'tell me about Bob' or 'what do I have for Sarah' or 'pull up Karen'\n  Outstanding: 'who owes me' or 'what's outstanding' or 'who hasn't paid'\n  Tasks: 'remind me to call Bob tomorrow' or 'I need to order more lumber'\n  Notes: 'remember Karen wants oak not pine' or 'note: Dave prefers mornings'\n  Search: 'what's the going rate for drywall' or 'look up lumber prices'\n  Timer: 'set a 25 minute timer' or 'remind me in an hour'\n  Open app: 'open Finder' or 'launch Chrome' or 'open System Settings'\n  ALWAYS: try to figure out what the user means and do it. If unclear, do your best guess and confirm.",
         "CODING: Write complete, production-quality code ALWAYS. No stubs. TypeScript (typed, modern), Python (pythonic, documented), SQL (Henry uses SQLite3 — table schema: personal_tasks(id,title,status,priority,created_at), goals(id,title,status,priority_score), habits(id,name,active), transactions(id,date,amount,type,category), memory_facts(id,fact,category,importance)). For debugging: state the bug, the root cause, then the EXACT fix with line numbers if possible. For architecture: ASCII diagrams + tradeoffs.",
         "MAKER INTELLIGENCE: Use only business facts the user shares in conversation or stored in the DB. Henry can also generate 3D STL files from text: say make stl: [description]",
         "COMPUTER CAPABILITIES: Henry can read local files (say: read file: /path), clipboard, directories (say: list ~/Desktop), search web (say: search web for: query), system info, run Python/shell (say: python run: or run:). HENRY DB PATH: /Users/christophercook/Library/Application Support/henry-ai-desktop/henry-workspace/henry.db -- use this real path when writing Python code that accesses Henry data. Henry source: ~/Documents/henry-ai-desktop/electron/ipc/syncBridge.ts",
