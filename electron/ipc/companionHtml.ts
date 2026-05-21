@@ -126,6 +126,37 @@ html,body{width:100%;height:100%;height:100dvh;background:#000;overflow:hidden;f
 <!-- Touch ripple effect -->
 <div id="ripple"></div>
 
+<!-- Virtual keyboard for typing on Mac -->
+<div id="kb-wrap" style="position:fixed;bottom:0;left:0;right:0;z-index:300;display:none;background:rgba(0,0,0,.94);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);padding:10px 12px;padding-bottom:env(safe-area-inset-bottom,10px);">
+  <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+    <span style="color:rgba(255,255,255,.5);font-size:12px;flex:1">Type on Mac</span>
+    <button onclick="closeKb()" style="background:none;border:none;color:rgba(255,255,255,.5);font-size:20px;cursor:pointer;padding:4px">✕</button>
+  </div>
+  <div style="display:flex;gap:8px">
+    <input id="kb-in" type="text" placeholder="Type here → sends to Mac" style="flex:1;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);border-radius:10px;padding:10px 14px;font-size:16px;color:#fff;outline:none;font-family:inherit" onkeydown="if(event.key==='Enter'){sendKbText();event.preventDefault()}">
+    <button onclick="sendKbText()" style="background:#7c3aed;border:none;border-radius:10px;padding:10px 16px;color:#fff;font-size:15px;cursor:pointer">Send</button>
+  </div>
+  <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">
+    <button class="kb-key" onclick="sendKbKey('Return','')">↵ Enter</button>
+    <button class="kb-key" onclick="sendKbKey('Escape','')">Esc</button>
+    <button class="kb-key" onclick="sendKbKey('BackSpace','')">⌫</button>
+    <button class="kb-key" onclick="sendKbKey('Tab','')">Tab</button>
+    <button class="kb-key" onclick="sendKbKey('space','meta')">⌘ Space</button>
+    <button class="kb-key" onclick="sendKbKey('c','meta')">⌘C</button>
+    <button class="kb-key" onclick="sendKbKey('v','meta')">⌘V</button>
+    <button class="kb-key" onclick="sendKbKey('z','meta')">⌘Z</button>
+    <button class="kb-key" onclick="sendKbKey('a','meta')">⌘A</button>
+    <button class="kb-key" onclick="sendKbKey('w','meta')">⌘W</button>
+  </div>
+</div>
+<style>
+.kb-key{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:6px 12px;color:#fff;font-size:13px;cursor:pointer;font-family:inherit}
+.kb-key:active{background:rgba(124,58,237,.6)}
+</style>
+
+<!-- Keyboard toggle button -->
+<button id="kb-btn" onclick="toggleKb()" style="position:fixed;right:16px;bottom:70px;width:44px;height:44px;border-radius:50%;border:none;background:rgba(40,40,60,.85);color:#fff;font-size:20px;cursor:pointer;z-index:250;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 12px rgba(0,0,0,.4)">⌨️</button>
+
 <!-- Chat overlay -->
 <div id="chat-wrap" class="collapsed">
   <div id="msgs-wrap"></div>
@@ -285,6 +316,31 @@ function addMsg(role, text) {
   wrap.appendChild(d);
   wrap.scrollTop = wrap.scrollHeight;
   return bubble;
+}
+
+function toggleKb() {
+  var kb = document.getElementById('kb-wrap');
+  if (kb) { kb.style.display = kb.style.display === 'none' ? 'block' : 'none'; if (kb.style.display === 'block') document.getElementById('kb-in').focus(); }
+}
+function closeKb() {
+  var kb = document.getElementById('kb-wrap');
+  if (kb) kb.style.display = 'none';
+}
+function sendKbText() {
+  var inp = document.getElementById('kb-in');
+  var text = inp ? inp.value : '';
+  if (!text) return;
+  inp.value = '';
+  fetch(BASE + '/sync/mac/open-app', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({action:'type', text:text})
+  }).catch(function() {});
+}
+function sendKbKey(key, mod) {
+  fetch(BASE + '/sync/mac/open-app', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({action:'key', key:key, modifiers:mod})
+  }).catch(function() {});
 }
 
 function sendMsg() {

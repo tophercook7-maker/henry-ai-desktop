@@ -1744,7 +1744,7 @@ self.addEventListener('fetch', (event) => {
         const knowledgeAnswer = (() => {
       // Version / identity
       if (/^(?:what version|which version|your version|version number|what.*version are you)/.test(lowerText) || lowerText === 'version') {
-        return 'Henry AI v2.0.0 — your Mac AI: reads files, runs code, runs local AI, remembers your business.\n\n150+ instant local commands, all <20ms.\n\n🔩 Iron Gateway v2: 10 free AI providers — Groq (llama-4-scout, llama-3.3-70b, qwen3), Gemini 2.0+1.5 Flash, Cerebras, OpenRouter. Round-robin with auto-failover.\n\nSay \'what can you do\' to see everything.';
+        return 'Henry AI v2.1.1 — your Mac AI: reads files, runs code, runs local AI, remembers your business.\n\n150+ instant local commands, all <20ms.\n\n🔩 Iron Gateway v2: 10 free AI providers — Groq (llama-4-scout, llama-3.3-70b, qwen3), Gemini 2.0+1.5 Flash, Cerebras, OpenRouter. Round-robin with auto-failover.\n\nSay \'what can you do\' to see everything.';
       }
       if (/^(?:what can you do|capabilities|features|what are you capable of|what do you do|your features)/.test(lowerText) || lowerText === 'help') {
         return '\uD83E\uDDE0 **Henry \u2014 What I Can Do**\n\n' + [
@@ -3389,7 +3389,6 @@ self.addEventListener('fetch', (event) => {
     if (webSearchMatch) {
       const _wq = (Array.isArray(webSearchMatch) ? webSearchMatch[1] || webSearchMatch[2] : '').trim();
       if (_wq.length > 2) {
-        sendReply('\uD83D\uDD0D Looking up: **' + _wq + '**...');
         try {
           const _wgk = (dbGetOne<{api_key:string}>("SELECT api_key FROM providers WHERE id='groq' AND enabled=1 LIMIT 1") as {api_key:string}|null)?.api_key || '';
           const _wr = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -6125,9 +6124,37 @@ self.addEventListener('fetch', (event) => {
   // Open an app from companion
   if (path === '/sync/mac/open-app' && req.method === 'POST') {
     try {
-      const body = await readBody(req) as { app: string };
-      const { execSync } = await import('child_process');
-      execSync(`open -a "${(body.app||'Finder').replace(/"/g, '')}"`, { timeout: 3000 });
+      const body = await readBody(req) as { app?: string; action?: string; x?: number; y?: number; key?: string; modifiers?: string; text?: string };
+      const { execSync: _oaExec } = await import('child_process');
+      const action = body?.action || 'open';
+      if (action === 'click' && body?.x !== undefined) {
+        // Click at screen coordinates using cliclick (if available) or osascript
+        try {
+          _oaExec(`cliclick c:${body.x},${body.y} 2>/dev/null || osascript -e 'tell application "System Events" to click at {${body.x}, ${body.y}}'`, { timeout: 2000, shell: '/bin/bash' });
+        } catch {}
+      } else if (action === 'rightclick' && body?.x !== undefined) {
+        try {
+          _oaExec(`cliclick rc:${body.x},${body.y} 2>/dev/null || osascript -e 'tell application "System Events" to right click at {${body.x}, ${body.y}}'`, { timeout: 2000, shell: '/bin/bash' });
+        } catch {}
+      } else if (action === 'key' && body?.key) {
+        const mod = (body.modifiers || '').toLowerCase();
+        const modStr = mod.includes('meta') || mod.includes('cmd') ? 'command down' : mod.includes('shift') ? 'shift down' : mod.includes('alt') ? 'option down' : mod.includes('ctrl') ? 'control down' : '';
+        const keyMap: Record<string,string> = { Return:'return', Enter:'return', Escape:'escape', BackSpace:'delete', Tab:'tab', space:'space', F1:'F1', F2:'F2', F3:'F3', F4:'F4', F5:'F5' };
+        const k = keyMap[body.key] || body.key;
+        const script = modStr ? `tell application "System Events" to key code (key code of "${k}") using ${modStr}` : `tell application "System Events" to keystroke "${k}"`;
+        try { _oaExec(`osascript -e "${script.replace(/"/g, '\\\"')}"`  , { timeout: 2000 }); } catch {}
+      } else if (action === 'type' && body?.text) {
+        // Type text on the Mac
+        const safeText = (body.text||'')
+          .replace(/\\/g, '').replace(/"/g, '\\"').slice(0, 200);
+        try { _oaExec(`osascript -e 'tell application "System Events" to keystroke "${safeText}"'`, { timeout: 3000 }); } catch {}
+      } else if (body?.app) {
+        // Legacy: open an app
+        const _launchCmd = process.platform === 'darwin' ? 'open -a "' + (body.app||'Finder').replace(/"/g,'') + '"' :
+          process.platform === 'win32' ? 'start "" "' + (body.app||'').replace(/"/g,'') + '"' :
+          'xdg-open "' + (body.app||'').replace(/"/g,'') + '" 2>/dev/null';
+        _oaExec(_launchCmd, { timeout: 3000, shell: process.platform !== 'darwin' });
+      }
       jsonResponse(res, 200, { ok: true });
     } catch (e) {
       jsonResponse(res, 200, { ok: false, error: String(e) });
