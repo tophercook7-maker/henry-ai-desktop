@@ -1668,6 +1668,106 @@ self.addEventListener('fetch', (event) => {
       }
     }
 
+    // ── P5: Jobs by client name ─────────────────────────────────────────────
+    {
+      const _jbcM = lowerText.match(/^(?:show(?: my)?|list|find|what are)(?: the)?(?: open| active| all)? jobs?(?: for| from| with)[:\s]+(.+)/i)
+                 || lowerText.match(/^(?:show|find)(?: all)? work(?: for| done for)[:\s]+(.+)/i);
+      if (_jbcM) {
+        const _jbcHint = (_jbcM[1]||_jbcM[2]||'').trim();
+        const _jbcJobs = dbGet("SELECT job_number,title,status,bid_amount,invoice_amount,paid_amount,scheduled_date FROM jobs WHERE LOWER(client_name) LIKE ? AND status!='cancelled' ORDER BY created_at DESC LIMIT 15",
+          '%' + _jbcHint.split(' ')[0].toLowerCase() + '%') as any[];
+        if (!_jbcJobs.length) { sendReply('No jobs found for "' + _jbcHint + '". Say "show clients" to see all clients.'); return; }
+        const _jbcLines = ['**Jobs for ' + _jbcHint + ' (' + _jbcJobs.length + ')**', ''];
+        let _jbcTotal = 0;
+        for (const j of _jbcJobs) {
+          const _a = j.paid_amount>0 ? '$'+j.paid_amount.toFixed(0)+' paid' : j.invoice_amount>0 ? '$'+j.invoice_amount.toFixed(0)+' inv' : j.bid_amount>0 ? '$'+j.bid_amount.toFixed(0)+' bid' : '';
+          _jbcLines.push('  ' + j.job_number + ' [' + j.status + '] ' + j.title.slice(0,35) + (_a?' ('+_a+')':''));
+          if (j.scheduled_date) _jbcLines.push('    ' + j.scheduled_date);
+          _jbcTotal += j.paid_amount || j.invoice_amount || j.bid_amount || 0;
+        }
+        _jbcLines.push('', 'Total value: $' + _jbcTotal.toFixed(2));
+        sendReply(_jbcLines.join('\n'));
+        return;
+      }
+    }
+
+    // ── P6: Job search by keyword ─────────────────────────────────────────────
+    {
+      const _jsM = lowerText.match(/^(?:search(?: for)?|find)(?: (?:a|my))? jobs?[:\s]+(.+)/i)
+                || lowerText.match(/^(?:show|find) jobs?(?: with| about| containing| matching)[:\s]+(.+)/i);
+      if (_jsM) {
+        const _jsQ = (_jsM[1]||_jsM[2]||'').trim();
+        const _jsJobs = dbGet("SELECT job_number,client_name,title,status,bid_amount FROM jobs WHERE (LOWER(title) LIKE ? OR LOWER(client_name) LIKE ? OR LOWER(notes) LIKE ?) AND status!='cancelled' ORDER BY created_at DESC LIMIT 15",
+          '%'+_jsQ.toLowerCase()+'%', '%'+_jsQ.toLowerCase()+'%', '%'+_jsQ.toLowerCase()+'%') as any[];
+        if (!_jsJobs.length) { sendReply('No jobs matching "' + _jsQ + '".'); return; }
+        const _jsLines = ['**Jobs matching "' + _jsQ + '" (' + _jsJobs.length + ')**', ''];
+        for (const j of _jsJobs) _jsLines.push('  ' + j.job_number + ' [' + j.status + '] ' + j.client_name + ': ' + j.title.slice(0,35) + (j.bid_amount>0?' ($'+j.bid_amount.toFixed(0)+')':''));
+        sendReply(_jsLines.join('\n'));
+        return;
+      }
+    }
+
+    // ── P7: Overdue jobs ──────────────────────────────────────────────────────
+    {
+      const _ojM = /^(?:show|list|what are|find)(?: my)?(?: overdue| past due| late| unpaid)(?: jobs?)?$/.test(lowerText)
+              || lowerText === 'overdue' || lowerText === 'overdue jobs' || lowerText === 'past due';
+      if (_ojM) {
+        const _today = new Date().toISOString().slice(0,10);
+        const _ojJobs = dbGet("SELECT job_number,client_name,title,status,scheduled_date,bid_amount,invoice_amount FROM jobs WHERE status NOT IN ('paid','cancelled') AND ((status='invoiced' AND invoiced_date < date('now','-14 days')) OR (status='scheduled' AND scheduled_date < ?) OR (status='complete' AND invoice_sent=0)) ORDER BY scheduled_date ASC",
+          _today) as any[];
+        if (!_ojJobs.length) { sendReply('No overdue jobs. All caught up!'); return; }
+        const _ojLines = ['** Overdue / Needs Attention (' + _ojJobs.length + ')**', ''];
+        for (const j of _ojJobs) {
+          const _reason = j.status==='invoiced' ? 'invoice unpaid 14+ days' : j.status==='scheduled' && j.scheduled_date < _today ? 'scheduled date passed' : 'complete but not invoiced';
+          _ojLines.push('  ' + j.job_number + ' — ' + j.client_name + ': ' + j.title.slice(0,30));
+          _ojLines.push('    ' + _reason + (j.scheduled_date?' ('+j.scheduled_date+')':''));
+        }
+        sendReply(_ojLines.join('\n'));
+        return;
+      }
+    }
+
+    // ── P8: Material/expense analytics ────────────────────────────────────────
+    {
+      const _matSpendM = /^(?:how much(?: have i)?|what(?:'s| is| did i))(?: (?:have i?|i've|i))? (?:spent|spend)(?: on)?(?: (?:materials?|supplies?|parts?))?(?:(?: this| last)? (?:month|week|year))?$/.test(lowerText)
+                      || lowerText.includes('material') && lowerText.includes('spend') 
+                      || lowerText.includes('material') && lowerText.includes('cost') && lowerText.includes('month');
+      if (_matSpendM) {
+        const _ms30 = new Date(Date.now()-30*86400000).toISOString().slice(0,10);
+        const _ms7  = new Date(Date.now()-7*86400000).toISOString().slice(0,10);
+        const _matW  = (dbGetOne("SELECT COALESCE(SUM(total_cost),0) as t FROM job_materials WHERE created_at >= ?", _ms7+'T00:00:00') as any)?.t || 0;
+        const _matM  = (dbGetOne("SELECT COALESCE(SUM(total_cost),0) as t FROM job_materials WHERE created_at >= ?", _ms30+'T00:00:00') as any)?.t || 0;
+        const _expM  = (dbGetOne("SELECT COALESCE(SUM(amount),0) as t FROM transactions WHERE type='expense' AND date >= ?", _ms30) as any)?.t || 0;
+        const _profM = (dbGetOne("SELECT COALESCE(SUM(bid_amount-material_cost),0) as t FROM jobs WHERE status IN ('complete','invoiced','paid') AND completed_date >= ?", _ms30) as any)?.t || 0;
+        const _lines = [
+          '** Material & Expense Breakdown**', '',
+          '**This week:** $' + _matW.toFixed(2) + ' in materials',
+          '**This month:** $' + _matM.toFixed(2) + ' in materials  |  $' + _expM.toFixed(2) + ' other expenses',
+          '**Gross profit (completed jobs):** $' + _profM.toFixed(2),
+        ];
+        const _topMats = dbGet("SELECT material, SUM(total_cost) as total FROM job_materials WHERE total_cost>0 GROUP BY LOWER(material) ORDER BY total DESC LIMIT 5") as any[];
+        if (_topMats.length) { _lines.push('', '**Top materials by cost:**'); for (const m of _topMats) _lines.push('  • ' + m.material + ' — $' + Number(m.total).toFixed(2)); }
+        sendReply(_lines.join('\n'));
+        return;
+      }
+    }
+
+    // ── P9: Client analytics ("busiest client" / "top clients") ──────────────
+    {
+      const _caM = /^(?:who(?:'s| is)(?: my)? (?:best|busiest|biggest|top|most active|most valuable)|my (?:best|busiest|top|biggest) client|top clients?|best clients?)/.test(lowerText);
+      if (_caM) {
+        const _caByJobs = dbGet("SELECT client_name, COUNT(*) as job_count, COALESCE(SUM(paid_amount),0) as revenue FROM jobs WHERE status!='cancelled' GROUP BY LOWER(client_name) ORDER BY revenue DESC, job_count DESC LIMIT 5") as any[];
+        if (!_caByJobs.length) { sendReply('No client history yet. Add clients and jobs first.'); return; }
+        const _caLines = ['** Top Clients**', ''];
+        for (let i=0; i<_caByJobs.length; i++) {
+          const c2 = _caByJobs[i];
+          _caLines.push((i+1) + '. **' + c2.client_name + '** — ' + c2.job_count + ' job' + (c2.job_count!==1?'s':'') + ' — $' + Number(c2.revenue).toFixed(0) + ' paid');
+        }
+        sendReply(_caLines.join('\n'));
+        return;
+      }
+    }
+
     // End of priority dispatch
     // ════════════════════════════════════════════════════════════════════════
 
@@ -4143,39 +4243,31 @@ self.addEventListener('fetch', (event) => {
       return;
     }
 
-    const focusMatch = /^(?:what should i(?: do| focus on| work on| tackle)?|what.?s most important|what.?s next|top priority|focus(?: mode)?(?:\s+now)?)/.test(lowerText)
+    const focusMatch = /^(?:what should i(?: do| focus on| work on| tackle)?|what.?s most important|what.?s next|top priority|focus(?: mode)?(?:\s+now)?|what do i have today|what.?s on my plate|what needs doing)/.test(lowerText)
                       && !/pray(?:er|ing|ed)?/.test(lowerText)
                       && !/^(?:focus(?: mode| timer| block| session)?|pomodoro|start focus)$/.test(lowerText);
     if (focusMatch) {
       try {
-        const today = new Date().toISOString().slice(0,10);
-        // Priority: overdue reminders > today's reminders > high-priority tasks > undone habits
-        const overdueRem = dbGetOne<{title:string}>(
-          "SELECT title FROM reminders WHERE done=0 AND due_at < ? ORDER BY due_at ASC LIMIT 1",
-          new Date().toISOString()
-        ) as {title:string}|null;
-        if (overdueRem) { sendReply("⏰ Most urgent: **" + overdueRem.title + "** — this reminder is overdue."); return; }
-        
-        const topTask = dbGetOne<{title:string;priority:number}>(
-          "SELECT title, priority FROM personal_tasks WHERE status!='done' ORDER BY priority DESC, created_at ASC LIMIT 1"
-        ) as {title:string;priority:number}|null;
-        
-        const topGoal = dbGetOne<{title:string}>(
-          "SELECT title FROM goals WHERE status!='done' ORDER BY priority_score DESC LIMIT 1"
-        ) as {title:string}|null;
-        
-        const undoneHabit = dbGetOne<{name:string;icon:string}>(
-          "SELECT h.name, h.icon FROM habits h WHERE h.active=1 AND h.id NOT IN (SELECT habit_id FROM habit_logs WHERE date=?) ORDER BY h.created_at ASC LIMIT 1",
-          today
-        ) as {name:string;icon:string}|null;
-        
-        const parts: string[] = ["Here's what to focus on right now:\n"];
-        if (topTask) parts.push("✓ Top task: **" + topTask.title + "**");
-        if (undoneHabit) parts.push("○ Habit due: " + undoneHabit.icon + " " + undoneHabit.name);
-        if (topGoal) parts.push("◎ Active goal: " + topGoal.title);
-        if (parts.length === 1) parts.push("You're all caught up! Great work.");
-        sendReply(parts.join("\n"));
-      } catch { sendReply("Could not load priorities."); }
+        const _fToday = new Date().toISOString().slice(0,10);
+        // Check scheduled jobs for today
+        const _fTodayJobs = dbGet("SELECT job_number,client_name,title,bid_amount FROM jobs WHERE scheduled_date=? AND status NOT IN ('paid','cancelled') ORDER BY bid_amount DESC LIMIT 3", _fToday) as any[];
+        // Check overdue invoices
+        const _fOverdue = dbGet("SELECT job_number,client_name,invoice_amount FROM jobs WHERE status='invoiced' AND invoiced_date < date('now','-7 days') ORDER BY invoice_amount DESC LIMIT 3") as any[];
+        // Overdue reminders
+        const _fReminder = dbGetOne("SELECT title FROM reminders WHERE done=0 AND due_at < ? ORDER BY due_at ASC LIMIT 1", new Date().toISOString()) as any;
+        // Top task
+        const _fTask = dbGetOne("SELECT title, priority FROM personal_tasks WHERE status!='done' ORDER BY priority DESC, created_at ASC LIMIT 1") as any;
+        // Undone habit
+        const _fHabit = dbGetOne("SELECT h.name, h.icon FROM habits h WHERE h.active=1 AND h.id NOT IN (SELECT habit_id FROM habit_logs WHERE date=?) ORDER BY h.created_at ASC LIMIT 1", _fToday) as any;
+        const _fParts: string[] = ["Here's what to focus on right now:\n"];
+        if (_fTodayJobs.length) { _fParts.push('🔧 **Jobs scheduled today:**'); for (const j of _fTodayJobs) _fParts.push('  ' + j.job_number + ' — ' + j.client_name + ': ' + j.title.slice(0,35)); }
+        if (_fOverdue.length) { _fParts.push('⚠️ **Overdue invoices (follow up!):**'); for (const j of _fOverdue) _fParts.push('  ' + j.job_number + ' — ' + j.client_name + ' owes $' + j.invoice_amount); }
+        if (_fReminder) _fParts.push('⏰ Overdue reminder: **' + _fReminder.title + '**');
+        if (_fTask) _fParts.push('✓ Top task: **' + _fTask.title + '**');
+        if (_fHabit) _fParts.push('○ Habit due: ' + (_fHabit.icon||'•') + ' ' + _fHabit.name);
+        if (_fParts.length === 1) _fParts.push("You're all caught up! Great work.");
+        sendReply(_fParts.join('\n'));
+      } catch { sendReply('Could not load priorities.'); }
       return;
     }
 
