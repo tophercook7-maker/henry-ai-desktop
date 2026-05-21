@@ -15,6 +15,8 @@ export function buildCompanionHtml(macName: string): string {
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="data:application/json;base64,eyJuYW1lIjoiSGVucnkgQUkiLCJzaG9ydF9uYW1lIjoiSGVucnkiLCJkaXNwbGF5Ijoic3RhbmRhbG9uZSIsImJhY2tncm91bmRfY29sb3IiOiIjMDAwMDAwIiwidGhlbWVfY29sb3IiOiIjMDAwMDAwIiwiaWNvbnMiOlt7InNyYyI6Imljb24iLCJzaXplcyI6IjE5MngxOTIiLCJ0eXBlIjoiaW1hZ2UvcG5nIn1dfQ==">
 <meta name="theme-color" content="#000">
 <title>Henry</title>
 <style>
@@ -111,7 +113,10 @@ html,body{width:100%;height:100%;height:100dvh;background:#000;overflow:hidden;f
 
 <!-- Mac Screen -->
 <div id="screen">
-  <div id="screen-off">
+  <div id="add-home-banner" style="position:fixed;bottom:60px;left:50%;transform:translateX(-50%);background:rgba(124,58,237,.92);color:#fff;padding:10px 18px;border-radius:20px;font-size:13px;font-weight:600;z-index:500;display:none;cursor:pointer;white-space:nowrap" onclick="document.getElementById(\'add-home-banner\').style.display=\'none\'">
+  + Add to Home Screen for best experience
+</div>
+<div id="screen-off">
     <span style="font-size:32px">◉</span>
     <span>Connecting to ${esc}…</span>
   </div>
@@ -325,6 +330,15 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
   if (sb) sb.addEventListener('click', sendMsg);
+
+  // Show "Add to Home Screen" for Android non-PWA
+  if (/android/i.test(navigator.userAgent) && !window.matchMedia('(display-mode: standalone)').matches) {
+    setTimeout(function() {
+      var b = document.getElementById('add-home-banner');
+      if (b) b.style.display = 'block';
+      setTimeout(function() { if (b) b.style.display = 'none'; }, 8000);
+    }, 3000);
+  }
 
   // Start screen stream
   startStream();

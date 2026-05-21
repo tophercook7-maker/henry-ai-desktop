@@ -300,8 +300,12 @@ export function setSyncDb(db: import('better-sqlite3').Database): void {
     const _bkDir = _bkp.join(_bkos.homedir(), 'Library', 'Application Support', 'henry-ai-desktop', 'backups');
     const _bkFile = 'henry_' + new Date().toISOString().slice(0,10) + '.db';
     try {
-      _bkx('mkdir -p "' + _bkDir + '" && cp "' + db.name + '" "' + _bkDir + '/' + _bkFile + '"', {timeout:3000,shell:'/bin/bash'});
-      _bkx('cd "' + _bkDir + '" && ls -t henry_*.db 2>/dev/null | tail -n +8 | xargs rm -f 2>/dev/null || true', {timeout:2000,shell:'/bin/bash'});
+      if (process.platform === 'win32') {
+        _bkx('mkdir "' + _bkDir.replace(/\//g,'\\') + '" 2>nul && copy "' + db.name.replace(/\//g,'\\') + '" "' + (_bkDir + '\\' + _bkFile).replace(/\//g,'\\') + '"', {timeout:3000,shell:true});
+      } else {
+        _bkx('mkdir -p "' + _bkDir + '" && cp "' + db.name + '" "' + _bkDir + '/' + _bkFile + '"', {timeout:3000,shell:'/bin/bash'});
+        _bkx('cd "' + _bkDir + '" && ls -t henry_*.db 2>/dev/null | tail -n +8 | xargs rm -f 2>/dev/null || true', {timeout:2000,shell:'/bin/bash'});
+      }
     } catch {}
   } catch {}
 }
@@ -1441,6 +1445,102 @@ self.addEventListener('fetch', (event) => {
     // ── Knowledge router — instant answers, no AI needed ─────────────────────
     const lowerText = resolvedText.toLowerCase().trim();
 
+    // ════════════════════════════════════════════════════════════════════════
+    // ── PRIORITY DISPATCH — guaranteed to fire before all other handlers ───
+    // Fixes: "show jobs" → real jobs; "business summary" → dashboard;
+    //        "follow up with X in N days" → schedule; "run: X" → shell
+    // ════════════════════════════════════════════════════════════════════════
+
+    // P1: Jobs table (not personal tasks)
+    if (/^(?:show|list|my|all|open|active)(?: my)?(?: open| active| all)? jobs?$/i.test(lowerText) || lowerText === 'jobs') {
+      const _pj = dbGet("SELECT job_number,client_name,title,status,bid_amount,invoice_amount,paid_amount FROM jobs WHERE status!='cancelled' ORDER BY created_at DESC LIMIT 25") as any[];
+      if (!_pj.length) { sendReply('No jobs yet. Create one: "new job: [description] for [client] | $[amount] | [date]"'); return; }
+      const _pjIco: Record<string,string> = {bid:'Bid',scheduled:'Sched',in_progress:'Active',complete:'Done',invoiced:'Invoiced',paid:'Paid'};
+      const _pjByS: Record<string,any[]> = {};
+      for (const j of _pj) { if (!_pjByS[j.status]) _pjByS[j.status] = []; _pjByS[j.status].push(j); }
+      const _pjL = ['**Jobs (' + _pj.length + ')**', ''];
+      for (const [st, jobs] of Object.entries(_pjByS)) {
+        _pjL.push('--- ' + (_pjIco[st]||st) + ' ---');
+        for (const j of jobs as any[]) {
+          const _a = j.paid_amount > 0 ? '$' + j.paid_amount.toFixed(0) + ' paid' : j.invoice_amount > 0 ? '$' + j.invoice_amount.toFixed(0) + ' inv' : j.bid_amount > 0 ? '$' + j.bid_amount.toFixed(0) : '';
+          _pjL.push('  ' + j.job_number + ' — ' + j.client_name + ': ' + j.title.slice(0,32) + (_a ? ' (' + _a + ')' : ''));
+        }
+      }
+      const _pjOwe = (dbGetOne("SELECT COALESCE(SUM(invoice_amount-paid_amount),0) as t FROM jobs WHERE status IN ('invoiced','complete') AND invoice_amount>paid_amount") as any)?.t || 0;
+      if (_pjOwe > 0) _pjL.push('', '⚠️ Outstanding: $' + _pjOwe.toFixed(2));
+      sendReply(_pjL.join('\n')); return;
+    }
+
+    // P2: Business dashboard
+    if (lowerText === 'business summary' || lowerText === 'biz summary' || lowerText === 'business dashboard' ||
+        lowerText === 'business check' || lowerText === 'how is business' || lowerText === "how's business" ||
+        lowerText === 'my business stats' || lowerText === 'revenue summary' || lowerText === 'business overview') {
+      try {
+        const _pbd = new Date();
+        const _pbms = new Date(_pbd.getFullYear(), _pbd.getMonth(), 1).toISOString().slice(0,10);
+        const _pbws = new Date(_pbd.getTime() - 7*86400000).toISOString().slice(0,10);
+        const _pbys = new Date(_pbd.getFullYear(), 0, 1).toISOString().slice(0,10);
+        const _pbMi: number = (dbGetOne("SELECT COALESCE(SUM(amount),0) as t FROM transactions WHERE type='income' AND date>=?",_pbms) as any)?.t || 0;
+        const _pbMe: number = (dbGetOne("SELECT COALESCE(SUM(amount),0) as t FROM transactions WHERE type='expense' AND date>=?",_pbms) as any)?.t || 0;
+        const _pbWi: number = (dbGetOne("SELECT COALESCE(SUM(amount),0) as t FROM transactions WHERE type='income' AND date>=?",_pbws) as any)?.t || 0;
+        const _pbYi: number = (dbGetOne("SELECT COALESCE(SUM(amount),0) as t FROM transactions WHERE type='income' AND date>=?",_pbys) as any)?.t || 0;
+        const _pbNc: number = (dbGetOne('SELECT COUNT(*) as n FROM contacts') as any)?.n || 0;
+        const _pbOj: number = (dbGetOne("SELECT COUNT(*) as n FROM jobs WHERE status NOT IN ('paid','cancelled')") as any)?.n || 0;
+        const _pbOw: number = (dbGetOne("SELECT COALESCE(SUM(invoice_amount-paid_amount),0) as t FROM jobs WHERE status IN ('invoiced','complete') AND invoice_amount>paid_amount") as any)?.t || 0;
+        const _pbTc = dbGet('SELECT name,revenue_total FROM contacts WHERE revenue_total>0 ORDER BY revenue_total DESC LIMIT 3') as any[];
+        const _pbLines = [
+          '** Business Dashboard** — ' + _pbd.toLocaleDateString('en-US',{month:'long',year:'numeric'}), '',
+          '**This week:** $' + _pbWi.toFixed(2),
+          '**This month:** $' + _pbMi.toFixed(2) + ' in  |  $' + _pbMe.toFixed(2) + ' out  |  **$' + (_pbMi-_pbMe).toFixed(2) + ' net**',
+          '**This year:** $' + _pbYi.toFixed(2), '',
+          'Clients: ' + _pbNc + '  |  Active jobs: ' + _pbOj,
+        ];
+        if (_pbOw > 0) _pbLines.push('⚠️ Outstanding: $' + _pbOw.toFixed(2));
+        if (_pbTc.length) { _pbLines.push('', '**Top clients:**'); for (const _pbc of _pbTc) _pbLines.push('  • ' + _pbc.name + ' — $' + _pbc.revenue_total.toFixed(0)); }
+        sendReply(_pbLines.join('\n'));
+      } catch(e) { sendReply('Dashboard error: ' + e); }
+      return;
+    }
+
+    // P3: Follow-up scheduling
+    {
+      const _pfuM = lowerText.match(/^(?:follow(?:\s+up)?\s+with|remind\s+me\s+(?:to\s+)?(?:call|contact|follow\s+up\s+with))[:\s]+(.+?)\s+in\s+(\d+)\s*(day|week|hour)s?/i);
+      if (_pfuM) {
+        const _pfuName = _pfuM[1].trim();
+        const _pfuNum = parseInt(_pfuM[2]);
+        const _pfuUnit = _pfuM[3].toLowerCase();
+        const _pfuDays = _pfuUnit === 'week' ? _pfuNum*7 : _pfuUnit === 'hour' ? 1 : _pfuNum;
+        const _pfuDate = new Date(Date.now() + _pfuDays*86400000).toISOString().slice(0,10);
+        const _pfuClient = dbGetOne('SELECT id,name FROM contacts WHERE LOWER(name) LIKE ? LIMIT 1', '%' + _pfuName.split(' ')[0].toLowerCase() + '%') as any;
+        const _pfuReal = _pfuClient?.name || _pfuName;
+        if (_pfuClient) dbRun("UPDATE contacts SET next_followup=?,updated_at=? WHERE id=?", _pfuDate, new Date().toISOString(), _pfuClient.id);
+        const _pfuTaskId = Date.now().toString(36) + Math.random().toString(36).slice(2);
+        dbRun("INSERT INTO personal_tasks (id,title,notes,status,priority,due_at,created_at) VALUES (?,?,?,?,?,?,?)",
+          _pfuTaskId, 'Follow up with ' + _pfuReal, 'Scheduled follow-up contact', 'todo', 2,
+          _pfuDate + 'T09:00:00.000Z', new Date().toISOString());
+        sendReply('Follow-up scheduled with **' + _pfuReal + '** on **' + _pfuDate + '** — added to your task list.');
+        return;
+      }
+    }
+
+    // P4: Shell / run: commands (before habit handler intercepts "run")
+    if (/^(?:run|shell|exec|bash|cmd|terminal)[:\s]+.+/i.test(lowerText) && !lowerText.match(/^(?:run|shell)\s+(?:a\s+)?(?:timer|reminder|check|analysis|report)\b/i)) {
+      const _psh = resolvedText.match(/^(?:run|shell|exec|bash|cmd|terminal)[:\s]+(.+)/i);
+      if (_psh) {
+        const _pshCmd = _psh[1].trim();
+        try {
+          const { execSync: _pshX } = await import('child_process') as typeof import('child_process');
+          const _pshOut = _pshX(_pshCmd, { encoding: 'utf8', timeout: 10000, shell: '/bin/bash' }).trim();
+          sendReply('```\n$ ' + _pshCmd + '\n\n' + (_pshOut || '(no output)') + '\n```');
+        } catch(e: any) { sendReply('```\n$ ' + _pshCmd + '\n\nError: ' + (e.message||e) + '\n```'); }
+        return;
+      }
+    }
+
+    // End of priority dispatch
+    // ════════════════════════════════════════════════════════════════════════
+
+
     // ── Implicit task creation: "I need to X" / "I should X" ──────────────────
     const implicitTaskRx = lowerText.match(/^i (?:need to|should|have to|must|gotta)(?: still)? (.+?)(?:\s+today)?$/i)
                        || lowerText.match(/^(?:need to|gotta|must) (.+?)(?:\s+today)?$/i)
@@ -1708,7 +1808,7 @@ self.addEventListener('fetch', (event) => {
                              || /^(?:i (?:prayed|exercised|ran|jogged|walked|meditated|journaled|drank|read (?:my )?bible))/i.test(lowerText);
       const habitWordDone = /^(?:prayer(?:ed)?|bible|exercise(?:d)?|journal(?:ed)?|water|run|jog|walk)(?: done| today)?$/i.test(lowerText);
       const _hasDoneWord = /(?:done|complete[d]?|check(?:ed)?|finish(?:ed)?|logg?(?:ed)?)$/.test(lowerText.trim());
-      if (!lowerText.match(/^(?:add|create|new)(?: a)? habit/i) && (hasHKW || naturalHabitDone) && (/^(?:mark|done|check|finish|complete|log)/.test(lowerText) || naturalHabitDone || habitWordDone || _hasDoneWord)) {
+      if (!lowerText.match(/^(?:add|create|new)(?: a)? habit/i) && !lowerText.match(/^(?:run:|python run:|shell:|exec:)/i) && (hasHKW || naturalHabitDone) && (/^(?:mark|done|check|finish|complete|log)/.test(lowerText) || naturalHabitDone || habitWordDone || _hasDoneWord)) {
         let hk = hkws.find((k: string) => lowerText.includes(k)) || '';
         if (hk === 'praying') hk = 'prayer';
         if (hk === 'run' || hk === 'jog' || hk === 'walk') hk = 'exercise';
@@ -1768,18 +1868,25 @@ self.addEventListener('fetch', (event) => {
       return;
     }
 
-    // ── "what jobs do I have open" → open task list ────────────────────────
-    if (/^what(?:'s my)?(?: open)? jobs?(?: do i have| are open| are there)?/i.test(lowerText) ||
-        /^(?:show|list)(?: my)?(?: open)? jobs?(?:\s+in progress)?/i.test(lowerText)) {
-      // Alias: jobs = tasks with "job" or "order" in title
-      try {
-        const allTasks = dbGet<{id:string;title:string;priority:number}>(
-          "SELECT id,title,priority FROM personal_tasks WHERE status!='done' ORDER BY priority DESC, created_at DESC LIMIT 15"
-        ) as {id:string;title:string;priority:number}[];
-        if (!allTasks.length) { sendReply('No open jobs. Add one: "start a new job for [client]"'); return; }
-        sendReply('Open jobs:\n\n' + allTasks.map((t,i) => (i+1) + '. ' + t.title).join('\n'));
-      } catch { sendReply('Could not load jobs.'); }
-      return;
+    // ── "show jobs" / "what jobs do I have" → real jobs table ─────────────
+    if (/^(?:show|list|what(?:'s my)?(?: open)?|my|all|open|active)(?: my)?(?: open| active| all)? jobs?(?:\s+(?:do i have|are open|are there|in progress|today|this week))?$/i.test(lowerText) || lowerText === 'jobs') {
+      const _sj = dbGet("SELECT job_number,client_name,title,status,bid_amount,invoice_amount,paid_amount FROM jobs WHERE status!='cancelled' ORDER BY created_at DESC LIMIT 20") as any[];
+      if (!_sj.length) { sendReply('No jobs yet.\n\nCreate one: "new job: [description] for [client] | $[amount] | [date]"'); return; }
+      const _sjIco: Record<string,string> = {bid:'📝 Bid',scheduled:'📅 Scheduled',in_progress:'🔧 Active',complete:'✅ Complete',invoiced:'📤 Invoiced',paid:'💰 Paid'};
+      const _sjByStatus: Record<string,any[]> = {};
+      for (const j of _sj) { if (!_sjByStatus[j.status]) _sjByStatus[j.status] = []; _sjByStatus[j.status].push(j); }
+      const _sjLines = ['**Jobs (' + _sj.length + ')**', ''];
+      for (const [st, jobs] of Object.entries(_sjByStatus)) {
+        _sjLines.push(_sjIco[st] || st);
+        for (const j of jobs as any[]) {
+          const _a = j.paid_amount > 0 ? '$' + j.paid_amount.toFixed(0) + ' paid' : j.invoice_amount > 0 ? '$' + j.invoice_amount.toFixed(0) + ' invoiced' : j.bid_amount > 0 ? '$' + j.bid_amount.toFixed(0) + ' bid' : '';
+          _sjLines.push('  ' + j.job_number + ' — ' + j.client_name + ': ' + j.title.slice(0,35) + (_a ? ' (' + _a + ')' : ''));
+        }
+        _sjLines.push('');
+      }
+      const _sjOwe = (dbGetOne("SELECT COALESCE(SUM(invoice_amount-paid_amount),0) as t FROM jobs WHERE status IN ('invoiced','complete') AND invoice_amount>paid_amount") as any)?.t || 0;
+      if (_sjOwe > 0) _sjLines.push('⚠️ Outstanding: $' + _sjOwe.toFixed(2));
+      sendReply(_sjLines.join('\n')); return;
     }
 
     // ── Clipboard-aware commands: "explain this" / "fix this" / "review this" ─
@@ -1814,7 +1921,10 @@ self.addEventListener('fetch', (event) => {
     if (pairPhoneMatch) {
       try {
         const { execSync: _pn } = await import('child_process') as typeof import('child_process');
-        const _ip = _pn('ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null', { encoding:'utf8', shell:'/bin/bash', timeout:2000 }).trim();
+        const _ipCmd = process.platform === 'darwin' ? 'ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null' :
+          process.platform === 'linux' ? "hostname -I 2>/dev/null | awk '{print $1}'" :
+          "for /f \"tokens=2 delims=:\" %i in ('ipconfig ^| findstr /r \"IPv4\"') do echo %i";
+        const _ip = _pn(_ipCmd, { encoding:'utf8', shell: process.platform === 'win32' ? true : '/bin/bash', timeout:2000 }).trim().split('\n')[0].trim();
         const _localUrl = 'http://' + (_ip || 'YOUR-MAC-IP') + ':4242';
         const _turl = getTunnelUrl();
         const _bestUrl = _turl || _localUrl;
@@ -1842,7 +1952,10 @@ self.addEventListener('fetch', (event) => {
       if (_appKey) {
         try {
           const { execSync: _eal } = await import('child_process') as typeof import('child_process');
-          _eal('open -a "' + _knownApps[_appKey] + '"', { timeout: 3000 });
+          const _launchCmd = process.platform === 'darwin' ? 'open -a "' + _knownApps[_appKey] + '"' :
+            process.platform === 'win32' ? 'start "" "' + _knownApps[_appKey] + '"' :
+            'xdg-open "' + _knownApps[_appKey] + '" 2>/dev/null || ' + _knownApps[_appKey].toLowerCase().replace(/ /g,'-');
+          _eal(_launchCmd, { timeout: 3000, shell: process.platform !== 'darwin' });
           sendReply('🚀 Opened **' + _knownApps[_appKey] + '**');
         } catch { sendReply('Could not open ' + _knownApps[_appKey] + '. Is it installed?'); }
         return;
@@ -2923,12 +3036,19 @@ self.addEventListener('fetch', (event) => {
       const _njt = _njp[0] || '';
       const _nja = parseFloat((_njp.find((p: string) => /\$[\d,]+/.test(p))||'$0').replace(/[$,]/g,'')) || 0;
       const _njd = _njp.find((p: string) => /(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|\d\/\d)/i.test(p)) || '';
-      const _njc = _njp.find((p: string) => p !== _njt && !p.includes('$') && p !== _njd) || '';
+      let _njc = _njp.find((p: string) => p !== _njt && !p.includes('$') && p !== _njd) || '';
+      // Extract "for [client]" from title if not in pipe segments
+      if (!_njc) {
+        const _forMatch = _njt.match(/\bfor\s+([A-Z][\w\s]{2,30})$/i);
+        if (_forMatch) _njc = _forMatch[1].trim();
+      }
+      const _njcCap = _njc ? _njc.split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ') : '';
+      const _njTitle = _njcCap ? _njt.replace(/\s+for\s+.+$/i, '').trim() : _njt;
       const _njn = 'J-' + Date.now().toString().slice(-5);
       const _njid = Date.now().toString(36) + Math.random().toString(36).slice(2);
       dbRun('INSERT INTO jobs (id,job_number,client_name,title,status,bid_amount,scheduled_date,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)',
-        _njid, _njn, _njc || 'TBD', _njt, 'bid', _nja, _njd, new Date().toISOString(), new Date().toISOString());
-      sendReply('Job **' + _njn + '** created.\n' + _njt + (_njc ? '\nClient: ' + _njc : '') + (_nja > 0 ? '\nBid: $' + _nja.toFixed(2) : '') + (_njd ? '\nDate: ' + _njd : '') + '\n\nAdvance: "schedule ' + _njn + ' for [date]" | "job complete: ' + _njn + '" | "send invoice for ' + _njn + '"');
+        _njid, _njn, _njcCap || 'TBD', _njTitle || _njt, 'bid', _nja, _njd, new Date().toISOString(), new Date().toISOString());
+      sendReply('Job **' + _njn + '** created.\n' + (_njTitle||_njt) + (_njc ? '\nClient: ' + _njc : '') + (_nja > 0 ? '\nBid: $' + _nja.toFixed(2) : '') + (_njd ? '\nDate: ' + _njd : '') + '\n\nAdvance: "schedule ' + _njn + ' for [date]" | "job complete: ' + _njn + '" | "send invoice for ' + _njn + '"');
       return;
     }
 
@@ -2960,7 +3080,7 @@ self.addEventListener('fetch', (event) => {
       const _chn = (_clientHistM[1]||_clientHistM[2]||'').trim();
       const _chc = dbGetOne("SELECT id,name,email,phone,revenue_total,notes FROM contacts WHERE LOWER(name) LIKE ? LIMIT 1", '%' + _chn.toLowerCase() + '%') as any;
       if (!_chc) { sendReply('No client matching "' + _chn + '".'); return; }
-      const _chj = dbGet("SELECT job_number,title,status,bid_amount,invoice_amount,paid_amount FROM jobs WHERE LOWER(client_name) LIKE ? ORDER BY created_at DESC LIMIT 10", '%' + _chc.name.split(' ')[0].toLowerCase() + '%') as any[];
+      const _chj = dbGet("SELECT job_number,title,status,bid_amount,invoice_amount,paid_amount FROM jobs WHERE LOWER(client_name) LIKE ? OR LOWER(client_name) LIKE ? ORDER BY created_at DESC LIMIT 10", '%' + _chc.name.split(' ')[0].toLowerCase() + '%', '%' + _chc.name.split(' ').slice(-1)[0].toLowerCase() + '%') as any[];
       const _cht = dbGet("SELECT description,amount,date FROM transactions WHERE LOWER(category) LIKE ? OR LOWER(description) LIKE ? ORDER BY date DESC LIMIT 5", '%' + _chc.name.split(' ')[0].toLowerCase() + '%', '%' + _chc.name.split(' ')[0].toLowerCase() + '%') as any[];
       const _chm = dbGet("SELECT fact FROM memory_facts WHERE LOWER(fact) LIKE ? ORDER BY created_at DESC LIMIT 5", '%' + _chc.name.split(' ')[0].toLowerCase() + '%') as any[];
       const _lines = ['**' + _chc.name + '**'];
@@ -4367,7 +4487,15 @@ self.addEventListener('fetch', (event) => {
       sendReply('⏱️ Timer set for **' + _tLabel + '**. I\'ll let you know.');
       setTimeout(() => {
         const { execSync: _tExec } = require('child_process') as typeof import('child_process');
-        try { _tExec('osascript -e \'display notification "Timer done!" with title "Henry" sound name "Ping"\'', {timeout:3000}); } catch {}
+        try {
+        if (process.platform === 'darwin') {
+          _tExec('osascript -e \'display notification "Timer done!" with title "Henry" sound name "Ping"\'', {timeout:3000});
+        } else if (process.platform === 'linux') {
+          _tExec('notify-send "Henry" "Timer done!" 2>/dev/null || true', {timeout:3000,shell:'/bin/bash'});
+        } else {
+          _tExec('powershell -command "New-BurntToastNotification -Text \'Henry\', \'Timer done!\'"', {timeout:3000,shell:true});
+        }
+      } catch {}
         sendReply('⏰ **' + _tLabel + ' timer done!**');
       }, Math.min(_tMs, 3600000));
       return;
@@ -5790,8 +5918,18 @@ self.addEventListener('fetch', (event) => {
       const _scp = await import('path');
       // Capture as JPEG directly (much smaller than PNG)
       const _tmp = _scp.default.join(_scos.default.tmpdir(), `hs_${Date.now()}.jpg`);
-      // -x = no sound, -t jpg = JPEG, scale to 1280 wide max via sips
-      _scx(`screencapture -x -t jpg "${_tmp}" && sips -Z 1280 "${_tmp}" --out "${_tmp}" 2>/dev/null || true`, { timeout: 4000, shell: '/bin/bash' });
+      // Cross-platform screenshot → JPEG
+      if (process.platform === 'darwin') {
+        _scx(`screencapture -x -t jpg "${_tmp}" && sips -Z 1280 "${_tmp}" --out "${_tmp}" 2>/dev/null || true`, { timeout: 4000, shell: '/bin/bash' });
+      } else if (process.platform === 'linux') {
+        const _tmpPng = _tmp.replace('.jpg', '.png');
+        _scx(`scrot "${_tmpPng}" 2>/dev/null || import -window root "${_tmpPng}" 2>/dev/null || gnome-screenshot -f "${_tmpPng}" 2>/dev/null || true`, { timeout: 4000, shell: '/bin/bash' });
+        try { _scx(`convert "${_tmpPng}" -resize 1280x "${_tmp}" 2>/dev/null || cp "${_tmpPng}" "${_tmp}" 2>/dev/null || true`, { timeout: 3000, shell: '/bin/bash' }); } catch {}
+      } else {
+        // Windows — PowerShell screenshot
+        const _winTmp = _tmp.replace(/\\/g, '/');
+        _scx(`powershell -NoProfile -Command "Add-Type -Assembly System.Drawing,System.Windows.Forms; $s=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds; $b=New-Object System.Drawing.Bitmap $s.Width,$s.Height; [System.Drawing.Graphics]::FromImage($b).CopyFromScreen(0,0,0,0,$s.Size); $b.Save('${_winTmp}')"`, { timeout: 8000, shell: true });
+      }
       const _buf = _scfs.default.readFileSync(_tmp);
       try { _scfs.default.unlinkSync(_tmp); } catch {}
       res.writeHead(200, {
