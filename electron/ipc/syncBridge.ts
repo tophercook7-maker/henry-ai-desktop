@@ -286,6 +286,24 @@ let _db: import('better-sqlite3').Database | null = null;
 
 export function setSyncDb(db: import('better-sqlite3').Database): void {
   _db = db;
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, job_number TEXT NOT NULL, client_id TEXT, client_name TEXT NOT NULL, title TEXT NOT NULL, description TEXT, status TEXT NOT NULL DEFAULT 'bid' CHECK(status IN ('bid','scheduled','in_progress','complete','invoiced','paid','cancelled')), scheduled_date TEXT, scheduled_end TEXT, completed_date TEXT, invoiced_date TEXT, paid_date TEXT, bid_amount REAL DEFAULT 0, invoice_amount REAL DEFAULT 0, paid_amount REAL DEFAULT 0, notes TEXT, invoice_sent INTEGER DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);`);
+    db.exec(`CREATE TABLE IF NOT EXISTS job_materials (id TEXT PRIMARY KEY, job_id TEXT NOT NULL, material TEXT NOT NULL, quantity TEXT, unit_cost REAL DEFAULT 0, supplier TEXT, acquired INTEGER DEFAULT 0, created_at TEXT NOT NULL);`);
+    db.exec(`CREATE TABLE IF NOT EXISTS job_log (id TEXT PRIMARY KEY, job_id TEXT NOT NULL, note TEXT NOT NULL, created_at TEXT NOT NULL);`);
+    db.exec(`INSERT OR IGNORE INTO settings (key,value) VALUES ('business_type','general');`);
+    db.exec(`INSERT OR IGNORE INTO settings (key,value) VALUES ('business_name','My Business');`);
+    db.exec(`INSERT OR IGNORE INTO settings (key,value) VALUES ('payment_terms','Due on receipt');`);
+    // Auto-backup on startup
+    const { execSync: _bkx } = require('child_process') as typeof import('child_process');
+    const _bkos = require('os') as typeof import('os');
+    const _bkp = require('path') as typeof import('path');
+    const _bkDir = _bkp.join(_bkos.homedir(), 'Library', 'Application Support', 'henry-ai-desktop', 'backups');
+    const _bkFile = 'henry_' + new Date().toISOString().slice(0,10) + '.db';
+    try {
+      _bkx('mkdir -p "' + _bkDir + '" && cp "' + db.name + '" "' + _bkDir + '/' + _bkFile + '"', {timeout:3000,shell:'/bin/bash'});
+      _bkx('cd "' + _bkDir + '" && ls -t henry_*.db 2>/dev/null | tail -n +8 | xargs rm -f 2>/dev/null || true', {timeout:2000,shell:'/bin/bash'});
+    } catch {}
+  } catch {}
 }
 
 function dbGet<T>(sql: string, ...params: unknown[]): T[] {
@@ -1735,7 +1753,7 @@ self.addEventListener('fetch', (event) => {
     // ── "X owes me money" / "client owes me $Y" → create collection task ────
     const owesMeMatch = lowerText.match(/^(\w+) owes me(?: \$?([\d.]+))?/i)
                      || lowerText.match(/^(?:collect|follow up)(?: on)?(?: \$?([\d.]+))? (?:from|with) (\w+)/i);
-    if (owesMeMatch) {
+    if (owesMeMatch && (lowerText.includes(' owes') || lowerText.includes("hasn't paid") || lowerText.includes('owes me'))) {
       const client = (owesMeMatch[1] || owesMeMatch[2] || '').trim();
       const amount = owesMeMatch[2] || owesMeMatch[1] || '';
       const taskTitle = amount.match(/^[\d.]+$/)
@@ -1839,10 +1857,11 @@ self.addEventListener('fetch', (event) => {
       companion:'companion', 'today panel':'today', 'health panel':'health',
       'task panel':'tasks', 'goal panel':'goals', 'journal panel':'journal',
     };
-    const panelSwitchM = lowerText.match(/^(?:open|go to|show me?|switch to|navigate to|take me to)(?: (?:the|my|henry))?\s+([\w\s]{2,20})(?:\s+panel|\s+tab|\s+view)?$/i);
-    const _panelNames = ['today','journal','finance','goals','settings','tasks','habits','memory','chat','home'];
-    if (panelSwitchM && _panelNames.some(p => panelSwitchM[1].toLowerCase().includes(p))) {
-      const hint = (panelSwitchM[1] || '').trim().toLowerCase();
+    // Panel switch: ONLY when user explicitly says "panel" or "tab"
+    const panelSwitchM = lowerText.match(/^(?:go to|switch to)(?: (?:the|my|henry))?\s+([\w\s]{2,20})\s+(?:panel|tab|view)$/i)
+                      || lowerText.match(/^(?:open|show)(?: (?:the|my|henry))?\s+([\w\s]{2,20})\s+(?:panel|tab|view)$/i);
+    if (panelSwitchM) {
+      const hint = ((panelSwitchM[1]||panelSwitchM[2])||'').trim().toLowerCase();
       const panelKey = HENRY_PANELS[hint];
       if (panelKey) {
         pushToAll({ type: 'navigate', payload: { panel: panelKey }, id: '', timestamp: 0 } as any);
@@ -1855,16 +1874,7 @@ self.addEventListener('fetch', (event) => {
       }
     }
 
-    // ── "open [app]" → keyboard guide, never auto-launch ──────────────────
-    const openAppGuideMatch = lowerText.match(/^open(?:\s+the)?\s+([a-zA-Z][\w\s]{1,25})(?:\s+app)?$/i);
-    if (openAppGuideMatch && !/file|folder|document|\//.test(lowerText)) {
-      const _appName = (openAppGuideMatch[1] || '').trim();
-      const _skipWords = ['task','goal','note','habit','bible','chat','henry','my','the','a','up','this','it','me','code','that','file','more','everything','all'];
-      if (!_skipWords.includes(_appName.toLowerCase()) && _appName.length > 1) {
-        sendReply('Press **Cmd+Space**, type **"' + _appName + '"**, press Enter.\n\nHenry keeps your hands on the keyboard — no auto-launching.');
-        return;
-      }
-    }
+    // openAppGuideMatch removed
 
     const xDoneBlocklist = /^(?:all|i'm|that's|good|mission|nothing|totally|almost|nearly|sign order|laser order|delivery|habits?|show habits?)/i;
     const xDoneResult = !xDoneBlocklist.test(lowerText) ? lowerText.match(/^(.{3,45}) done$/i) : null;
@@ -2902,7 +2912,182 @@ self.addEventListener('fetch', (event) => {
       return;
     }
 
-    // ── Universal search ────────────────────────────────────────────────────────
+    // ════════════════════════════════════════════════════════════════
+    // ── JOB MANAGEMENT (works for any trade) ─────────────────────
+    // ════════════════════════════════════════════════════════════════
+
+    // ── Create job: "new job: fix pipes for Bob | $450 | May 27" ──
+    const _newJobM = lowerText.match(/^(?:new|add|create)(?: a?)? (?:job|bid|work order|project)[:\s]+(.+)/i);
+    if (_newJobM) {
+      const _njp = _newJobM[1].split('|').map((s: string) => s.trim());
+      const _njt = _njp[0] || '';
+      const _nja = parseFloat((_njp.find((p: string) => /\$[\d,]+/.test(p))||'$0').replace(/[$,]/g,'')) || 0;
+      const _njd = _njp.find((p: string) => /(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|\d\/\d)/i.test(p)) || '';
+      const _njc = _njp.find((p: string) => p !== _njt && !p.includes('$') && p !== _njd) || '';
+      const _njn = 'J-' + Date.now().toString().slice(-5);
+      const _njid = Date.now().toString(36) + Math.random().toString(36).slice(2);
+      dbRun('INSERT INTO jobs (id,job_number,client_name,title,status,bid_amount,scheduled_date,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)',
+        _njid, _njn, _njc || 'TBD', _njt, 'bid', _nja, _njd, new Date().toISOString(), new Date().toISOString());
+      sendReply('Job **' + _njn + '** created.\n' + _njt + (_njc ? '\nClient: ' + _njc : '') + (_nja > 0 ? '\nBid: $' + _nja.toFixed(2) : '') + (_njd ? '\nDate: ' + _njd : '') + '\n\nAdvance: "schedule ' + _njn + ' for [date]" | "job complete: ' + _njn + '" | "send invoice for ' + _njn + '"');
+      return;
+    }
+
+    // ── Show jobs ──────────────────────────────────────────────────
+    const _showJobsM = /^(?:show|list|all|open|my)(?: my)?(?: open| active| all)? jobs?$/.test(lowerText) || lowerText === 'jobs';
+    if (_showJobsM) {
+      const _sj = dbGet("SELECT job_number,client_name,title,status,bid_amount,invoice_amount,paid_amount FROM jobs WHERE status!='cancelled' ORDER BY created_at DESC LIMIT 20") as any[];
+      if (!_sj.length) { sendReply('No jobs yet.\n\nCreate one: "new job: [description] for [client] | $[amount] | [date]"'); return; }
+      const _sjIco: Record<string,string> = {bid:'Bid',scheduled:'Scheduled',in_progress:'In Progress',complete:'Complete',invoiced:'Invoiced',paid:'Paid'};
+      const _sjLines = ['**Jobs (' + _sj.length + ')**',''];
+      const _sjGroups: Record<string,any[]> = {};
+      for (const j of _sj) { if (!_sjGroups[j.status]) _sjGroups[j.status] = []; _sjGroups[j.status].push(j); }
+      for (const [st, jobs] of Object.entries(_sjGroups)) {
+        _sjLines.push('**' + (_sjIco[st]||st) + ':**');
+        for (const j of jobs as any[]) {
+          const _a = j.paid_amount > 0 ? '$' + j.paid_amount.toFixed(0) + ' pd' : j.invoice_amount > 0 ? '$' + j.invoice_amount.toFixed(0) + ' inv' : j.bid_amount > 0 ? '$' + j.bid_amount.toFixed(0) : '';
+          _sjLines.push('  ' + j.job_number + ' — ' + j.client_name + ': ' + j.title.slice(0,35) + (_a ? ' (' + _a + ')' : ''));
+        }
+      }
+      const _sjOwe = (dbGetOne("SELECT COALESCE(SUM(invoice_amount-paid_amount),0) as t FROM jobs WHERE status IN ('invoiced','complete') AND invoice_amount>paid_amount") as any)?.t || 0;
+      if (_sjOwe > 0) _sjLines.push('', 'Outstanding: $' + _sjOwe.toFixed(2));
+      sendReply(_sjLines.join('\n')); return;
+    }
+
+    // ── Client full history ─────────────────────────────────────────
+    const _clientHistM = lowerText.match(/^(?:pull up|show everything(?: for)?|full history|all work for|client history for|history for)[:\s]+(.+)/i)
+                      || lowerText.match(/^(?:show|get|find)(?: me)? (?:everything|all)(?: for| about)[:\s]+(.+)/i);
+    if (_clientHistM) {
+      const _chn = (_clientHistM[1]||_clientHistM[2]||'').trim();
+      const _chc = dbGetOne("SELECT id,name,email,phone,revenue_total,notes FROM contacts WHERE LOWER(name) LIKE ? LIMIT 1", '%' + _chn.toLowerCase() + '%') as any;
+      if (!_chc) { sendReply('No client matching "' + _chn + '".'); return; }
+      const _chj = dbGet("SELECT job_number,title,status,bid_amount,invoice_amount,paid_amount FROM jobs WHERE LOWER(client_name) LIKE ? ORDER BY created_at DESC LIMIT 10", '%' + _chc.name.split(' ')[0].toLowerCase() + '%') as any[];
+      const _cht = dbGet("SELECT description,amount,date FROM transactions WHERE LOWER(category) LIKE ? OR LOWER(description) LIKE ? ORDER BY date DESC LIMIT 5", '%' + _chc.name.split(' ')[0].toLowerCase() + '%', '%' + _chc.name.split(' ')[0].toLowerCase() + '%') as any[];
+      const _chm = dbGet("SELECT fact FROM memory_facts WHERE LOWER(fact) LIKE ? ORDER BY created_at DESC LIMIT 5", '%' + _chc.name.split(' ')[0].toLowerCase() + '%') as any[];
+      const _lines = ['**' + _chc.name + '**'];
+      if (_chc.email) _lines.push(_chc.email); if (_chc.phone) _lines.push(_chc.phone);
+      if (_chc.revenue_total > 0) _lines.push('Total revenue: $' + _chc.revenue_total.toFixed(2));
+      if (_chc.notes) _lines.push(_chc.notes);
+      if (_chj.length) { _lines.push('','**Jobs:**'); for (const j of _chj) { const _a = j.paid_amount > 0 ? '$' + j.paid_amount.toFixed(0) + ' paid' : '$' + j.bid_amount.toFixed(0) + ' bid'; _lines.push('  ' + j.job_number + ' [' + j.status + '] ' + j.title.slice(0,35) + ' ' + _a); } }
+      if (_cht.length) { _lines.push('','**Payments:**'); for (const t of _cht) _lines.push('  $' + t.amount.toFixed(2) + ' — ' + t.description.slice(0,35) + ' (' + t.date + ')'); }
+      if (_chm.length) { _lines.push('','**Notes:**'); for (const m of _chm) _lines.push('  - ' + m.fact); }
+      const _chOwe = _chj.filter(j => ['invoiced','complete'].includes(j.status)).reduce((s: number,j: any) => s + (j.invoice_amount - j.paid_amount), 0);
+      if (_chOwe > 0) _lines.push('', 'OUTSTANDING: $' + _chOwe.toFixed(2));
+      sendReply(_lines.join('\n')); return;
+    }
+
+    // ── Add materials to job ────────────────────────────────────────
+    const _addMatM = lowerText.match(/^(?:add (?:material|materials|parts?|supplies?) (?:to|for)(?: job)?)[:\s]+([J|j]-\d+)[:\s]+(.+)/i);
+    if (_addMatM) {
+      const _amn = _addMatM[1].toUpperCase();
+      const _amj = dbGetOne("SELECT id,title FROM jobs WHERE UPPER(job_number)=? LIMIT 1", _amn) as any;
+      if (!_amj) { sendReply('Job ' + _amn + ' not found.'); return; }
+      const _ami = _addMatM[2].split(/[,;]/).map((s: string) => s.trim()).filter(Boolean);
+      for (const item of _ami) {
+        dbRun('INSERT INTO job_materials (id,job_id,material,quantity,created_at) VALUES (?,?,?,?,?)',
+          Date.now().toString(36) + Math.random().toString(36).slice(2), _amj.id, item, '1', new Date().toISOString());
+      }
+      sendReply('Added ' + _ami.length + ' material' + (_ami.length>1?'s':'') + ' to **' + _amn + '**:\n' + _ami.map((i: string) => '  - ' + i).join('\n'));
+      return;
+    }
+
+    // ── Log work on job ─────────────────────────────────────────────
+    const _logWorkM = lowerText.match(/^(?:log(?: work| note)? (?:on|for)|update job|note (?:on|for))[:\s]+([J|j]-\d+)[:\s]+(.+)/i);
+    if (_logWorkM) {
+      const _lwn = _logWorkM[1].toUpperCase();
+      const _lwj = dbGetOne("SELECT id,title FROM jobs WHERE UPPER(job_number)=? LIMIT 1", _lwn) as any;
+      if (!_lwj) { sendReply('Job ' + _lwn + ' not found.'); return; }
+      dbRun('INSERT INTO job_log (id,job_id,note,created_at) VALUES (?,?,?,?)',
+        Date.now().toString(36) + Math.random().toString(36).slice(2), _lwj.id, _logWorkM[2].trim(), new Date().toISOString());
+      sendReply('Work logged on **' + _lwn + '**: ' + _logWorkM[2].trim());
+      return;
+    }
+
+    // ── Schedule job ────────────────────────────────────────────────
+    const _schedJobM = lowerText.match(/^(?:schedule|book)(?: job)?\s+([J|j]-\d+)\s+(?:for|on)\s+(.+)/i);
+    if (_schedJobM) {
+      const _sjn = _schedJobM[1].toUpperCase();
+      const _sdate = _schedJobM[2].trim();
+      const _sjob = dbGetOne("SELECT id,title,client_name FROM jobs WHERE UPPER(job_number)=? LIMIT 1", _sjn) as any;
+      if (!_sjob) { sendReply('Job ' + _sjn + ' not found.'); return; }
+      dbRun("UPDATE jobs SET status='scheduled',scheduled_date=?,updated_at=? WHERE id=?", _sdate, new Date().toISOString(), _sjob.id);
+      sendReply('**' + _sjn + '** scheduled for **' + _sdate + '**\n' + _sjob.client_name + ': ' + _sjob.title);
+      return;
+    }
+
+    // ── Mark complete ───────────────────────────────────────────────
+    const _complJobM = lowerText.match(/^(?:job complete|complete job|mark job done|mark complete)[:\s]+([J|j]-\d+)/i)
+                    || lowerText.match(/^([J|j]-\d+)\s+(?:is |'s )?(complete|done|finished)/i);
+    if (_complJobM) {
+      const _cjn = (_complJobM[1]||_complJobM[2]||'').toUpperCase();
+      const _cjob = dbGetOne("SELECT id,title,client_name,bid_amount FROM jobs WHERE UPPER(job_number)=? LIMIT 1", _cjn) as any;
+      if (!_cjob) { sendReply('Job ' + _cjn + ' not found.'); return; }
+      dbRun("UPDATE jobs SET status='complete',completed_date=?,invoice_amount=CASE WHEN invoice_amount=0 THEN bid_amount ELSE invoice_amount END,updated_at=? WHERE id=?",
+        new Date().toISOString().slice(0,10), new Date().toISOString(), _cjob.id);
+      sendReply('**' + _cjn + '** marked complete.\n' + _cjob.client_name + ': ' + _cjob.title + '\n\nSay "send invoice for ' + _cjn + '" to generate invoice.');
+      return;
+    }
+
+    // ── Send invoice ────────────────────────────────────────────────
+    const _invoiceM = lowerText.match(/^(?:send(?: the)?|generate|create|make)(?: an?)? invoice(?: for)?[:\s]+([J|j]-\d+)/i)
+                   || lowerText.match(/^invoice[:\s]+([J|j]-\d+)/i);
+    if (_invoiceM) {
+      const _inn = (_invoiceM[1]||_invoiceM[2]||'').toUpperCase();
+      const _inj = dbGetOne("SELECT * FROM jobs WHERE UPPER(job_number)=? LIMIT 1", _inn) as any;
+      if (!_inj) { sendReply('Job ' + _inn + ' not found.'); return; }
+      const _ina = _inj.invoice_amount || _inj.bid_amount || 0;
+      const _invNum = 'INV-' + _inn + '-' + new Date().toISOString().slice(2,10).replace(/-/g,'');
+      const _bizN = (dbGetOne("SELECT value FROM settings WHERE key='business_name'") as any)?.value || 'My Business';
+      const _terms = (dbGetOne("SELECT value FROM settings WHERE key='payment_terms'") as any)?.value || 'Due on receipt';
+      const _mats = dbGet("SELECT material,quantity FROM job_materials WHERE job_id=?", _inj.id) as any[];
+      const _logs = dbGet("SELECT note FROM job_log WHERE job_id=? ORDER BY created_at", _inj.id) as any[];
+      let _txt = 'INVOICE\n' + '='.repeat(48) + '\n' + _bizN + '\nInvoice #: ' + _invNum + '\nDate: ' + new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}) + '\n\nBILL TO:\n' + _inj.client_name + '\n\nJOB: ' + _inj.title;
+      if (_inj.scheduled_date) _txt += '\nDate of Service: ' + _inj.scheduled_date;
+      _txt += '\n\n' + '-'.repeat(48) + '\n' + 'Description'.padEnd(38) + 'Amount\n' + '-'.repeat(48) + '\n';
+      _txt += _inj.title.slice(0,35).padEnd(38) + '$' + _ina.toFixed(2) + '\n';
+      if (_mats.length) { _txt += '\nMaterials used:\n'; for (const m of _mats) _txt += '  - ' + (m.quantity||'') + ' ' + m.material + '\n'; }
+      _txt += '\n' + '-'.repeat(48) + '\nTOTAL DUE: $' + _ina.toFixed(2) + '\n\nPayment Terms: ' + _terms;
+      if (_logs.length) { _txt += '\n\nWork Performed:\n'; for (const l of _logs) _txt += '- ' + l.note + '\n'; }
+      const _ipath = require('os').homedir() + '/Desktop/' + _invNum + '.txt';
+      require('fs').writeFileSync(_ipath, _txt, 'utf8');
+      dbRun("UPDATE jobs SET status='invoiced',invoiced_date=?,invoice_amount=?,invoice_sent=1,updated_at=? WHERE id=?",
+        new Date().toISOString().slice(0,10), _ina, new Date().toISOString(), _inj.id);
+      sendReply('Invoice **' + _invNum + '** saved to Desktop!\n\n' + _inj.client_name + ': ' + _inj.title + '\nAmount due: **$' + _ina.toFixed(2) + '**\n\nWhen paid: say "payment received: ' + _inn + ' $' + _ina.toFixed(0) + '"');
+      return;
+    }
+
+    // ── Record payment ──────────────────────────────────────────────
+    const _payM = lowerText.match(/^(?:payment received|got paid|mark paid|paid)[:\s]+([J|j]-\d+)(?:[:\s]+\$?([\d,]+))?/i)
+               || lowerText.match(/^([J|j]-\d+)\s+(?:is |'s )?paid(?:[:\s]+\$?([\d,]+))?/i);
+    if (_payM) {
+      const _pjn = (_payM[1]||_payM[3]||'').toUpperCase();
+      const _pamt = parseFloat((_payM[2]||_payM[4]||'0').replace(/,/g,'')) || 0;
+      const _pjob = dbGetOne("SELECT * FROM jobs WHERE UPPER(job_number)=? LIMIT 1", _pjn) as any;
+      if (!_pjob) { sendReply('Job ' + _pjn + ' not found.'); return; }
+      const _ppaid = _pamt || _pjob.invoice_amount || _pjob.bid_amount;
+      dbRun("UPDATE jobs SET status='paid',paid_amount=?,paid_date=?,updated_at=? WHERE id=?", _ppaid, new Date().toISOString().slice(0,10), new Date().toISOString(), _pjob.id);
+      dbRun("INSERT INTO transactions (id,type,amount,category,description,date,created_at) VALUES (?,?,?,?,?,?,?)",
+        Date.now().toString(36) + Math.random().toString(36).slice(2), 'income', _ppaid, _pjob.client_name, _pjob.title + ' (' + _pjn + ')', new Date().toISOString().slice(0,10), new Date().toISOString());
+      dbRun("UPDATE contacts SET revenue_total=revenue_total+?,updated_at=? WHERE LOWER(name) LIKE ?", _ppaid, new Date().toISOString(), '%' + _pjob.client_name.split(' ')[0].toLowerCase() + '%');
+      sendReply('Payment received! **$' + _ppaid.toFixed(2) + '** from ' + _pjob.client_name + '\n' + _pjn + ': ' + _pjob.title + '\nLogged to income.');
+      return;
+    }
+
+    // ── Outstanding ─────────────────────────────────────────────────
+    const _oweM = /^(?:show(?: my)?|what.?s|who owes me|outstanding|unpaid|owed)(?: (?:outstanding|balance|money|invoices?))?$/.test(lowerText) || lowerText === 'who owes me';
+    if (_oweM) {
+      const _oj = dbGet("SELECT job_number,client_name,title,invoice_amount,paid_amount,invoiced_date FROM jobs WHERE status IN ('invoiced','complete') AND (invoice_amount-paid_amount)>0 ORDER BY invoiced_date ASC") as any[];
+      if (!_oj.length) { sendReply('No outstanding balances. All clear!'); return; }
+      const _ot = _oj.reduce((s: number, j: any) => s + j.invoice_amount - j.paid_amount, 0);
+      const _ol = ['Outstanding Balances — Total: **$' + _ot.toFixed(2) + '**',''];
+      for (const j of _oj) {
+        const _age = j.invoiced_date ? Math.floor((Date.now() - new Date(j.invoiced_date).getTime())/86400000) : 0;
+        _ol.push('- **' + j.client_name + '** — ' + j.job_number + ' — $' + (j.invoice_amount - j.paid_amount).toFixed(2) + (_age > 0 ? ' (' + _age + ' days)' : ''));
+        _ol.push('  ' + j.title.slice(0,45));
+      }
+      sendReply(_ol.join('\n')); return;
+    }
+
+        // ── Universal search ────────────────────────────────────────────────────────
     const universalSearchMatch = !/^(?:find|show|search)(?: me)?(?: some)? (?:videos?|pictures?|photos?|images?|tutorials?)/i.test(lowerText) && !/^search(?: the)? web/i.test(lowerText) && !/^search for:/i.test(lowerText) && !/^look up:/i.test(lowerText) && lowerText.match(/^(?:search(?: (?:my|all))?(?: (?:notes?|memory|tasks?|everything|data))?(?:\s+for)?|find(?: everything about| all about| (?:my notes?|tasks?) (?:about|for|with))?)[:\s]+(.+)/i)
                                || lowerText.match(/^(?:show (?:everything|all)(?: about))[:\s]+(.+)/i);
     if (universalSearchMatch) {
@@ -3900,7 +4085,41 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Morning routine ──────────────────────────────────────────────────────
-    const morningMatch = /^(?:morning routine|morning brief|start my day|good morning henry|what.*morning routine|let'?s do morning|morning check.?in|daily check.?in|start the day|new day|fresh start|start fresh|reset for the day|new morning)/.test(lowerText)
+    // ── Business dashboard early check ──────────────────────────────────────────────
+    const _bizEarly = lowerText === 'business summary' || lowerText === 'biz summary' ||
+      lowerText === 'my business' || lowerText === 'business check' ||
+      /^how.{0,4}business/.test(lowerText) ||
+      /^business (?:dashboard|overview|report|stats?)$/.test(lowerText);
+    if (_bizEarly) {
+      try {
+        const _bn = new Date();
+        const _bms = new Date(_bn.getFullYear(), _bn.getMonth(), 1).toISOString().slice(0,10);
+        const _bws = new Date(_bn.getTime() - 7*86400000).toISOString().slice(0,10);
+        const _bys = new Date(_bn.getFullYear(), 0, 1).toISOString().slice(0,10);
+        const _bmi: number = (dbGetOne("SELECT COALESCE(SUM(amount),0) as t FROM transactions WHERE type='income' AND date>=?",_bms) as any)?.t || 0;
+        const _bme: number = (dbGetOne("SELECT COALESCE(SUM(amount),0) as t FROM transactions WHERE type='expense' AND date>=?",_bms) as any)?.t || 0;
+        const _bwi: number = (dbGetOne("SELECT COALESCE(SUM(amount),0) as t FROM transactions WHERE type='income' AND date>=?",_bws) as any)?.t || 0;
+        const _byi: number = (dbGetOne("SELECT COALESCE(SUM(amount),0) as t FROM transactions WHERE type='income' AND date>=?",_bys) as any)?.t || 0;
+        const _bnc: number = (dbGetOne('SELECT COUNT(*) as n FROM contacts') as any)?.n || 0;
+        const _boq: number = (dbGetOne("SELECT COUNT(*) as n FROM quotes WHERE status IN ('draft','sent')") as any)?.n || 0;
+        const _boj: number = (dbGetOne("SELECT COUNT(*) as n FROM jobs WHERE status NOT IN ('paid','cancelled')") as any)?.n || 0;
+        const _bow: number = (dbGetOne("SELECT COALESCE(SUM(invoice_amount-paid_amount),0) as t FROM jobs WHERE status IN ('invoiced','complete') AND invoice_amount>paid_amount") as any)?.t || 0;
+        const _btc = dbGet('SELECT name,revenue_total FROM contacts WHERE revenue_total>0 ORDER BY revenue_total DESC LIMIT 3') as any[];
+        const _blines = [
+          '** Business Dashboard** (' + _bn.toLocaleDateString('en-US',{month:'long',year:'numeric'}) + ')','',
+          '**This week:** $' + _bwi.toFixed(2) + ' income',
+          '**This month:** $' + _bmi.toFixed(2) + ' in  |  $' + _bme.toFixed(2) + ' out  |  **$' + (_bmi-_bme).toFixed(2) + ' net**',
+          '**This year:** $' + _byi.toFixed(2) + ' total','',
+          'Clients: ' + _bnc + '  |  Open jobs: ' + _boj + '  |  Open quotes: ' + _boq,
+        ];
+        if (_bow > 0) _blines.push('Outstanding: $' + _bow.toFixed(2));
+        if (_btc.length) { _blines.push('','**Top clients:**'); for (const _bc of _btc) _blines.push('  - ' + _bc.name + ' $' + _bc.revenue_total.toFixed(0)); }
+        sendReply(_blines.join('\n'));
+      } catch(e) { sendReply('Dashboard error: ' + e); }
+      return;
+    }
+
+        const morningMatch = /^(?:morning routine|morning brief|start my day|good morning henry|what.*morning routine|let'?s do morning|morning check.?in|daily check.?in|start the day|new day|fresh start|start fresh|reset for the day|new morning)/.test(lowerText)
                      || lowerText === 'gm' || lowerText === 'good morning' || lowerText === 'morning';
     if (morningMatch) {
       try {
