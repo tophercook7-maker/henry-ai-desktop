@@ -1803,6 +1803,25 @@ self.addEventListener('fetch', (event) => {
       }
     }
 
+    // P_RENAME: Job title rename
+    {
+      const _jrnM = lowerText.match(/^(?:change|rename|update)(?: the)?(?: job)? (?:title|name)(?: of| for)? ([j]-\d{4,6})(?: to)?[:\s]+(.+)/i)
+                 || lowerText.match(/^rename ([j]-\d{4,6})(?: to)?[:\s]+(.+)/i)
+                 || lowerText.match(/^([j]-\d{4,6})(?:'s)? (?:title|name)(?: is| =)?[:\s]+(.+)/i);
+      if (_jrnM) {
+        const _jrnNum = (_jrnM[1]||'').toUpperCase();
+        const _jrnTitle = (_jrnM[2]||'').trim();
+        if (_jrnNum && _jrnTitle.length > 2) {
+          const _jrnJob = dbGetOne('SELECT id,job_number,title FROM jobs WHERE UPPER(job_number)=? LIMIT 1', _jrnNum) as any;
+          if (_jrnJob) {
+            dbRun('UPDATE jobs SET title=?,updated_at=? WHERE id=?', _jrnTitle, new Date().toISOString(), _jrnJob.id);
+            sendReply('**' + _jrnNum + '** renamed: "' + _jrnJob.title.slice(0,30) + '" \u2192 "' + _jrnTitle + '"');
+            return;
+          } else { sendReply('Job ' + _jrnNum + ' not found.'); return; }
+        }
+      }
+    }
+
     // P_BID: Job bid edit — must be before goals handler which catches 'change X to Y'
     {
       const _pBidM = lowerText.match(/^(?:change|update|set)(?: the)?(?: job)?\s+([j]-\d{4,6})(?:'s)?\s+(?:bid|amount|price|quote)(?: to)?\s+\$?([\d,.]+)/i);
@@ -3784,6 +3803,24 @@ self.addEventListener('fetch', (event) => {
       return;
     }
 
+    // ── Add labor (hours x rate) ────────────────────────────────────────────
+    {
+      const _labM = lowerText.match(/^(?:add(?: some)? labor(?: to)?|log labor(?: for)?)[:\s]+([j]-\d{4,6})[:\s]+([\d.]+)\s*h(?:ours?|r)?(?:\s*(?:at|@)\s*\$?([\d.]+))?/i);
+      if (_labM) {
+        const _labNum = (_labM[1]||'').toUpperCase();
+        const _labHrs = parseFloat(_labM[2]||'0');
+        const _labRate = parseFloat(_labM[3]||'0')||parseFloat((dbGetOne("SELECT value FROM settings WHERE key='hourly_rate'") as any)?.value||'0');
+        const _labCost = _labHrs*_labRate;
+        const _labJob = dbGetOne('SELECT id,job_number,client_name,title FROM jobs WHERE UPPER(job_number)=? LIMIT 1',_labNum) as any;
+        if (_labJob && _labHrs>0) {
+          dbRun('INSERT INTO job_log (id,job_id,note,created_at) VALUES (?,?,?,?)',Date.now().toString(36)+Math.random().toString(36).slice(2),_labJob.id,'Labor: '+_labHrs+'h'+(_labRate>0?' @ $'+_labRate+' = $'+_labCost.toFixed(2):''),new Date().toISOString());
+          if (_labCost>0) dbRun('UPDATE jobs SET material_cost=COALESCE(material_cost,0)+?,updated_at=? WHERE id=?',_labCost,new Date().toISOString(),_labJob.id);
+          sendReply('\u23F1 Labor logged \u2014 **'+_labNum+'**: '+_labHrs+'h'+(_labRate>0?' @ $'+_labRate+'/hr = **$'+_labCost.toFixed(2)+'**':''));
+          return;
+        }
+      }
+    }
+
     // ── Log work on job ─────────────────────────────────────────────
     const _logWorkM = lowerText.match(/^(?:log(?: work| note)? (?:on|for)|update job|note (?:on|for))[:\s]+([J|j]-\d+)[:\s]+(.+)/i);
     if (_logWorkM) {
@@ -4657,6 +4694,19 @@ self.addEventListener('fetch', (event) => {
       return;
     }
 
+    // ── Total profit on paid jobs ────────────────────────────────────────
+    if (/^(?:total profit|net profit|how much(?: have i)? (?:profited|netted|earned(?: on)?)(?: all)?|profit total|profit summary)/.test(lowerText)) {
+      const _yr = new Date().getFullYear().toString();
+      const _tpAll = dbGet("SELECT paid_amount,material_cost,bid_amount FROM jobs WHERE status='paid'") as any[];
+      const _tpYr = dbGet("SELECT paid_amount,material_cost FROM jobs WHERE status='paid' AND strftime('%Y',COALESCE(paid_date,created_at))=?", _yr) as any[];
+      const _tpRA = _tpAll.reduce((s: number,j: any)=>s+(j.paid_amount||j.bid_amount||0),0);
+      const _tpMA = _tpAll.reduce((s: number,j: any)=>s+(j.material_cost||0),0);
+      const _tpRY = _tpYr.reduce((s: number,j: any)=>s+(j.paid_amount||0),0);
+      const _tpMY = _tpYr.reduce((s: number,j: any)=>s+(j.material_cost||0),0);
+      sendReply('**Total Profit \u2014 Paid Jobs**\n\n' + _yr + ' (' + _tpYr.length + ' jobs): $' + _tpRY.toFixed(2) + ' revenue \u2014 **$' + (_tpRY-_tpMY).toFixed(2) + ' profit**\nAll time (' + _tpAll.length + ' jobs): $' + _tpRA.toFixed(2) + ' revenue \u2014 **$' + (_tpRA-_tpMA).toFixed(2) + ' profit**');
+      return;
+    }
+
     // ── Best/largest job ──────────────────────────────────────────────────────
     const _bestJobM = /^(?:what(?:'s| is| was)(?: my)? (?:best|biggest|largest|highest|most expensive|top) (?:paying )?job|my (?:best|biggest|largest|top) job|biggest job ever|most i(?:'ve)? (?:charged|made|earned)(?: on a job)?)/.test(lowerText);
     if (_bestJobM) {
@@ -4668,6 +4718,16 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Jobs completed count ─────────────────────────────────────────────────
+    // ── Busiest month ─────────────────────────────────────────────────────
+    if (/^(?:busiest|most active|best) month(?: this year| so far|ever)?$/.test(lowerText)||lowerText==='best month') {
+      const _yr2 = new Date().getFullYear().toString();
+      const _bmR = dbGet("SELECT strftime('%Y-%m',created_at) as mo,COUNT(*) as n,COALESCE(SUM(paid_amount),0) as rev FROM jobs WHERE strftime('%Y',created_at)=? GROUP BY mo ORDER BY n DESC LIMIT 6",_yr2) as any[];
+      if (!_bmR.length) { sendReply('No jobs this year yet.'); return; }
+      const _bmL = ['**Busiest months \u2014 '+_yr2+'**',''];
+      for (const m of _bmR) { const ml=new Date(m.mo+'-01T12:00:00').toLocaleString('en-US',{month:'long'}); _bmL.push((m===_bmR[0]?'\uD83D\uDD25':'  ')+' '+ml+': '+m.n+' job'+(m.n!==1?'s':'')+(m.rev>0?' ($'+m.rev.toFixed(0)+' collected)':'')); }
+      sendReply(_bmL.join('\n')); return;
+    }
+
     const _jobCountM = /^how many jobs(?: did i| have i| this year| this month)?(?:\s+(?:completed?|done|finished|invoiced|paid|this year|this month|so far|ever))*/.test(lowerText)
                     || /^(?:job|work) (?:count|total|summary)(?: this year| this month)?$/.test(lowerText)
                     || lowerText === 'jobs this year' || lowerText === 'jobs this month';
