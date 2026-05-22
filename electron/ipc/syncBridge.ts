@@ -1502,7 +1502,7 @@ self.addEventListener('fetch', (event) => {
                     || lowerText.match(/^(?:bill|send invoice to|invoice)\s+(\w[\w\s]{1,25})$/i);
       if (_nlBillM) {
         const _billHint = (_nlBillM[1]||_nlBillM[2]||'').trim();
-        const _billJob = dbGetOne("SELECT id,job_number,title,client_name,bid_amount,invoice_amount FROM jobs WHERE status IN ('complete') AND LOWER(client_name) LIKE ? ORDER BY updated_at DESC LIMIT 1",
+        const _billJob = dbGetOne("SELECT id,job_number,title,client_name,bid_amount,invoice_amount,status FROM jobs WHERE status IN ('complete','invoiced') AND LOWER(client_name) LIKE ? ORDER BY updated_at DESC LIMIT 1",
           '%' + _billHint.split(' ')[0].toLowerCase() + '%') as any;
         if (_billJob) {
           const _bAmt = _billJob.invoice_amount || _billJob.bid_amount;
@@ -1598,6 +1598,30 @@ self.addEventListener('fetch', (event) => {
           if (_ncOwe > 0) _ncLines.push('', '⚠️ Outstanding: $' + _ncOwe.toFixed(2));
           sendReply(_ncLines.join('\n')); return;
         }
+      }
+    }
+
+    // P1a: This week's schedule
+    {
+      const _thisWeekM = /^(?:what(?:'s| do i have)?|my)(?: (?:my|the))? (?:schedule|scheduled|coming up)(?:(?: this week| for this week| today| this month)?)?$/.test(lowerText)
+                      || /^(?:show|what are|what do i have)(?: my)? (?:scheduled|upcoming)(?: jobs?)?(?: this week| today)?$/.test(lowerText)
+                      || lowerText === 'my schedule' || lowerText === 'schedule this week' || lowerText === 'this week' || lowerText === 'scheduled this week';
+      if (_thisWeekM) {
+        const _now = new Date();
+        const _wStart = new Date(_now); _wStart.setDate(_now.getDate() - _now.getDay());
+        const _wEnd = new Date(_wStart); _wEnd.setDate(_wStart.getDate() + 6);
+        const _wsDate = _wStart.toISOString().slice(0,10);
+        const _weDate = _wEnd.toISOString().slice(0,10);
+        const _wJobs = dbGet("SELECT job_number,client_name,title,scheduled_date,status,bid_amount FROM jobs WHERE scheduled_date BETWEEN ? AND ? AND status NOT IN ('paid','cancelled') ORDER BY scheduled_date ASC", _wsDate, _weDate) as any[];
+        const _wTasks = dbGet("SELECT title, due_at FROM personal_tasks WHERE status!='done' AND due_at BETWEEN ? AND ? ORDER BY due_at ASC LIMIT 5", _wsDate+'T00:00:00Z', _weDate+'T23:59:59Z') as any[];
+        if (!_wJobs.length && !_wTasks.length) { sendReply('Nothing scheduled this week. Say "schedule J-XXXXX for [date]" to book jobs.'); return; }
+        const _wLines = ['**This week — ' + _wsDate + ' to ' + _weDate + '**', ''];
+        if (_wJobs.length) {
+          _wLines.push('**Jobs:**');
+          for (const j of _wJobs) _wLines.push('  ' + j.scheduled_date + ' — ' + j.job_number + ' ' + j.client_name + ': ' + j.title.slice(0,30) + ' ($' + (j.bid_amount||0).toFixed(0) + ')');
+        }
+        if (_wTasks.length) { _wLines.push('', '**Tasks due:**'); for (const t of _wTasks) _wLines.push('  ' + (t.due_at||'').slice(0,10) + ' — ' + t.title); }
+        sendReply(_wLines.join('\n')); return;
       }
     }
 
@@ -2209,6 +2233,17 @@ self.addEventListener('fetch', (event) => {
           resolvedText = action2 + ':\n\n```\n' + clipTxt.slice(0, 6000) + '\n```';
         }
       } catch { /* fall through to AI */ }
+    }
+
+    // ── Set payment terms ─────────────────────────────────────────────────────
+    const _setTermsM = lowerText.match(/^(?:set(?: my)?|change(?: my)?|update(?: my)?) payment terms?(?: to)?[:\s]+(.+)/i);
+    if (_setTermsM) {
+      const _terms = (_setTermsM[1]||'').trim();
+      if (_terms.length > 1) {
+        dbRun("UPDATE settings SET value=? WHERE key='payment_terms'", _terms);
+        sendReply('Payment terms updated to **' + _terms + '**. Future invoices will show this.');
+        return;
+      }
     }
 
     // ── Set business name ──────────────────────────────────────────────────────
@@ -3605,6 +3640,35 @@ self.addEventListener('fetch', (event) => {
     }
 
 
+    // ── Jobs needing invoice ──────────────────────────────────────────────────
+    const _needsInvM = /^(?:what(?:'s| (?:jobs?|work))? (?:need|needs?)(?: to be| to get)? (?:invoic|bill)|what(?:'s| is) (?:ready to|needs to) (?:be invoic|be bill)|(?:show|list)(?: me)?(?: the)? (?:uninvoic|unbill)|what(?:'s| do i need to) bill|jobs? (?:ready to invoice|to bill|needing invoic))/.test(lowerText)
+                     || lowerText === 'what needs billing' || lowerText === 'what needs invoicing' || lowerText === 'ready to invoice';
+    if (_needsInvM) {
+      const _njInv = dbGet("SELECT job_number,client_name,title,bid_amount,completed_date FROM jobs WHERE status='complete' AND invoice_sent=0 ORDER BY completed_date ASC") as any[];
+      if (!_njInv.length) { sendReply('All completed jobs have been invoiced!'); return; }
+      const _niTotal = _njInv.reduce((s: number,j: any) => s+(j.bid_amount||0), 0);
+      const _niLines = ['**Jobs ready to invoice (' + _njInv.length + ') — $' + _niTotal.toFixed(0) + ' total**', ''];
+      for (const j of _njInv) {
+        _niLines.push('  ' + j.job_number + ' — ' + j.client_name + ': ' + j.title.slice(0,32) + ' ($' + (j.bid_amount||0).toFixed(0) + ')');
+        if (j.completed_date) _niLines.push('    Completed: ' + j.completed_date);
+      }
+      _niLines.push('', 'Say "bill ' + _njInv[0].client_name.split(' ')[0] + '" or "send invoice for ' + _njInv[0].job_number + '" to generate.');
+      sendReply(_niLines.join('\n')); return;
+    }
+
+    // ── Who to follow up with ────────────────────────────────────────────────
+    const _fuSuggestM = /^(?:who should i|who do i need to|who to)(?: (?:call|contact|follow up with|reach out to|check in with))?(?:\s+(?:today|this week))?$/.test(lowerText)
+                     || lowerText === 'follow up list' || lowerText === 'who to call';
+    if (_fuSuggestM) {
+      const _fuLines: string[] = ['**Follow up with:**', ''];
+      const _fuInv = dbGet("SELECT client_name,job_number,invoice_amount,invoiced_date FROM jobs WHERE status='invoiced' AND invoiced_date < date('now','-7 days') ORDER BY invoiced_date ASC LIMIT 3") as any[];
+      if (_fuInv.length) { _fuLines.push('**Unpaid invoices (7+ days):**'); for (const j of _fuInv) { const age = Math.floor((Date.now()-new Date(j.invoiced_date).getTime())/86400000); _fuLines.push('  \u2022 ' + j.client_name + ' \u2014 $' + j.invoice_amount + ' (' + age + ' days old)'); } }
+      const _fuTasks = dbGet("SELECT title,due_at FROM personal_tasks WHERE status!='done' AND LOWER(title) LIKE '%follow%' ORDER BY due_at ASC LIMIT 5") as any[];
+      if (_fuTasks.length) { _fuLines.push('', '**Scheduled follow-ups:**'); for (const t of _fuTasks) _fuLines.push('  \u2022 ' + t.title + (t.due_at?' ('+t.due_at.slice(0,10)+')':'')); }
+      if (_fuLines.length === 2) { sendReply('Nothing urgent to follow up on.'); return; }
+      sendReply(_fuLines.join('\n')); return;
+    }
+
     // ── Outstanding ─────────────────────────────────────────────────
     const _oweM = /^(?:show(?: my)?|what.?s|who owes me|outstanding|unpaid|owed)(?: (?:outstanding|balance|money|invoices?))?$/.test(lowerText) || lowerText === 'who owes me';
     if (_oweM) {
@@ -4043,6 +4107,16 @@ self.addEventListener('fetch', (event) => {
     // ── Show expenses ──────────────────────────────────────────────────────────
     // ── Show all transactions this month ────────────────────────────────────
     // ── "average job size" / "avg revenue per job" — local SQL ─────────────────
+    // ── Best/largest job ──────────────────────────────────────────────────────
+    const _bestJobM = /^(?:what(?:'s| is| was)(?: my)? (?:best|biggest|largest|highest|most expensive|top) (?:paying )?job|my (?:best|biggest|largest|top) job|biggest job ever|most i(?:'ve)? (?:charged|made|earned)(?: on a job)?)/.test(lowerText);
+    if (_bestJobM) {
+      const _bj = dbGetOne("SELECT job_number,client_name,title,paid_amount,invoice_amount,bid_amount,status FROM jobs ORDER BY COALESCE(paid_amount,invoice_amount,bid_amount) DESC LIMIT 1") as any;
+      if (!_bj) { sendReply('No jobs recorded yet.'); return; }
+      const _bjAmt = _bj.paid_amount || _bj.invoice_amount || _bj.bid_amount || 0;
+      sendReply('Your biggest job: **' + _bj.job_number + '** — ' + _bj.client_name + '\n**' + _bj.title + '**\n' + (_bjAmt > 0 ? '$' + _bjAmt.toFixed(2) : 'No amount') + ' [' + _bj.status + ']');
+      return;
+    }
+
     const avgJobMatch = /^(?:what(?:'?s| is)(?: my)? average (?:job|order|transaction|sale|invoice)(?: size| value)?|avg(?:erage)?(?:job| job|order|transaction|invoice)|average (?:job|ticket|deal|order|transaction) (?:size|value)|my average (?:job|order|transaction)(?: size)?)/.test(lowerText)
                      || /^how much (?:do I|does each|is each)(?: job| order| transaction| sale)? (?:average|avg|typically|usually)(?: bring in| make| cost| pay)?/.test(lowerText);
     if (avgJobMatch) {
