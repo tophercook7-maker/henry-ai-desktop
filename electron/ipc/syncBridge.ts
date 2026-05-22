@@ -1655,6 +1655,19 @@ self.addEventListener('fetch', (event) => {
       }
     }
 
+    // P1a-next: Next week's schedule
+    if (/^(?:next week(?:'s)? (?:schedule|jobs?|work)|what(?:'s| do i have) next week|show next week)/.test(lowerText)) {
+      const _nwStart = new Date(); _nwStart.setDate(_nwStart.getDate() + (7 - _nwStart.getDay()));
+      const _nwEnd = new Date(_nwStart); _nwEnd.setDate(_nwEnd.getDate() + 7);
+      const _nwSt = _nwStart.toISOString().slice(0,10);
+      const _nwEn = _nwEnd.toISOString().slice(0,10);
+      const _nwJobs = dbGet("SELECT job_number,client_name,title,scheduled_date,bid_amount FROM jobs WHERE scheduled_date BETWEEN ? AND ? AND status NOT IN ('paid','cancelled') ORDER BY scheduled_date", _nwSt, _nwEn) as any[];
+      if (!_nwJobs.length) { sendReply('Nothing scheduled for next week yet.'); return; }
+      const _nwLines = ['**Next week — ' + _nwSt + ' to ' + _nwEn + '**', ''];
+      for (const j of _nwJobs) _nwLines.push('  \u2022 ' + j.scheduled_date + ' — ' + j.job_number + ' ' + j.client_name + ': ' + j.title.slice(0,28) + ' ($' + (j.bid_amount||0).toFixed(0) + ')');
+      sendReply(_nwLines.join('\n')); return;
+    }
+
     // P1a-0: Tomorrow's schedule
     if (/^(?:what(?:'s| do i have)?(?: (?:on my|the))? schedule for tomorrow|tomorrow(?:'s| schedule)|scheduled for tomorrow|what(?:'s| do i have) tomorrow)/.test(lowerText)) {
       const _tom = new Date(); _tom.setDate(_tom.getDate()+1);
@@ -1671,7 +1684,7 @@ self.addEventListener('fetch', (event) => {
     // P1a: This week's schedule
     {
       const _thisWeekM = /^(?:what(?:'s| do i have)?|my)(?: (?:my|the))? (?:schedule|scheduled|coming up)(?:(?: this week| for this week| today| this month)?)?$/.test(lowerText)
-                      || /^(?:show|what are|what do i have)(?: my)? (?:scheduled|upcoming)(?: jobs?)?(?: this week| today)?$/.test(lowerText)
+                      || /^(?:show|what are|what do i have|list)(?: (?:my|all))? (?:scheduled|upcoming|this week's)(?: jobs?)?(?: this week| today)?$/.test(lowerText)
                       || lowerText === 'my schedule' || lowerText === 'schedule this week' || lowerText === 'this week' || lowerText === 'scheduled this week';
       if (_thisWeekM) {
         const _now = new Date();
@@ -1801,6 +1814,47 @@ self.addEventListener('fetch', (event) => {
           _pfuDate + 'T09:00:00.000Z', new Date().toISOString());
         sendReply('Follow-up scheduled with **' + _pfuReal + '** on **' + _pfuDate + '** — added to your task list.');
         return;
+      }
+    }
+
+    // P_PAID: Mark job as paid in full
+    {
+      const _mPaidM = lowerText.match(/^(?:mark|set)(?: job)? ([j]-\d{4,6}) (?:as |as fully )?paid(?: in full)?(?:\s+\$?([\d,]+))?/i)
+                   || lowerText.match(/^([j]-\d{4,6}) (?:is |has been )?(?:paid(?: in full)?|fully paid)(?:\s+\$?([\d,]+))?/i)
+                   || lowerText.match(/^([j]-\d{4,6}) paid in full/i);
+      if (_mPaidM) {
+        const _mpNum = (_mPaidM[1]||'').toUpperCase();
+        const _mpAmt = parseFloat((_mPaidM[2]||'0').replace(/,/g,'')) || 0;
+        const _mpJob = dbGetOne('SELECT id,job_number,client_name,title,invoice_amount,bid_amount FROM jobs WHERE UPPER(job_number)=? LIMIT 1', _mpNum) as any;
+        if (_mpJob) {
+          const _mpFull = _mpAmt || _mpJob.invoice_amount || _mpJob.bid_amount || 0;
+          const _mpDate = (() => { const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); })();
+          dbRun('UPDATE jobs SET status=?,paid_amount=?,paid_date=?,updated_at=? WHERE id=?', 'paid', _mpFull, _mpDate, new Date().toISOString(), _mpJob.id);
+          sendReply('\u2705 **' + _mpNum + '** marked paid — ' + _mpJob.client_name + ': ' + _mpJob.title.slice(0,30) + '\nAmount: **$' + _mpFull.toFixed(2) + '**');
+          return;
+        } else { sendReply('Job ' + _mpNum + ' not found.'); return; }
+      }
+    }
+
+    // P_LABOR: Log labor hours on job — must be before habit logger
+    {
+      const _plabM = lowerText.match(/^(?:log|track|record)(?: (?:work|time|hours?))? ([\d.]+)\s*h(?:ours?|r)?(?: (?:on|to|for|toward))? ([j]-\d{4,6})/i)
+                  || lowerText.match(/^([j]-\d{4,6})\s+([\d.]+)\s*h(?:ours?|r)?(?:\s+(?:today|this morning|this afternoon))?$/i);
+      if (_plabM) {
+        const _plIsJobFirst = /^j-/i.test(_plabM[1]||'');
+        const _plNum = (_plIsJobFirst ? _plabM[1] : _plabM[2]||'').toUpperCase();
+        const _plHrs = parseFloat(_plIsJobFirst ? _plabM[2]||'0' : _plabM[1]||'0');
+        if (_plNum.startsWith('J-') && _plHrs > 0) {
+          const _plJob = dbGetOne('SELECT id,job_number,client_name,title FROM jobs WHERE UPPER(job_number)=? LIMIT 1', _plNum) as any;
+          if (_plJob) {
+            const _plRate = parseFloat((dbGetOne("SELECT value FROM settings WHERE key='hourly_rate'") as any)?.value||'0');
+            const _plCost = _plHrs * _plRate;
+            dbRun('INSERT INTO job_log (id,job_id,note,created_at) VALUES (?,?,?,?)', Date.now().toString(36)+Math.random().toString(36).slice(2), _plJob.id, 'Labor: '+_plHrs+'h'+(_plRate>0?' @ $'+_plRate+' = $'+_plCost.toFixed(2):''), new Date().toISOString());
+            if (_plCost>0) dbRun('UPDATE jobs SET material_cost=COALESCE(material_cost,0)+?,updated_at=? WHERE id=?', _plCost, new Date().toISOString(), _plJob.id);
+            sendReply('\u23F1 Labor logged \u2014 **'+_plNum+'**: '+_plHrs+'h'+(_plRate>0?' @ $'+_plRate+'/hr = **$'+_plCost.toFixed(2)+'**':''));
+            return;
+          }
+        }
       }
     }
 
@@ -2096,6 +2150,41 @@ self.addEventListener('fetch', (event) => {
         return "Honestly? I'm sharpest on maker business math, habits, and code execution — that's where I have real data. Weakest spot right now: habit_logs only has 1 entry, so streaks are meaningless. The more you log daily, the better I get. I'm built for Topher's world specifically — that specificity is the whole point.";
       }
       // ── Explain the setup / what Henry does ───────────────────────────────────
+    // ── What's new / changelog ─────────────────────────────────────────────────
+    if (/^(?:what(?:'s| is)(?: the)? new|changelog|what(?:'s| have you) (?:changed|added|improved|got|gotten)(?: lately| recently)?|what(?:'s| can) henry do (?:now|new|differently))/.test(lowerText)
+        || lowerText === "what's new" || lowerText === 'henry changelog' || lowerText === "what's new in henry") {
+      sendReply('**Henry v2.1.3 — Latest additions:**\n\n' +
+        '\uD83D\uDCBC **Business:**\n' +
+        '  \u2022 Cash flow snapshot (pipeline view)\n' +
+        '  \u2022 Partial payments on specific jobs\n' +
+        '  \u2022 Aging report (overdue invoices)\n' +
+        '  \u2022 Job margin/cost breakdown\n' +
+        '  \u2022 Average job value per client\n' +
+        '  \u2022 Busiest month analytics\n' +
+        '  \u2022 Total profit on all paid jobs\n' +
+        '  \u2022 Labor time tracking on jobs\n' +
+        '  \u2022 Completed jobs by year\n\n' +
+        '\uD83D\uDCDD **Jobs:**\n' +
+        '  \u2022 Rename job title\n' +
+        '  \u2022 Mark job paid in full\n' +
+        '  \u2022 Job notes with timestamps\n' +
+        '  \u2022 Work log display per job\n\n' +
+        '\uD83D\uDC65 **Clients:**\n' +
+        '  \u2022 Call log (saved to contact notes)\n' +
+        '  \u2022 Communication history display\n' +
+        '  \u2022 Email invoice via Mail.app\n' +
+        '  \u2022 Add phone/email/notes to contacts\n\n' +
+        '\uD83D\uDCF1 **Companion:**\n' +
+        '  \u2022 12 quick action buttons\n' +
+        '  \u2022 Mic button with voice recognition\n' +
+        '  \u2022 Bold text + line breaks in replies\n\n' +
+        '\uD83D\uDCD6 **Personal:**\n' +
+        '  \u2022 Journal saves correctly\n' +
+        '  \u2022 Today completions summary\n' +
+        '  \u2022 Hourly rate stored in settings');
+      return;
+    }
+
     if (/^(?:what is henry'?s? setup|what does the setup do|what is the setup stuff|explain.*setup|henry setup|what are you connected to|what.*connection|how.*setup.*work|what providers|what is iron gateway|explain iron gateway)/.test(lowerText)) {
       sendReply('**Henry\'s Setup — what it is:**\n\n**Iron Gateway** is Henry\'s AI engine. It connects to multiple AI providers so Henry always has a brain:\n\n• **Groq** (free, fast) — you already have a key, this is what Henry uses now\n• **Gemini** — Google\'s AI, very capable, has a free tier\n• **Ollama** — runs AI *locally* on your Mac or TheVault, completely private\n\nThe setup panels let you connect these. You don\'t need all of them — Groq is enough. But Ollama would let Henry work offline using your own hardware.\n\n**Right now:**\n• Groq ✅ connected and working\n• Ollama ❌ not running (say "start ollama" to fix)\n• Screen Recording ❌ needs toggle in System Settings\n• Accessibility ❌ needs toggle in System Settings\n• Mic — should work (tap the mic button in the chat bar)\n\nSay "fix screen recording", "fix accessibility", or "start ollama" and I\'ll open the right place.');
       return;
@@ -3774,6 +3863,31 @@ self.addEventListener('fetch', (event) => {
       sendReply(_rcLines.join('\n')); return;
     }
 
+    // ── Show communication log for client ──────────────────────────────────────
+    {
+      const _cdM = lowerText.match(/^(?:show|get|what(?:'s| did))(?: my)?(?: (?:the|my))? comm(?:unication)? (?:log|history)(?: (?:for|with)) ([\w][\w\s]{1,25})/i)
+               || lowerText.match(/^(?:show|get)(?: me)? (?:what|all)?(?: pat said|pat(?:'s| reynolds') notes?|client notes? for) ([\w][\w\s]{1,25})/i)
+               || lowerText.match(/^([\w][\w\s]{1,20}) (?:comm(?:unication)?|call|contact) (?:log|history)/i);
+      if (_cdM) {
+        const _cdName = (_cdM[1]||_cdM[2]||'').trim();
+        const _cdC = dbGetOne('SELECT name,notes,phone,email FROM contacts WHERE LOWER(name) LIKE ? LIMIT 1', '%'+_cdName.split(' ')[0].toLowerCase()+'%') as any;
+        if (_cdC) {
+          const _cdLines = ['**Communication log — ' + _cdC.name + '**'];
+          if (_cdC.phone) _cdLines.push('Phone: ' + _cdC.phone);
+          if (_cdC.email) _cdLines.push('Email: ' + _cdC.email);
+          _cdLines.push('');
+          if (_cdC.notes && _cdC.notes.length > 1) {
+            const _cdEntries = _cdC.notes.split('\n').filter((l: string) => l.trim());
+            for (const e of _cdEntries) _cdLines.push('  \u2022 ' + e);
+          } else {
+            _cdLines.push('No contact history yet.');
+            _cdLines.push('Say "log a call with ' + _cdC.name.split(' ')[0] + '" to add one.');
+          }
+          sendReply(_cdLines.join('\n')); return;
+        }
+      }
+    }
+
     // ── Client phone/email quick lookup ─────────────────────────────────────────
     {
       const _cphM = lowerText.match(/^(?:what(?:'s| is)(?: the)?|show me|get) ([\w][\w\s]{1,25}?)(?:'s)? (?:phone|number|cell|email|address)$/i)
@@ -3839,10 +3953,15 @@ self.addEventListener('fetch', (event) => {
 
     // ── Add labor (hours x rate) ────────────────────────────────────────────
     {
-      const _labM = lowerText.match(/^(?:add(?: some)? labor(?: to)?|log labor(?: for)?)[:\s]+([j]-\d{4,6})[:\s]+([\d.]+)\s*h(?:ours?|r)?(?:\s*(?:at|@)\s*\$?([\d.]+))?/i);
+      const _labM = lowerText.match(/^(?:add(?: some)? labor(?: to)?|log labor(?: for)?)[:\s]+([j]-\d{4,6})[:\s]+([\d.]+)\s*h(?:ours?|r)?(?:\s*(?:at|@)\s*\$?([\d.]+))?/i)
+                 || lowerText.match(/^(?:log|track|record)(?: (?:work|time|hours?))? ([\d.]+)\s*h(?:ours?|r)?(?: (?:on|to|for|toward))? ([j]-\d{4,6})/i)
+                 || lowerText.match(/^([j]-\d{4,6}) ([\d.]+)\s*h(?:ours?|r)?(?:\s+(?:today|this morning|this afternoon))?$/i);
       if (_labM) {
-        const _labNum = (_labM[1]||'').toUpperCase();
-        const _labHrs = parseFloat(_labM[2]||'0');
+        // Smart group detection: pattern1=(jobnum,hrs,rate), pattern2=(hrs,jobnum), pattern3=(jobnum,hrs)
+        const _lp1 = /^j-/i.test(_labM[1]||''); // group1 is job number?
+        const _labNum = (_lp1 ? _labM[1] : _labM[2]||_labM[1]||'').toUpperCase();
+        const _labHrsRaw = _lp1 ? (_labM[2]||'0') : (_labM[1]||'0');
+        const _labHrs = parseFloat(_labHrsRaw);
         const _labRate = parseFloat(_labM[3]||'0')||parseFloat((dbGetOne("SELECT value FROM settings WHERE key='hourly_rate'") as any)?.value||'0');
         const _labCost = _labHrs*_labRate;
         const _labJob = dbGetOne('SELECT id,job_number,client_name,title FROM jobs WHERE UPPER(job_number)=? LIMIT 1',_labNum) as any;
@@ -4113,7 +4232,7 @@ self.addEventListener('fetch', (event) => {
       const _acdM = lowerText.match(/^(?:add|set|update)(?: the)? (?:phone|number|cell|email|note)[:\s]+(?:for |to )?([\w][\w\s]{1,25})(?:[:\s]+)(.+)/i)
                  || lowerText.match(/^(?:add|set|update)(?: the)? (?:phone|number|cell|email|note) (?:for|to) ([\w][\w\s]{1,25})[:\s]+(.+)/i)
                  || lowerText.match(/^([\w][\w\s]{1,25}?)(?:'s)? (?:phone|number|email|note)(?: is| =)?[:\s]+(.+)/i);
-      if (_acdM) {
+      if (_acdM && _acdM[2] && _acdM[2].trim().length > 2 && !['number','info','details','address'].includes(_acdM[2].trim().toLowerCase())) {
         const _acdClient = (_acdM[1]||'').trim();
         const _acdVal = (_acdM[2]||'').trim();
         const _acdField = lowerText.includes('email') ? 'email' : lowerText.includes('note') ? 'notes' : 'phone';
@@ -5686,6 +5805,23 @@ self.addEventListener('fetch', (event) => {
       sendReply('🔌 Tunnel stopped. Companion only accessible on home WiFi now.');
       return;
     }
+    // ── Export jobs to CSV ─────────────────────────────────────────────────
+    if (/^(?:export|download)(?: (?:my|all))? jobs?(?: to)?(?:(?: (?:a|as|to))? (?:csv|spreadsheet|excel))?$/.test(lowerText) || lowerText === 'export jobs') {
+      try {
+        const { execSync: _exEx } = await import('child_process') as typeof import('child_process');
+        const _exJobs = dbGet('SELECT job_number,client_name,title,status,bid_amount,invoice_amount,paid_amount,material_cost,notes FROM jobs ORDER BY created_at DESC') as any[];
+        const _hdr = 'job_number,client,title,status,bid,invoice,paid,materials,notes';
+        const _rows = _exJobs.map((j: any) => [j.job_number,j.client_name,'"'+j.title+'"',j.status,j.bid_amount||0,j.invoice_amount||0,j.paid_amount||0,j.material_cost||0,'"'+(j.notes||'').replace(/"/g,"'").replace(/\n/g,' ')+'"'].join(','));
+        const _csv = [_hdr, ..._rows].join('\n');
+        const _dt = (() => { const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); })();
+        const _fp = require('os').homedir() + '/Desktop/henry_jobs_' + _dt + '.csv';
+        require('fs').writeFileSync(_fp, _csv);
+        _exEx('open -R "' + _fp + '"', {timeout:3000,shell:'/bin/bash'});
+        sendReply('\uD83D\uDCCA **' + _exJobs.length + ' jobs** exported to Desktop: henry_jobs_' + _dt + '.csv');
+      } catch(e) { sendReply('Export failed: ' + String(e).slice(0,80)); }
+      return;
+    }
+
     const tunnelUrlMatch = lowerText === 'tunnel url' || lowerText === 'my tunnel url' || lowerText === 'public url' || lowerText === 'remote url';
     if (tunnelUrlMatch) {
       const _tu2 = getTunnelUrl();
