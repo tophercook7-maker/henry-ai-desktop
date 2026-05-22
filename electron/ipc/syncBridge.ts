@@ -1465,16 +1465,35 @@ self.addEventListener('fetch', (event) => {
     {
       // "finished/completed the X job" or "done with X for Y"
       const _nlDoneM = !lowerText.match(/^(?:habit|exercise|bible|journal|prayer|water|meditat|cold shower|stretch|read|run|walk)/i) &&
-        lowerText.match(/^(?:i(?:'ve)?\s+)?(?:finished|completed|done with|wrapped up)(?: the)?(?: (?:job|work|project))? (?:for\s+|on\s+)?(.{3,50})$/i);
+        lowerText.match(/^(?:i(?:'ve)?\s+)?(?:finished|completed|done with|wrapped up)(?: the)?(?: (?:job|work|project))?(?: (?:for|on|with)\s+)?(.{3,60})(?:\s+(?:today|just now|already|this morning|this afternoon))?$/i);
       if (_nlDoneM) {
         const _hint = (_nlDoneM[1]||'').trim();
-        const _ndJob = dbGetOne("SELECT id,job_number,title,client_name FROM jobs WHERE status NOT IN ('complete','invoiced','paid','cancelled') AND (LOWER(title) LIKE ? OR LOWER(client_name) LIKE ?) LIMIT 1",
-          '%' + _hint.split(' ')[0] + '%', '%' + _hint.split(' ')[0] + '%') as any;
+        // Extract client name if "for X" pattern
+        const _forPart = _hint.match(/\b(?:for|with)\s+(\w+)/i);
+        const _clientHint = _forPart ? _forPart[1].toLowerCase() : _hint.split(' ')[0].toLowerCase();
+        const _titleHint = _hint.replace(/\b(?:for|with)\s+\w+/i,'').trim().split(' ').filter((w: string) => w.length > 3)[0]?.toLowerCase() || _hint.split(' ')[0].toLowerCase();
+        const _ndJob = dbGetOne("SELECT id,job_number,title,client_name FROM jobs WHERE status NOT IN ('complete','invoiced','paid','cancelled') AND (LOWER(client_name) LIKE ? OR LOWER(title) LIKE ? OR LOWER(title) LIKE ?) ORDER BY created_at DESC LIMIT 1",
+          '%' + _clientHint + '%', '%' + _titleHint + '%', '%' + _hint.split(' ')[0].toLowerCase() + '%') as any;
         if (_ndJob) {
           dbRun("UPDATE jobs SET status='complete',completed_date=?,invoice_amount=CASE WHEN invoice_amount=0 THEN bid_amount ELSE invoice_amount END,updated_at=? WHERE id=?",
             new Date().toISOString().slice(0,10), new Date().toISOString(), _ndJob.id);
           sendReply('Job **' + _ndJob.job_number + '** marked complete \u2014 ' + _ndJob.client_name + ': ' + _ndJob.title + '\n\nSay "send invoice for ' + _ndJob.job_number + '" or just say "bill ' + _ndJob.client_name + '".');
           return;
+        } else if (_hint.length > 3) {
+          // Fuzzy word search — try each word in the hint
+          const _ndWords = _hint.replace(/['']/g,'').split(/\s+/).filter((w: string) => w.length > 3);
+          let _ndFallback: any = null;
+          for (const _nw of _ndWords) {
+            _ndFallback = dbGetOne("SELECT id,job_number,title,client_name FROM jobs WHERE status NOT IN ('complete','invoiced','paid','cancelled') AND (LOWER(client_name) LIKE ? OR LOWER(title) LIKE ?) ORDER BY created_at DESC LIMIT 1",
+              '%'+_nw.toLowerCase()+'%', '%'+_nw.toLowerCase()+'%') as any;
+            if (_ndFallback) break;
+          }
+          if (_ndFallback) {
+            dbRun("UPDATE jobs SET status='complete',completed_date=?,invoice_amount=CASE WHEN invoice_amount=0 THEN bid_amount ELSE invoice_amount END,updated_at=? WHERE id=?",
+              new Date().toISOString().slice(0,10), new Date().toISOString(), _ndFallback.id);
+            sendReply('Job **' + _ndFallback.job_number + '** marked complete \u2014 ' + _ndFallback.client_name + ': ' + _ndFallback.title + '\n\nSay "bill ' + _ndFallback.client_name.split(' ')[0] + '" to send the invoice.');
+            return;
+          }
         }
       }
 
@@ -1584,7 +1603,9 @@ self.addEventListener('fetch', (event) => {
 
     // P1b: Jobs by specific status
     {
-      const _jStatusM = lowerText.match(/^(?:show|list)(?: my)? (?:all )?(bids?|scheduled|active|in.?progress|complete[d]?|invoiced|paid|cancelled)(?: jobs?)?$/i);
+      const _jStatusM = lowerText.match(/^(?:show|list|what are|how much are)(?: my| all my)?(?: all)? (?:all )?(bids?|scheduled|active|in.?progress|complete[d]?|invoiced|paid|cancelled)(?: jobs?)?(?:\s+(?:worth|value|total))?$/i)
+                    || lowerText.match(/^(?:all|total|sum)(?: my)? (bids?|active|invoiced|paid)(?: jobs?)? (?:worth|value|total)/i)
+                    || lowerText.match(/^what(?:'s| is|\s+are)(?: all)?(?: my)? (?:active |open )?(bids?|invoices?|paid jobs?|completed?) (?:worth|value|total)/i);
       if (_jStatusM) {
         const _raw = _jStatusM[1].toLowerCase().replace(/s$/,'').replace(/-/,'_').replace('in_progress','in_progress').replace('complete','complete').replace('scheduled','scheduled').replace('bid','bid').replace('invoiced','invoiced').replace('paid','paid').replace('active','in_progress').replace('cancelled','cancelled');
         const _statusMap: Record<string,string> = {bid:'bid',bids:'bid',scheduled:'scheduled',active:'in_progress',in_progress:'in_progress',complete:'complete',completed:'complete',invoiced:'invoiced',paid:'paid',cancelled:'cancelled'};
@@ -1890,7 +1911,7 @@ self.addEventListener('fetch', (event) => {
         const knowledgeAnswer = (() => {
       // Version / identity
       if (/^(?:what version|which version|your version|version number|what.*version are you)/.test(lowerText) || lowerText === 'version') {
-        return 'Henry AI v2.1.1 — your Mac AI: reads files, runs code, runs local AI, remembers your business.\n\n150+ instant local commands, all <20ms.\n\n🔩 Iron Gateway v2: 10 free AI providers — Groq (llama-4-scout, llama-3.3-70b, qwen3), Gemini 2.0+1.5 Flash, Cerebras, OpenRouter. Round-robin with auto-failover.\n\nSay \'what can you do\' to see everything.';
+        return 'Henry AI v2.1.2 — your Mac AI: reads files, runs code, runs local AI, remembers your business.\n\n150+ instant local commands, all <20ms.\n\n🔩 Iron Gateway v2: 10 free AI providers — Groq (llama-4-scout, llama-3.3-70b, qwen3), Gemini 2.0+1.5 Flash, Cerebras, OpenRouter. Round-robin with auto-failover.\n\nSay \'what can you do\' to see everything.';
       }
       if (/^(?:what can you do|capabilities|features|what are you capable of|what do you do|your features)/.test(lowerText) || lowerText === 'help') {
         return '\uD83E\uDDE0 **Henry \u2014 What I Can Do**\n\n' + [
@@ -4569,7 +4590,7 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Notepad (scratchpad) ─────────────────────────────────────────────────
-    const _notepadM = lowerText === 'notepad' || lowerText === 'open notepad' || lowerText === 'show notepad' || lowerText === 'my notes' || lowerText === 'show my notes' || lowerText === 'scratchpad';
+    const _notepadM = lowerText === 'notepad' || lowerText === 'open notepad' || lowerText === 'show notepad' || lowerText === 'my notes' || lowerText === 'show my notes' || lowerText === 'scratchpad' || lowerText === 'take a note' || lowerText === 'my notepad';
     if (_notepadM) {
       const _npNotes = dbGet("SELECT fact, created_at FROM memory_facts WHERE category='notepad' ORDER BY created_at DESC LIMIT 25") as any[];
       if (!_npNotes.length) { sendReply('Notepad is empty.\n\nAdd a note: "notepad: [text]" or "jot: [text]"'); return; }
@@ -4581,7 +4602,7 @@ self.addEventListener('fetch', (event) => {
       _npl.push('', 'Add: "notepad: [text]" \u2014 Clear: "clear notepad"');
       sendReply(_npl.join('\n')); return;
     }
-    const _notepadAddM = !lowerText.match(/^note(?:s)?(?: on| for| to| about| added)/i) && lowerText.match(/^(?:notepad|jot(?:ting)?|scratch(?:pad)?|write (?:this )?down)[:\s]+(.+)/i);
+    const _notepadAddM = !lowerText.match(/^note(?:s)?(?: on| for| to| about| added)/i) && lowerText.match(/^(?:notepad|jot(?:ting)?|scratch(?:pad)?|write (?:this )?down|take a note)[:\s]+(.+)/i);
     if (_notepadAddM) {
       const _npaText = (Array.isArray(_notepadAddM) ? _notepadAddM[1] : '').trim();
       if (_npaText.length > 1) {
