@@ -1573,6 +1573,24 @@ self.addEventListener('fetch', (event) => {
         }
       }
 
+      // '[Client] needs a [job] $amount' — natural job creation
+      const _needsJobM = lowerText.match(/^(\w[\w ]{1,25}) needs? (.+) \$([\d,]+)$/i)
+                      || lowerText.match(/^(\w[\w ]{1,25}) needs? (.+?) \$([\d,]+)/i);
+      if (_needsJobM && /\$/.test(lowerText)) {
+        const _njcRaw = (_needsJobM[1]||'').trim();
+        const _njcName = _njcRaw.split(' ').map((w: string)=>w.charAt(0).toUpperCase()+w.slice(1).toLowerCase()).join(' ');
+        const _njcTitle = (_needsJobM[2]||'').trim().replace(/^(?:a|an|the)\s+/i,'');
+        const _njcAmt = parseFloat((_needsJobM[3]||'0').replace(/,/g,'')) || parseFloat((lowerText.match(/\$(\d+)/)||['','0'])[1]);
+        if (_njcTitle.length > 2 && !['what','show','list','who'].includes(_njcRaw.toLowerCase())) {
+          const _njcNum = 'J-' + Date.now().toString().slice(-5);
+          const _njcId = Date.now().toString(36)+Math.random().toString(36).slice(2);
+          dbRun('INSERT INTO jobs (id,job_number,client_name,title,status,bid_amount,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)',
+            _njcId, _njcNum, _njcName, _njcTitle, 'bid', _njcAmt, new Date().toISOString(), new Date().toISOString());
+          sendReply('Job **' + _njcNum + '** created!\n\n**' + _njcTitle + '**\nClient: ' + _njcName + (_njcAmt>0?' \u2014 $' + _njcAmt.toFixed(2):'') + '\n\nSay "schedule ' + _njcNum + ' for [date]" to book it.');
+          return;
+        }
+      }
+
       // "start a job for X" / "X needs Y done" / "new job — X for Y"
       const _nlJobM = lowerText.match(/^(?:start(?:ing)?|new|got a|picking up|have a|add) (?:a )?job(?:[:\s]+| for | with )(.{5,80})/i)
                    || lowerText.match(/^(?:create|add) (?:a )?(?:new )?(?:job|project|work order)[:\s]+(.{5,80})/i);
@@ -4449,8 +4467,9 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Jobs completed count ─────────────────────────────────────────────────
-    const _jobCountM = /^how many jobs(?: did i| have i)? (?:completed?|done|finished|invoiced|paid)(?: this year| this month| this week| so far|ever)?/.test(lowerText)
-                    || /^(?:job|work) (?:count|total|summary)(?: this year| this month)?$/.test(lowerText);
+    const _jobCountM = /^how many jobs(?: did i| have i| this year| this month)?(?:\s+(?:completed?|done|finished|invoiced|paid|this year|this month|so far|ever))*/.test(lowerText)
+                    || /^(?:job|work) (?:count|total|summary)(?: this year| this month)?$/.test(lowerText)
+                    || lowerText === 'jobs this year' || lowerText === 'jobs this month';
     if (_jobCountM) {
       const _jcYear = new Date().getFullYear().toString();
       const _jcMonth = new Date().toISOString().slice(0,7);

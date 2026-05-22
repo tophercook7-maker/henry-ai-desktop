@@ -120,7 +120,7 @@ html,body{width:100%;height:100%;height:100dvh;background:#000;overflow:hidden;f
 </div>
 <div id="screen-off">
     <span style="font-size:32px">◉</span>
-    <span>Connecting to ${esc}…</span>
+    <span style="font-size:12px;text-align:center;padding:0 20px">Connecting to ${esc}…<br><span style="opacity:.5;font-size:11px">Make sure Henry AI is open on your Mac</span></span>
   </div>
   <img id="screen-img" src="" alt="" style="display:none">
 </div>
@@ -162,6 +162,9 @@ html,body{width:100%;height:100%;height:100dvh;background:#000;overflow:hidden;f
 <!-- Chat overlay -->
 <div id="chat-wrap" class="collapsed">
   <div id="msgs-wrap"></div>
+  <div id="quick-btns" style="display:flex;gap:6px;padding:6px 12px 0;overflow-x:auto;scrollbar-width:none;background:rgba(0,0,0,.92)">
+    <style>#quick-btns::-webkit-scrollbar{display:none}</style>
+  </div>
   <div id="input-row">
     <button id="mic-btn" onclick="toggleMic()" title="Voice input">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" width="20" height="20">
@@ -171,7 +174,7 @@ html,body{width:100%;height:100%;height:100dvh;background:#000;overflow:hidden;f
         <line x1="8" y1="23" x2="16" y2="23"/>
       </svg>
     </button>
-    <textarea id="msg-in" rows="1" placeholder="Message Henry… or tap mic"></textarea>
+    <textarea id="msg-in" rows="1" placeholder="Ask Henry anything… or tap 🎤"></textarea>
     <button id="send-btn">↑</button>
   </div>
 </div>
@@ -237,8 +240,17 @@ function fetchFrame() {
 
 function startStream() {
   fetchFrame();
-  screenTimer = setInterval(fetchFrame, 500);
+  screenTimer = setInterval(fetchFrame, document.hidden ? 2000 : 500);
 }
+document.addEventListener('visibilitychange', function() {
+  if (screenTimer) clearInterval(screenTimer);
+  if (!document.hidden) {
+    fetchFrame();
+    screenTimer = setInterval(fetchFrame, 500);
+  } else {
+    screenTimer = setInterval(fetchFrame, 3000);
+  }
+});
 
 // ── Touch → click on Mac ──────────────────────────────────────────────────────
 var _touchStart = null;
@@ -269,6 +281,14 @@ document.getElementById('screen').addEventListener('touchend', function(e) {
     rip.style.top = clientY + 'px';
     rip.className = 'pop';
     setTimeout(function() { rip.className = 'fade'; setTimeout(function() { rip.className = ''; }, 300); }, 200);
+  }
+
+  // Swipe up on screen = open chat
+  var _swipeDy = e.changedTouches.length ? e.changedTouches[0].clientY - clientY : 0;
+  if (_swipeDy < -40) {
+    var _chatW = document.getElementById('chat-wrap');
+    if (_chatW) _chatW.classList.remove('collapsed');
+    return;
   }
 
   // Calculate Mac coordinates
@@ -313,15 +333,27 @@ function sendMacAction(payload) {
 function addMsg(role, text) {
   var wrap = document.getElementById('msgs-wrap');
   if (!wrap) return null;
-  // Show chat area when messages arrive
   var chatWrap = document.getElementById('chat-wrap');
   if (chatWrap) chatWrap.classList.remove('collapsed');
-  
   var d = document.createElement('div');
   d.className = 'msg ' + role;
   var bubble = document.createElement('div');
   bubble.className = 'bubble';
-  bubble.textContent = text;
+  // Safe bold via split on ** pairs; newlines via char 10
+  var _s = (text||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  var _bp = _s.split('**');
+  _s = _bp.map(function(p,i){ return i%2===1 ? '<strong>'+p+'</strong>' : p; }).join('');
+  _s = _s.split(String.fromCharCode(10)).join('<br>');
+  bubble.innerHTML = _s;
+  bubble.addEventListener('click', function() {
+    if (navigator.clipboard && text && text.length > 5) {
+      navigator.clipboard.writeText(text).then(function() {
+        var _op = bubble.style.opacity;
+        bubble.style.opacity = '0.5';
+        setTimeout(function(){ bubble.style.opacity = _op || '1'; }, 300);
+      });
+    }
+  });
   d.appendChild(bubble);
   wrap.appendChild(d);
   wrap.scrollTop = wrap.scrollHeight;
@@ -407,6 +439,7 @@ function sendMsg() {
   inp.style.height = '';
   busy = true;
   if (btn) btn.className = 'busy';
+  if (navigator.vibrate) navigator.vibrate(10);
   addMsg('u', text);
   var bubble = addMsg('h', '…');
   fetch(BASE + '/sync/prompt', {
@@ -415,12 +448,19 @@ function sendMsg() {
   })
   .then(function(r) { return r.json(); })
   .then(function(d) {
-    if (bubble) bubble.textContent = d.reply || 'Done.';
+    if (bubble) {
+      var _r = (d.reply || 'Done.');
+      var _rb = _r.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      var _rp = _rb.split('**');
+      _rb = _rp.map(function(p,i){ return i%2===1?'<strong>'+p+'</strong>':p; }).join('');
+      _rb = _rb.split(String.fromCharCode(10)).join('<br>');
+      bubble.innerHTML = _rb;
+    }
     busy = false;
     if (btn) btn.className = '';
   })
   .catch(function(e) {
-    if (bubble) bubble.textContent = '⚠ ' + (e.message || 'Connection lost');
+    if (bubble) bubble.innerHTML = '&#9888; ' + (e.message || 'Connection lost');
     busy = false;
     if (btn) btn.className = '';
   });
@@ -443,7 +483,7 @@ document.addEventListener('DOMContentLoaded', function() {
   if (sb) sb.addEventListener('click', sendMsg);
 
   // Show "Add to Home Screen" for Android non-PWA
-  if (/android/i.test(navigator.userAgent) && !window.matchMedia('(display-mode: standalone)').matches) {
+  if (!window.matchMedia('(display-mode: standalone)').matches && window.matchMedia('(pointer: coarse)').matches) {
     setTimeout(function() {
       var b = document.getElementById('add-home-banner');
       if (b) b.style.display = 'block';
@@ -452,6 +492,39 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   // Start screen stream
+  // Quick action buttons
+  var _qActions = [
+    {l:'☀️ GM', q:'gm'},
+    {l:'📋 Jobs', q:'show jobs'},
+    {l:'💰 Bids', q:'show bids'},
+    {l:'🧾 Invoice', q:'what needs invoicing'},
+    {l:'👥 Clients', q:'show clients'},
+    {l:'📊 Biz', q:'business summary'},
+    {l:'⏰ Timer', q:'set a timer for 25 minutes'},
+    {l:'📝 Notes', q:'notepad'},
+    {l:'🎯 Focus', q:'what should I work on today'},
+    {l:'💪 Habits', q:'habit consistency'},
+    {l:'✝ Bible', q:'read John 3:16'},
+    {l:'🌙 GN', q:'gn'},
+  ];
+  var qb = document.getElementById('quick-btns');
+  if (qb) {
+    _qActions.forEach(function(a) {
+      var btn = document.createElement('button');
+      btn.textContent = a.l;
+      btn.style.cssText = 'background:rgba(124,58,237,.25);border:1px solid rgba(124,58,237,.4);border-radius:14px;padding:5px 10px;color:#c4b5fd;font-size:12px;cursor:pointer;white-space:nowrap;font-family:inherit;flex-shrink:0';
+      btn.addEventListener('click', function() {
+        var inp = document.getElementById('msg-in');
+        if (inp) { inp.value = a.q; }
+        var cw = document.getElementById('chat-wrap');
+        if (cw) cw.classList.remove('collapsed');
+        sendMsg();
+        if (navigator.vibrate) navigator.vibrate(8);
+      });
+      qb.appendChild(btn);
+    });
+  }
+
   startStream();
   
   // Size auto-detected from first frame
