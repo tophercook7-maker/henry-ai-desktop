@@ -2178,6 +2178,14 @@ self.addEventListener('fetch', (event) => {
         '  \u2022 12 quick action buttons\n' +
         '  \u2022 Mic button with voice recognition\n' +
         '  \u2022 Bold text + line breaks in replies\n\n' +
+        '\uD83D\uDCBB **System Controls:**\n' +
+        '  \u2022 Screen brightness (brighter/dimmer/brightness 80%)\n' +
+        '  \u2022 Volume control (volume 50%, louder, mute)\n' +
+        '  \u2022 Sleep, lock screen, restart, shut down\n' +
+        '  \u2022 Battery status, disk space, system info\n' +
+        '  \u2022 Available printers + print invoices\n' +
+        '  \u2022 Screenshot (saves to Desktop)\n' +
+        '  \u2022 List running apps, quit an app\n\n' +
         '\uD83D\uDCD6 **Personal:**\n' +
         '  \u2022 Journal saves correctly\n' +
         '  \u2022 Today completions summary\n' +
@@ -5821,6 +5829,181 @@ self.addEventListener('fetch', (event) => {
       } catch(e) { sendReply('Export failed: ' + String(e).slice(0,80)); }
       return;
     }
+
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // ── SYSTEM CONTROLS (Mac automation) ─────────────────────────────────────
+    // ══════════════════════════════════════════════════════════════════════════
+    if (/^(?:system|mac|computer|machine) (?:info|status|specs?|about|details)|what computer(?: am i| is this)|tell me about this mac$/.test(lowerText)
+        || lowerText === 'system info' || lowerText === 'about this mac' || lowerText === 'computer info') {
+      try {
+        const { execSync: _sx } = await import('child_process') as typeof import('child_process');
+        const _sver = _sx('sw_vers -productVersion', {encoding:'utf8',timeout:3000}).trim();
+        const _smem = _sx('sysctl -n hw.memsize', {encoding:'utf8',timeout:2000}).trim();
+        const _smemG = (parseInt(_smem)/1073741824).toFixed(0);
+        const _scpu = _sx('sysctl -n machdep.cpu.brand_string 2>/dev/null || sysctl -n hw.model', {encoding:'utf8',timeout:2000,shell:'/bin/bash'}).trim();
+        const _sdisk = _sx('df -h / | tail -1', {encoding:'utf8',timeout:2000,shell:'/bin/bash'}).trim();
+        const _sDiskParts = _sdisk.split(/\s+/);
+        const _svol = _sx('osascript -e "output volume of (get volume settings)"', {encoding:'utf8',timeout:3000,shell:'/bin/bash'}).trim();
+        const _sBat = _sx('pmset -g batt 2>/dev/null | grep -oE "[0-9]+%" | head -1', {encoding:'utf8',timeout:3000,shell:'/bin/bash'}).trim();
+        const _sPrn = _sx('lpstat -p 2>/dev/null | grep -oE "printer [^ ]+" | head -3', {encoding:'utf8',timeout:3000,shell:'/bin/bash'}).trim().replace(/printer /g,'');
+        const _sHost = (dbGetOne("SELECT value FROM settings WHERE key='machine_hostname'") as any)?.value||'MacBook Pro';
+        const _sChip = (dbGetOne("SELECT value FROM settings WHERE key='machine_chip'") as any)?.value||'Apple M1 Max';
+        sendReply('\uD83D\uDCBB **' + _sHost + '**\n\nmacOS ' + _sver + '\nChip: ' + _sChip.slice(0,30) + '\nRAM: ' + _smemG + ' GB\nDisk: ' + (_sDiskParts[2]||'?') + ' used, **' + (_sDiskParts[3]||'?') + ' free** of ' + (_sDiskParts[1]||'?') + '\nVolume: ' + _svol + '%' + (_sBat?' | Battery: '+_sBat:'') + '\nPrinter: ' + (_sPrn||'none found'));
+      } catch(e) { sendReply('System info error: ' + String(e).slice(0,60)); }
+      return;
+    }
+
+    // ── Screen brightness ─────────────────────────────────────────────────────
+    {
+      const _briM = lowerText.match(/^(?:set(?: the)? |)(screen |display |monitor )?brightness(?: to)?\s*(\d+)%?$/i)
+                 || lowerText.match(/^(brighter|dimmer|dim|bright|full brightness|max brightness|min brightness)$/i);
+      if (_briM) {
+        const { execSync: _bx } = await import('child_process') as typeof import('child_process');
+        let _briVal = 0.7;
+        const _briWord = (_briM[1]||_briM[0]||'').toLowerCase();
+        const _briNum = [_briM[1],_briM[2],_briM[3]].find((g: any) => g && /^\d+$/.test(g));
+        if (_briNum) { _briVal = Math.min(1, parseInt(_briNum)/100); }
+        else if (/brighter/.test(_briWord)) { _briVal = Math.min(1, (parseFloat(_bx('brightness -l 2>/dev/null | grep -oE "[0-9.]+ \\(display" | grep -oE "[0-9.]+" | head -1',{encoding:'utf8',timeout:2000,shell:'/bin/bash'})||'0.5')) + 0.2); }
+        else if (/dimmer|dim/.test(_briWord)) { _briVal = Math.max(0, (parseFloat(_bx('brightness -l 2>/dev/null | grep -oE "[0-9.]+ \\(display" | grep -oE "[0-9.]+" | head -1',{encoding:'utf8',timeout:2000,shell:'/bin/bash'})||'0.5')) - 0.2); }
+        else if (/full|max/.test(_briWord)) { _briVal = 1.0; }
+        else if (/min/.test(_briWord)) { _briVal = 0.1; }
+        try { _bx('brightness ' + _briVal.toFixed(2), {timeout:3000}); sendReply('\u2600\uFE0F Brightness set to ' + Math.round(_briVal*100) + '%'); } catch { sendReply('\u2600\uFE0F Brightness adjusted (try saying a number: "brightness 80%")'); }
+        return;
+      }
+    }
+
+    // ── Volume ────────────────────────────────────────────────────────────────
+    {
+      const _volM = lowerText.match(/^(?:set(?: the)? )?(?:sound |audio |speaker |output )?volume(?: to)?\s*(\d+)%?$/i)
+               || lowerText.match(/^(louder|quieter|mute|unmute|volume up|volume down|max volume|silence)$/i);
+      if (_volM) {
+        const { execSync: _vx } = await import('child_process') as typeof import('child_process');
+        const _vw = (_volM[1]||lowerText).toLowerCase();
+        if (/^\d+$/.test(_volM[1]||'')) {
+          const _vn = Math.min(100, parseInt(_volM[1]));
+          _vx('osascript -e "set volume output volume ' + _vn + '"', {timeout:3000,shell:'/bin/bash'});
+          sendReply('\uD83D\uDD0A Volume set to ' + _vn + '%'); return;
+        }
+        if (/^unmute$/.test(_vw)) { _vx('osascript -e "set volume without output muted"', {timeout:3000,shell:'/bin/bash'}); sendReply('\uD83D\uDD0A Unmuted'); return; }
+        if (/^(?:mute|silence)$/.test(_vw)) { _vx('osascript -e "set volume with output muted"', {timeout:3000,shell:'/bin/bash'}); sendReply('\uD83D\uDD07 Muted'); return; }
+        if (/unmute/.test(_vw)) { _vx('osascript -e "set volume without output muted"', {timeout:3000,shell:'/bin/bash'}); sendReply('\uD83D\uDD0A Unmuted'); return; }
+        if (/louder|up/.test(_vw)) {
+          const _cv = parseInt(_vx('osascript -e "output volume of (get volume settings)"', {encoding:'utf8',timeout:2000,shell:'/bin/bash'}).trim()||'50');
+          const _nv = Math.min(100,_cv+20); _vx('osascript -e "set volume output volume ' + _nv + '"', {timeout:3000,shell:'/bin/bash'}); sendReply('\uD83D\uDD0A Volume ' + _cv + '% \u2192 ' + _nv + '%'); return;
+        }
+        if (/quieter|down/.test(_vw)) {
+          const _cv2 = parseInt(_vx('osascript -e "output volume of (get volume settings)"', {encoding:'utf8',timeout:2000,shell:'/bin/bash'}).trim()||'50');
+          const _nv2 = Math.max(0,_cv2-20); _vx('osascript -e "set volume output volume ' + _nv2 + '"', {timeout:3000,shell:'/bin/bash'}); sendReply('\uD83D\uDD09 Volume ' + _cv2 + '% \u2192 ' + _nv2 + '%'); return;
+        }
+        if (/max/.test(_vw)) { _vx('osascript -e "set volume output volume 100"', {timeout:3000,shell:'/bin/bash'}); sendReply('\uD83D\uDD0A Volume 100%'); return; }
+      }
+    }
+
+    // ── Sleep / shutdown / restart / lock ─────────────────────────────────────
+    if (/^(?:sleep|go to sleep|put(?:(?: the)? computer| mac)? to sleep)$/.test(lowerText)) {
+      const { execSync: _slx } = await import('child_process') as typeof import('child_process');
+      _slx('osascript -e "tell application \\"System Events\\" to sleep"', {timeout:5000,shell:'/bin/bash'});
+      sendReply('\uD83D\uDCA4 Sleeping...'); return;
+    }
+    if (/^(?:lock(?: the)? (?:screen|computer|mac)|screen lock|lock screen)$/.test(lowerText)) {
+      const { execSync: _lkx } = await import('child_process') as typeof import('child_process');
+      _lkx('osascript -e "tell application \\"System Events\\" to keystroke \\"q\\" using {command down, control down}"', {timeout:3000,shell:'/bin/bash'});
+      sendReply('\uD83D\uDD12 Screen locked'); return;
+    }
+    if (/^(?:restart|reboot|restart(?:(?: the)? computer| mac)?)$/.test(lowerText)) {
+      sendReply('\uD83D\uDD04 Restarting your Mac in 5 seconds...');
+      const { execSync: _rx } = await import('child_process') as typeof import('child_process');
+      setTimeout(() => { try { _rx('osascript -e "tell application \\"System Events\\" to restart"', {shell:'/bin/bash'}); } catch {} }, 5000);
+      return;
+    }
+    if (/^(?:shut ?down|power off|turn off(?: the)? (?:computer|mac)?)$/.test(lowerText)) {
+      sendReply('\uD83D\uDEAB Shutting down in 5 seconds... Say anything to cancel.');
+      const { execSync: _sdx } = await import('child_process') as typeof import('child_process');
+      setTimeout(() => { try { _sdx('osascript -e "tell application \\"System Events\\" to shut down"', {shell:'/bin/bash'}); } catch {} }, 5000);
+      return;
+    }
+
+    // ── Battery status ────────────────────────────────────────────────────────
+    if (/^(?:battery(?: status| level| life)?|how much battery|power status|charging status)$/.test(lowerText)) {
+      const { execSync: _batx } = await import('child_process') as typeof import('child_process');
+      const _batOut = _batx('pmset -g batt', {encoding:'utf8',timeout:3000,shell:'/bin/bash'});
+      const _batPct = (_batOut.match(/([\d]+)%/)||['','?'])[1];
+      const _batChg = _batOut.includes('charging') ? 'charging \u26A1' : _batOut.includes('discharging') ? 'on battery' : 'charged';
+      const _batTime = (_batOut.match(/(\d+:\d+) remaining/)||['',''])[1];
+      sendReply('\uD83D\uDD0B **Battery: ' + _batPct + '%** — ' + _batChg + (_batTime?' — ' + _batTime + ' remaining':'')); return;
+    }
+
+    // ── Disk / storage space ──────────────────────────────────────────────────
+    if (/^(?:disk space|storage|how much (?:storage|space|disk)|free space|storage info)$/.test(lowerText)) {
+      const { execSync: _dkx } = await import('child_process') as typeof import('child_process');
+      const _dkOut = _dkx('df -h / | tail -1', {encoding:'utf8',timeout:3000,shell:'/bin/bash'}).split(/\s+/);
+      const _theVault = _dkx('df -h /Volumes/TheVault 2>/dev/null | tail -1', {encoding:'utf8',timeout:2000,shell:'/bin/bash'}).split(/\s+/);
+      let _dkLines = ['\uD83D\uDCBE **Storage**', '', 'Mac (/): ' + _dkOut[2] + ' used, **' + _dkOut[3] + ' free** of ' + _dkOut[1]];
+      if (_theVault.length > 3) _dkLines.push('TheVault: ' + _theVault[2] + ' used, **' + _theVault[3] + ' free** of ' + _theVault[1]);
+      sendReply(_dkLines.join('\n')); return;
+    }
+
+    // ── Print ─────────────────────────────────────────────────────────────────
+    {
+      const _prtM = lowerText.match(/^(?:print|send to printer?)(?: this| the)?(?:\s+(?:invoice|job|report|summary|notes?))?(?:\s+(?:for|on|of|from)?\s+(.+))?$/i);
+      if (_prtM || lowerText === 'print' || lowerText === 'list printers' || lowerText === 'available printers' || lowerText === 'show printers') {
+        const { execSync: _px } = await import('child_process') as typeof import('child_process');
+        if (lowerText.includes('list') || lowerText.includes('available') || lowerText.includes('show printers')) {
+          const _prnList = _px('lpstat -p 2>/dev/null', {encoding:'utf8',timeout:3000,shell:'/bin/bash'});
+          const _prnDef = _px('lpstat -d 2>/dev/null', {encoding:'utf8',timeout:2000,shell:'/bin/bash'}).trim();
+          sendReply('\uD83D\uDDA8 **Printers:**\n\n' + (_prnList.trim()||'No printers found') + '\n\n' + _prnDef);
+        } else {
+          // Print the most recent invoice or job summary
+          const _prnTarg = (_prtM?.[1]||'').trim();
+          const _prnDef2 = _px('lpstat -d 2>/dev/null | grep -oE " [^ ]+$"', {encoding:'utf8',timeout:2000,shell:'/bin/bash'}).trim();
+          if (!_prnDef2) { sendReply('No default printer found. Connect a printer first.'); return; }
+          // Find and print the most recent invoice HTML from Desktop
+          const _prnFile = _px('ls ~/Desktop/INV-*.html 2>/dev/null | sort | tail -1', {encoding:'utf8',timeout:2000,shell:'/bin/bash'}).trim();
+          if (_prnFile) {
+            _px('lp -d ' + _prnDef2 + ' "' + _prnFile + '" 2>/dev/null || open -a "Preview" "' + _prnFile + '"', {timeout:5000,shell:'/bin/bash'});
+            sendReply('\uD83D\uDDA8 Printing **' + _prnFile.split('/').pop() + '** to ' + _prnDef2);
+          } else {
+            sendReply('\uD83D\uDDA8 **Printer:** ' + _prnDef2 + '\n\nNo invoice found on Desktop. Generate one first: "send invoice for J-XXXXX"\n\nOr say "print job summary" for a text summary.');
+          }
+        }
+        return;
+      }
+    }
+
+    // ── What apps are running ─────────────────────────────────────────────────
+    if (/^(?:what(?:'s| is) (?:running|open)|show (?:running|open) apps?|running apps?|open apps?|list apps?|what apps?)$/.test(lowerText)) {
+      const { execSync: _apx } = await import('child_process') as typeof import('child_process');
+      const _apList = _apx('osascript -e "tell application \\"System Events\\" to get name of every process whose background only is false"', {encoding:'utf8',timeout:5000,shell:'/bin/bash'}).trim();
+      const _apps = _apList.split(',').map((a: string)=>a.trim()).filter(Boolean);
+      sendReply('\uD83D\uDCBB **Running apps (' + _apps.length + '):**\n\n' + _apps.join(', ')); return;
+    }
+
+    // ── Quit an app ──────────────────────────────────────────────────────────
+    {
+      const _quitM = lowerText.match(/^(?:quit|close|kill|force quit)(?: the)? ([\w][\w\s]{1,30})$/i);
+      if (_quitM) {
+        const _qApp = (_quitM[1]||'').trim();
+        const { execSync: _qx } = await import('child_process') as typeof import('child_process');
+        try {
+          _qx('osascript -e "tell application \\"' + _qApp + '\\" to quit"', {timeout:5000,shell:'/bin/bash'});
+          sendReply('\u2713 Quit **' + _qApp + '**');
+        } catch { sendReply('Could not quit ' + _qApp + '. Try the exact app name.'); }
+        return;
+      }
+    }
+
+    // ── Take a screenshot ────────────────────────────────────────────────────
+    if (/^(?:take a? screenshot|screenshot|capture screen|snap(?:shot)?)$/.test(lowerText)) {
+      const { execSync: _scx } = await import('child_process') as typeof import('child_process');
+      const _scDate = (() => { const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')+'_'+String(d.getHours()).padStart(2,'0')+String(d.getMinutes()).padStart(2,'0'); })();
+      const _scPath = require('os').homedir() + '/Desktop/henry_screenshot_' + _scDate + '.png';
+      _scx('screencapture -x "' + _scPath + '"', {timeout:5000,shell:'/bin/bash'});
+      _scx('open -R "' + _scPath + '"', {timeout:3000,shell:'/bin/bash'});
+      sendReply('\uD83D\uDCF7 Screenshot saved: **henry_screenshot_' + _scDate + '.png**\n\nDesktop > revealed in Finder'); return;
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
 
     const tunnelUrlMatch = lowerText === 'tunnel url' || lowerText === 'my tunnel url' || lowerText === 'public url' || lowerText === 'remote url';
     if (tunnelUrlMatch) {

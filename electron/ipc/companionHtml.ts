@@ -11,8 +11,12 @@ export function buildCompanionHtml(macName: string): string {
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Henry AI">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#0a0a0f">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="mobile-web-app-capable" content="yes">
@@ -494,18 +498,29 @@ document.addEventListener('DOMContentLoaded', function() {
   // Start screen stream
   // Quick action buttons
   var _qActions = [
-    {l:'☀️ GM', q:'gm'},
-    {l:'📋 Jobs', q:'show jobs'},
-    {l:'💰 Bids', q:'show bids'},
-    {l:'🧾 Invoice', q:'what needs invoicing'},
-    {l:'👥 Clients', q:'show clients'},
-    {l:'📊 Biz', q:'business summary'},
-    {l:'⏱ 25min', q:'set a timer for 25 minutes'},
-    {l:'📝 Notes', q:'notepad'},
-    {l:'🎯 Focus', q:'what should I work on today'},
-    {l:'💪 Habits', q:'habit consistency'},
-    {l:'📒 Journal', q:'show journal'},
-    {l:'🌙 GN', q:'gn'},
+  {l:'☀️ GM', q:'gm'},
+  {l:'📋 Jobs', q:'show jobs'},
+  {l:'💰 Bids', q:'show bids'},
+  {l:'🧾 Invoice', q:'what needs invoicing'},
+  {l:'👥 Clients', q:'show clients'},
+  {l:'📊 Cash Flow', q:'cash flow'},
+  {l:'⏱ 25min', q:'set a timer for 25 minutes'},
+  {l:'📝 Notes', q:'notepad'},
+  {l:'🎯 Focus', q:'what should I work on today'},
+  {l:'💪 Habits', q:'habit consistency'},
+  {l:'📒 Journal', q:'show journal'},
+  {l:'🖥 Screen', q:'system info'},
+  {l:'🔊 Volume', q:'volume up'},
+  {l:'☀ Brighter', q:'brighter'},
+  {l:'🌙 Dimmer', q:'dimmer'},
+  {l:'🔒 Lock', q:'lock screen'},
+  {l:'😴 Sleep', q:'sleep'},
+  {l:'🖨 Print', q:'print'},
+  {l:'📸 Screenshot', q:'take a screenshot'},
+  {l:'🔋 Battery', q:'battery status'},
+  {l:'💾 Disk', q:'disk space'},
+  {l:'📱 Pair', q:'pair my phone'},
+  {l:'🌙 GN', q:'gn'},
   ];
   var qb = document.getElementById('quick-btns');
   if (qb) {
