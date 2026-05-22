@@ -2435,6 +2435,23 @@ self.addEventListener('fetch', (event) => {
       return;
     }
 
+    // ── Quick job complete: "J-XXXXX done" / "J-XXXXX is done" ─────────────────
+    {
+      const _qjDone = lowerText.match(/^([j]-\d{4,6})\s+(?:is\s+)?(?:done|complete[d]?|finished|wrapped up|all done)$/i)
+                   || lowerText.match(/^(?:job\s+)?([j]-\d{4,6})\s+(?:is\s+)?(?:done|complete[d]?|finished)$/i)
+                   || lowerText.match(/^(?:done with|finished|completed)\s+([j]-\d{4,6})$/i);
+      if (_qjDone) {
+        const _qjNum = (_qjDone[1]||_qjDone[2]||'').toUpperCase();
+        const _qjJob = dbGetOne("SELECT id,job_number,client_name,title,bid_amount FROM jobs WHERE UPPER(job_number)=? AND status NOT IN ('paid','cancelled') LIMIT 1", _qjNum) as any;
+        if (_qjJob) {
+          dbRun("UPDATE jobs SET status='complete',completed_date=?,invoice_amount=CASE WHEN invoice_amount=0 THEN bid_amount ELSE invoice_amount END,updated_at=? WHERE id=?",
+            new Date().toISOString().slice(0,10), new Date().toISOString(), _qjJob.id);
+          sendReply('Job **' + _qjJob.job_number + '** marked complete — ' + _qjJob.client_name + ': ' + _qjJob.title + '\n\nSay "bill ' + _qjJob.client_name.split(' ')[0] + '" to send the invoice.');
+          return;
+        }
+      }
+    }
+
     // completeTaskMatch - only if 'task' keyword is present, or starts with done/complete + non-habit text
     const _habitWords = ['prayer','bible','exercise','journal','water','run','walk','stretch','meditat','cold shower','gratitude','read','gym'];
     const _looksLikeHabit = _habitWords.some(hw => lowerText.includes(hw));
@@ -3670,6 +3687,26 @@ self.addEventListener('fetch', (event) => {
     }
 
 
+    // ── Invoice summary (monthly/yearly) ─────────────────────────────────────
+    const _invSummaryM = /^(?:what(?:'s| did i| have i)?|how much(?:'s|'ve i)?|show)(?: the| my)? (?:total(?:s?)? )?invoiced?(?: (?:this|last|so far|year|month))?(?:(?: this| last)? (?:month|year|week))?$/.test(lowerText)
+                      || lowerText === 'invoicing summary' || /^total invoiced/.test(lowerText);
+    if (_invSummaryM) {
+      const _isMonth = new Date().toISOString().slice(0,7);
+      const _isYear  = new Date().getFullYear().toString();
+      const _isMonthTotal = (dbGetOne("SELECT COALESCE(SUM(invoice_amount),0) as n FROM jobs WHERE strftime('%Y-%m',invoiced_date)=?", _isMonth) as any)?.n || 0;
+      const _isYearTotal  = (dbGetOne("SELECT COALESCE(SUM(invoice_amount),0) as n FROM jobs WHERE strftime('%Y',invoiced_date)=?", _isYear) as any)?.n || 0;
+      const _isPaidMonth  = (dbGetOne("SELECT COALESCE(SUM(paid_amount),0) as n FROM jobs WHERE strftime('%Y-%m',paid_date)=?", _isMonth) as any)?.n || 0;
+      const _isUnpaid     = (dbGetOne("SELECT COALESCE(SUM(invoice_amount-paid_amount),0) as n FROM jobs WHERE status='invoiced'") as any)?.n || 0;
+      const _isJobs = dbGet("SELECT job_number,client_name,invoice_amount,invoiced_date,status FROM jobs WHERE strftime('%Y-%m',invoiced_date)=? ORDER BY invoiced_date DESC", _isMonth) as any[];
+      const _isLines = ['**Invoicing Summary**', '',
+        'This month invoiced: **$' + _isMonthTotal.toFixed(2) + '**',
+        'This month collected: $' + _isPaidMonth.toFixed(2),
+        'Year to date: $' + _isYearTotal.toFixed(2),
+        'Currently outstanding: **$' + _isUnpaid.toFixed(2) + '**'];
+      if (_isJobs.length) { _isLines.push('', 'This month:'); for (const j of _isJobs) _isLines.push('  ' + j.job_number + ' ' + j.client_name + ' — $' + j.invoice_amount + ' [' + j.status + ']'); }
+      sendReply(_isLines.join('\n')); return;
+    }
+
     // ── Jobs needing invoice ──────────────────────────────────────────────────
     const _needsInvM = /^(?:what(?:'s| (?:jobs?|work))? (?:need|needs?)(?: to be| to get)? (?:invoic|bill)|what(?:'s| is) (?:ready to|needs to) (?:be invoic|be bill)|(?:show|list)(?: me)?(?: the)? (?:uninvoic|unbill)|what(?:'s| do i need to) bill|jobs? (?:ready to invoice|to bill|needing invoic))/.test(lowerText)
                      || lowerText === 'what needs billing' || lowerText === 'what needs invoicing' || lowerText === 'ready to invoice';
@@ -3684,6 +3721,25 @@ self.addEventListener('fetch', (event) => {
       }
       _niLines.push('', 'Say "bill ' + _njInv[0].client_name.split(' ')[0] + '" or "send invoice for ' + _njInv[0].job_number + '" to generate.');
       sendReply(_niLines.join('\n')); return;
+    }
+
+    // ── Days since invoice / last contact ────────────────────────────────────
+    {
+      const _dsiM = lowerText.match(/^how (?:long|many days?)(?: (?:has it been|ago|since))(?: since)?(?: i| did i)? invoiced? (.+)/i)
+                 || lowerText.match(/^when did i (?:last )?invoiced? (.+)/i)
+                 || lowerText.match(/^(.+) invoice date/i);
+      if (_dsiM) {
+        const _dsiName = (_dsiM[1]||'').trim().replace(/\?$/,'');
+        const _dsiJob = dbGetOne("SELECT client_name,job_number,invoice_amount,invoiced_date FROM jobs WHERE status IN ('invoiced','paid') AND LOWER(client_name) LIKE ? ORDER BY invoiced_date DESC LIMIT 1",
+          '%'+_dsiName.split(' ')[0].toLowerCase()+'%') as any;
+        if (_dsiJob && _dsiJob.invoiced_date) {
+          const _dsiAge = Math.floor((Date.now() - new Date(_dsiJob.invoiced_date).getTime()) / 86400000);
+          sendReply('**' + _dsiJob.client_name + '** — last invoiced ' + _dsiAge + ' day' + (_dsiAge===1?'':'s') + ' ago\n' + _dsiJob.job_number + ': $' + _dsiJob.invoice_amount + ' (' + _dsiJob.invoiced_date + ')' + (_dsiAge > 14 ? '\n\n⚠️ That\'s over 2 weeks — consider following up.' : ''));
+          return;
+        } else if (_dsiName.length > 2) {
+          sendReply('No invoice found for "' + _dsiName + '".'); return;
+        }
+      }
     }
 
     // ── Who to follow up with ────────────────────────────────────────────────
