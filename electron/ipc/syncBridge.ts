@@ -3036,6 +3036,28 @@ self.addEventListener('fetch', (event) => {
 
     // "what reminders do i have" / "show reminders"
     // ── Reminders due today ─────────────────────────────────────────────────
+    // ── Show all upcoming reminders (tasks with due_at + reminders table) ────
+    const _showAllRem = /^(?:show|list|what)(?: are)?(?: my)?(?: upcoming)? reminders?$/.test(lowerText)
+                     || lowerText === 'reminders' || lowerText === 'my reminders' || lowerText === 'what reminders do i have' || lowerText === 'upcoming reminders';
+    if (_showAllRem) {
+      const _now = new Date().toISOString();
+      // Check reminders table
+      const _remTable = dbGet("SELECT title,due_at,notes FROM reminders WHERE done=0 AND due_at >= ? ORDER BY due_at ASC LIMIT 10", _now) as any[];
+      // Also check tasks with due_at (which is where 'remind me' stores things)
+      const _remTasks = dbGet("SELECT title,due_at FROM personal_tasks WHERE status='todo' AND due_at IS NOT NULL AND due_at >= ? ORDER BY due_at ASC LIMIT 10", _now) as any[];
+      const _allRems = [
+        ..._remTable.map((r: any) => ({ title: r.title, due: r.due_at, note: r.notes })),
+        ..._remTasks.map((t: any) => ({ title: t.title, due: t.due_at, note: '' })),
+      ].sort((a: any, b: any) => a.due < b.due ? -1 : 1).slice(0, 12);
+      if (!_allRems.length) { sendReply('No upcoming reminders. Add one: "remind me to call Karen tomorrow at 8am"'); return; }
+      const _remLines = ['**Upcoming reminders (' + _allRems.length + ')**', ''];
+      for (const r of _allRems) {
+        const _rd = new Date(r.due); const _rdStr = _rd.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}) + ' at ' + _rd.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
+        _remLines.push('  \u2022 ' + r.title + ' \u2014 ' + _rdStr);
+      }
+      sendReply(_remLines.join('\n')); return;
+    }
+
     const remsDueTodayMatch = /^(?:show|what|list)(?: my)? reminders? (?:due|for|today)/.test(lowerText)
                            || /^(?:today|due today).* reminders?/.test(lowerText)
                            || lowerText === "reminders today" || lowerText === "due today";
@@ -4163,6 +4185,23 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Direct verse reference: "John 3:16" / "lookup John 3:16" / "what is John 3:16"
+    // ── Scripture: save verse voice command ─────────────────────────────────
+    const _ssM = lowerText.match(/^(?:save|bookmark)(?: this)?(?: verse)?[:\s]+(.{3,30})$/i)
+              || (lowerText.startsWith('save ') && /\d/.test(lowerText) && lowerText.length < 30);
+    if (_ssM) {
+      const _ssRef = (typeof _ssM === 'object' && _ssM[1]) ? _ssM[1].trim() : lowerText.replace(/^save\s+/i,'').trim();
+      if (/[0-9]/.test(_ssRef)) {
+        try {
+          const _ssLookup = await (window as any).henryAPI?.scriptureLookup?.(_ssRef);
+          if (_ssLookup?.found) {
+            await (window as any).henryAPI?.scriptureSaveVerse?.({ ref: _ssLookup.normalizedReference || _ssRef, text: _ssLookup.text, source: 'KJV' });
+            sendReply('\u2726 Saved **' + (_ssLookup.normalizedReference || _ssRef) + '** to your saved verses.');
+            return;
+          }
+        } catch { /* fall through */ }
+      }
+    }
+
     const directVerseMatch = lowerText.match(/^(?:lookup|look up|what(?:'s| is)(?: the)?(?: verse)?|show me|read|get)\s+([1-3]?\s*[a-z]+\s+\d+:\d+)/i)
                          || lowerText.match(/^([1-3]?\s*(?:genesis|exodus|leviticus|numbers|deuteronomy|joshua|judges|ruth|samuel|kings|chronicles|ezra|nehemiah|esther|job|psalms?|proverbs?|ecclesiastes|isaiah|jeremiah|lamentations|ezekiel|daniel|hosea|joel|amos|obadiah|jonah|micah|nahum|habakkuk|zephaniah|haggai|zechariah|malachi|matthew|mark|luke|john|acts|romans|corinthians|galatians|ephesians|philippians|colossians|thessalonians|timothy|titus|philemon|hebrews|james|peter|jude|revelation))\s+\d+(?::\d+)?/i)
                           || lowerText.match(/^([1-3]?\s*[a-z]+\s+\d+:\d+)$/i);
@@ -4263,6 +4302,24 @@ self.addEventListener('fetch', (event) => {
       sendReply(_jdLines.join('\n')); return;
     }
 
+    // ── Profit margin ─────────────────────────────────────────────────────────
+    const _marginM = /^(?:what(?:'s| is)(?: my)? profit margin|profit margin(?: this month| this year| overall)?|my margin)/.test(lowerText);
+    if (_marginM) {
+      const _mMonth = new Date().toISOString().slice(0,7);
+      const _mRev = (dbGetOne("SELECT COALESCE(SUM(paid_amount),0) as n FROM jobs WHERE strftime('%Y-%m',paid_date)=?", _mMonth) as any)?.n || 0;
+      const _mMat = (dbGetOne("SELECT COALESCE(SUM(material_cost),0) as n FROM jobs WHERE strftime('%Y-%m',paid_date)=?", _mMonth) as any)?.n || 0;
+      const _mExp = (dbGetOne("SELECT COALESCE(SUM(amount),0) as n FROM transactions WHERE type='expense' AND strftime('%Y-%m',date)=?", _mMonth) as any)?.n || 0;
+      const _mProfit = _mRev - _mMat - _mExp;
+      const _mMargin = _mRev > 0 ? ((_mProfit / _mRev) * 100).toFixed(1) : '0';
+      sendReply('**Profit Margin — ' + new Date().toLocaleString('en-US',{month:'long'}) + '**\n\n' +
+        'Revenue:   $' + _mRev.toFixed(2) + '\n' +
+        'Materials: $' + _mMat.toFixed(2) + '\n' +
+        'Expenses:  $' + _mExp.toFixed(2) + '\n' +
+        'Profit:    **$' + _mProfit.toFixed(2) + '**\n' +
+        'Margin:    **' + _mMargin + '%**');
+      return;
+    }
+
     // ── Best/largest job ──────────────────────────────────────────────────────
     const _bestJobM = /^(?:what(?:'s| is| was)(?: my)? (?:best|biggest|largest|highest|most expensive|top) (?:paying )?job|my (?:best|biggest|largest|top) job|biggest job ever|most i(?:'ve)? (?:charged|made|earned)(?: on a job)?)/.test(lowerText);
     if (_bestJobM) {
@@ -4270,6 +4327,20 @@ self.addEventListener('fetch', (event) => {
       if (!_bj) { sendReply('No jobs recorded yet.'); return; }
       const _bjAmt = _bj.paid_amount || _bj.invoice_amount || _bj.bid_amount || 0;
       sendReply('Your biggest job: **' + _bj.job_number + '** — ' + _bj.client_name + '\n**' + _bj.title + '**\n' + (_bjAmt > 0 ? '$' + _bjAmt.toFixed(2) : 'No amount') + ' [' + _bj.status + ']');
+      return;
+    }
+
+    // ── Jobs completed count ─────────────────────────────────────────────────
+    const _jobCountM = /^how many jobs(?: did i| have i)? (?:completed?|done|finished|invoiced|paid)(?: this year| this month| this week| so far|ever)?/.test(lowerText)
+                    || /^(?:job|work) (?:count|total|summary)(?: this year| this month)?$/.test(lowerText);
+    if (_jobCountM) {
+      const _jcYear = new Date().getFullYear().toString();
+      const _jcMonth = new Date().toISOString().slice(0,7);
+      const _jcAll   = (dbGetOne("SELECT COUNT(*) as n FROM jobs WHERE status IN ('complete','invoiced','paid')") as any)?.n || 0;
+      const _jcYear2 = (dbGetOne("SELECT COUNT(*) as n FROM jobs WHERE status IN ('complete','invoiced','paid') AND strftime('%Y',COALESCE(completed_date,paid_date))=?", _jcYear) as any)?.n || 0;
+      const _jcMonth2= (dbGetOne("SELECT COUNT(*) as n FROM jobs WHERE status IN ('complete','invoiced','paid') AND strftime('%Y-%m',COALESCE(completed_date,paid_date))=?", _jcMonth) as any)?.n || 0;
+      const _jcRev   = (dbGetOne("SELECT COALESCE(SUM(paid_amount),0) as n FROM jobs WHERE status='paid'") as any)?.n || 0;
+      sendReply('**Jobs completed:**\n\nThis month: **' + _jcMonth2 + '**\nThis year: **' + _jcYear2 + '**\nAll time: **' + _jcAll + '**\n\nTotal collected: **$' + _jcRev.toFixed(0) + '**');
       return;
     }
 
