@@ -1494,8 +1494,9 @@ self.addEventListener('fetch', (event) => {
     // Understands free-form business talk without requiring special syntax
     {
       // "finished/completed the X job" or "done with X for Y"
-      const _nlDoneM = !lowerText.match(/^(?:habit|exercise|bible|journal|prayer|water|meditat|cold shower|stretch|read|run|walk)/i) &&
-        lowerText.match(/^(?:i(?:'ve)?\s+)?(?:finished|completed|done with|wrapped up)(?: the)?(?: (?:job|work|project))?(?: (?:for|on|with)\s+)?(.{3,60})(?:\s+(?:today|just now|already|this morning|this afternoon))?$/i);
+      const _nlDoneM = !lowerText.match(/^(?:habit|exercise|bible|journal|prayer|water|meditat|cold shower|stretch|read|run|walk)/i)
+        && !lowerText.match(/jobs?(?: this year| this month| completed|\s+for)/i)
+        && lowerText.match(/^(?:i(?:'ve)?\s+)?(?:finished|completed|done with|wrapped up)(?: the)?(?: (?:job|work|project))?(?: (?:for|on|with)\s+)?(.{3,60})(?:\s+(?:today|just now|already|this morning|this afternoon))?$/i);
       if (_nlDoneM) {
         const _hint = (_nlDoneM[1]||'').trim();
         // Extract client name if "for X" pattern
@@ -2289,6 +2290,26 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── 'customer paid' without amount ──────────────────────────────────────
+    // ── Partial payment on job ──────────────────────────────────────────────
+    {
+      const _ppMx = lowerText.match(/^([\w][\w ]{0,20}) paid \$?([\d,.]+) (?:on|for|toward) ([j]-\d{4,6})/i);
+      if (_ppMx) {
+        const _ppAmtX = parseFloat((_ppMx[2]||'0').replace(/,/g,''));
+        const _ppNumX = (_ppMx[3]||'').toUpperCase();
+        if (_ppNumX.startsWith('J-') && _ppAmtX > 0) {
+          const _ppJobX = dbGetOne('SELECT id,job_number,client_name,invoice_amount,paid_amount FROM jobs WHERE UPPER(job_number)=? LIMIT 1', _ppNumX) as any;
+          if (_ppJobX) {
+            const _ppNewX = (_ppJobX.paid_amount||0) + _ppAmtX;
+            const _ppStX = _ppNewX >= (_ppJobX.invoice_amount||_ppAmtX) ? 'paid' : 'invoiced';
+            dbRun('UPDATE jobs SET paid_amount=?,status=?,updated_at=? WHERE id=?', _ppNewX, _ppStX, new Date().toISOString(), _ppJobX.id);
+            const _ppOwdX = Math.max(0, (_ppJobX.invoice_amount||0) - _ppNewX);
+            sendReply('\uD83D\uDCB5 $' + _ppAmtX.toFixed(2) + ' from **' + _ppJobX.client_name + '** on ' + _ppNumX + (_ppOwdX > 0 ? '\n  Still owed: $' + _ppOwdX.toFixed(2) : '\n  \u2705 Fully paid!'));
+            return;
+          }
+        }
+      }
+    }
+
     if (/^customer(?: just)? paid$/.test(lowerText) || lowerText === 'payment received') {
       sendReply('How much? Say "customer paid $X" or "I got paid $X" to log it.');
       return;
@@ -2735,7 +2756,20 @@ self.addEventListener('fetch', (event) => {
       return;
     }
 
-    const completedGoalsMatch = /^(?:show|list|how many)(?: my)?(?: completed?| achieved?| done| finished)(?: goals?)?/.test(lowerText)
+    // ── Completed jobs this year ────────────────────────────────────────────
+    if (/^show(?: all)?(?: my)? completed(?: jobs?)?(?: this year)?$/.test(lowerText)
+        || lowerText === 'completed jobs this year' || lowerText === 'jobs completed this year') {
+      const _cjYr = new Date().getFullYear().toString();
+      const _cjR = dbGet("SELECT job_number,client_name,title,paid_amount,invoice_amount,bid_amount,status FROM jobs WHERE status IN ('complete','invoiced','paid') AND strftime('%Y',COALESCE(completed_date,updated_at))=? ORDER BY updated_at DESC", _cjYr) as any[];
+      if (!_cjR.length) { sendReply('No completed jobs this year yet.'); return; }
+      const _cjRev = _cjR.reduce((s: number,j: any)=>s+(j.paid_amount||j.invoice_amount||j.bid_amount||0), 0);
+      const _cjLines = ['**Completed jobs '+_cjYr+' ('+_cjR.length+') \u2014 $'+_cjRev.toFixed(0)+' total**',''];
+      for (const j of _cjR) _cjLines.push('  '+j.job_number+' ['+j.status+'] '+j.client_name+': '+j.title.slice(0,28)+' ($'+(j.paid_amount||j.invoice_amount||j.bid_amount||0).toFixed(0)+')');
+      sendReply(_cjLines.join('\n')); return;
+    }
+
+    const completedGoalsMatch = /^(?:show|list|how many)(?: my)?(?: completed?| achieved?| done| finished)(?: goals?)?$/.test(lowerText)
+                              || /^(?:show|list|how many)(?: my)?(?: completed?| achieved?| done| finished) goals?/.test(lowerText)
                               || /^how many goals? (?:have i|did i)(?: hit| achieve| complete| finish)?/.test(lowerText)
                               || lowerText === "goals achieved" || lowerText === "completed goals";
     if (completedGoalsMatch) {
@@ -4009,6 +4043,22 @@ self.addEventListener('fetch', (event) => {
       sendReply(_isLines.join('\n')); return;
     }
 
+    // ── Aging report (outstanding invoices by age) ─────────────────────────
+    if (/^(?:who has|show|list)(?: (?:me|all))?(?: clients? with)? outstanding invoices?(?: over| older than)? (?:\d+ days?|30 days?|60 days?|90 days?)|aging report|invoice aging/.test(lowerText)) {
+      const _days = (lowerText.match(/(\d+)\s*days?/) || ['','30'])[1];
+      const _arRows = dbGet("SELECT client_name,job_number,invoice_amount,paid_amount,invoiced_date FROM jobs WHERE status='invoiced' AND invoiced_date < date('now','-' || ? || ' days') ORDER BY invoiced_date ASC", _days) as any[];
+      if (!_arRows.length) { sendReply('No invoices outstanding more than ' + _days + ' days. Great!'); return; }
+      const _arTotal = _arRows.reduce((s: number,j: any) => s+(j.invoice_amount-j.paid_amount), 0);
+      const _arLines = ['**Invoices outstanding 30+ days — $' + _arTotal.toFixed(2) + '**', ''];
+      for (const j of _arRows) {
+        const _age = Math.floor((Date.now()-new Date(j.invoiced_date).getTime())/86400000);
+        const _owe = j.invoice_amount - j.paid_amount;
+        _arLines.push('  ' + j.client_name + ' — ' + j.job_number + ' — $' + _owe.toFixed(2) + ' (' + _age + ' days old)');
+      }
+      _arLines.push('', 'Say "follow up with ' + _arRows[0].client_name.split(' ')[0] + '" or "text ' + _arRows[0].client_name.split(' ')[0] + ': invoice reminder"');
+      sendReply(_arLines.join('\n')); return;
+    }
+
     // ── Jobs needing invoice ──────────────────────────────────────────────────
     const _needsInvM = /^(?:what(?:'s| (?:jobs?|work))? (?:need|needs?)(?: to be| to get)? (?:invoic|bill)|what(?:'s| is) (?:ready to|needs to) (?:be invoic|be bill)|(?:show|list)(?: me)?(?: (?:all|the))? (?:uninvoic|unbill)|what(?:'s| do i need to) bill|jobs? (?:ready to invoice|to bill|needing invoic)|any jobs? (?:overdue|ready) for invoic|(?:uninvoiced|unbilled) complete)/.test(lowerText)
                      || lowerText === 'what needs billing' || lowerText === 'what needs invoicing' || lowerText === 'ready to invoice' || lowerText === 'uninvoiced jobs' || lowerText === 'not yet invoiced';
@@ -4649,8 +4699,10 @@ self.addEventListener('fetch', (event) => {
     // ── Show all transactions this month ────────────────────────────────────
     // ── "average job size" / "avg revenue per job" — local SQL ─────────────────
     // ── Job profit / detail lookup ────────────────────────────────────────────
-    const _jobDetailM = lowerText.match(/^(?:profit(?: on)?|cost(?: of)?|details?(?: on| for)?|info(?: on| for)?|show)(?: job)?\s+([J|j]-\d+)$/i)
-                     || (lowerText.match(/^(?:what(?:'s| is)(?: the)? profit|how much(?: did i)? make|how much profit)(?: on| from| for)?\s+([J|j]-\d+)/i));
+    const _jobDetailM = lowerText.match(/^(?:profit(?: on)?|cost(?: of)?|details?(?: on| for)?|info(?: on| for)?|show|view|open)(?: job)?\s+([j]-\d{4,6})$/i)
+                     || lowerText.match(/^(?:what(?:'s| is)(?: the)? profit|how much(?: did i)? make|how much profit|labor cost|work log|work logged|hours logged)(?: on| from| for)?\s+([j]-\d{4,6})/i)
+                     || lowerText.match(/^([j]-\d{4,6})(?:'s)? (?:details?|info|breakdown|work log|labor|hours|profit|cost)$/i)
+                     || lowerText.match(/^(?:show|list|what)(?: all)? work (?:logged|done) (?:on|for) ([j]-\d{4,6})/i);
     if (_jobDetailM) {
       const _jdNum = (_jobDetailM[1]||_jobDetailM[2]||'').toUpperCase();
       const _jdJob = dbGetOne("SELECT * FROM jobs WHERE UPPER(job_number)=? LIMIT 1", _jdNum) as any;
