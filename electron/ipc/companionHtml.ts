@@ -73,6 +73,8 @@ html,body{width:100%;height:100%;height:100dvh;background:#000;overflow:hidden;f
 .msg.h .bubble{background:rgba(255,255,255,.12);color:#fff;border-bottom-left-radius:4px}
 .msg time{font-size:10px;color:rgba(255,255,255,.3);padding:0 3px}
 
+#mic-btn{background:none;border:none;color:rgba(255,255,255,.6);cursor:pointer;padding:6px;flex-shrink:0;border-radius:10px;transition:all .2s;display:flex;align-items:center;justify-content:center}
+#mic-btn.active{color:#f87171;background:rgba(248,113,113,.15);animation:pulse 1s infinite}
 #input-row{
   display:flex;align-items:flex-end;gap:8px;
   padding:8px 12px 10px;
@@ -161,7 +163,15 @@ html,body{width:100%;height:100%;height:100dvh;background:#000;overflow:hidden;f
 <div id="chat-wrap" class="collapsed">
   <div id="msgs-wrap"></div>
   <div id="input-row">
-    <textarea id="msg-in" rows="1" placeholder="Message Henry…"></textarea>
+    <button id="mic-btn" onclick="toggleMic()" title="Voice input">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" width="20" height="20">
+        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+        <line x1="12" y1="19" x2="12" y2="23"/>
+        <line x1="8" y1="23" x2="16" y2="23"/>
+      </svg>
+    </button>
+    <textarea id="msg-in" rows="1" placeholder="Message Henry… or tap mic"></textarea>
     <button id="send-btn">↑</button>
   </div>
 </div>
@@ -341,6 +351,51 @@ function sendKbKey(key, mod) {
     method:'POST', headers:{'Content-Type':'application/json'},
     body:JSON.stringify({action:'key', key:key, modifiers:mod})
   }).catch(function() {});
+}
+
+// ── Voice recognition ──────────────────────────────────────────────────────
+var _sr = null;
+var _micActive = false;
+function toggleMic() {
+  if (_micActive) { stopMic(); return; }
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) {
+    // Fallback: tell user to type
+    var inp = document.getElementById('msg-in');
+    if (inp) inp.placeholder = 'Voice not supported in this browser. Type below.';
+    return;
+  }
+  _sr = new SR();
+  _sr.lang = 'en-US';
+  _sr.continuous = false;
+  _sr.interimResults = true;
+  _sr.maxAlternatives = 1;
+  _micActive = true;
+  var btn = document.getElementById('mic-btn');
+  if (btn) btn.classList.add('active');
+  var inp = document.getElementById('msg-in');
+  if (inp) inp.placeholder = 'Listening…';
+  _sr.onresult = function(e) {
+    var interim = '';
+    var final = '';
+    for (var i = e.resultIndex; i < e.results.length; i++) {
+      if (e.results[i].isFinal) final += e.results[i][0].transcript;
+      else interim += e.results[i][0].transcript;
+    }
+    if (inp) inp.value = final || interim;
+    if (final) { stopMic(); setTimeout(sendMsg, 80); }
+  };
+  _sr.onerror = function(e) { stopMic(); if (e.error !== 'no-speech') alert('Mic error: ' + e.error); };
+  _sr.onend = function() { stopMic(); };
+  _sr.start();
+}
+function stopMic() {
+  _micActive = false;
+  if (_sr) { try { _sr.stop(); } catch {} _sr = null; }
+  var btn = document.getElementById('mic-btn');
+  if (btn) btn.classList.remove('active');
+  var inp = document.getElementById('msg-in');
+  if (inp && inp.placeholder.includes('Listening')) inp.placeholder = 'Message Henry… or tap mic';
 }
 
 function sendMsg() {

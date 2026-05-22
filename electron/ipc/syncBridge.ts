@@ -1886,7 +1886,13 @@ self.addEventListener('fetch', (event) => {
       if (/^(?:are you happy|how are you performing|how(?:'s| is) henry doing|how (?:well|good) are you|your performance|how do you feel|do you enjoy|what do you think of yourself)/.test(lowerText)) {
         return "Honestly? I'm sharpest on maker business math, habits, and code execution — that's where I have real data. Weakest spot right now: habit_logs only has 1 entry, so streaks are meaningless. The more you log daily, the better I get. I'm built for Topher's world specifically — that specificity is the whole point.";
       }
-      if (/^(?:what would make you smarter|how can you improve|what do you need to improve|how could you be better|your weaknesses|what(?:'s| is) missing from you|what are you missing)/.test(lowerText)) {
+      // ── Explain the setup / what Henry does ───────────────────────────────────
+    if (/^(?:what is henry'?s? setup|what does the setup do|what is the setup stuff|explain.*setup|henry setup|what are you connected to|what.*connection|how.*setup.*work|what providers|what is iron gateway|explain iron gateway)/.test(lowerText)) {
+      sendReply('**Henry\'s Setup — what it is:**\n\n**Iron Gateway** is Henry\'s AI engine. It connects to multiple AI providers so Henry always has a brain:\n\n• **Groq** (free, fast) — you already have a key, this is what Henry uses now\n• **Gemini** — Google\'s AI, very capable, has a free tier\n• **Ollama** — runs AI *locally* on your Mac or TheVault, completely private\n\nThe setup panels let you connect these. You don\'t need all of them — Groq is enough. But Ollama would let Henry work offline using your own hardware.\n\n**Right now:**\n• Groq ✅ connected and working\n• Ollama ❌ not running (say "start ollama" to fix)\n• Screen Recording ❌ needs toggle in System Settings\n• Accessibility ❌ needs toggle in System Settings\n• Mic — should work (tap the mic button in the chat bar)\n\nSay "fix screen recording", "fix accessibility", or "start ollama" and I\'ll open the right place.');
+      return;
+    }
+
+    if (/^(?:what would make you smarter|how can you improve|what do you need to improve|how could you be better|your weaknesses|what(?:'s| is) missing from you|what are you missing)/.test(lowerText)) {
         return "Three things: (1) More habit data — I only have a few log entries so streaks mean nothing yet. Log daily for a week and I can really advise you. (2) Tag your transactions by client name so I can show per-client revenue, not just totals. (3) Use me before decisions, not after — I reason better with context.";
       }
       if (/^(?:how does(?: henry'?s?)? iron gateway|explain iron gateway|what is iron gateway|iron gateway explained|how does.*ai.*work|what providers|which providers|what ai providers)/.test(lowerText)) {
@@ -2144,6 +2150,47 @@ self.addEventListener('fetch', (event) => {
           resolvedText = action2 + ':\n\n```\n' + clipTxt.slice(0, 6000) + '\n```';
         }
       } catch { /* fall through to AI */ }
+    }
+
+    // ── Ollama start / fix ────────────────────────────────────────────────────
+    const _ollamaCmd = lowerText.match(/^(?:start|fix|launch|run|open)(?: up)? ollama$/i)
+                    || lowerText === 'ollama' || lowerText === 'ollama status' || lowerText === 'is ollama running';
+    if (_ollamaCmd) {
+      try {
+        const { execSync: _olEx } = await import('child_process') as typeof import('child_process');
+        const _olRunning = (() => { try { _olEx('curl -s --max-time 1 http://127.0.0.1:11434/', {timeout:2000}); return true; } catch { return false; } })();
+        if (_olRunning) { sendReply('Ollama is already running at http://127.0.0.1:11434. Henry can use it now.'); return; }
+        const _vault = '/Volumes/TheVault/Ollama';
+        const _vaultOk = (() => { try { require('fs').readdirSync(_vault); return true; } catch { return false; } })();
+        const _launchEnv = _vaultOk ? 'OLLAMA_MODELS=\''+_vault+'\' ' : '';
+        _olEx(_launchEnv + 'open -a Ollama', { timeout: 4000, shell: '/bin/bash' });
+        sendReply(_vaultOk
+          ? 'Ollama started \u2014 using models from TheVault.\n  Path: ' + _vault + '\n  URL: http://127.0.0.1:11434\n\nGive it ~15 seconds to load, then say "ollama status" to confirm.'
+          : 'Ollama started (TheVault not mounted \u2014 using default model path). Give it ~15 seconds.');
+      } catch(e) { sendReply('Could not start Ollama: ' + String(e).slice(0,100) + '\n\nCheck that /Applications/Ollama.app exists.'); }
+      return;
+    }
+
+    // ── Permission fixes ──────────────────────────────────────────────────────
+    const _permFix = lowerText.match(/^(?:fix|grant|enable|allow|open)(?: the?)? (screen ?recording|screen ?capture|accessibility|permissions?|micro?phone?)(?: (?:permission|access|setting)s?)?$/i);
+    if (_permFix) {
+      const { execSync: _pfEx } = await import('child_process') as typeof import('child_process');
+      const _pt = (_permFix[1]||'').toLowerCase();
+      let _purl = '';
+      let _pmsg = '';
+      if (_pt.includes('screen')) {
+        _purl = 'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture';
+        _pmsg = 'Opening Screen Recording in System Settings\u2026\n\n1. Find **Henry AI** in the list\n2. Toggle it **ON**\n3. Quit Henry (\u2318Q) then reopen it\n\nAfter that, your phone companion will show your Mac screen.';
+      } else if (_pt.includes('access')) {
+        _purl = 'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility';
+        _pmsg = 'Opening Accessibility in System Settings\u2026\n\n1. Find **Henry AI** in the list\n2. Toggle it **ON**\n\nThis lets Henry click and type on your Mac from your phone.';
+      } else {
+        _purl = 'x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone';
+        _pmsg = 'Opening Microphone in System Settings\u2026\n\n1. Find **Henry AI** in the list\n2. Toggle it **ON**\n\nThe mic button will then work for voice commands.';
+      }
+      try { _pfEx('open "' + _purl + '"', { timeout: 3000, shell: '/bin/bash' }); } catch {}
+      sendReply(_pmsg);
+      return;
     }
 
     // ── Companion phone setup / pairing ──────────────────────────────────────
@@ -4445,6 +4492,33 @@ self.addEventListener('fetch', (event) => {
         sendReply('🧠 Saved: "' + _rfact + '" _(category: ' + _rcat + ')_');
       }
       return;
+    }
+
+    // ── Notepad (scratchpad) ─────────────────────────────────────────────────
+    const _notepadM = lowerText === 'notepad' || lowerText === 'open notepad' || lowerText === 'show notepad' || lowerText === 'my notes' || lowerText === 'show my notes' || lowerText === 'scratchpad';
+    if (_notepadM) {
+      const _npNotes = dbGet("SELECT fact, created_at FROM memory_facts WHERE category='notepad' ORDER BY created_at DESC LIMIT 25") as any[];
+      if (!_npNotes.length) { sendReply('Notepad is empty.\n\nAdd a note: "notepad: [text]" or "jot: [text]"'); return; }
+      const _npl = ['**Notepad (' + _npNotes.length + ' notes)**', ''];
+      for (const n of _npNotes) {
+        const _nd = new Date(n.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+        _npl.push('\u2022 ' + n.fact + ' _(' + _nd + ')_');
+      }
+      _npl.push('', 'Add: "notepad: [text]" \u2014 Clear: "clear notepad"');
+      sendReply(_npl.join('\n')); return;
+    }
+    const _notepadAddM = !lowerText.match(/^note(?:s)?(?: on| for| to| about| added)/i) && lowerText.match(/^(?:notepad|jot(?:ting)?|scratch(?:pad)?|write (?:this )?down)[:\s]+(.+)/i);
+    if (_notepadAddM) {
+      const _npaText = (Array.isArray(_notepadAddM) ? _notepadAddM[1] : '').trim();
+      if (_npaText.length > 1) {
+        dbRun("INSERT INTO memory_facts (id,conversation_id,fact,category,importance,created_at) VALUES (?,?,?,?,?,?)",
+          Date.now().toString(36)+Math.random().toString(36).slice(2), null, _npaText, 'notepad', 3, new Date().toISOString());
+        sendReply('\uD83D\uDCDD Notepad: "' + _npaText + '"'); return;
+      }
+    }
+    if (lowerText === 'clear notepad' || lowerText === 'clear my notes' || lowerText === 'wipe notepad') {
+      dbRun("UPDATE memory_facts SET category='archived' WHERE category='notepad'");
+      sendReply('Notepad cleared.'); return;
     }
 
     // ── Quick note ────────────────────────────────────────────────────────────

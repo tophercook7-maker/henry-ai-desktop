@@ -249,6 +249,28 @@ export function registerScriptureHandlers(db: Database.Database, getWindow?: Win
     return { imported, errors, books: target.length };
   });
 
+  // ── Get full chapter ────────────────────────────────────────────────────────
+  ipcMain.handle('scripture:getChapter', async (_event, book: string, chapter: number) => {
+    try {
+      const rows = db.prepare(
+        `SELECT book, chapter, verse_start as verse, text FROM scripture_entries
+         WHERE book = ? AND chapter = ? ORDER BY verse_start ASC`
+      ).all(book, chapter) as { book: string; chapter: number; verse: number; text: string }[];
+      return rows;
+    } catch { return []; }
+  });
+
+  // ── Keyword search across all verses ────────────────────────────────────────
+  ipcMain.handle('scripture:searchKeyword', async (_event, query: string, limit = 20) => {
+    try {
+      const rows = db.prepare(
+        `SELECT book, chapter, verse_start as verse, text FROM scripture_entries
+         WHERE LOWER(text) LIKE ? ORDER BY book, chapter, verse_start LIMIT ?`
+      ).all('%' + query.toLowerCase() + '%', limit) as { book: string; chapter: number; verse: number; text: string }[];
+      return rows;
+    } catch { return []; }
+  });
+
   ipcMain.handle('scripture:count', async () => {
     const row = db.prepare(`SELECT COUNT(*) AS c FROM scripture_entries`).get() as { c: number };
     return row.c;

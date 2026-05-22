@@ -3,7 +3,7 @@
  * Look up passages, save verses, add study notes, study with Henry
  * Saved verses persist to SQLite (scripture_entries + saved_verses tables)
  */
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { sendToHenry } from '../../actions/store/chatBridgeStore';
 import { useStore } from '../../store';
 import { getCrossRefs } from '../../henry/crossReferences';
@@ -11,7 +11,7 @@ import { callHenryAI, NoBackendAvailableError } from '../../henry/henryAI';
 
 const getApi = () => (window as any).henryAPI as any;
 
-type Tab = 'lookup' | 'saved' | 'study' | 'import';
+type Tab = 'read' | 'lookup' | 'saved' | 'study' | 'import';
 
 interface VerseResult {
   found: boolean;
@@ -89,9 +89,340 @@ async function henryStudy(passage: string, text: string, prompt: string, mode: S
   }
 }
 
+
+// ── ReadTab: Browse Bible by Book → Chapter → Read ────────────────────────────
+const ALL_BOOKS_IN_ORDER = [
+  // OT
+  'Genesis','Exodus','Leviticus','Numbers','Deuteronomy','Joshua','Judges','Ruth',
+  '1 Samuel','2 Samuel','1 Kings','2 Kings','1 Chronicles','2 Chronicles',
+  'Ezra','Nehemiah','Esther','Job','Psalms','Proverbs','Ecclesiastes',
+  'Song of Solomon','Isaiah','Jeremiah','Lamentations','Ezekiel','Daniel',
+  'Hosea','Joel','Amos','Obadiah','Jonah','Micah','Nahum','Habakkuk',
+  'Zephaniah','Haggai','Zechariah','Malachi',
+  // NT
+  'Matthew','Mark','Luke','John','Acts',
+  'Romans','1 Corinthians','2 Corinthians','Galatians','Ephesians',
+  'Philippians','Colossians','1 Thessalonians','2 Thessalonians',
+  '1 Timothy','2 Timothy','Titus','Philemon','Hebrews',
+  'James','1 Peter','2 Peter','1 John','2 John','3 John','Jude','Revelation',
+];
+
+const CHAPTER_COUNTS: Record<string,number> = {
+  Genesis:50,Exodus:40,Leviticus:27,Numbers:36,Deuteronomy:34,Joshua:24,Judges:21,Ruth:4,
+  '1 Samuel':31,'2 Samuel':24,'1 Kings':22,'2 Kings':25,'1 Chronicles':29,'2 Chronicles':36,
+  Ezra:10,Nehemiah:13,Esther:10,Job:42,Psalms:150,Proverbs:31,Ecclesiastes:12,
+  'Song of Solomon':8,Isaiah:66,Jeremiah:52,Lamentations:5,Ezekiel:48,Daniel:12,
+  Hosea:14,Joel:3,Amos:9,Obadiah:1,Jonah:4,Micah:7,Nahum:3,Habakkuk:3,
+  Zephaniah:3,Haggai:2,Zechariah:14,Malachi:4,
+  Matthew:28,Mark:16,Luke:24,John:21,Acts:28,Romans:16,
+  '1 Corinthians':16,'2 Corinthians':13,Galatians:6,Ephesians:6,
+  Philippians:4,Colossians:4,'1 Thessalonians':5,'2 Thessalonians':3,
+  '1 Timothy':6,'2 Timothy':4,Titus:3,Philemon:1,Hebrews:13,
+  James:5,'1 Peter':5,'2 Peter':3,'1 John':5,'2 John':1,'3 John':1,Jude:1,Revelation:22,
+};
+
+const POPULAR_PASSAGES = [
+  {ref:'Psalm 23',  label:'The Lord is My Shepherd'},
+  {ref:'John 3:1-21',label:'Born Again'},
+  {ref:'Isaiah 40', label:'Those Who Wait on the Lord'},
+  {ref:'Romans 8',  label:'Life in the Spirit'},
+  {ref:'Matthew 5-7',label:'Sermon on the Mount'},
+  {ref:'John 1',    label:'The Word Made Flesh'},
+  {ref:'Psalm 91',  label:'Dwelling in His Shelter'},
+  {ref:'Philippians 4',label:'Rejoice Always'},
+  {ref:'Proverbs 3',label:'Trust in the Lord'},
+  {ref:'Revelation 21',label:'New Heaven & Earth'},
+];
+
+interface ReadTabProps {
+  count: number;
+  downloading: boolean;
+  downloadProgress: string;
+  onDownload: () => void;
+  onLookup: (ref: string) => void;
+  onStudy: (ref: string, text: string) => void;
+  onDownloadImport: () => void;
+}
+
+function ReadTab({ count, downloading, downloadProgress, onDownload, onLookup, onStudy, onDownloadImport }: ReadTabProps) {
+  const [book, setBook] = React.useState<string>(() => localStorage.getItem('henry:bible:book') || '');
+  const [chapter, setChapter] = React.useState<number>(() => parseInt(localStorage.getItem('henry:bible:ch') || '1'));
+  const [verses, setVerses] = React.useState<{book:string;chapter:number;verse:number;text:string}[]>([]);
+  const [loading, setLoading] = React.useState(false);
+  const [highlighted, setHighlighted] = React.useState<number|null>(null);
+  const [bookSearch, setBookSearch] = React.useState('');
+  const [showBookList, setShowBookList] = React.useState(!book);
+  const inp2 = "bg-henry-surface border border-henry-border/30 rounded-xl px-3 py-2 text-sm text-henry-text placeholder:text-henry-text-muted outline-none focus:border-henry-accent/50 transition-all";
+
+  React.useEffect(() => {
+    if (book) loadChapter(book, chapter);
+  }, []);
+
+  async function loadChapter(b: string, ch: number) {
+    setLoading(true); setVerses([]);
+    try {
+      const api2 = (window as any).henryAPI;
+      const result = await api2?.scriptureGetChapter?.(b, ch);
+      if (result && result.length > 0) {
+        setVerses(result);
+        setBook(b); setChapter(ch);
+        try {
+          localStorage.setItem('henry:bible:book', b);
+          localStorage.setItem('henry:bible:ch', String(ch));
+        } catch {}
+        setShowBookList(false);
+      } else {
+        setVerses([]);
+      }
+    } catch { setVerses([]); }
+    setLoading(false);
+  }
+
+  const chCount = book ? (CHAPTER_COUNTS[book] || 1) : 1;
+  const filteredBooks = bookSearch
+    ? ALL_BOOKS_IN_ORDER.filter(b => b.toLowerCase().includes(bookSearch.toLowerCase()))
+    : ALL_BOOKS_IN_ORDER;
+
+  // Group books for display
+  const OT_count = 39;
+  const isOT = (b: string) => ALL_BOOKS_IN_ORDER.indexOf(b) < OT_count;
+
+  if (count === 0 && !downloading) {
+    return (
+      <div className="flex-1 overflow-y-auto px-6 py-8 flex flex-col items-center">
+        <div className="max-w-md w-full space-y-6 text-center">
+          <div>
+            <div className="text-5xl mb-4">✝</div>
+            <h2 className="text-xl font-bold text-henry-text mb-2">Welcome to Bible Study</h2>
+            <p className="text-henry-text-muted text-sm leading-relaxed">
+              Download the complete King James Bible once — free, instant, offline forever.
+              Then read any chapter, look up any verse, study with Henry, build sermon outlines, and save your favorites.
+            </p>
+          </div>
+
+          <div className="bg-henry-accent/8 border border-henry-accent/25 rounded-2xl p-6 space-y-4">
+            <p className="text-henry-text font-semibold">📖 King James Version</p>
+            <p className="text-henry-text-muted text-xs">66 books · 1,189 chapters · 31,102 verses · Free public domain text</p>
+            <button
+              onClick={onDownload}
+              disabled={downloading}
+              className="w-full py-3.5 bg-henry-accent text-white font-bold rounded-xl text-base hover:bg-henry-accent/80 transition-all shadow-lg"
+            >
+              ⬇ Download KJV — Free
+            </button>
+            <p className="text-henry-text-muted text-xs">Takes about 30 seconds on WiFi</p>
+          </div>
+
+          <div className="text-left space-y-3">
+            <p className="text-[11px] uppercase tracking-wider text-henry-text-muted font-semibold">After downloading you can:</p>
+            {[
+              ['📖', 'Read any chapter of any book'],
+              ['🔍', 'Look up any verse by reference (John 3:16)'],
+              ['💾', 'Save and annotate your favorite verses'],
+              ['🎓', 'Study passages with Henry — context, meaning, application'],
+              ['✝', 'Build full sermon outlines from any text'],
+              ['🔎', 'Search all 31,000 verses by keyword'],
+            ].map(([icon, text]) => (
+              <div key={text as string} className="flex items-center gap-3">
+                <span className="text-base w-6">{icon}</span>
+                <p className="text-sm text-henry-text-muted">{text as string}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (downloading) {
+    return (
+      <div className="flex-1 flex items-center justify-center px-6">
+        <div className="text-center space-y-4">
+          <div className="text-4xl animate-pulse">📖</div>
+          <p className="text-henry-accent font-semibold">{downloadProgress || 'Downloading...'}</p>
+          <p className="text-henry-text-muted text-xs">This only happens once. Henry stores the Bible locally on your Mac.</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 flex overflow-hidden">
+      {/* Book/Chapter sidebar */}
+      {showBookList ? (
+        <div className="w-full overflow-y-auto px-4 py-4 space-y-3">
+          <input
+            value={bookSearch}
+            onChange={e => setBookSearch(e.target.value)}
+            placeholder="Search books…"
+            className={inp2 + ' w-full'}
+          />
+
+          {/* Popular passages */}
+          {!bookSearch && (
+            <div className="space-y-2">
+              <p className="text-[10px] uppercase tracking-wider text-henry-text-muted font-semibold">Popular passages</p>
+              <div className="grid grid-cols-2 gap-1.5">
+                {POPULAR_PASSAGES.map(p => (
+                  <button
+                    key={p.ref}
+                    onClick={() => onLookup(p.ref)}
+                    className="text-left p-2.5 rounded-xl bg-henry-surface border border-henry-border/20 hover:border-henry-accent/40 transition-all"
+                  >
+                    <p className="text-[11px] font-semibold text-henry-accent">{p.ref}</p>
+                    <p className="text-[10px] text-henry-text-muted mt-0.5 leading-tight">{p.label}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* OT */}
+          {(!bookSearch || filteredBooks.some(b => isOT(b))) && (
+            <div className="space-y-1">
+              <p className="text-[10px] uppercase tracking-wider text-henry-text-muted font-semibold">Old Testament</p>
+              <div className="flex flex-wrap gap-1">
+                {filteredBooks.filter(b => isOT(b)).map(b => (
+                  <button
+                    key={b}
+                    onClick={() => loadChapter(b, 1)}
+                    className="text-[11px] px-2 py-1 rounded-lg bg-henry-surface border border-henry-border/20 text-henry-text-muted hover:text-henry-accent hover:border-henry-accent/40 transition-all"
+                  >
+                    {b}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* NT */}
+          {(!bookSearch || filteredBooks.some(b => !isOT(b))) && (
+            <div className="space-y-1">
+              <p className="text-[10px] uppercase tracking-wider text-henry-text-muted font-semibold">New Testament</p>
+              <div className="flex flex-wrap gap-1">
+                {filteredBooks.filter(b => !isOT(b)).map(b => (
+                  <button
+                    key={b}
+                    onClick={() => loadChapter(b, 1)}
+                    className="text-[11px] px-2 py-1 rounded-lg bg-henry-surface border border-henry-border/20 text-henry-text-muted hover:text-henry-accent hover:border-henry-accent/40 transition-all"
+                  >
+                    {b}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Chapter header */}
+          <div className="px-5 py-3 border-b border-henry-border/15 flex items-center gap-3 flex-shrink-0">
+            <button
+              onClick={() => setShowBookList(true)}
+              className="text-henry-text-muted hover:text-henry-accent text-xs font-medium transition-all flex items-center gap-1"
+            >
+              ← Books
+            </button>
+            <div className="flex-1 flex items-center gap-2">
+              <span className="font-bold text-henry-text">{book}</span>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => chapter > 1 && loadChapter(book, chapter - 1)}
+                  disabled={chapter <= 1}
+                  className="w-6 h-6 rounded-lg bg-henry-surface text-henry-text-muted hover:text-henry-text disabled:opacity-30 text-sm flex items-center justify-center"
+                >‹</button>
+                <select
+                  value={chapter}
+                  onChange={e => loadChapter(book, parseInt(e.target.value))}
+                  className="bg-henry-surface border border-henry-border/30 rounded-lg px-2 py-1 text-xs text-henry-text outline-none"
+                >
+                  {Array.from({length: chCount}, (_, i) => i+1).map(n => (
+                    <option key={n} value={n}>Ch. {n}</option>
+                  ))}
+                </select>
+                <button
+                  onClick={() => chapter < chCount && loadChapter(book, chapter + 1)}
+                  disabled={chapter >= chCount}
+                  className="w-6 h-6 rounded-lg bg-henry-surface text-henry-text-muted hover:text-henry-text disabled:opacity-30 text-sm flex items-center justify-center"
+                >›</button>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                const text = verses.map(v => v.verse + ' ' + v.text).join(' ');
+                onStudy(book + ' ' + chapter, text);
+              }}
+              disabled={verses.length === 0}
+              className="text-[11px] px-3 py-1.5 rounded-xl bg-henry-accent/10 border border-henry-accent/30 text-henry-accent hover:bg-henry-accent/20 transition-all"
+            >
+              Study →
+            </button>
+          </div>
+
+          {/* Verses */}
+          <div className="flex-1 overflow-y-auto px-5 py-4">
+            {loading ? (
+              <div className="flex items-center justify-center h-32">
+                <p className="text-henry-text-muted text-sm animate-pulse">Loading {book} {chapter}…</p>
+              </div>
+            ) : verses.length === 0 ? (
+              <div className="flex items-center justify-center h-32">
+                <div className="text-center">
+                  <p className="text-henry-text-muted text-sm">No verses found.</p>
+                  <p className="text-henry-text-muted text-xs mt-1">The Bible may not be downloaded yet.</p>
+                  <button onClick={onDownloadImport} className="mt-3 text-xs text-henry-accent hover:underline">Download KJV →</button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-0.5">
+                <p className="text-[10px] uppercase tracking-wider text-henry-text-muted mb-4 font-semibold">
+                  {book} {chapter} · King James Version
+                </p>
+                {verses.map(v => (
+                  <div
+                    key={v.verse}
+                    onClick={() => setHighlighted(highlighted === v.verse ? null : v.verse)}
+                    className={`flex gap-3 py-1.5 px-2 rounded-lg cursor-pointer group transition-all ${
+                      highlighted === v.verse
+                        ? 'bg-henry-accent/15 border border-henry-accent/20'
+                        : 'hover:bg-henry-surface/50'
+                    }`}
+                  >
+                    <span className="text-[11px] text-henry-accent font-bold w-6 flex-shrink-0 pt-0.5">{v.verse}</span>
+                    <p className="text-henry-text text-sm leading-relaxed">{v.text}</p>
+                  </div>
+                ))}
+
+                {/* Chapter nav at bottom */}
+                <div className="flex justify-between pt-6">
+                  <button
+                    onClick={() => chapter > 1 && loadChapter(book, chapter - 1)}
+                    disabled={chapter <= 1}
+                    className="text-sm text-henry-text-muted hover:text-henry-text disabled:opacity-30 flex items-center gap-1 transition-all"
+                  >
+                    ← {book} {chapter - 1}
+                  </button>
+                  <button
+                    onClick={() => chapter < chCount && loadChapter(book, chapter + 1)}
+                    disabled={chapter >= chCount}
+                    className="text-sm text-henry-text-muted hover:text-henry-text disabled:opacity-30 flex items-center gap-1 transition-all"
+                  >
+                    {book} {chapter + 1} →
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ScripturePanel() {
   const { setCurrentView, providers } = useStore();
-  const [tab, setTab]         = useState<Tab>('lookup');
+  const [tab, setTab]         = useState<Tab>(() => (localStorage.getItem('henry:scripture:tab') as Tab) || 'read');
+  const setTabPersisted = (t: Tab) => { setTab(t); try { localStorage.setItem('henry:scripture:tab', t); } catch {} };
   const [downloading, setDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState('');
   const [query, setQuery]     = useState('');
@@ -299,15 +630,29 @@ export default function ScripturePanel() {
         </div>
         {/* Tabs */}
         <div className="flex gap-1 mt-3">
-          {(['lookup','saved','study','import'] as Tab[]).map(t => (
-            <button key={t} onClick={() => setTab(t)}
+          {(['read','lookup','saved','study','import'] as Tab[]).map(t => (
+            <button key={t} onClick={() => setTabPersisted(t)}
               className={'text-[12px] px-3 py-1.5 rounded-lg font-medium transition-all capitalize ' +
                 (tab===t ? 'bg-henry-accent text-white' : 'bg-henry-surface border border-henry-border/30 text-henry-text-muted hover:text-henry-text')}>
-              {t==='lookup'?'Lookup':t==='saved'?`Saved${savedCount>0?' ('+savedCount+')':''}`:t==='study'?(tab==='study' ? <span className='flex items-center gap-1'>Study <button onClick={e=>{e.stopPropagation();setShowReadingPlan(s=>!s)}} className='text-[9px] bg-henry-accent/15 text-henry-accent px-1.5 rounded'>📅</button></span> : 'Study'):'📥 Import'}
+              {t==='read'?'📖 Read':t==='lookup'?'Lookup':t==='saved'?`Saved${savedCount>0?' ('+savedCount+')':''}`:t==='study'?(tab==='study' ? <span className='flex items-center gap-1'>Study <button onClick={e=>{e.stopPropagation();setShowReadingPlan(s=>!s)}} className='text-[9px] bg-henry-accent/15 text-henry-accent px-1.5 rounded'>📅</button></span> : 'Study'):'📥 Import'}
             </button>
           ))}
         </div>
       </div>
+
+
+      {/* ── READ TAB ── Chapter browser ─────────────────────────────────── */}
+      {tab === 'read' && (
+        <ReadTab
+          count={count}
+          downloading={downloading}
+          downloadProgress={downloadProgress}
+          onDownload={() => void downloadKJV()}
+          onLookup={(ref) => { setQuery(ref); setTabPersisted('lookup'); void lookup(ref); }}
+          onStudy={(ref, text) => { setStudyRef(ref); setStudyText(text); setTabPersisted('study'); }}
+          onDownloadImport={() => { setTabPersisted('import'); setTimeout(() => void downloadKJV(), 100); }}
+        />
+      )}
 
       {/* ── LOOKUP TAB ── */}
       {tab === 'lookup' && (
@@ -396,7 +741,7 @@ export default function ScripturePanel() {
                       <button onClick={() => {
                         setStudyText(result.text || '');
                         setStudyRef(result.normalizedReference || '');
-                        setTab('study');
+                        setTabPersisted('study');
                       }} className="flex-1 py-2 rounded-xl bg-henry-surface border border-henry-border/30 text-henry-text-muted text-sm hover:text-henry-text transition-all">
                         Study →
                       </button>
@@ -416,7 +761,7 @@ export default function ScripturePanel() {
                         Henry stores the Bible locally on your Mac for instant offline lookup. Download the King James Version free — 31,000 verses, takes about 30 seconds.
                       </p>
                       <button
-                        onClick={() => { setTab('import'); setTimeout(() => void downloadKJV(), 100); }}
+                        onClick={() => { setTabPersisted('import'); setTimeout(() => void downloadKJV(), 100); }}
                         disabled={downloading}
                         className="w-full py-2.5 rounded-xl bg-henry-accent text-white text-sm font-bold hover:bg-henry-accent/80 transition-all disabled:opacity-40">
                         {downloading ? downloadProgress || 'Downloading…' : '⬇ Download KJV — Free'}
@@ -457,7 +802,7 @@ export default function ScripturePanel() {
                 </div>
                 <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-all flex-shrink-0 ml-2">
                   <button onClick={() => {
-                    setStudyText(v.text); setStudyRef(v.ref); setTab('study');
+                    setStudyText(v.text); setStudyRef(v.ref); setTabPersisted('study');
                   }} className="text-[10px] px-2 py-1 rounded bg-henry-surface2 text-henry-text-muted hover:text-henry-accent">Study</button>
                   <button onClick={() => deleteVerse(v.ref)} className="text-[10px] px-2 py-1 rounded text-henry-text-muted hover:text-red-400">✕</button>
                 </div>
@@ -495,7 +840,7 @@ export default function ScripturePanel() {
                   <div className="flex flex-wrap gap-1 pt-1">
                     {refs.slice(0, 5).map(r => (
                       <button key={r}
-                        onClick={() => { setTab('lookup'); setQuery(r); void lookup(r); }}
+                        onClick={() => { setTabPersisted('lookup'); setQuery(r); void lookup(r); }}
                         className="text-[10px] px-2 py-0.5 rounded-full bg-henry-accent/8 border border-henry-accent/20 text-henry-accent/80 hover:bg-henry-accent/15 transition-all">
                         {r}
                       </button>
@@ -636,7 +981,7 @@ export default function ScripturePanel() {
               return (
                 <div key={day} className="flex items-center gap-2">
                   <span className="text-[10px] text-henry-text-muted w-5">{day}</span>
-                  <button onClick={() => { setQuery(passage); setTab('lookup'); setShowReadingPlan(false); }}
+                  <button onClick={() => { setQuery(passage); setTabPersisted('lookup'); setShowReadingPlan(false); }}
                     className={`text-xs hover:text-henry-accent transition-all ${isToday ? 'text-henry-accent font-bold' : 'text-henry-text-muted'}`}>
                     {isToday && '→ '}{passage}
                   </button>

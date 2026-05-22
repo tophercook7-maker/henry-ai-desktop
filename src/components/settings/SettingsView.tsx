@@ -284,26 +284,18 @@ const PROVIDER_WIZARD: Record<string, {
     ],
   },
   ollama: {
-    tagline: 'Run AI locally on your own computer — completely free, private.',
+    tagline: 'Run AI locally — completely free, private, works offline.',
     cost: 'Free forever (uses your hardware)',
     costColor: 'text-henry-success',
     steps: [
       {
-        title: 'Download & install Ollama',
-        body: 'Ollama is a free app for Mac, Windows, and Linux. Download and install it like any regular application — takes about 2 minutes.',
-        link: { label: 'Download Ollama →', url: 'https://ollama.ai/download' },
+        title: 'Start Ollama',
+        body: 'Ollama is already installed on your Mac. Just say "start ollama" to Henry and it will launch automatically with your models from TheVault. Or click the button below.',
+        link: { label: 'Start Ollama now →', url: 'henry://start-ollama' },
       },
       {
-        title: 'Pull a model',
-        body: 'Open your Terminal (Mac/Linux) or Command Prompt (Windows) and run this command to download a model. llama3 is a great starting point — takes ~5 minutes depending on your internet speed.',
-      },
-      {
-        title: 'Allow browser access',
-        body: 'By default Ollama blocks browser connections. You need to restart Ollama with a special setting. On Mac: open Terminal and run the command below. On Windows: set OLLAMA_ORIGINS=* as a system environment variable and restart Ollama.',
-      },
-      {
-        title: 'Enter your Ollama URL',
-        body: 'Once Ollama is running, enter the URL below (usually left as the default). Then use the model manager beneath to pull and manage your models.',
+        title: 'Enter the Ollama URL',
+        body: 'Ollama runs at http://localhost:11434 by default. Leave this as-is unless you moved it to a different machine.',
       },
     ],
   },
