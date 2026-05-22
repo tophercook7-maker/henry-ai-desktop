@@ -1582,6 +1582,26 @@ self.addEventListener('fetch', (event) => {
       }
     }
 
+    // P1b: Jobs by specific status
+    {
+      const _jStatusM = lowerText.match(/^(?:show|list)(?: my)? (?:all )?(bids?|scheduled|active|in.?progress|complete[d]?|invoiced|paid|cancelled)(?: jobs?)?$/i);
+      if (_jStatusM) {
+        const _raw = _jStatusM[1].toLowerCase().replace(/s$/,'').replace(/-/,'_').replace('in_progress','in_progress').replace('complete','complete').replace('scheduled','scheduled').replace('bid','bid').replace('invoiced','invoiced').replace('paid','paid').replace('active','in_progress').replace('cancelled','cancelled');
+        const _statusMap: Record<string,string> = {bid:'bid',bids:'bid',scheduled:'scheduled',active:'in_progress',in_progress:'in_progress',complete:'complete',completed:'complete',invoiced:'invoiced',paid:'paid',cancelled:'cancelled'};
+        const _sKey = _statusMap[_raw] || _raw;
+        const _sJobs = dbGet("SELECT job_number,client_name,title,bid_amount,invoice_amount,paid_amount,scheduled_date FROM jobs WHERE status=? ORDER BY created_at DESC LIMIT 20", _sKey) as any[];
+        if (!_sJobs.length) { sendReply('No ' + _sKey.replace('_',' ') + ' jobs.'); return; }
+        const _sTotal = _sJobs.reduce((s: number,j: any) => s+(j.paid_amount||j.invoice_amount||j.bid_amount||0), 0);
+        const _sLines = ['**' + _sKey.replace('_',' ').replace(/^./,c=>c.toUpperCase()) + ' jobs (' + _sJobs.length + ') — $' + _sTotal.toFixed(0) + ' total**',''];
+        for (const j of _sJobs) {
+          const _a = j.paid_amount>0?'$'+j.paid_amount.toFixed(0)+' paid':j.invoice_amount>0?'$'+j.invoice_amount.toFixed(0)+' inv':'$'+j.bid_amount.toFixed(0);
+          _sLines.push('  ' + j.job_number + ' — ' + j.client_name + ': ' + j.title.slice(0,32) + ' (' + _a + ')');
+          if (j.scheduled_date) _sLines.push('    📅 ' + j.scheduled_date);
+        }
+        sendReply(_sLines.join('\n')); return;
+      }
+    }
+
     // P1: Jobs table (not personal tasks)
     if (/^(?:show|list|my|all|open|active)(?: my)?(?: open| active| all)? jobs?$/i.test(lowerText) || lowerText === 'jobs') {
       const _pj = dbGet("SELECT job_number,client_name,title,status,bid_amount,invoice_amount,paid_amount FROM jobs WHERE status!='cancelled' ORDER BY created_at DESC LIMIT 25") as any[];
@@ -1631,6 +1651,24 @@ self.addEventListener('fetch', (event) => {
         sendReply(_pbLines.join('\n'));
       } catch(e) { sendReply('Dashboard error: ' + e); }
       return;
+    }
+
+    // P3b: Client-specific outstanding
+    {
+      const _coM = lowerText.match(/^(?:what(?:'s| does)?(?: does)? |how much does |how much is )(\w[\w\s]{1,25}) (?:owe|owes)(?: me)?/i)
+                || lowerText.match(/^(?:outstanding|balance|amount) (?:from|for|owed by) (\w[\w\s]{1,25})/i);
+      if (_coM) {
+        const _coName = (_coM[1]||_coM[2]||'').trim();
+        if (!['who','what','how','when','anyone'].includes(_coName.toLowerCase())) {
+          const _coJobs = dbGet("SELECT job_number,title,invoice_amount,paid_amount FROM jobs WHERE LOWER(client_name) LIKE ? AND status IN ('invoiced','complete') AND invoice_amount>paid_amount",
+            '%' + _coName.split(' ')[0].toLowerCase() + '%') as any[];
+          const _coTotal = _coJobs.reduce((s: number,j: any) => s+(j.invoice_amount-j.paid_amount), 0);
+          if (!_coJobs.length) { sendReply(_coName + ' has no outstanding balance.'); return; }
+          const _coLines = ['**' + _coName + ' owes $' + _coTotal.toFixed(2) + '**',''];
+          for (const j of _coJobs) _coLines.push('  ' + j.job_number + ' — ' + j.title.slice(0,35) + ' ($' + (j.invoice_amount-j.paid_amount).toFixed(2) + ')');
+          sendReply(_coLines.join('\n')); return;
+        }
+      }
     }
 
     // P3: Follow-up scheduling
@@ -2150,6 +2188,26 @@ self.addEventListener('fetch', (event) => {
           resolvedText = action2 + ':\n\n```\n' + clipTxt.slice(0, 6000) + '\n```';
         }
       } catch { /* fall through to AI */ }
+    }
+
+    // ── Set business name ──────────────────────────────────────────────────────
+    const _bizNameSet = lowerText.match(/^(?:my business(?:\s+name)?\s+is|set(?:\s+my)?\s+business(?:\s+name)?(?:\s+to)?|name(?:\s+my)?\s+business)[:\s]+(.+)/i);
+    if (_bizNameSet) {
+      const _newBizName = (_bizNameSet[1]||'').trim();
+      if (_newBizName.length > 1) {
+        dbRun("UPDATE settings SET value=? WHERE key='business_name'", _newBizName);
+        sendReply('Business name set to **' + _newBizName + '**. Your invoices will show this name going forward.');
+        return;
+      }
+    }
+
+    // ── Show business settings ─────────────────────────────────────────────────
+    if (lowerText === 'business info' || lowerText === 'my business info' || lowerText === 'business settings' || lowerText === 'show business info') {
+      const _bizN = (dbGetOne("SELECT value FROM settings WHERE key='business_name'") as any)?.value || 'My Business';
+      const _bizT = (dbGetOne("SELECT value FROM settings WHERE key='business_type'") as any)?.value || 'general';
+      const _bizPay = (dbGetOne("SELECT value FROM settings WHERE key='payment_terms'") as any)?.value || 'Due on receipt';
+      sendReply('**Business Info**\n\nName: ' + _bizN + '\nType: ' + _bizT + '\nPayment terms: ' + _bizPay + '\n\nChange: "my business name is [name]" or "set business type: plumber"');
+      return;
     }
 
     // ── Ollama start / fix ────────────────────────────────────────────────────
@@ -3509,6 +3567,22 @@ self.addEventListener('fetch', (event) => {
       sendReply('Job **' + _cxn + '** cancelled \u2014 ' + _cxjob.client_name + ': ' + _cxjob.title);
       return;
     }
+    // ── Duplicate job ─────────────────────────────────────────────────────────
+    const _dupJobM = lowerText.match(/^(?:duplicate|copy|clone|same job as|another job like|create another job like)[:\s]+([J|j]-\d+)(?:[:\s]+(?:for[:\s]+)?(.+))?/i);
+    if (_dupJobM) {
+      const _djSrc = _dupJobM[1].toUpperCase();
+      const _djClient = (_dupJobM[2]||'').trim();
+      const _djOrig = dbGetOne("SELECT * FROM jobs WHERE UPPER(job_number)=? LIMIT 1", _djSrc) as any;
+      if (!_djOrig) { sendReply('Job ' + _djSrc + ' not found.'); return; }
+      const _djNum = 'J-' + Date.now().toString().slice(-5);
+      const _djId = Date.now().toString(36) + Math.random().toString(36).slice(2);
+      const _djNewClient = _djClient ? _djClient.split(' ').map((w: string) => w.charAt(0).toUpperCase()+w.slice(1).toLowerCase()).join(' ') : _djOrig.client_name;
+      dbRun('INSERT INTO jobs (id,job_number,client_name,title,status,bid_amount,notes,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)',
+        _djId, _djNum, _djNewClient, _djOrig.title, 'bid', _djOrig.bid_amount, _djOrig.notes||null, new Date().toISOString(), new Date().toISOString());
+      sendReply('Job **' + _djNum + '** created — same as ' + _djSrc + '\n' + _djNewClient + ': ' + _djOrig.title + '\nBid: $' + (_djOrig.bid_amount||0).toFixed(2) + '\n\nAdvance it: "schedule ' + _djNum + ' for [date]"');
+      return;
+    }
+
 
     // ── Outstanding ─────────────────────────────────────────────────
     const _oweM = /^(?:show(?: my)?|what.?s|who owes me|outstanding|unpaid|owed)(?: (?:outstanding|balance|money|invoices?))?$/.test(lowerText) || lowerText === 'who owes me';
