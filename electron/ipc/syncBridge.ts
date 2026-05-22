@@ -4185,6 +4185,21 @@ self.addEventListener('fetch', (event) => {
       }
     }
 
+    // ── Cash flow snapshot ────────────────────────────────────────────────────
+    if (/^(?:cash flow|how much (?:cash|money) (?:do i have )?coming in|projected (?:cash|income)|what(?:'s| is)(?: my)? cash flow|money coming in)/.test(lowerText)) {
+      const _cfInvoiced = (dbGetOne("SELECT COALESCE(SUM(invoice_amount-paid_amount),0) as n FROM jobs WHERE status='invoiced'") as any)?.n || 0;
+      const _cfBids = (dbGetOne("SELECT COALESCE(SUM(bid_amount),0) as n FROM jobs WHERE status='bid'") as any)?.n || 0;
+      const _cfSched = (dbGetOne("SELECT COALESCE(SUM(bid_amount),0) as n FROM jobs WHERE status='scheduled'") as any)?.n || 0;
+      const _cfReady = (dbGetOne("SELECT COALESCE(SUM(bid_amount),0) as n FROM jobs WHERE status='complete' AND invoice_sent=0") as any)?.n || 0;
+      sendReply('**Cash Flow Snapshot**\n\n' +
+        '\uD83D\uDCB8 Invoiced (awaiting payment): **$' + _cfInvoiced.toFixed(2) + '**\n' +
+        '\uD83D\uDCCC Ready to invoice: $' + _cfReady.toFixed(2) + '\n' +
+        '\uD83D\uDCC5 Scheduled (upcoming): $' + _cfSched.toFixed(2) + '\n' +
+        '\uD83D\uDCDD Open bids: $' + _cfBids.toFixed(2) + '\n\n' +
+        'Total pipeline: **$' + (_cfInvoiced+_cfReady+_cfSched+_cfBids).toFixed(2) + '**');
+      return;
+    }
+
     const _oweM = /^(?:show(?: my)?|what.?s|who owes me|outstanding|unpaid|owed)(?: (?:outstanding|balance|money|invoices?))?$/.test(lowerText) || lowerText === 'who owes me';
     if (_oweM) {
       const _oj = dbGet("SELECT job_number,client_name,title,invoice_amount,paid_amount,invoiced_date FROM jobs WHERE status IN ('invoiced','complete') AND (invoice_amount-paid_amount)>0 ORDER BY invoiced_date ASC") as any[];
@@ -4699,9 +4714,9 @@ self.addEventListener('fetch', (event) => {
     // ── Show all transactions this month ────────────────────────────────────
     // ── "average job size" / "avg revenue per job" — local SQL ─────────────────
     // ── Job profit / detail lookup ────────────────────────────────────────────
-    const _jobDetailM = lowerText.match(/^(?:profit(?: on)?|cost(?: of)?|details?(?: on| for)?|info(?: on| for)?|show|view|open)(?: job)?\s+([j]-\d{4,6})$/i)
-                     || lowerText.match(/^(?:what(?:'s| is)(?: the)? profit|how much(?: did i)? make|how much profit|labor cost|work log|work logged|hours logged)(?: on| from| for)?\s+([j]-\d{4,6})/i)
-                     || lowerText.match(/^([j]-\d{4,6})(?:'s)? (?:details?|info|breakdown|work log|labor|hours|profit|cost)$/i)
+    const _jobDetailM = lowerText.match(/^(?:profit(?: on)?|cost(?: of)?|details?(?: on| for)?|info(?: on| for)?|show|view|open|margin(?: on)?|breakdown(?: of)?)(?: job)?\s+([j]-\d{4,6})$/i)
+                     || lowerText.match(/^(?:what(?:'s| is)(?: the)? (?:profit|margin|cost|labor cost)|how much(?: did i)? make|how much profit|labor cost|work log|work logged|hours logged|material cost)(?: on| from| for)?\s+([j]-\d{4,6})/i)
+                     || lowerText.match(/^([j]-\d{4,6})(?:'s)? (?:details?|info|breakdown|work log|labor|hours|profit|cost|margin|materials?)$/i)
                      || lowerText.match(/^(?:show|list|what)(?: all)? work (?:logged|done) (?:on|for) ([j]-\d{4,6})/i);
     if (_jobDetailM) {
       const _jdNum = (_jobDetailM[1]||_jobDetailM[2]||'').toUpperCase();
@@ -4757,6 +4772,26 @@ self.addEventListener('fetch', (event) => {
       const _tpMY = _tpYr.reduce((s: number,j: any)=>s+(j.material_cost||0),0);
       sendReply('**Total Profit \u2014 Paid Jobs**\n\n' + _yr + ' (' + _tpYr.length + ' jobs): $' + _tpRY.toFixed(2) + ' revenue \u2014 **$' + (_tpRY-_tpMY).toFixed(2) + ' profit**\nAll time (' + _tpAll.length + ' jobs): $' + _tpRA.toFixed(2) + ' revenue \u2014 **$' + (_tpRA-_tpMA).toFixed(2) + ' profit**');
       return;
+    }
+
+    // ── Average job value for client ─────────────────────────────────────────
+    {
+      const _avgCM = lowerText.match(/^(?:average(?: job)? (?:value|size|amount|price) (?:for|from)|avg (?:job )?(?:for|from)) ([\w][\w\s]{1,25})/i)
+                  || lowerText.match(/^(?:what(?:'s| is)(?: the)? average(?: job)?)(?: I(?:'ve)?| i've)? charged?(?: to| for)? ([\w][\w\s]{1,25})/i);
+      if (_avgCM) {
+        const _acName = (_avgCM[1]||'').trim();
+        const _acFirst = _acName.split(' ')[0].toLowerCase();
+        if (_acFirst.length > 2) {
+          const _acJobs = dbGet("SELECT paid_amount,invoice_amount,bid_amount FROM jobs WHERE LOWER(client_name) LIKE ?", '%'+_acFirst+'%') as any[];
+          if (_acJobs.length) {
+            const _acAmts = _acJobs.map((j: any) => j.paid_amount||j.invoice_amount||j.bid_amount||0).filter((a: number) => a > 0);
+            const _acAvg = _acAmts.reduce((s: number,a: number) => s+a, 0) / (_acAmts.length||1);
+            const _acReal = (dbGetOne("SELECT name FROM contacts WHERE LOWER(name) LIKE ? LIMIT 1", '%'+_acFirst+'%') as any)?.name || _acName;
+            sendReply('**Avg job value for ' + _acReal + ':** $' + _acAvg.toFixed(2) + '\n' + _acJobs.length + ' jobs total');
+            return;
+          }
+        }
+      }
     }
 
     // ── Best/largest job ──────────────────────────────────────────────────────
@@ -5692,6 +5727,21 @@ self.addEventListener('fetch', (event) => {
       const _focusTask = _topTask?.title || 'your top priority task';
       sendReply('🎯 **Focus Mode: ' + _mins + ' minutes**\n\nTask: **' + _focusTask + '**\n\n1. Close Slack, email, social\n2. Work ONLY on this task\n3. Come back after ' + _mins + ' min\n\n_Started at ' + new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'}) + '_\n\nSay \'done\' when finished.');
       return;
+    }
+
+    // ── What did I complete/finish today ─────────────────────────────────────
+    if (/^(?:what did i|did i)(?: (?:complete|finish|accomplish|do|get done))(?: (?:today|today\?|so far|this afternoon|this morning))?\??$/.test(lowerText)
+        || lowerText === 'today completions' || lowerText === 'what did i finish today') {
+      const _tod = (() => { const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); })();
+      const _todTasks = dbGet("SELECT title FROM personal_tasks WHERE status='done' AND DATE(updated_at)=?", _tod) as any[];
+      const _todJobs = dbGet("SELECT job_number,client_name,title,status FROM jobs WHERE status IN ('complete','paid') AND DATE(updated_at)=? ORDER BY updated_at DESC", _tod) as any[];
+      const _todHabits = dbGet("SELECT habit_id FROM habit_logs WHERE DATE(logged_at)=?", _tod) as any[];
+      const _todLines: string[] = ['**Today (' + _tod + ')**', ''];
+      if (_todJobs.length) { _todLines.push('**Jobs completed:**'); for (const j of _todJobs) _todLines.push('  \u2022 '+j.job_number+' '+j.client_name+': '+j.title.slice(0,30)); }
+      if (_todTasks.length) { _todLines.push('', '**Tasks done:**'); for (const t of _todTasks) _todLines.push('  \u2022 '+t.title); }
+      if (_todHabits.length) _todLines.push('', '\uD83D\uDCAA Habits logged: '+_todHabits.length);
+      if (_todLines.length === 2) { sendReply('Nothing marked complete yet today. Get after it!'); return; }
+      sendReply(_todLines.join('\n')); return;
     }
 
     // ── Week summary ─────────────────────────────────────────────────────────
