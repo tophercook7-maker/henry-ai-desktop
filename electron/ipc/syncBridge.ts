@@ -1767,6 +1767,46 @@ self.addEventListener('fetch', (event) => {
       }
     }
 
+    // P_BID: Job bid edit — must be before goals handler which catches 'change X to Y'
+    {
+      const _pBidM = lowerText.match(/^(?:change|update|set)(?: the)?(?: job)?\s+([j]-\d{4,6})(?:'s)?\s+(?:bid|amount|price|quote)(?: to)?\s+\$?([\d,.]+)/i);
+      if (_pBidM) {
+        const _pbNum = (_pBidM[1]||'').toUpperCase();
+        const _pbAmt = parseFloat((_pBidM[2]||'').replace(/,/g,''));
+        if (_pbNum && !isNaN(_pbAmt) && _pbAmt > 0) {
+          const _pbJob = dbGetOne('SELECT id,job_number,client_name,title,bid_amount FROM jobs WHERE UPPER(job_number)=? LIMIT 1', _pbNum) as any;
+          if (_pbJob) {
+            dbRun('UPDATE jobs SET bid_amount=?,updated_at=? WHERE id=?', _pbAmt, new Date().toISOString(), _pbJob.id);
+            sendReply('**' + _pbNum + '** bid updated: $' + (_pbJob.bid_amount||0).toFixed(2) + ' \u2192 **$' + _pbAmt.toFixed(2) + '**\n' + _pbJob.client_name + ': ' + _pbJob.title.slice(0,40));
+            return;
+          }
+        }
+      }
+    }
+
+    // Bid total — before finance handler
+    if (/^(?:total value of(?: all)?|sum of|all)(?: my| open| current)? bids?(?:\s+(?:worth|value|total))?$/i.test(lowerText)
+        || /^(?:how much are|what are)(?: all| my)? (?:open )?bids? worth/i.test(lowerText)
+        || lowerText === 'total bids' || lowerText === 'bid total' || lowerText === 'open bids value') {
+      const _pbtJobs = dbGet("SELECT job_number,client_name,bid_amount,title FROM jobs WHERE status='bid' ORDER BY bid_amount DESC") as any[];
+      const _pbtTotal = _pbtJobs.reduce((s: number,j: any) => s+(j.bid_amount||0), 0);
+      if (!_pbtJobs.length) { sendReply('No open bids right now.'); return; }
+      const _pbtLines = ['**Open bids (' + _pbtJobs.length + ') — $' + _pbtTotal.toFixed(0) + ' total**', ''];
+      for (const j of _pbtJobs) _pbtLines.push('  ' + j.job_number + ' ' + j.client_name + ': ' + j.title.slice(0,28) + ' ($' + (j.bid_amount||0).toFixed(0) + ')');
+      sendReply(_pbtLines.join('\n')); return;
+    }
+
+    // Show revenue by client (with 'show' prefix)
+    if (/^show(?: my)? revenue by client$/.test(lowerText) || /^show client revenue$/.test(lowerText)) {
+      const _srcRows = dbGet("SELECT client_name, COUNT(*) as jobs, COALESCE(SUM(paid_amount),0) as paid FROM jobs WHERE client_name NOT IN ('TBD','') AND paid_amount>0 GROUP BY LOWER(client_name) ORDER BY paid DESC") as any[];
+      if (!_srcRows.length) { sendReply('No paid jobs yet to summarize.'); return; }
+      const _srcTotal = _srcRows.reduce((s: number,r: any) => s+r.paid, 0);
+      const _srcLines = ['**Revenue by client**', ''];
+      for (const r of _srcRows) _srcLines.push('\u2022 **' + r.client_name + '** \u2014 $' + r.paid.toFixed(0) + ' (' + r.jobs + ' job' + (r.jobs!==1?'s':'') + ')');
+      _srcLines.push('', 'Total: **$' + _srcTotal.toFixed(2) + '**');
+      sendReply(_srcLines.join('\n')); return;
+    }
+
     // P4: Shell / run: commands (before habit handler intercepts "run")
     if (/^(?:run|shell|exec|bash|cmd|terminal)[:\s]+.+/i.test(lowerText) && !lowerText.match(/^(?:run|shell)\s+(?:a\s+)?(?:timer|reminder|check|analysis|report)\b/i)) {
       const _psh = resolvedText.match(/^(?:run|shell|exec|bash|cmd|terminal)[:\s]+(.+)/i);
@@ -3535,6 +3575,21 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Client full history ─────────────────────────────────────────
+    // ── Revenue by client ─────────────────────────────────────────────────────
+    if (/^(?:show|list|revenue|income) (?:by|per|from each) client$/.test(lowerText)
+        || /^(?:client|revenue) (?:breakdown|summary|by client)$/.test(lowerText)
+        || lowerText === 'revenue by client' || lowerText === 'client revenue breakdown') {
+      const _rcRows = dbGet("SELECT client_name, COUNT(*) as jobs, COALESCE(SUM(paid_amount),0) as paid FROM jobs WHERE client_name NOT IN ('TBD','') GROUP BY LOWER(client_name) ORDER BY paid DESC") as any[];
+      if (!_rcRows.length) { sendReply('No job data yet.'); return; }
+      const _rcTotal = _rcRows.reduce((s: number,r: any) => s+r.paid, 0);
+      const _rcLines = ['**Revenue by client**', ''];
+      for (const r of _rcRows) {
+        if (r.paid > 0) _rcLines.push('\u2022 **' + r.client_name + '** \u2014 $' + r.paid.toFixed(0) + ' (' + r.jobs + ' job' + (r.jobs!==1?'s':'') + ')');
+      }
+      _rcLines.push('', 'Total: **$' + _rcTotal.toFixed(2) + '**');
+      sendReply(_rcLines.join('\n')); return;
+    }
+
     const _clientHistM = lowerText.match(/^(?:pull up|show everything(?: for)?|full history|all work for|client history for|history for)[:\s]+(.+)/i)
                       || lowerText.match(/^(?:show|get|find)(?: me)? (?:everything|all)(?: for| about)[:\s]+(.+)/i);
     if (_clientHistM) {
@@ -3664,6 +3719,24 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Edit job ─────────────────────────────────────────────────────────────
+    // ── Edit job bid/amount directly ─────────────────────────────────────────
+    {
+      const _ebM = lowerText.match(/^(?:change|update|set|edit)(?: the)?(?: job)?\s+([j]-\d{4,6})(?:'s)?\s+(?:bid|amount|price|quote)(?: to)?\s+\$?([\d,.]+)/i)
+                || lowerText.match(/^([j]-\d{4,6})(?:'s)?\s+(?:bid|amount|price)\s+(?:is|=|to|:)?\s*\$?([\d,.]+)/i);
+      if (_ebM) {
+        const _ebNum = (_ebM[1]||'').toUpperCase();
+        const _ebAmt = parseFloat((_ebM[2]||'').replace(/,/g,''));
+        if (_ebNum && !isNaN(_ebAmt) && _ebAmt > 0) {
+          const _ebJob = dbGetOne('SELECT id,job_number,client_name,title,bid_amount FROM jobs WHERE UPPER(job_number)=? LIMIT 1', _ebNum) as any;
+          if (_ebJob) {
+            dbRun('UPDATE jobs SET bid_amount=?,updated_at=? WHERE id=?', _ebAmt, new Date().toISOString(), _ebJob.id);
+            sendReply('**' + _ebNum + '** bid updated: $' + (_ebJob.bid_amount||0).toFixed(2) + ' \u2192 **$' + _ebAmt.toFixed(2) + '**\n' + _ebJob.client_name + ': ' + _ebJob.title.slice(0,40));
+            return;
+          } else { sendReply('Job ' + _ebNum + ' not found.'); return; }
+        }
+      }
+    }
+
     const _editJobM = lowerText.match(/^(?:edit|update|change|modify)(?: job)?[:\s]+([J|j]-\d+)[:\s]+(.+)/i);
     if (_editJobM) {
       const _ejn = _editJobM[1].toUpperCase();
@@ -4253,6 +4326,51 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Finance summary ────────────────────────────────────────────────────────
+    // ── YTD / revenue summary from jobs ──────────────────────────────────────
+    {
+      const _ytdM = /^(?:year(?:\s+to\s+date|ly)?(?:\s+revenue|\s+income|\s+total)?|ytd(?:\s+revenue)?|how much(?: have i)? made this year|this year(?:'s)? revenue|annual revenue)/.test(lowerText);
+      const _lastMonthM = /^(?:last month(?:'s)?|previous month(?:'s)?)\s+(?:revenue|income|total|earnings?)/.test(lowerText);
+      const _monthBreakM = /^(?:monthly|month by month|revenue by month|show(?: me)? revenue by month|income by month)/.test(lowerText);
+      if (_ytdM || _lastMonthM || _monthBreakM) {
+        const _yr = new Date().getFullYear();
+        if (_ytdM) {
+          const _ytdRev = (dbGetOne("SELECT COALESCE(SUM(paid_amount),0) as n FROM jobs WHERE paid_amount>0 AND strftime('%Y',COALESCE(paid_date,created_at))=?", String(_yr)) as any)?.n || 0;
+          const _ytdJobs = (dbGetOne("SELECT COUNT(*) as n FROM jobs WHERE status='paid' AND strftime('%Y',COALESCE(paid_date,created_at))=?", String(_yr)) as any)?.n || 0;
+          const _ytdMat = (dbGetOne("SELECT COALESCE(SUM(material_cost),0) as n FROM jobs WHERE strftime('%Y',created_at)=?", String(_yr)) as any)?.n || 0;
+          sendReply('**Year to date (' + _yr + ')**\n\nRevenue: **$' + _ytdRev.toFixed(2) + '**\nMaterials: $' + _ytdMat.toFixed(2) + '\nProfit: **$' + (_ytdRev-_ytdMat).toFixed(2) + '**\nPaid jobs: ' + _ytdJobs); return;
+        }
+        if (_lastMonthM) {
+          const _lm = new Date(); _lm.setMonth(_lm.getMonth()-1);
+          const _lmStr = _lm.toISOString().slice(0,7);
+          const _lmRev = (dbGetOne("SELECT COALESCE(SUM(paid_amount),0) as n FROM jobs WHERE paid_amount>0 AND strftime('%Y-%m',COALESCE(paid_date,created_at))=?", _lmStr) as any)?.n || 0;
+          const _lmName = _lm.toLocaleString('en-US',{month:'long',year:'numeric'});
+          sendReply('**' + _lmName + '**\n\nRevenue: **$' + _lmRev.toFixed(2) + '**'); return;
+        }
+        if (_monthBreakM) {
+          const _mbMonths: string[] = [];
+          for (let i = 5; i >= 0; i--) { const d = new Date(); d.setMonth(d.getMonth()-i); _mbMonths.push(d.toISOString().slice(0,7)); }
+          const _mbLines = ['**Revenue by month (last 6 months)**', ''];
+          for (const mo of _mbMonths) {
+            const _moRev = (dbGetOne("SELECT COALESCE(SUM(paid_amount),0) as n FROM jobs WHERE paid_amount>0 AND strftime('%Y-%m',COALESCE(paid_date,created_at))=?", mo) as any)?.n || 0;
+            const _moLabel = new Date(mo+'-01').toLocaleString('en-US',{month:'short',year:'numeric'});
+            _mbLines.push('  ' + _moLabel + ': ' + (_moRev>0?'**$'+_moRev.toFixed(0)+'**':'—'));
+          }
+          sendReply(_mbLines.join('\n')); return;
+        }
+      }
+    }
+
+    // ── Bid total / open job value ─────────────────────────────────────────────
+    if (/^(?:total|sum|value|what(?:'s| is)) (?:of |all )?(?:my |open |current )?(?:bids?|quotes?) (?:worth|value|total)|^(?:how much are|what are) (?:my |all )?(open )?bids? worth|^open bid(?:s)? total/.test(lowerText)
+        || lowerText === 'total bids' || lowerText === 'bid total' || lowerText === 'all bids value') {
+      const _btJobs = dbGet("SELECT job_number,client_name,bid_amount,title FROM jobs WHERE status='bid' ORDER BY bid_amount DESC") as any[];
+      const _btTotal = _btJobs.reduce((s: number,j: any) => s+(j.bid_amount||0), 0);
+      if (!_btJobs.length) { sendReply('No open bids.'); return; }
+      const _btLines = ['**Open bids (' + _btJobs.length + ') — total **$' + _btTotal.toFixed(2) + '****', ''];
+      for (const j of _btJobs) _btLines.push('  ' + j.job_number + ' ' + j.client_name + ': ' + j.title.slice(0,30) + ' ($' + j.bid_amount.toFixed(0) + ')');
+      sendReply(_btLines.join('\n')); return;
+    }
+
     const financeSummaryMatch = /^(?:show|what|get)(?: me)?(?: my)? (?:finance|money|spending|budget|income|expense)/.test(lowerText)
                              || lowerText === "finance summary" || lowerText === "my finances";
     if (financeSummaryMatch) {
