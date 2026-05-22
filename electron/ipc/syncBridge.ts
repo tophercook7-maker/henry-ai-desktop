@@ -1578,7 +1578,10 @@ self.addEventListener('fetch', (event) => {
                       || lowerText.match(/^(\w[\w ]{1,25}) needs? (.+?) \$([\d,]+)/i);
       if (_needsJobM && /\$/.test(lowerText)) {
         const _njcRaw = (_needsJobM[1]||'').trim();
-        const _njcName = _njcRaw.split(' ').map((w: string)=>w.charAt(0).toUpperCase()+w.slice(1).toLowerCase()).join(' ');
+        const _njcNameRaw = _njcRaw.split(' ').map((w: string)=>w.charAt(0).toUpperCase()+w.slice(1).toLowerCase()).join(' ');
+        // Try to find full name in contacts
+        const _njcFull = dbGetOne("SELECT name FROM contacts WHERE LOWER(name) LIKE ? LIMIT 1", '%' + _njcRaw.split(' ')[0].toLowerCase() + '%') as any;
+        const _njcName = _njcFull?.name || _njcNameRaw;
         const _njcTitle = (_needsJobM[2]||'').trim().replace(/^(?:a|an|the)\s+/i,'');
         const _njcAmt = parseFloat((_needsJobM[3]||'0').replace(/,/g,'')) || parseFloat((lowerText.match(/\$(\d+)/)||['','0'])[1]);
         if (_njcTitle.length > 2 && !['what','show','list','who'].includes(_njcRaw.toLowerCase())) {
@@ -1603,6 +1606,8 @@ self.addEventListener('fetch', (event) => {
         const _njAmt = parseFloat((_njDesc.match(/\$([\d,]+)/)||['','0'])[1].replace(/,/g,'')) || 0;
         const _njTitle = _njDesc.replace(/\bfor\s+[A-Z][\w\s]{1,25}/i,'').replace(/\$[\d,]+/,'').replace(/\|.*/,'').trim() || _njDesc.slice(0,50);
         const _njcCap = _njClient ? _njClient.split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ') : '';
+        const _njcFullName = dbGetOne("SELECT name FROM contacts WHERE LOWER(name) LIKE ? LIMIT 1", '%' + (_njcCap||'').split(' ')[0].toLowerCase() + '%') as any;
+        const _njcFinalClient = _njcFullName?.name || _njcFinalClient;
         const _njNum = 'J-' + Date.now().toString().slice(-5);
         const _njId = Date.now().toString(36) + Math.random().toString(36).slice(2);
         dbRun('INSERT INTO jobs (id,job_number,client_name,title,status,bid_amount,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)',
@@ -3608,6 +3613,24 @@ self.addEventListener('fetch', (event) => {
       sendReply(_rcLines.join('\n')); return;
     }
 
+    // ── Client phone/email quick lookup ─────────────────────────────────────────
+    {
+      const _cphM = lowerText.match(/^(?:what(?:'s| is)(?: the)?|show me|get) ([\w][\w\s]{1,25}?)(?:'s)? (?:phone|number|cell|email|address)$/i)
+                 || lowerText.match(/^([\w][\w\s]{1,25}) (?:phone|number|email|address)$/i);
+      if (_cphM) {
+        const _cphName = (_cphM[1]||'').trim();
+        const _cphField = lowerText.includes('email') ? 'email' : 'phone';
+        const _cphC = dbGetOne("SELECT name,phone,email FROM contacts WHERE LOWER(name) LIKE ? LIMIT 1", '%' + _cphName.split(' ')[0].toLowerCase() + '%') as any;
+        if (_cphC) {
+          const _cphVal = _cphField === 'email' ? _cphC.email : _cphC.phone;
+          sendReply(_cphVal && _cphVal.length > 1
+            ? '**' + _cphC.name + '** ' + _cphField + ': ' + _cphVal
+            : 'No ' + _cphField + ' on file for ' + _cphC.name + '. Say "add phone for ' + _cphC.name + ': [number]" to add one.');
+          return;
+        }
+      }
+    }
+
     const _clientHistM = lowerText.match(/^(?:pull up|show everything(?: for)?|full history|all work for|client history for|history for)[:\s]+(.+)/i)
                       || lowerText.match(/^(?:show|get|find)(?: me)? (?:everything|all)(?: for| about)[:\s]+(.+)/i);
     if (_clientHistM) {
@@ -3869,6 +3892,23 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Outstanding ─────────────────────────────────────────────────
+    // ── Add phone/email/note to client ─────────────────────────────────────────
+    {
+      const _acdM = lowerText.match(/^(?:add|set|update)(?: the)? (?:phone|number|cell|email|note)[:\s]+(?:for |to )?([\w][\w\s]{1,25})(?:[:\s]+)(.+)/i)
+                 || lowerText.match(/^(?:add|set|update)(?: the)? (?:phone|number|cell|email|note) (?:for|to) ([\w][\w\s]{1,25})[:\s]+(.+)/i)
+                 || lowerText.match(/^([\w][\w\s]{1,25}?)(?:'s)? (?:phone|number|email|note)(?: is| =)?[:\s]+(.+)/i);
+      if (_acdM) {
+        const _acdClient = (_acdM[1]||'').trim();
+        const _acdVal = (_acdM[2]||'').trim();
+        const _acdField = lowerText.includes('email') ? 'email' : lowerText.includes('note') ? 'notes' : 'phone';
+        const _acdC = dbGetOne('SELECT id,name FROM contacts WHERE LOWER(name) LIKE ? LIMIT 1', '%'+_acdClient.split(' ')[0].toLowerCase()+'%') as any;
+        if (_acdC && _acdVal.length > 1) {
+          dbRun('UPDATE contacts SET '+_acdField+'=?,updated_at=? WHERE id=?', _acdVal, new Date().toISOString(), _acdC.id);
+          sendReply('Updated **'+_acdC.name+'**: '+_acdField+' = **'+_acdVal+'**'); return;
+        }
+      }
+    }
+
     // ── Show clients ───────────────────────────────────────────────────────────
     if (/^(?:show(?: all)?(?: my)?|list(?: my)?|who are my|all(?: my)?|my)(?: active)? clients?$/.test(lowerText) || lowerText === 'clients' || lowerText === 'client list') {
       // Sync revenue from jobs → contacts first
@@ -5379,6 +5419,21 @@ self.addEventListener('fetch', (event) => {
       const _focusTask = _topTask?.title || 'your top priority task';
       sendReply('🎯 **Focus Mode: ' + _mins + ' minutes**\n\nTask: **' + _focusTask + '**\n\n1. Close Slack, email, social\n2. Work ONLY on this task\n3. Come back after ' + _mins + ' min\n\n_Started at ' + new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'}) + '_\n\nSay \'done\' when finished.');
       return;
+    }
+
+    // ── Week summary ─────────────────────────────────────────────────────────
+    if (/^what did i (?:do|accomplish|complete|work on) this week/.test(lowerText)
+        || lowerText === 'this week summary' || lowerText === 'week summary' || lowerText === 'summary of my week') {
+      const _wkD = new Date(); _wkD.setDate(_wkD.getDate() - _wkD.getDay());
+      const _wkS = _wkD.toISOString().slice(0,10);
+      const _wkJobs = dbGet("SELECT job_number,client_name,title,status,paid_amount FROM jobs WHERE (completed_date>=? OR paid_date>=? OR created_at>=?) AND status NOT IN ('cancelled') ORDER BY updated_at DESC LIMIT 8",_wkS,_wkS,_wkS) as any[];
+      const _wkTasks = dbGet("SELECT title FROM personal_tasks WHERE status='done' AND updated_at>=? LIMIT 5",_wkS+'T00:00:00Z') as any[];
+      const _wkPaid = _wkJobs.filter((j: any)=>j.status==='paid').reduce((s: number,j: any)=>s+(j.paid_amount||0),0);
+      const _wkLines = ['**Week Summary**',''];
+      if (_wkJobs.length) { _wkLines.push('**Jobs:**'); for (const j of _wkJobs) _wkLines.push('  \u2022 '+j.job_number+' '+j.client_name+': '+j.title.slice(0,30)+' ['+j.status+']'); }
+      if (_wkTasks.length) { _wkLines.push('','**Tasks done:**'); for (const t of _wkTasks) _wkLines.push('  \u2022 '+t.title); }
+      if (_wkPaid>0) _wkLines.push('','**Collected: $'+_wkPaid.toFixed(2)+'**');
+      sendReply(_wkLines.length>2 ? _wkLines.join('\n') : 'Nothing logged this week yet.'); return;
     }
 
     const eodMatch = /^(?:end of day|eod|day summary|daily summary|wrap up|wrap up my day|wrap it up|pack it in|clock out|sign off|logging off|done for today|calling it a day|what did i do today|what did i accomplish today|what have i done today|how did my day go|good night|goodnight|gn|heading to bed|time for bed|going to bed|i'm done for the day|i am done for the day|i'm heading to bed|im heading to bed|heading to bed|evening wrap|night|calling it|that's a wrap)/.test(lowerText)
