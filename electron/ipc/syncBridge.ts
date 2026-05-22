@@ -248,7 +248,7 @@ function validateToken(req: http.IncomingMessage): string | null {
 function recordEvent(event: Omit<SyncEvent, 'id' | 'timestamp'>): SyncEvent {
   const full: SyncEvent = {
     ...event,
-    id: crypto.randomUUID(),
+    id: Date.now().toString(36)+Math.random().toString(36).slice(2),
     timestamp: Date.now(),
   };
   eventLog.push(full);
@@ -887,7 +887,7 @@ self.addEventListener('fetch', (event) => {
         "SELECT id FROM conversations WHERE title = 'Henry — Companion' LIMIT 1"
       );
       if (!conv) {
-        const convId = require('crypto').randomUUID();
+        const convId = Date.now().toString(36)+Math.random().toString(36).slice(2);
         dbRun("INSERT INTO conversations (id, title) VALUES (?, 'Henry — Companion')", convId);
         conv = { id: convId };
       }
@@ -922,7 +922,7 @@ self.addEventListener('fetch', (event) => {
       }
       dbRun("UPDATE conversations SET updated_at = datetime('now') WHERE id = ?", body.conversation_id);
       // Push to desktop via SSE so ChatView can show companion messages live
-      const chatUpdateEvent: SyncEvent = { id: require('crypto').randomUUID(), type: 'companion_chat_update', payload: { conversation_id: body.conversation_id, messages: body.messages }, timestamp: Date.now(), fromDevice: '' };
+      const chatUpdateEvent: SyncEvent = { id: Date.now().toString(36)+Math.random().toString(36).slice(2), type: 'companion_chat_update', payload: { conversation_id: body.conversation_id, messages: body.messages }, timestamp: Date.now(), fromDevice: '' };
       pushToAll(chatUpdateEvent);
       jsonResponse(res, 200, { ok: true });
     } catch (e) { jsonResponse(res, 500, { error: String(e) }); }
@@ -935,7 +935,7 @@ self.addEventListener('fetch', (event) => {
         "SELECT id FROM conversations WHERE title = 'Henry — Companion' LIMIT 1"
       );
       if (!conv) {
-        const convId = require('crypto').randomUUID();
+        const convId = Date.now().toString(36)+Math.random().toString(36).slice(2);
         dbRun("INSERT INTO conversations (id, title) VALUES (?, 'Henry — Companion')", convId);
         conv = { id: convId };
       }
@@ -1959,7 +1959,7 @@ self.addEventListener('fetch', (event) => {
       const habitWords = ['prayer','pray','bible','exercise','water','journal'];
       if (!habitWords.some(h => title.toLowerCase().includes(h))) {
         try {
-          const id = require('crypto').randomUUID();
+          const id = Date.now().toString(36) + Math.random().toString(36).slice(2);
           dbRun("INSERT INTO personal_tasks (id,title,status,priority,created_at) VALUES (?,?,?,?,?)",
             id, title, 'todo', 2, new Date().toISOString());
           sendReply('\u2705 Task added: "' + title + '"\n\nSay "what tasks do I have" to see your list.');
@@ -2239,7 +2239,7 @@ self.addEventListener('fetch', (event) => {
           try {
             const ex = dbGetOne<{id:string}>("SELECT id FROM habit_logs WHERE habit_id=? AND date=?", fh.id, td);
             if (!ex) dbRun("INSERT INTO habit_logs (id,habit_id,date,count,created_at) VALUES (?,?,?,?,?)",
-              require('crypto').randomUUID(), fh.id, td, 1, new Date().toISOString());
+              Date.now().toString(36)+Math.random().toString(36).slice(2), fh.id, td, 1, new Date().toISOString());
             sendReply('\u2713 ' + fh.name + ' marked done for today.');
           } catch { sendReply('Could not update habit.'); }
           return;
@@ -2273,7 +2273,7 @@ self.addEventListener('fetch', (event) => {
         ? 'Collect $' + parseFloat(amount).toFixed(0) + ' from ' + client
         : 'Follow up: ' + client + ' owes payment';
       try {
-        const id = require('crypto').randomUUID();
+        const id = Date.now().toString(36)+Math.random().toString(36).slice(2);
         dbRun("INSERT INTO personal_tasks (id,title,status,priority,created_at) VALUES (?,?,?,?,?)",
           id, taskTitle, 'todo', 3, new Date().toISOString());
         sendReply('✅ Task added: "' + taskTitle + '"\n\nSay "what jobs do I have open" to see your list.');
@@ -2401,6 +2401,49 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Companion phone setup / pairing ──────────────────────────────────────
+    // ── Send iMessage / text ─────────────────────────────────────────────────
+    const _imsgM = lowerText.match(/^(?:text|send(?: a)? (?:text|message|imessage)|message)(?: to)? ([\w][\w\s]{1,25}?)(?:[:\s]+|,\s*)(.+)/i);
+    if (_imsgM) {
+      const _imsgName = (_imsgM[1]||'').trim();
+      const _imsgBody = (_imsgM[2]||'').trim();
+      if (_imsgName.length > 1 && _imsgBody.length > 0) {
+        // Look up phone from contacts
+        const _imsgC = dbGetOne('SELECT name,phone FROM contacts WHERE LOWER(name) LIKE ? LIMIT 1', '%'+_imsgName.split(' ')[0].toLowerCase()+'%') as any;
+        if (_imsgC && _imsgC.phone) {
+          try {
+            const { execSync: _msEx } = await import('child_process') as typeof import('child_process');
+            const _msScript = `tell application "Messages" to send "${_imsgBody.replace(/"/g,'\\"')}" to buddy "${_imsgC.phone}" of service "SMS"`;
+            _msEx('osascript -e \'' + _msScript + '\'', {timeout:5000, shell:'/bin/bash'});
+            sendReply('\u2709\ufe0f Texted **' + _imsgC.name + '** (' + _imsgC.phone + '):\n"' + _imsgBody + '"');
+          } catch(e) { sendReply('Could not send message. Check that Messages.app is set up on your Mac.'); }
+        } else if (_imsgC) {
+          sendReply('No phone number on file for ' + _imsgC.name + '.\n\nAdd one: "add phone for ' + _imsgC.name + ': [number]"');
+        } else {
+          sendReply('Contact not found: ' + _imsgName + '. Add them: "add client: ' + _imsgName + ' | [phone] | [email]"');
+        }
+        return;
+      }
+    }
+
+    // ── Call a client (opens Phone/FaceTime) ─────────────────────────────────
+    const _callM = lowerText.match(/^(?:call|phone|ring)(?: up)? ([\w][\w\s]{1,25})$/i);
+    if (_callM) {
+      const _callName = (_callM[1]||'').trim();
+      const _callC = dbGetOne('SELECT name,phone FROM contacts WHERE LOWER(name) LIKE ? LIMIT 1', '%'+_callName.split(' ')[0].toLowerCase()+'%') as any;
+      if (_callC && _callC.phone) {
+        try {
+          const { execSync: _clEx } = await import('child_process') as typeof import('child_process');
+          _clEx(`open "tel://${_callC.phone.replace(/[^0-9]/g,'')}"`, {timeout:3000});
+          sendReply('\ud83d\udcf1 Calling **' + _callC.name + '** \u2014 ' + _callC.phone);
+        } catch { sendReply('\ud83d\udcf1 **' + _callC.name + '**: ' + _callC.phone); }
+      } else if (_callC) {
+        sendReply('No phone number for ' + _callC.name + '. Say "add phone for ' + _callC.name + ': [number]" to add one.');
+      } else {
+        sendReply('Contact not found: ' + _callName);
+      }
+      return;
+    }
+
     const pairPhoneMatch = /^(?:pair|connect|setup|show|get)(?: my)?(?: phone| mobile| companion| device|iphone)(?: app)?$/.test(lowerText)
                         || lowerText === 'companion' || lowerText === 'pair phone' || lowerText === 'my phone';
     if (pairPhoneMatch) {
@@ -2722,7 +2765,7 @@ self.addEventListener('fetch', (event) => {
         .replace(/^goal[:\s]+/i,'').trim();
       if (title.length > 1) {
         try {
-          const id = require('crypto').randomUUID();
+          const id = Date.now().toString(36)+Math.random().toString(36).slice(2);
           dbRun("INSERT INTO goals (id,title,status,priority_score,strategic_significance_score,emotional_significance_score,created_at,updated_at,last_active_at) VALUES (?,?,?,?,?,?,?,?,?)",
             id, title, 'active', 0.7, 0.7, 0.5, new Date().toISOString(), new Date().toISOString(), new Date().toISOString());
           try { dbRun('PRAGMA wal_checkpoint(PASSIVE)'); } catch {}
@@ -2773,7 +2816,7 @@ self.addEventListener('fetch', (event) => {
           .replace(/^task[:\s]+/i,'').trim();
       if (title.length > 1) {
         try {
-          const id = require('crypto').randomUUID();
+          const id = Date.now().toString(36)+Math.random().toString(36).slice(2);
           dbRun("INSERT INTO personal_tasks (id,title,status,priority,created_at) VALUES (?,?,?,?,?)",
             id, title, 'todo', 2, new Date().toISOString());
           sendReply(`✓ \u2705 Added: "${title}"`);
@@ -2827,7 +2870,7 @@ self.addEventListener('fetch', (event) => {
         return d.toISOString();
       })();
       try {
-        const id = require('crypto').randomUUID();
+        const id = Date.now().toString(36)+Math.random().toString(36).slice(2);
         dbRun("INSERT INTO reminders (id,title,due_at,done,created_at) VALUES (?,?,?,?,?)",
           id, title || rawTitle, due_at, 0, new Date().toISOString());
         const whenStr = due_at ? ` for ${new Date(due_at).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}` : '';
@@ -3208,7 +3251,7 @@ self.addEventListener('fetch', (event) => {
           const existing = dbGetOne<{id:string}>("SELECT id FROM habit_logs WHERE habit_id=? AND date=?", matchedHabit.id, today);
           if (!existing) {
             dbRun("INSERT INTO habit_logs (id,habit_id,date,count,created_at) VALUES (?,?,?,?,?)",
-              require('crypto').randomUUID(), matchedHabit.id, today, 1, new Date().toISOString());
+              Date.now().toString(36)+Math.random().toString(36).slice(2), matchedHabit.id, today, 1, new Date().toISOString());
           }
           sendReply('✓ ' + matchedHabit.name + ' marked done for today.');
         } catch (e) { sendReply("Could not update habit: " + e); }
@@ -3226,7 +3269,7 @@ self.addEventListener('fetch', (event) => {
         const unit = (terseHealthMatch[3] || cat2unit[cat] || 'units').toLowerCase();
         const today = new Date().toISOString().slice(0,10);
         dbRun("INSERT INTO health_logs (id,date,category,label,value,unit,created_at) VALUES (?,?,?,?,?,?,?)",
-          require('crypto').randomUUID(), today, cat, cat, val, unit, new Date().toISOString());
+          Date.now().toString(36)+Math.random().toString(36).slice(2), today, cat, cat, val, unit, new Date().toISOString());
         sendReply("Logged: " + val + " " + unit + " (" + cat + ")");
       } catch (e) { sendReply("Could not log: " + e); }
       return;
@@ -3251,7 +3294,7 @@ self.addEventListener('fetch', (event) => {
         else if (/exercised|worked out|jogged|ran/.test(lowerText)) { category = 'exercise'; unit = 'min'; }
         else if (/calories|burned|consumed/.test(lowerText)) { category = 'calories'; unit = 'cal'; }
         dbRun("INSERT INTO health_logs (id,date,category,label,value,unit,created_at) VALUES (?,?,?,?,?,?,?)",
-          require('crypto').randomUUID(), today, category, category, value, unit, new Date().toISOString());
+          Date.now().toString(36)+Math.random().toString(36).slice(2), today, category, category, value, unit, new Date().toISOString());
         sendReply('Logged: ' + value + (unit ? ' ' + unit : '') + ' (' + category + ')');
       } catch (e) { sendReply('Could not log: ' + e); }
       return;
@@ -3275,7 +3318,7 @@ self.addEventListener('fetch', (event) => {
         else if (unit.includes('hr') || unit.includes('hour') || label.includes('sleep')) category = 'sleep';
         else if (unit.includes('cal')) category = 'calories';
         dbRun("INSERT INTO health_logs (id,date,category,label,value,unit,created_at) VALUES (?,?,?,?,?,?,?)",
-          require('crypto').randomUUID(), today, category, label || category, value, unit, new Date().toISOString());
+          Date.now().toString(36)+Math.random().toString(36).slice(2), today, category, label || category, value, unit, new Date().toISOString());
         sendReply('✓ Logged: ' + value + ' ' + unit + ' (' + category + ')');
       } catch (e) { sendReply("Could not log: " + e); }
       return;
@@ -4210,7 +4253,7 @@ self.addEventListener('fetch', (event) => {
       const title = (recurringMatch[1] || recurringMatch[2] || '').trim();
       if (title.length > 1) {
         try {
-          const id = require('crypto').randomUUID();
+          const id = Date.now().toString(36)+Math.random().toString(36).slice(2);
           // Set due_at for tomorrow 6am as the first occurrence
           const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate()+1); tomorrow.setHours(6,0,0,0);
           dbRun("INSERT INTO reminders (id,title,due_at,done,repeat,created_at) VALUES (?,?,?,?,?,?)",
@@ -4259,15 +4302,15 @@ self.addEventListener('fetch', (event) => {
 
     // ── Add journal entry ─────────────────────────────────────────────────────
     const journalMatch = lowerText.match(/^(?:add|create|write|log)(?: a)? journal(?: entry)?[:\s]+(.+)/i)
-                      || lowerText.match(/^journal[:\s]+(.+)/i);
+                      || lowerText.match(/^journal(?:\s+entry)?[:\s]+(.+)/i);
     if (journalMatch) {
       const content = (journalMatch[1] || '').trim();
       if (content.length > 1) {
         try {
           const today = new Date().toISOString().slice(0,10);
-          const id = require('crypto').randomUUID();
-          dbRun("INSERT INTO journal_entries (id,date,content,mood,created_at) VALUES (?,?,?,?,?)",
-            id, today, content, '', new Date().toISOString());
+          const id = Date.now().toString(36)+Math.random().toString(36).slice(2);
+          dbRun("INSERT INTO journal_entries (id,date,title,content,mood,tags,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)",
+            id, today, content.slice(0,60), content, '', '', new Date().toISOString(), new Date().toISOString());
           sendReply('Journal entry saved: "' + content + '"');
         } catch (e) { sendReply('Could not save journal entry: ' + e); }
         return;
@@ -4362,7 +4405,9 @@ self.addEventListener('fetch', (event) => {
 
     // ── Bible verse search ─────────────────────────────────────────────────────
     const bibleSearchMatch = lowerText.match(/^(?:find|show|search)(?: a| me)?(?: bible| scripture)?(?: verse| verses?)?(?: about| on| for)\s+(.+)/i)
-                          || lowerText.match(/^(?:verse|scripture)(?: about| on| for)\s+(.+)/i);
+                          || lowerText.match(/^(?:verse|scripture)(?: about| on| for)\s+(.+)/i)
+                          || lowerText.match(/^what does the (?:bible|scripture|word)(?: say)? about\s+(.+)/i)
+                          || lowerText.match(/^(?:bible|scripture) (?:verse|passage)s? about\s+(.+)/i);
     if (bibleSearchMatch) {
       const topic = (bibleSearchMatch[1] || '').trim();
       if (topic.length > 2) {
@@ -4427,6 +4472,18 @@ self.addEventListener('fetch', (event) => {
       const _btLines = ['**Open bids (' + _btJobs.length + ') — total **$' + _btTotal.toFixed(2) + '****', ''];
       for (const j of _btJobs) _btLines.push('  ' + j.job_number + ' ' + j.client_name + ': ' + j.title.slice(0,30) + ' ($' + j.bid_amount.toFixed(0) + ')');
       sendReply(_btLines.join('\n')); return;
+    }
+
+    // ── Expense total (local from transactions) ─────────────────────────────────
+    if (/^(?:total|what(?:'s| are))(?: my)? expenses?(?: this month| this year| this week)?$/.test(lowerText)
+        || lowerText === 'show expenses' || lowerText === 'my expenses this month') {
+      const _exMonth = new Date().toISOString().slice(0,7);
+      const _exTotal = (dbGetOne("SELECT COALESCE(SUM(amount),0) as n FROM transactions WHERE type='expense' AND strftime('%Y-%m',date)=?", _exMonth) as any)?.n || 0;
+      const _exRows = dbGet("SELECT description,amount,date FROM transactions WHERE type='expense' AND strftime('%Y-%m',date)=? ORDER BY date DESC LIMIT 8", _exMonth) as any[];
+      const _exLines = ['**Expenses — ' + new Date().toLocaleString('en-US',{month:'long'}) + '**', '', 'Total: **$' + _exTotal.toFixed(2) + '**'];
+      if (_exRows.length) { _exLines.push(''); for (const e of _exRows) _exLines.push('  • ' + (e.description||'expense') + ' — $' + (e.amount||0).toFixed(2)); }
+      else _exLines.push('', 'No expenses logged yet. Say "I spent $50 on supplies" to track one.');
+      sendReply(_exLines.join('\n')); return;
     }
 
     const financeSummaryMatch = /^(?:show|what|get)(?: me)?(?: my)? (?:finance|money|spending|budget|income|expense)/.test(lowerText)
@@ -4898,7 +4955,7 @@ self.addEventListener('fetch', (event) => {
       const req = addPrayerMatch[1].trim();
       if (req.length > 1) {
         try {
-          const id = require('crypto').randomUUID();
+          const id = Date.now().toString(36)+Math.random().toString(36).slice(2);
           dbRun("INSERT INTO prayer_requests (id,title,body,status,created_at) VALUES (?,?,?,?,?)",
             id, req.slice(0,80), req, 'active', new Date().toISOString());
           sendReply('Prayer request saved: "' + req + '"');
@@ -5002,7 +5059,7 @@ self.addEventListener('fetch', (event) => {
       const content = hashtagMatch[2].trim();
       if (content.length > 1) {
         try {
-          const id = require('crypto').randomUUID();
+          const id = Date.now().toString(36)+Math.random().toString(36).slice(2);
           const now4 = new Date().toISOString();
           if (tag === 'task') {
             dbRun("INSERT INTO personal_tasks (id,title,status,priority,created_at) VALUES (?,?,?,?,?)", id, content, 'todo', 2, now4);
@@ -5035,7 +5092,7 @@ self.addEventListener('fetch', (event) => {
       const fact = (rememberSaveMatch[1] || '').trim();
       if (fact.length > 2) {
         try {
-          const id5 = require('crypto').randomUUID();
+          const id5 = Date.now().toString(36)+Math.random().toString(36).slice(2);
           // Auto-detect category from content
           const _cat = /dpi|watt|laser|material|wood|cherry|walnut|maple|engrav/i.test(fact) ? 'laser' :
                        /client|customer|paid|owes|job|order/i.test(fact) ? 'client' :
@@ -5055,7 +5112,7 @@ self.addEventListener('fetch', (event) => {
     if (_rsm2) {
       const _rfact = (_rsm2[1] || '').trim();
       if (_rfact.length > 2) {
-        const _rid = require('crypto').randomUUID();
+        const _rid = Date.now().toString(36)+Math.random().toString(36).slice(2);
         const _rcat = /dpi|watt|laser|material|wood|cherry|walnut|maple|engrav/i.test(_rfact) ? 'laser' :
                       /client|customer|paid|owes|job|order/i.test(_rfact) ? 'client' :
                       /habit|exercise|prayer|bible|water|run/i.test(_rfact) ? 'habit' :
@@ -5104,7 +5161,7 @@ self.addEventListener('fetch', (event) => {
       const content = noteMatch[1].trim();
       if (content.length > 1) {
         try {
-          const id = require('crypto').randomUUID();
+          const id = Date.now().toString(36)+Math.random().toString(36).slice(2);
           dbRun("INSERT INTO memory_facts (id,fact,category,importance,created_at) VALUES (?,?,?,?,?)",
             id, content, 'note', 1, new Date().toISOString());
           sendReply("Note saved: \"" + content + "\"");
@@ -5300,7 +5357,7 @@ self.addEventListener('fetch', (event) => {
       const revenue = parseFloat(jobRevMatch?.[1] || '0') || 0;
       try {
         const today = new Date().toISOString().slice(0,10);
-        const id = require('crypto').randomUUID();
+        const id = Date.now().toString(36)+Math.random().toString(36).slice(2);
         if (revenue > 0) {
           dbRun("INSERT INTO production_runs (id,title,quantity,revenue,date,created_at) VALUES (?,?,?,?,?,?) ON CONFLICT DO NOTHING",
             id, desc || 'Custom order', qty, revenue, today, new Date().toISOString());
@@ -5583,7 +5640,7 @@ self.addEventListener('fetch', (event) => {
       const name = addHabitMatch[1].trim();
       if (name.length > 1) {
         try {
-          const id = require('crypto').randomUUID();
+          const id = Date.now().toString(36)+Math.random().toString(36).slice(2);
           dbRun("INSERT INTO habits (id,name,icon,color,target_per_day,active,created_at) VALUES (?,?,?,?,?,?,?)",
             id, name, '⭐', '#7c3aed', 1, 1, new Date().toISOString());
           sendReply("Added habit: \"" + name + "\" — it will now appear in your daily check-in list.");
@@ -5618,7 +5675,7 @@ self.addEventListener('fetch', (event) => {
       const category = (expenseMatch[2] || 'supplies').trim().slice(0, 80);
       if (amount > 0) {
         try {
-          const id = require('crypto').randomUUID();
+          const id = Date.now().toString(36)+Math.random().toString(36).slice(2);
           const today5 = new Date().toISOString().slice(0,10);
           dbRun("INSERT INTO transactions (id,date,amount,type,category,created_at) VALUES (?,?,?,?,?,?)",
             id, today5, amount, 'expense', category, new Date().toISOString());
@@ -5636,7 +5693,7 @@ self.addEventListener('fetch', (event) => {
       const amt = parseFloat(quickIncomeMatch[1] || quickIncomeMatch[2] || '0');
       if (amt > 0) {
         try {
-          const id = require('crypto').randomUUID();
+          const id = Date.now().toString(36)+Math.random().toString(36).slice(2);
           dbRun("INSERT INTO transactions (id,date,amount,type,category,created_at) VALUES (?,?,?,?,?,?)",
             id, new Date().toISOString().slice(0,10), amt, 'income', 'job', new Date().toISOString());
           sendReply('💰 Logged income: $' + amt.toFixed(2) + '\n\nSay "what\'s my revenue this month" to see your totals.');
@@ -5659,7 +5716,7 @@ self.addEventListener('fetch', (event) => {
         try {
           const today = new Date().toISOString().slice(0,10);
           dbRun("INSERT INTO transactions (id,date,type,amount,category,description,created_at) VALUES (?,?,?,?,?,?,?)",
-            require('crypto').randomUUID(), today, 'income', amount, 'laser', 'Logged via chat', new Date().toISOString());
+            Date.now().toString(36)+Math.random().toString(36).slice(2), today, 'income', amount, 'laser', 'Logged via chat', new Date().toISOString());
           sendReply("Logged income: $" + amount.toFixed(2) + " for today.");
         } catch (e) { sendReply("Could not log revenue. Open Finance panel to add manually."); }
         return;
@@ -5718,7 +5775,7 @@ self.addEventListener('fetch', (event) => {
         try {
           const saved: string[] = [];
           for (const item of items.slice(0, 5)) { // max 5 at once
-            const id = require('crypto').randomUUID();
+            const id = Date.now().toString(36)+Math.random().toString(36).slice(2);
             dbRun("INSERT INTO personal_tasks (id,title,status,priority,created_at) VALUES (?,?,?,?,?)",
               id, item, 'todo', 2, new Date().toISOString());
             saved.push(item);
@@ -5851,6 +5908,19 @@ self.addEventListener('fetch', (event) => {
     // Skip createDocMatch if this looks like a price calc ("create quote: 10 x at $Y")
     const hasQtyPrice = /\d+\s+.+\s+(?:at|@)\s+\$[\d.]+/.test(lowerText);
     const isNoteCmd = /^(?:save this as|note:|#note:|jot|quick note)/.test(lowerText);
+    // ── Show quotes (local DB) ─────────────────────────────────────────────
+    if (/^(?:show|list)(?: my| all)? quotes?$/.test(lowerText) || lowerText === 'my quotes' || lowerText === 'quotes') {
+      const _qRows = dbGet('SELECT quote_number,customer_name,total,status,created_at FROM quotes ORDER BY created_at DESC LIMIT 10') as any[];
+      if (!_qRows.length) { sendReply('No quotes yet. Say "quote: deck for Pat $3500" to create one.'); return; }
+      const _qTotal = _qRows.reduce((s: number,q: any) => s+(q.total||0), 0);
+      const _qLines = ['**Quotes (' + _qRows.length + ') \u2014 $' + _qTotal.toFixed(0) + ' total**', ''];
+      for (const q of _qRows) {
+        const _qd = new Date(q.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric'});
+        _qLines.push('  ' + (q.quote_number||'Q-?') + ' \u2014 ' + (q.customer_name||'?') + ': $' + (q.total||0).toFixed(0) + ' [' + (q.status||'draft') + '] ' + _qd);
+      }
+      sendReply(_qLines.join('\n')); return;
+    }
+
     const createDocMatch = !hasQtyPrice && !isNoteCmd && lowerText.match(/^(?:make|create|write|draft|generate)(?: (?:me|a|an))? (?:invoice|quote|estimate|proposal|letter|contract|report|checklist)(?: for .+)?(?:\s+in word| as (?:a )?word)?/i);
     if (createDocMatch) {
       const docType = lowerText.match(/invoice|quote|estimate|proposal|letter|contract|report|checklist/i)?.[0] || 'document';
@@ -5985,7 +6055,7 @@ self.addEventListener('fetch', (event) => {
       const fact = resolvedText.replace(/^(?:please )?remember(?: that)? /i, '').trim();
       if (fact.length > 3) {
         try {
-          const id = require('crypto').randomUUID();
+          const id = Date.now().toString(36)+Math.random().toString(36).slice(2);
           dbRun(
             "INSERT OR IGNORE INTO memory_facts (id, fact, category, importance, created_at) VALUES (?,?,?,?,?)",
             id, fact, 'user', 2, new Date().toISOString()
@@ -6896,7 +6966,7 @@ self.addEventListener('fetch', (event) => {
         dbRun('DELETE FROM habit_logs WHERE habit_id=? AND date=?', body.habit_id, today);
         jsonResponse(res, 200, { action: 'removed', habit_id: body.habit_id });
       } else {
-        const id = crypto.randomUUID();
+        const id = Date.now().toString(36)+Math.random().toString(36).slice(2);
         dbRun('INSERT INTO habit_logs (id, habit_id, date, count) VALUES (?,?,?,1)', id, body.habit_id, today);
         jsonResponse(res, 200, { action: 'added', habit_id: body.habit_id });
       }
@@ -6984,7 +7054,7 @@ self.addEventListener('fetch', (event) => {
   if (path === '/sync/mac/tasks/create' && req.method === 'POST') {
     const body = await readBody<Record<string,unknown>>(req);
     const data: Record<string,unknown> = body || {};
-    const id = String(data.id || crypto.randomUUID());
+    const id = String(data.id || Date.now().toString(36)+Math.random().toString(36).slice(2));
     const title = String(data.title || '').trim();
     if (!title) { jsonResponse(res, 400, { error: 'title required' }); return; }
     dbRun(
@@ -7033,7 +7103,7 @@ self.addEventListener('fetch', (event) => {
     const data: Record<string,unknown> = body || {};
     const title = String(data.title || '').trim();
     if (!title) { jsonResponse(res, 400, { error: 'title required' }); return; }
-    const id = String(data.id || crypto.randomUUID());
+    const id = String(data.id || Date.now().toString(36)+Math.random().toString(36).slice(2));
     dbRun(
       "INSERT INTO reminders (id,title,notes,due_at,repeat,done,created_at,updated_at) VALUES (?,?,?,?,?,0,?,?)",
       id, title, String(data.notes || ''), data.due_at ? String(data.due_at) : null, 'none',
@@ -7058,7 +7128,7 @@ self.addEventListener('fetch', (event) => {
     const data: Record<string,unknown> = body || {};
     const content = String(data.content || '').trim();
     if (!content) { jsonResponse(res, 400, { error: 'content required' }); return; }
-    const id = String(data.id || crypto.randomUUID());
+    const id = String(data.id || Date.now().toString(36)+Math.random().toString(36).slice(2));
     const today = new Date().toISOString().slice(0, 10);
     dbRun(
       "INSERT OR REPLACE INTO journal_entries (id,date,title,content,mood,created_at,updated_at) VALUES (?,?,?,?,?,?,?)",
@@ -7118,7 +7188,7 @@ self.addEventListener('fetch', (event) => {
     const data: Record<string,unknown> = body || {};
     const category = String(data.category || '').trim();
     if (!category) { jsonResponse(res, 400, { error: 'category required' }); return; }
-    const id = String(data.id || crypto.randomUUID());
+    const id = String(data.id || Date.now().toString(36)+Math.random().toString(36).slice(2));
     const today = new Date().toISOString().slice(0, 10);
     dbRun(
       "INSERT INTO health_logs (id,category,value,note,date,created_at) VALUES (?,?,?,?,?,?)",
