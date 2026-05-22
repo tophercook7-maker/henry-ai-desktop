@@ -2193,6 +2193,30 @@ self.addEventListener('fetch', (event) => {
       return;
     }
 
+    // ── First-run / setup wizard ────────────────────────────────────────────
+    if (/^(?:setup henry|first run|first time setup|henry setup wizard|configure henry|initial setup)$/.test(lowerText)) {
+      const _bizName = (dbGetOne("SELECT value FROM settings WHERE key='business_name'") as any)?.value||'';
+      const _ownerName = (dbGetOne("SELECT value FROM settings WHERE key='owner_name'") as any)?.value||'';
+      const _rate = (dbGetOne("SELECT value FROM settings WHERE key='hourly_rate'") as any)?.value||'';
+      const _hostname = (dbGetOne("SELECT value FROM settings WHERE key='machine_hostname'") as any)?.value||'';
+      const _printers = (dbGetOne("SELECT value FROM settings WHERE key='machine_printers'") as any)?.value||'none found';
+      const _setupLines = ['\uD83E\uDD16 **Henry AI — Setup**', '',
+        'Tell Henry about your business by saying:', '',
+        '  1. **My name is [your name]**',
+        '  2. **My business name is [business name]**',
+        '  3. **I am a [type of contractor]** (plumber, carpenter, electrician…)',
+        '  4. **My rate is $[amount] per hour**',
+        '  5. **Set payment terms to Net 30** (or whatever you use)',
+        '',
+        'Then say **pair my phone** to get your companion URL.',
+        '',
+        '\uD83D\uDCBB **This computer:** ' + (_hostname||'Mac') + ' · ' + (_printers !== 'none found' ? _printers : 'no printer found'),
+      ];
+      if (_bizName) _setupLines.push('', '\u2705 Business: **' + _bizName + '**' + (_ownerName ? ' · Owner: ' + _ownerName : '') + (_rate ? ' · Rate: $' + _rate + '/hr' : ''));
+      else _setupLines.push('', '\u26A0\uFE0F Business not configured yet — start with step 1');
+      sendReply(_setupLines.join('\n')); return;
+    }
+
     if (/^(?:what is henry'?s? setup|what does the setup do|what is the setup stuff|explain.*setup|henry setup|what are you connected to|what.*connection|how.*setup.*work|what providers|what is iron gateway|explain iron gateway)/.test(lowerText)) {
       sendReply('**Henry\'s Setup — what it is:**\n\n**Iron Gateway** is Henry\'s AI engine. It connects to multiple AI providers so Henry always has a brain:\n\n• **Groq** (free, fast) — you already have a key, this is what Henry uses now\n• **Gemini** — Google\'s AI, very capable, has a free tier\n• **Ollama** — runs AI *locally* on your Mac or TheVault, completely private\n\nThe setup panels let you connect these. You don\'t need all of them — Groq is enough. But Ollama would let Henry work offline using your own hardware.\n\n**Right now:**\n• Groq ✅ connected and working\n• Ollama ❌ not running (say "start ollama" to fix)\n• Screen Recording ❌ needs toggle in System Settings\n• Accessibility ❌ needs toggle in System Settings\n• Mic — should work (tap the mic button in the chat bar)\n\nSay "fix screen recording", "fix accessibility", or "start ollama" and I\'ll open the right place.');
       return;
@@ -2502,6 +2526,20 @@ self.addEventListener('fetch', (event) => {
 
     // ── Show business settings ─────────────────────────────────────────────────
     if (lowerText === 'business info' || lowerText === 'my business info' || lowerText === 'business settings' || lowerText === 'show business info' || lowerText === 'show my settings' || lowerText === 'settings' || lowerText === 'show settings') {
+    // ── 'My name is X' → owner name ──────────────────────────────────────────
+    {
+      const _ownM = lowerText.match(/^(?:my name is|call me|i go by)(?: the)? ([\w][\w\s]{0,30}?)(?:\.|!)?$/i);
+      if (_ownM) {
+        const _owN = (_ownM[1]||'').trim().split(' ').map((w: string)=>w.charAt(0).toUpperCase()+w.slice(1).toLowerCase()).join(' ');
+        const _skip = ['a','an','the','not','just','your','henry','trying','looking'];
+        if (_owN.length > 1 && !_skip.includes(_owN.toLowerCase())) {
+          dbRun("UPDATE settings SET value=? WHERE key='owner_name'", _owN);
+          dbRun("INSERT OR IGNORE INTO settings (key,value) VALUES ('owner_name',?)", _owN);
+          sendReply('Got it, **' + _owN + '**. \uD83D\uDD91 Good to meet you!'); return;
+        }
+      }
+    }
+
       const _bizN = (dbGetOne("SELECT value FROM settings WHERE key='business_name'") as any)?.value || 'My Business';
       const _bizT = (dbGetOne("SELECT value FROM settings WHERE key='business_type'") as any)?.value || 'general';
       const _bizPay = (dbGetOne("SELECT value FROM settings WHERE key='payment_terms'") as any)?.value || 'Due on receipt';
