@@ -293,6 +293,36 @@ export function setSyncDb(db: import('better-sqlite3').Database): void {
     db.exec(`INSERT OR IGNORE INTO settings (key,value) VALUES ('business_type','general');`);
     db.exec(`INSERT OR IGNORE INTO settings (key,value) VALUES ('business_name','My Business');`);
     db.exec(`INSERT OR IGNORE INTO settings (key,value) VALUES ('payment_terms','Due on receipt');`);
+    // Auto-populate contacts from jobs if contacts table is empty
+    try {
+      const _ctCount = (db.prepare('SELECT COUNT(*) as n FROM contacts').get() as any)?.n || 0;
+      if (_ctCount === 0) {
+        const _ctJobs = db.prepare("SELECT client_name, COALESCE(SUM(paid_amount),0) as rev FROM jobs WHERE client_name NOT IN ('TBD','') GROUP BY LOWER(client_name)").all() as any[];
+        const _ctStmt = db.prepare('INSERT OR IGNORE INTO contacts (id,name,email,phone,revenue_total,priority,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)');
+        const _ctNow = new Date().toISOString();
+        for (const cl of _ctJobs) {
+          const _ctId = Date.now().toString(36) + Math.random().toString(36).slice(2);
+          _ctStmt.run(_ctId, cl.client_name, '', '', cl.rev || 0, 2, _ctNow, _ctNow);
+        }
+      } else {
+        // Sync revenue from jobs to contacts
+        const _ctJobsRev = db.prepare("SELECT client_name, COALESCE(SUM(paid_amount),0) as rev FROM jobs WHERE client_name NOT IN ('TBD','') GROUP BY LOWER(client_name)").all() as any[];
+        for (const cl of _ctJobsRev) { db.prepare('UPDATE contacts SET revenue_total=?, updated_at=? WHERE LOWER(name)=?').run(cl.rev||0, new Date().toISOString(), cl.client_name.toLowerCase()); }
+      }
+    } catch { /* non-fatal */ }
+    // Auto-populate contacts from jobs if contacts table is empty
+    try {
+      const _ctCount = (db.prepare('SELECT COUNT(*) as n FROM contacts').get() as any)?.n || 0;
+      if (_ctCount === 0) {
+        const _ctJobs = db.prepare("SELECT client_name, COALESCE(SUM(paid_amount),0) as rev FROM jobs WHERE client_name NOT IN ('TBD','') GROUP BY LOWER(client_name)").all() as any[];
+        const _ctStmt = db.prepare("INSERT OR IGNORE INTO contacts (id,name,email,phone,revenue_total,priority,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)");
+        const _ctNow = new Date().toISOString();
+        for (const cl of _ctJobs) {
+          const _ctId = Date.now().toString(36) + Math.random().toString(36).slice(2);
+          _ctStmt.run(_ctId, cl.client_name, '', '', cl.rev || 0, 2, _ctNow, _ctNow);
+        }
+      }
+    } catch { /* non-fatal */ }
     // Auto-backup on startup
     const { execSync: _bkx } = require('child_process') as typeof import('child_process');
     const _bkos = require('os') as typeof import('os');
@@ -3670,6 +3700,48 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Outstanding ─────────────────────────────────────────────────
+    // ── Show clients ───────────────────────────────────────────────────────────
+    if (/^(?:show(?: all)?(?: my)?|list(?: my)?|who are my|all(?: my)?|my)(?: active)? clients?$/.test(lowerText) || lowerText === 'clients' || lowerText === 'client list') {
+      // Sync revenue from jobs → contacts first
+      const _scSync = dbGet("SELECT client_name, COALESCE(SUM(paid_amount),0) as rev FROM jobs WHERE client_name NOT IN ('TBD','') GROUP BY LOWER(client_name)") as any[];
+      for (const _sc of _scSync) {
+        const _scEx = dbGetOne('SELECT id FROM contacts WHERE LOWER(name)=? LIMIT 1', _sc.client_name.toLowerCase()) as any;
+        if (_scEx) dbRun('UPDATE contacts SET revenue_total=?, updated_at=? WHERE id=?', _sc.rev||0, new Date().toISOString(), _scEx.id);
+        else dbRun('INSERT OR IGNORE INTO contacts (id,name,email,phone,revenue_total,priority,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)', Date.now().toString(36)+Math.random().toString(36).slice(2), _sc.client_name, '', '', _sc.rev||0, 2, new Date().toISOString(), new Date().toISOString());
+      }
+      const _clAll = dbGet('SELECT name,email,phone,revenue_total FROM contacts ORDER BY revenue_total DESC LIMIT 20') as any[];
+      if (!_clAll.length) { sendReply('No clients yet. Add one: "add client: Bob Smith | bob@email.com | 555-1234"'); return; }
+      const _clLines = ['**Clients (' + _clAll.length + ')**', ''];
+      for (const cl of _clAll) {
+        const _clJobs = (dbGetOne('SELECT COUNT(*) as n FROM jobs WHERE LOWER(client_name) LIKE ?', '%'+cl.name.split(' ')[0].toLowerCase()+'%') as any)?.n || 0;
+        _clLines.push('\u2022 **' + cl.name + '**' + (cl.revenue_total>0?' \u2014 $'+cl.revenue_total.toFixed(0)+' paid':'') + ' (' + _clJobs + ' job' + (_clJobs!==1?'s':'') + ')');
+        if (cl.email) _clLines.push('  ' + cl.email);
+        if (cl.phone) _clLines.push('  ' + cl.phone);
+      }
+      sendReply(_clLines.join('\n')); return;
+    }
+
+    // ── Client revenue lookup ────────────────────────────────────────────────
+    {
+      const _crRx = lowerText.match(/^(?:total(?: revenue| income)? from|revenue from|income from|how much from)[:\s]+(.+)/i)
+                 || lowerText.match(/^how much(?: have i)? (?:made|earned|billed|charged)(?: from| with)[:\s]+(.+)/i);
+      if (_crRx) {
+        const _crName = (_crRx[1]||_crRx[2]||'').trim().replace(/'s?$/, '');
+        const _crFirst = _crName.split(' ')[0].toLowerCase();
+        if (_crFirst.length > 2) {
+          const _crJobs = dbGet("SELECT paid_amount,invoice_amount,status FROM jobs WHERE LOWER(client_name) LIKE ?", '%'+_crFirst+'%') as any[];
+          if (_crJobs.length) {
+            const _crPaid = _crJobs.reduce((s: number,j: any) => s+(j.paid_amount||0), 0);
+            const _crOwe = _crJobs.filter((j: any) => ['invoiced','complete'].includes(j.status)).reduce((s: number,j: any) => s+(j.invoice_amount-j.paid_amount), 0);
+            const _crReal = (dbGetOne('SELECT name FROM contacts WHERE LOWER(name) LIKE ? LIMIT 1', '%'+_crFirst+'%') as any)?.name || _crName;
+            const _crOut = ['**' + _crReal + ' \u2014 Revenue**', '', 'Jobs: ' + _crJobs.length, 'Paid: **$' + _crPaid.toFixed(2) + '**'];
+            if (_crOwe > 0) _crOut.push('\u26a0\ufe0f Outstanding: $' + _crOwe.toFixed(2));
+            sendReply(_crOut.join('\n')); return;
+          }
+        }
+      }
+    }
+
     const _oweM = /^(?:show(?: my)?|what.?s|who owes me|outstanding|unpaid|owed)(?: (?:outstanding|balance|money|invoices?))?$/.test(lowerText) || lowerText === 'who owes me';
     if (_oweM) {
       const _oj = dbGet("SELECT job_number,client_name,title,invoice_amount,paid_amount,invoiced_date FROM jobs WHERE status IN ('invoiced','complete') AND (invoice_amount-paid_amount)>0 ORDER BY invoiced_date ASC") as any[];
@@ -4107,6 +4179,34 @@ self.addEventListener('fetch', (event) => {
     // ── Show expenses ──────────────────────────────────────────────────────────
     // ── Show all transactions this month ────────────────────────────────────
     // ── "average job size" / "avg revenue per job" — local SQL ─────────────────
+    // ── Job profit / detail lookup ────────────────────────────────────────────
+    const _jobDetailM = lowerText.match(/^(?:profit(?: on)?|cost(?: of)?|details?(?: on| for)?|info(?: on| for)?|show)(?: job)?\s+([J|j]-\d+)$/i)
+                     || (lowerText.match(/^(?:what(?:'s| is)(?: the)? profit|how much(?: did i)? make|how much profit)(?: on| from| for)?\s+([J|j]-\d+)/i));
+    if (_jobDetailM) {
+      const _jdNum = (_jobDetailM[1]||_jobDetailM[2]||'').toUpperCase();
+      const _jdJob = dbGetOne("SELECT * FROM jobs WHERE UPPER(job_number)=? LIMIT 1", _jdNum) as any;
+      if (!_jdJob) { sendReply('Job ' + _jdNum + ' not found.'); return; }
+      const _jdMats = dbGet("SELECT material, quantity, unit_cost FROM job_materials WHERE job_id=?", _jdJob.id) as any[];
+      const _jdLogs = dbGet("SELECT note, created_at FROM job_log WHERE job_id=? ORDER BY created_at", _jdJob.id) as any[];
+      const _jdMatCost = _jdMats.reduce((s: number, m: any) => s + (m.unit_cost||0), 0);
+      const _jdRevenue = _jdJob.paid_amount || _jdJob.invoice_amount || _jdJob.bid_amount || 0;
+      const _jdProfit = _jdRevenue - _jdMatCost;
+      const _jdLines = [
+        '**' + _jdNum + '** — ' + _jdJob.client_name,
+        _jdJob.title,
+        'Status: **' + _jdJob.status + '**', '',
+      ];
+      if (_jdJob.scheduled_date) _jdLines.push('Scheduled: ' + _jdJob.scheduled_date);
+      if (_jdRevenue > 0) _jdLines.push('Revenue: $' + _jdRevenue.toFixed(2));
+      if (_jdMatCost > 0) { _jdLines.push('Materials: $' + _jdMatCost.toFixed(2)); _jdLines.push('**Profit: $' + _jdProfit.toFixed(2) + '**'); }
+      else _jdLines.push('(No materials logged)');
+      const _jdOwe = (_jdJob.invoice_amount||0) - (_jdJob.paid_amount||0);
+      if (_jdOwe > 0) _jdLines.push('⚠️ Outstanding: $' + _jdOwe.toFixed(2));
+      if (_jdMats.length) { _jdLines.push('', 'Materials:'); for (const m of _jdMats) _jdLines.push('  • ' + (m.quantity||'') + ' ' + m.material + (m.unit_cost>0?' ($'+m.unit_cost.toFixed(2)+')':'')); }
+      if (_jdLogs.length) { _jdLines.push('', 'Work log:'); for (const l of _jdLogs) _jdLines.push('  ' + l.created_at.slice(0,10) + ': ' + l.note); }
+      sendReply(_jdLines.join('\n')); return;
+    }
+
     // ── Best/largest job ──────────────────────────────────────────────────────
     const _bestJobM = /^(?:what(?:'s| is| was)(?: my)? (?:best|biggest|largest|highest|most expensive|top) (?:paying )?job|my (?:best|biggest|largest|top) job|biggest job ever|most i(?:'ve)? (?:charged|made|earned)(?: on a job)?)/.test(lowerText);
     if (_bestJobM) {
