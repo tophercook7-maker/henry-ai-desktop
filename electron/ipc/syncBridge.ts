@@ -1654,6 +1654,19 @@ self.addEventListener('fetch', (event) => {
       }
     }
 
+    // P1a-0: Tomorrow's schedule
+    if (/^(?:what(?:'s| do i have)?(?: (?:on my|the))? schedule for tomorrow|tomorrow(?:'s| schedule)|scheduled for tomorrow|what(?:'s| do i have) tomorrow)/.test(lowerText)) {
+      const _tom = new Date(); _tom.setDate(_tom.getDate()+1);
+      const _tomStr = _tom.toISOString().slice(0,10);
+      const _tomJobs = dbGet("SELECT job_number,client_name,title,bid_amount FROM jobs WHERE scheduled_date=? AND status NOT IN ('paid','cancelled') ORDER BY title ASC", _tomStr) as any[];
+      const _tomTasks = dbGet("SELECT title FROM personal_tasks WHERE status='todo' AND due_at BETWEEN ? AND ? ORDER BY due_at ASC LIMIT 5", _tomStr+'T00:00:00Z', _tomStr+'T23:59:59Z') as any[];
+      if (!_tomJobs.length && !_tomTasks.length) { sendReply('Nothing scheduled for tomorrow (' + _tomStr + '). Say "schedule J-XXXXX for tomorrow" to add a job.'); return; }
+      const _tomLines = ['**Tomorrow (' + _tom.toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'}) + ')**', ''];
+      if (_tomJobs.length) { _tomLines.push('**Jobs:**'); for (const j of _tomJobs) _tomLines.push('  \u2022 '+j.job_number+' '+j.client_name+': '+j.title.slice(0,30)+' ($'+(j.bid_amount||0).toFixed(0)+')'); }
+      if (_tomTasks.length) { _tomLines.push('', '**Tasks:**'); for (const t of _tomTasks) _tomLines.push('  \u2022 '+t.title); }
+      sendReply(_tomLines.join('\n')); return;
+    }
+
     // P1a: This week's schedule
     {
       const _thisWeekM = /^(?:what(?:'s| do i have)?|my)(?: (?:my|the))? (?:schedule|scheduled|coming up)(?:(?: this week| for this week| today| this month)?)?$/.test(lowerText)
@@ -2028,7 +2041,7 @@ self.addEventListener('fetch', (event) => {
         const knowledgeAnswer = (() => {
       // Version / identity
       if (/^(?:what version|which version|your version|version number|what.*version are you)/.test(lowerText) || lowerText === 'version') {
-        return 'Henry AI v2.1.2 — your Mac AI: reads files, runs code, runs local AI, remembers your business.\n\n150+ instant local commands, all <20ms.\n\n🔩 Iron Gateway v2: 10 free AI providers — Groq (llama-4-scout, llama-3.3-70b, qwen3), Gemini 2.0+1.5 Flash, Cerebras, OpenRouter. Round-robin with auto-failover.\n\nSay \'what can you do\' to see everything.';
+        return 'Henry AI v2.1.3 — your Mac AI: reads files, runs code, runs local AI, remembers your business.\n\n150+ instant local commands, all <20ms.\n\n🔩 Iron Gateway v2: 10 free AI providers — Groq (llama-4-scout, llama-3.3-70b, qwen3), Gemini 2.0+1.5 Flash, Cerebras, OpenRouter. Round-robin with auto-failover.\n\nSay \'what can you do\' to see everything.';
       }
       if (/^(?:what can you do|capabilities|features|what are you capable of|what do you do|your features)/.test(lowerText) || lowerText === 'help') {
         return '\uD83E\uDDE0 **Henry \u2014 What I Can Do**\n\n' + [
@@ -2351,7 +2364,7 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Show business settings ─────────────────────────────────────────────────
-    if (lowerText === 'business info' || lowerText === 'my business info' || lowerText === 'business settings' || lowerText === 'show business info') {
+    if (lowerText === 'business info' || lowerText === 'my business info' || lowerText === 'business settings' || lowerText === 'show business info' || lowerText === 'show my settings' || lowerText === 'settings' || lowerText === 'show settings') {
       const _bizN = (dbGetOne("SELECT value FROM settings WHERE key='business_name'") as any)?.value || 'My Business';
       const _bizT = (dbGetOne("SELECT value FROM settings WHERE key='business_type'") as any)?.value || 'general';
       const _bizPay = (dbGetOne("SELECT value FROM settings WHERE key='payment_terms'") as any)?.value || 'Due on receipt';
@@ -2402,6 +2415,56 @@ self.addEventListener('fetch', (event) => {
 
     // ── Companion phone setup / pairing ──────────────────────────────────────
     // ── Send iMessage / text ─────────────────────────────────────────────────
+    // ── Add/show job notes ──────────────────────────────────────────────────
+    {
+      const _jobNoteAddM = lowerText.match(/^(?:add|log|save)(?: a)? note(?:s?)? (?:to|for|on)(?: job)?[:\s]+([j]-\d{4,6})[:\s]+(.+)/i)
+                        || lowerText.match(/^([j]-\d{4,6})(?:'s)? note[:\s]+(.+)/i);
+      if (_jobNoteAddM) {
+        const _jnNum = (_jobNoteAddM[1]||'').toUpperCase();
+        const _jnText = (_jobNoteAddM[2]||'').trim();
+        const _jnJob = dbGetOne('SELECT id,job_number,client_name,notes FROM jobs WHERE UPPER(job_number)=? LIMIT 1', _jnNum) as any;
+        if (_jnJob) {
+          const _jnOld = _jnJob.notes ? _jnJob.notes + '\n' : '';
+          const _jnNew = _jnOld + new Date().toISOString().slice(0,10) + ': ' + _jnText;
+          dbRun('UPDATE jobs SET notes=?,updated_at=? WHERE id=?', _jnNew, new Date().toISOString(), _jnJob.id);
+          sendReply('\uD83D\uDCCC Note added to **' + _jnNum + '** (' + _jnJob.client_name + '):\n' + _jnText);
+          return;
+        } else { sendReply('Job ' + _jnNum + ' not found.'); return; }
+      }
+      const _jobNoteShowM = lowerText.match(/^(?:show|get|what(?:'s| are)(?: the)?) notes?(?: for| on)?(?: job)?[:\s]+([j]-\d{4,6})/i)
+                         || lowerText.match(/^([j]-\d{4,6}) notes?$/i);
+      if (_jobNoteShowM) {
+        const _jnsNum = (_jobNoteShowM[1]||'').toUpperCase();
+        const _jnsJob = dbGetOne('SELECT job_number,client_name,notes FROM jobs WHERE UPPER(job_number)=? LIMIT 1', _jnsNum) as any;
+        if (_jnsJob) {
+          sendReply(_jnsJob.notes && _jnsJob.notes.length > 1
+            ? '**Notes for ' + _jnsNum + '** (' + _jnsJob.client_name + '):\n\n' + _jnsJob.notes
+            : 'No notes for ' + _jnsNum + '. Say "add note to ' + _jnsNum + ': [text]" to add one.');
+          return;
+        }
+      }
+    }
+
+    // ── Hourly rate ─────────────────────────────────────────────────────────
+    {
+      const _hrSetM = lowerText.match(/^(?:set(?: my)?|my|update(?: my)?|i charge) (?:hourly )?rate(?:\s+(?:is|to|=|at))?\s+\$?([\d.]+)/i)
+                   || lowerText.match(/^(?:rate|charge)[:\s]+\$?([\d.]+)(?: (?:per|an) hour)?$/i);
+      if (_hrSetM) {
+        const _hrVal = parseFloat(_hrSetM[1]||'0');
+        if (_hrVal > 0) {
+          dbRun("UPDATE settings SET value=? WHERE key='hourly_rate'", String(_hrVal));
+          dbRun("INSERT OR IGNORE INTO settings (key,value) VALUES ('hourly_rate',?)", String(_hrVal));
+          sendReply('Hourly rate set to **$' + _hrVal.toFixed(2) + '/hr**.');
+          return;
+        }
+      }
+      if (/^(?:what(?:'s| is)(?: my)? hourly rate|my hourly rate|how much do i charge|my rate)$/.test(lowerText)) {
+        const _hrV = (dbGetOne("SELECT value FROM settings WHERE key='hourly_rate'") as any)?.value;
+        sendReply(_hrV ? '**Hourly rate:** $' + parseFloat(_hrV).toFixed(2) + '/hr' : 'No rate set. Say "my rate is $75" to set one.');
+        return;
+      }
+    }
+
     const _imsgM = lowerText.match(/^(?:text|send(?: a)? (?:text|message|imessage)|message)(?: to)? ([\w][\w\s]{1,25}?)(?:[:\s]+|,\s*)(.+)/i);
     if (_imsgM) {
       const _imsgName = (_imsgM[1]||'').trim();
@@ -2548,7 +2611,9 @@ self.addEventListener('fetch', (event) => {
                    || lowerText.match(/^(?:done with|finished|completed)\s+([j]-\d{4,6})$/i);
       if (_qjDone) {
         const _qjNum = (_qjDone[1]||_qjDone[2]||'').toUpperCase();
-        const _qjJob = dbGetOne("SELECT id,job_number,client_name,title,bid_amount FROM jobs WHERE UPPER(job_number)=? AND status NOT IN ('paid','cancelled') LIMIT 1", _qjNum) as any;
+        const _qjJobRaw = dbGetOne('SELECT id,job_number,client_name,title,bid_amount,status FROM jobs WHERE UPPER(job_number)=? LIMIT 1', _qjNum) as any;
+        if (_qjJobRaw && ['paid','complete','invoiced'].includes(_qjJobRaw.status)) { sendReply(_qjNum + ' is already ' + _qjJobRaw.status + '.'); return; }
+        const _qjJob = _qjJobRaw;
         if (_qjJob) {
           dbRun("UPDATE jobs SET status='complete',completed_date=?,invoice_amount=CASE WHEN invoice_amount=0 THEN bid_amount ELSE invoice_amount END,updated_at=? WHERE id=?",
             new Date().toISOString().slice(0,10), new Date().toISOString(), _qjJob.id);
@@ -3102,7 +3167,7 @@ self.addEventListener('fetch', (event) => {
                         || lowerText === 'tasks done today' || lowerText === 'completed today';
     if (doneTodayMatch) {
       try {
-        const today = new Date().toISOString().slice(0,10);
+        const today = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD in local timezone
         const done = dbGet<{title:string}>(
           "SELECT title FROM personal_tasks WHERE status='done' AND completed_at >= ? ORDER BY completed_at DESC LIMIT 10",
           today + 'T00:00:00.000Z'
@@ -4307,7 +4372,7 @@ self.addEventListener('fetch', (event) => {
       const content = (journalMatch[1] || '').trim();
       if (content.length > 1) {
         try {
-          const today = new Date().toISOString().slice(0,10);
+          const today = (() => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); })();
           const id = Date.now().toString(36)+Math.random().toString(36).slice(2);
           dbRun("INSERT INTO journal_entries (id,date,title,content,mood,tags,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)",
             id, today, content.slice(0,60), content, '', '', new Date().toISOString(), new Date().toISOString());
@@ -4329,7 +4394,7 @@ self.addEventListener('fetch', (event) => {
         if (!entries.length) sendReply("No journal entries yet. Say \"journal: [your thoughts]\" to write one.");
         else sendReply(entries.length + " recent journal entr" + (entries.length > 1 ? "ies" : "y") + ":\n\n" +
           entries.map((e,i) => {
-            const d = new Date(e.date).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+            const d = new Date(e.date + 'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
             const preview = (e.content || '').slice(0,50).replace(/\n/g,' ');
             return (i+1) + ". " + d + " — " + preview + (e.content?.length > 50 ? "…" : "");
           }).join("\n"));
@@ -4360,7 +4425,7 @@ self.addEventListener('fetch', (event) => {
 
     // ── Direct verse reference: "John 3:16" / "lookup John 3:16" / "what is John 3:16"
     // ── Scripture: save verse voice command ─────────────────────────────────
-    const _ssM = lowerText.match(/^(?:save|bookmark)(?: this)?(?: verse)?[:\s]+(.{3,30})$/i)
+    const _ssM = /\d/.test(lowerText) && lowerText.match(/^(?:save|bookmark)(?: this)?(?: verse)?[:\s]+(.{3,30})$/i)
               || (lowerText.startsWith('save ') && /\d/.test(lowerText) && lowerText.length < 30);
     if (_ssM) {
       const _ssRef = (typeof _ssM === 'object' && _ssM[1]) ? _ssM[1].trim() : lowerText.replace(/^save\s+/i,'').trim();

@@ -500,11 +500,11 @@ document.addEventListener('DOMContentLoaded', function() {
     {l:'🧾 Invoice', q:'what needs invoicing'},
     {l:'👥 Clients', q:'show clients'},
     {l:'📊 Biz', q:'business summary'},
-    {l:'⏰ Timer', q:'set a timer for 25 minutes'},
+    {l:'⏱ 25min', q:'set a timer for 25 minutes'},
     {l:'📝 Notes', q:'notepad'},
     {l:'🎯 Focus', q:'what should I work on today'},
     {l:'💪 Habits', q:'habit consistency'},
-    {l:'✝ Bible', q:'read John 3:16'},
+    {l:'📒 Journal', q:'show journal'},
     {l:'🌙 GN', q:'gn'},
   ];
   var qb = document.getElementById('quick-btns');
