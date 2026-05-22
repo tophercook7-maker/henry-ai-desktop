@@ -3827,6 +3827,27 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Send invoice ────────────────────────────────────────────────
+    // ── Email invoice to client ────────────────────────────────────────────
+    {
+      const _eiM = lowerText.match(/^(?:email|send by email)(?: the)? invoice (?:for|to) ([j]-\d{4,6})/i)
+               || lowerText.match(/^email ([j]-\d{4,6})(?:'s)? invoice/i)
+               || lowerText.match(/^(?:email|send)(?: the)? invoice for ([j]-\d{4,6}) to/i);
+      if (_eiM) {
+        const _eiNum = (_eiM[1]||'').toUpperCase();
+        const _eiJob = dbGetOne('SELECT * FROM jobs WHERE UPPER(job_number)=? LIMIT 1', _eiNum) as any;
+        if (!_eiJob) { sendReply('Job ' + _eiNum + ' not found.'); return; }
+        const _eiC = dbGetOne('SELECT email,name FROM contacts WHERE LOWER(name) LIKE ? LIMIT 1', '%'+(_eiJob.client_name||'').split(' ')[0].toLowerCase()+'%') as any;
+        if (!_eiC?.email) { sendReply('No email for **' + _eiJob.client_name + '**. Add one: "add email to ' + _eiJob.client_name + ': [email]"'); return; }
+        const _eiAmt = (_eiJob.invoice_amount || _eiJob.bid_amount || 0).toFixed(2);
+        const { execSync: _eiEx } = await import('child_process') as typeof import('child_process');
+        const _eiSub = encodeURIComponent('Invoice ' + _eiNum + ': ' + (_eiJob.title||'').slice(0,30));
+        const _eiBody = encodeURIComponent('Hi ' + _eiJob.client_name.split(' ')[0] + ',\n\nInvoice for: ' + (_eiJob.title||'') + '\nAmount due: $' + _eiAmt + '\n\nThank you!\nTopher Cook Workshop');
+        _eiEx('open "mailto:' + _eiC.email + '?subject=' + _eiSub + '&body=' + _eiBody + '"', {timeout:3000,shell:'/bin/bash'});
+        sendReply('\uD83D\uDCE7 Mail opened to **' + _eiJob.client_name + '** (' + _eiC.email + ')\nAmount: $' + _eiAmt + '\n\nAttach the invoice HTML from your Desktop and send.');
+        return;
+      }
+    }
+
     const _invoiceM = lowerText.match(/^(?:send(?: the)?|generate|create|make)(?: an?)? invoice(?: for)?[:\s]+([J|j]-\d+)/i)
                    || lowerText.match(/^invoice[:\s]+([J|j]-\d+)/i);
     if (_invoiceM) {
@@ -3952,8 +3973,8 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Jobs needing invoice ──────────────────────────────────────────────────
-    const _needsInvM = /^(?:what(?:'s| (?:jobs?|work))? (?:need|needs?)(?: to be| to get)? (?:invoic|bill)|what(?:'s| is) (?:ready to|needs to) (?:be invoic|be bill)|(?:show|list)(?: me)?(?: the)? (?:uninvoic|unbill)|what(?:'s| do i need to) bill|jobs? (?:ready to invoice|to bill|needing invoic))/.test(lowerText)
-                     || lowerText === 'what needs billing' || lowerText === 'what needs invoicing' || lowerText === 'ready to invoice';
+    const _needsInvM = /^(?:what(?:'s| (?:jobs?|work))? (?:need|needs?)(?: to be| to get)? (?:invoic|bill)|what(?:'s| is) (?:ready to|needs to) (?:be invoic|be bill)|(?:show|list)(?: me)?(?: (?:all|the))? (?:uninvoic|unbill)|what(?:'s| do i need to) bill|jobs? (?:ready to invoice|to bill|needing invoic)|any jobs? (?:overdue|ready) for invoic|(?:uninvoiced|unbilled) complete)/.test(lowerText)
+                     || lowerText === 'what needs billing' || lowerText === 'what needs invoicing' || lowerText === 'ready to invoice' || lowerText === 'uninvoiced jobs' || lowerText === 'not yet invoiced';
     if (_needsInvM) {
       const _njInv = dbGet("SELECT job_number,client_name,title,bid_amount,completed_date FROM jobs WHERE status='complete' AND invoice_sent=0 ORDER BY completed_date ASC") as any[];
       if (!_njInv.length) { sendReply('All completed jobs have been invoiced!'); return; }
@@ -4013,6 +4034,24 @@ self.addEventListener('fetch', (event) => {
         if (_acdC && _acdVal.length > 1) {
           dbRun('UPDATE contacts SET '+_acdField+'=?,updated_at=? WHERE id=?', _acdVal, new Date().toISOString(), _acdC.id);
           sendReply('Updated **'+_acdC.name+'**: '+_acdField+' = **'+_acdVal+'**'); return;
+        }
+      }
+    }
+
+    // ── Communication / call log ──────────────────────────────────────────────
+    {
+      const _commM = lowerText.match(/^(?:log(?: a)? call(?: with)?|i called|spoke with|talked to)\s+([\w][\w\s]{2,30})(?:\s+(?:today|yesterday|just now|earlier|this morning|this afternoon))?$/i)
+      if (_commM) {
+        const _commName = (_commM[1]||'').trim();
+        const _commC = dbGetOne('SELECT id,name,notes FROM contacts WHERE LOWER(name) LIKE ? LIMIT 1', '%'+_commName.split(' ')[0].toLowerCase()+'%') as any;
+        const _commDate = (() => { const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); })();
+        const _commEntry = _commDate + ': called ' + (_commC?.name || _commName);
+        if (_commC) {
+          const _commOld = _commC.notes || '';
+          dbRun('UPDATE contacts SET notes=?,updated_at=? WHERE id=?', (_commOld?_commOld+'\n':'')+_commEntry, new Date().toISOString(), _commC.id);
+          sendReply('\uD83D\uDCDE Call logged with **' + _commC.name + '** on ' + new Date().toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}) + '.'); return;
+        } else if (_commName.length > 1) {
+          sendReply('Contact \'' + _commName + '\' not found. Add them: "add client: ' + _commName + ' | [phone] | [email]"'); return;
         }
       }
     }
