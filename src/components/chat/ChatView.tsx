@@ -3234,23 +3234,14 @@ const DISCOVERY_MODES: Array<{
   },
 ];
 
-// ── Quick action pills for the clean welcome screen ──────────────────────────
+// ── Quick action pills — 6 essentials only ───────────────────────────────────
 const QUICK_CHIPS = [
-  { icon: '☀️', label: 'Morning brief',        text: 'gm' },
-  { icon: '📋', label: 'My jobs',              text: 'show jobs' },
-  { icon: '💰', label: 'Who owes me',          text: 'who owes me' },
-  { icon: '📊', label: 'Business summary',     text: 'business summary' },
-  { icon: '💸', label: 'Cash flow',            text: 'cash flow' },
-  { icon: '🧾', label: 'Needs invoicing',      text: 'what jobs need invoicing' },
-  { icon: '👥', label: 'Clients',              text: 'show clients' },
-  { icon: '🎯', label: 'Focus now',            text: 'what should I work on today' },
-  { icon: '💪', label: 'Habits',               text: 'habit consistency' },
-  { icon: '📒', label: 'Journal',              text: 'show journal' },
-  { icon: '🖥', label: 'System info',          text: 'system info' },
-  { icon: '🔋', label: 'Battery',              text: 'battery status' },
-  { icon: '🖨', label: 'Print',                text: 'print' },
-  { icon: '📸', label: 'Screenshot',           text: 'take a screenshot' },
-  { icon: '🌙', label: 'Wrap up',              text: 'gn' },
+  { icon: '☀️', label: 'Morning brief', text: 'gm' },
+  { icon: '📋', label: 'My jobs',       text: 'show jobs' },
+  { icon: '💰', label: 'Who owes me',   text: 'who owes me' },
+  { icon: '📊', label: 'Cash flow',     text: 'cash flow' },
+  { icon: '💪', label: 'Habits',        text: 'habit consistency' },
+  { icon: '🌙', label: 'Wrap up',       text: 'gn' },
 ];
 
 function EmptyChat({
@@ -3261,42 +3252,37 @@ function EmptyChat({
   proactiveSuggestion?: string | null;
 }) {
   return (
-    <div className="h-full flex flex-col items-center justify-center pb-6 overflow-y-auto">
-      <div className="w-full max-w-xl px-5 animate-fade-in">
+    <div className="h-full flex flex-col items-center justify-center pb-6">
+      <div className="w-full max-w-md px-6 animate-fade-in">
 
-        {/* Henry identity — minimal, centered */}
-        <div className="text-center mb-6">
-          <div className="w-14 h-14 mx-auto mb-3 rounded-2xl bg-henry-accent/10 border border-henry-accent/20 flex items-center justify-center text-3xl">🤖</div>
-          <h2 className="text-lg font-semibold text-henry-text">Henry AI</h2>
-          <p className="text-[12px] text-henry-text-muted mt-1">Type anything, or tap a quick action below</p>
+        {/* Identity */}
+        <div className="text-center mb-8">
+          <div className="w-12 h-12 mx-auto mb-3 rounded-xl bg-henry-accent/10 border border-henry-accent/20 flex items-center justify-center text-2xl">🤖</div>
+          <h2 className="text-base font-semibold text-henry-text">Henry AI</h2>
         </div>
 
         {/* Proactive suggestion */}
         {proactiveSuggestion && (
-          <div className="mb-5 flex items-start gap-2.5 px-3.5 py-3 rounded-xl bg-henry-accent/6 border border-henry-accent/15">
-            <span className="shrink-0 text-henry-accent text-sm mt-0.5">💡</span>
-            <p className="text-[12px] text-henry-text leading-relaxed">{proactiveSuggestion}</p>
+          <div className="mb-6 flex items-start gap-2.5 px-3 py-2.5 rounded-lg bg-henry-accent/6 border border-henry-accent/15">
+            <span className="shrink-0 text-henry-accent text-xs mt-0.5">💡</span>
+            <p className="text-[11px] text-henry-text leading-relaxed">{proactiveSuggestion}</p>
           </div>
         )}
 
-        {/* Quick action chips — scrollable single row */}
-        <div className="flex flex-wrap gap-2 justify-center">
+        {/* 6 core chips in 2 rows of 3 */}
+        <div className="grid grid-cols-3 gap-2">
           {QUICK_CHIPS.map(({ icon, label, text }) => (
             <button
               key={label}
               onClick={() => onModeAndInject('companion', text)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-henry-surface/50 border border-henry-border/30 text-[11px] text-henry-text-muted hover:text-henry-text hover:border-henry-accent/30 hover:bg-henry-hover/40 transition-all active:scale-95"
+              className="flex flex-col items-center gap-1 px-2 py-2.5 rounded-xl bg-henry-surface/40 border border-henry-border/20 text-henry-text-muted hover:text-henry-text hover:border-henry-accent/25 hover:bg-henry-hover/30 transition-all active:scale-95"
             >
-              <span>{icon}</span>
-              <span>{label}</span>
+              <span className="text-base">{icon}</span>
+              <span className="text-[10px] font-medium">{label}</span>
             </button>
           ))}
         </div>
 
-        {/* Hint */}
-        <p className="text-center text-[10px] text-henry-text-muted/60 mt-5">
-          Voice: tap the mic · Change AI model: use the dropdown · System commands work too
-        </p>
       </div>
     </div>
   );
