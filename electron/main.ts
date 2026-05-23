@@ -731,25 +731,31 @@ app.whenReady().then(() => {
 
       // Check if cloudflared is installed — if not, install it automatically
       let cloudflaredPath = '';
+      const _isWin32 = process.platform === 'win32';
       try {
-        cloudflaredPath = execSync('which cloudflared', { encoding: 'utf8' }).trim();
+        cloudflaredPath = _isWin32
+          ? execSync('where cloudflared', { encoding: 'utf8', shell: true }).trim().split('\n')[0].trim()
+          : execSync('which cloudflared', { encoding: 'utf8' }).trim();
       } catch {
-        // Not found — try to install via brew silently
-        console.log('[Henry] cloudflared not found — installing via brew...');
+        // Not found — try to install
+        console.log('[Henry] cloudflared not found — installing...');
         try {
-          // Check brew exists
-          const brewPath = execSync('which brew', { encoding: 'utf8' }).trim();
-          if (brewPath) {
-            execSync(`${brewPath} install cloudflared`, {
-              timeout: 120_000,
-              stdio: 'ignore',
-              env: { ...process.env, HOME: process.env.HOME || '/Users/' + process.env.USER },
-            });
-            cloudflaredPath = execSync('which cloudflared', { encoding: 'utf8' }).trim();
-            console.log('[Henry] cloudflared installed at:', cloudflaredPath);
+          if (_isWin32) {
+            execSync('winget install Cloudflare.cloudflared --silent', { timeout: 120000, stdio: 'ignore', shell: true });
+            try { cloudflaredPath = execSync('where cloudflared', { encoding: 'utf8', shell: true }).trim().split('\n')[0].trim(); } catch { /* still not found */ }
+          } else {
+            const brewPath = execSync('which brew', { encoding: 'utf8' }).trim();
+            if (brewPath) {
+              execSync(brewPath + ' install cloudflared', {
+                timeout: 120_000, stdio: 'ignore',
+                env: { ...process.env, HOME: process.env.HOME || '/Users/' + process.env.USER },
+              });
+              cloudflaredPath = execSync('which cloudflared', { encoding: 'utf8' }).trim();
+            }
           }
-        } catch (installErr) {
-          console.log('[Henry] Could not auto-install cloudflared:', installErr instanceof Error ? installErr.message : String(installErr));
+          if (cloudflaredPath) console.log('[Henry] cloudflared installed at:', cloudflaredPath);
+        } catch {
+          console.log('[Henry] Could not auto-install cloudflared');
           return;
         }
       }
@@ -818,5 +824,5 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
+  // All platforms supported — quit on all-windows-closed
 });

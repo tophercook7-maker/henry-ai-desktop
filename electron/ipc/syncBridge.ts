@@ -30,6 +30,7 @@ function getCtx(sessionId: string): {role:string;content:string}[] {
  */
 
 import http from 'http';
+import { IS_MAC, IS_WIN, IS_LINUX, tryExec, desktopPath, downloadPath, revealFile, setVolumeCmd, getVolumeCmd, muteCmd, unmuteCmd, setBrightnessCmd, getBrightnessCmd, sleepCmd, lockScreenCmd, restartCmd, shutdownCmd, getBatteryInfo, getDiskInfo, listPrintersCmd, getDefaultPrinterCmd, printFileCmd, screenshotCmd, listAppsCmd, quitAppCmd, getOsVersion, getChipInfo, getHostname, getStartupItemsCmd, getCloudflaredPath } from './platformCommands';
 import crypto from 'crypto';
 import os from 'os';
 import fs from 'fs';
@@ -6221,11 +6222,11 @@ self.addEventListener('fetch', (event) => {
         const _expCsv = [_expHdr,..._expData,..._matData,'','TOTAL,,,'+(_expTotal+_matTotal).toFixed(2)].join('\n');
 
         // Write files
-        const _qbRevPath = require('os').homedir() + '/Desktop/henry_revenue_' + _qbDate + '.csv';
-        const _qbExpPath = require('os').homedir() + '/Desktop/henry_expenses_' + _qbDate + '.csv';
+        const _qbRevPath = desktopPath() + require('path').sep + 'henry_revenue_' + _qbDate + '.csv';
+        const _qbExpPath = desktopPath() + require('path').sep + 'henry_expenses_' + _qbDate + '.csv';
         require('fs').writeFileSync(_qbRevPath, _revCsv);
         require('fs').writeFileSync(_qbExpPath, _expCsv);
-        _qbx('open -R "' + _qbRevPath + '"', {timeout:3000,shell:'/bin/bash'});
+        tryExec(revealFile(_qbRevPath), 3000);
 
         const _profit = _revTotal - _expTotal - _matTotal;
         sendReply('\uD83D\uDCCA **Accounting Export — ' + _biz + '**\n\n' +
@@ -6250,9 +6251,9 @@ self.addEventListener('fetch', (event) => {
         const _rows = _exJobs.map((j: any) => [j.job_number,j.client_name,'"'+j.title+'"',j.status,j.bid_amount||0,j.invoice_amount||0,j.paid_amount||0,j.material_cost||0,'"'+(j.notes||'').replace(/"/g,"'").replace(/\n/g,' ')+'"'].join(','));
         const _csv = [_hdr, ..._rows].join('\n');
         const _dt = (() => { const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); })();
-        const _fp = require('os').homedir() + '/Desktop/henry_jobs_' + _dt + '.csv';
+        const _fp = desktopPath() + require('path').sep + 'henry_jobs_' + _dt + '.csv';
         require('fs').writeFileSync(_fp, _csv);
-        _exEx('open -R "' + _fp + '"', {timeout:3000,shell:'/bin/bash'});
+        tryExec(revealFile(_fp), 3000);
         sendReply('\uD83D\uDCCA **' + _exJobs.length + ' jobs** exported to Desktop: henry_jobs_' + _dt + '.csv');
       } catch(e) { sendReply('Export failed: ' + String(e).slice(0,80)); }
       return;
@@ -6261,9 +6262,8 @@ self.addEventListener('fetch', (event) => {
 
     // ══════════════════════════════════════════════════════════════════════════
     // ── Platform detection + cross-platform command helpers ───────────────────
-    const _isMac = process.platform === 'darwin';
-    const _isWin = process.platform === 'win32';
-    const _isLinux = process.platform === 'linux';
+    // Platform detection — from platformCommands.ts
+    const _isMac = IS_MAC; const _isWin = IS_WIN; const _isLinux = IS_LINUX;
 
     // These helpers return the right command per OS — groundwork for Windows support
     // Currently only Mac is fully implemented; Win/Linux stubs are ready to fill
@@ -6301,18 +6301,16 @@ self.addEventListener('fetch', (event) => {
         || lowerText === 'system info' || lowerText === 'about this mac' || lowerText === 'computer info') {
       try {
         const { execSync: _sx } = await import('child_process') as typeof import('child_process');
-        const _sver = _sx('sw_vers -productVersion', {encoding:'utf8',timeout:3000}).trim();
-        const _smem = _sx('sysctl -n hw.memsize', {encoding:'utf8',timeout:2000}).trim();
-        const _smemG = (parseInt(_smem)/1073741824).toFixed(0);
-        const _scpu = _sx('sysctl -n machdep.cpu.brand_string 2>/dev/null || sysctl -n hw.model', {encoding:'utf8',timeout:2000,shell:'/bin/bash'}).trim();
-        const _sdisk = _sx('df -h / | tail -1', {encoding:'utf8',timeout:2000,shell:'/bin/bash'}).trim();
-        const _sDiskParts = _sdisk.split(/\s+/);
-        const _svol = _sx('osascript -e "output volume of (get volume settings)"', {encoding:'utf8',timeout:3000,shell:'/bin/bash'}).trim();
-        const _sBat = _sx('pmset -g batt 2>/dev/null | grep -oE "[0-9]+%" | head -1', {encoding:'utf8',timeout:3000,shell:'/bin/bash'}).trim();
-        const _sPrn = _sx('lpstat -p 2>/dev/null | grep -oE "printer [^ ]+" | head -3', {encoding:'utf8',timeout:3000,shell:'/bin/bash'}).trim().replace(/printer /g,'');
-        const _sHost = (dbGetOne("SELECT value FROM settings WHERE key='machine_hostname'") as any)?.value||'MacBook Pro';
-        const _sChip = (dbGetOne("SELECT value FROM settings WHERE key='machine_chip'") as any)?.value||'Apple M1 Max';
-        sendReply('\uD83D\uDCBB **' + _sHost + '**\n\nmacOS ' + _sver + '\nChip: ' + _sChip.slice(0,30) + '\nRAM: ' + _smemG + ' GB\nDisk: ' + (_sDiskParts[2]||'?') + ' used, **' + (_sDiskParts[3]||'?') + ' free** of ' + (_sDiskParts[1]||'?') + '\nVolume: ' + _svol + '%' + (_sBat?' | Battery: '+_sBat:'') + '\nPrinter: ' + (_sPrn||'none found'));
+        const _sver = getOsVersion();
+        const _smemG = (require('os').totalmem()/1073741824).toFixed(0);
+        const _scpu = getChipInfo();
+        const _disk = getDiskInfo();
+        const _svol = tryExec(getVolumeCmd(), 3000) || '?';
+        const _sBat = getBatteryInfo();
+        const _sPrn = tryExec(listPrintersCmd(), 3000).replace(/printer /g,'').split('\n')[0].trim();
+        const _sHost = getHostname();
+        const _sChip = _scpu;
+        sendReply('\uD83D\uDCBB **' + _sHost + '**\n\n' + (IS_WIN?'Windows':'macOS') + ' ' + _sver + '\nChip: ' + _sChip.slice(0,30) + '\nRAM: ' + _smemG + ' GB\nDisk: ' + _disk.used + ' used, **' + _disk.free + ' free** of ' + _disk.total + '\nVolume: ' + _svol + '%' + ' | Battery: ' + _sBat + '\nPrinter: ' + (_sPrn||'none found'));
       } catch(e) { sendReply('System info error: ' + String(e).slice(0,60)); }
       return;
     }
@@ -6366,24 +6364,24 @@ self.addEventListener('fetch', (event) => {
     // ── Sleep / shutdown / restart / lock ─────────────────────────────────────
     if (/^(?:sleep|go to sleep|put(?:(?: the)? computer| mac)? to sleep)$/.test(lowerText)) {
       const { execSync: _slx } = await import('child_process') as typeof import('child_process');
-      _slx('osascript -e "tell application \\"System Events\\" to sleep"', {timeout:5000,shell:'/bin/bash'});
+      tryExec(sleepCmd(), 5000);
       sendReply('\uD83D\uDCA4 Sleeping...'); return;
     }
     if (/^(?:lock(?: the)? (?:screen|computer|mac)|screen lock|lock screen)$/.test(lowerText)) {
       const { execSync: _lkx } = await import('child_process') as typeof import('child_process');
-      _lkx('osascript -e "tell application \\"System Events\\" to keystroke \\"q\\" using {command down, control down}"', {timeout:3000,shell:'/bin/bash'});
+      tryExec(lockScreenCmd(), 3000);
       sendReply('\uD83D\uDD12 Screen locked'); return;
     }
     if (/^(?:restart|reboot|restart(?:(?: the)? computer| mac)?)$/.test(lowerText)) {
       sendReply('\uD83D\uDD04 Restarting your Mac in 5 seconds...');
       const { execSync: _rx } = await import('child_process') as typeof import('child_process');
-      setTimeout(() => { try { _rx('osascript -e "tell application \\"System Events\\" to restart"', {shell:'/bin/bash'}); } catch {} }, 5000);
+      setTimeout(() => { try { tryExec(restartCmd(), 8000); } catch {} }, 5000);
       return;
     }
     if (/^(?:shut ?down|power off|turn off(?: the)? (?:computer|mac)?)$/.test(lowerText)) {
       sendReply('\uD83D\uDEAB Shutting down in 5 seconds... Say anything to cancel.');
       const { execSync: _sdx } = await import('child_process') as typeof import('child_process');
-      setTimeout(() => { try { _sdx('osascript -e "tell application \\"System Events\\" to shut down"', {shell:'/bin/bash'}); } catch {} }, 5000);
+      setTimeout(() => { try { tryExec(shutdownCmd(), 8000); } catch {} }, 5000);
       return;
     }
 
@@ -6413,8 +6411,8 @@ self.addEventListener('fetch', (event) => {
       if (_prtM || lowerText === 'print' || lowerText === 'list printers' || lowerText === 'available printers' || lowerText === 'show printers') {
         const { execSync: _px } = await import('child_process') as typeof import('child_process');
         if (lowerText.includes('list') || lowerText.includes('available') || lowerText.includes('show printers')) {
-          const _prnList = _px('lpstat -p 2>/dev/null', {encoding:'utf8',timeout:3000,shell:'/bin/bash'});
-          const _prnDef = _px('lpstat -d 2>/dev/null', {encoding:'utf8',timeout:2000,shell:'/bin/bash'}).trim();
+          const _prnList = tryExec(listPrintersCmd(), 3000);
+          const _prnDef = tryExec(getDefaultPrinterCmd(), 2000);
           sendReply('\uD83D\uDDA8 **Printers:**\n\n' + (_prnList.trim()||'No printers found') + '\n\n' + _prnDef);
         } else {
           // Print the most recent invoice or job summary
@@ -6437,8 +6435,8 @@ self.addEventListener('fetch', (event) => {
     // ── What apps are running ─────────────────────────────────────────────────
     if (/^(?:what(?:'s| is) (?:running|open)|show (?:running|open) apps?|running apps?|open apps?|list apps?|what apps?)$/.test(lowerText)) {
       const { execSync: _apx } = await import('child_process') as typeof import('child_process');
-      const _apList = _apx('osascript -e "tell application \\"System Events\\" to get name of every process whose background only is false"', {encoding:'utf8',timeout:5000,shell:'/bin/bash'}).trim();
-      const _apps = _apList.split(',').map((a: string)=>a.trim()).filter(Boolean);
+      const _apList = tryExec(listAppsCmd(), 5000);
+      const _apps = _apList.split(IS_WIN?'\n':',').map((a: string)=>a.trim()).filter(Boolean);
       sendReply('\uD83D\uDCBB **Running apps (' + _apps.length + '):**\n\n' + _apps.join(', ')); return;
     }
 
@@ -6449,7 +6447,7 @@ self.addEventListener('fetch', (event) => {
         const _qApp = (_quitM[1]||'').trim();
         const { execSync: _qx } = await import('child_process') as typeof import('child_process');
         try {
-          _qx('osascript -e "tell application \\"' + _qApp + '\\" to quit"', {timeout:5000,shell:'/bin/bash'});
+          tryExec(quitAppCmd(_qApp), 5000);
           sendReply('\u2713 Quit **' + _qApp + '**');
         } catch { sendReply('Could not quit ' + _qApp + '. Try the exact app name.'); }
         return;
