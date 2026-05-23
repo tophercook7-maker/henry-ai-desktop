@@ -2115,7 +2115,7 @@ self.addEventListener('fetch', (event) => {
         const knowledgeAnswer = (() => {
       // Version / identity
       if (/^(?:what version|which version|your version|version number|what.*version are you)/.test(lowerText) || lowerText === 'version') {
-        return 'Henry AI v2.1.3 — your Mac AI: reads files, runs code, runs local AI, remembers your business.\n\n150+ instant local commands, all <20ms.\n\n🔩 Iron Gateway v2: 10 free AI providers — Groq (llama-4-scout, llama-3.3-70b, qwen3), Gemini 2.0+1.5 Flash, Cerebras, OpenRouter. Round-robin with auto-failover.\n\nSay \'what can you do\' to see everything.';
+        return 'Henry AI v2.2.0 — your Mac AI: reads files, runs code, runs local AI, remembers your business.\n\n150+ instant local commands, all <20ms.\n\n🔩 Iron Gateway v2: 10 free AI providers — Groq (llama-4-scout, llama-3.3-70b, qwen3), Gemini 2.0+1.5 Flash, Cerebras, OpenRouter. Round-robin with auto-failover.\n\nSay \'what can you do\' to see everything.';
       }
       if (/^(?:what can you do|capabilities|features|what are you capable of|what do you do|your features)/.test(lowerText) || lowerText === 'help') {
         return '\uD83E\uDDE0 **Henry \u2014 What I Can Do**\n\n' + [
@@ -2153,7 +2153,7 @@ self.addEventListener('fetch', (event) => {
     // ── What's new / changelog ─────────────────────────────────────────────────
     if (/^(?:what(?:'s| is)(?: the)? new|changelog|what(?:'s| have you) (?:changed|added|improved|got|gotten)(?: lately| recently)?|what(?:'s| can) henry do (?:now|new|differently))/.test(lowerText)
         || lowerText === "what's new" || lowerText === 'henry changelog' || lowerText === "what's new in henry") {
-      sendReply('**Henry v2.1.3 — Latest additions:**\n\n' +
+      sendReply('**Henry v2.2.0 — Latest additions:**\n\n' +
         '\uD83D\uDCBC **Business:**\n' +
         '  \u2022 Cash flow snapshot (pipeline view)\n' +
         '  \u2022 Partial payments on specific jobs\n' +
@@ -2190,6 +2190,45 @@ self.addEventListener('fetch', (event) => {
         '  \u2022 Journal saves correctly\n' +
         '  \u2022 Today completions summary\n' +
         '  \u2022 Hourly rate stored in settings');
+      return;
+    }
+
+    // ── Henry help / command guide ────────────────────────────────────────────
+    if (/^(?:henry )?help$/.test(lowerText) || lowerText === 'show all commands'
+        || lowerText === 'what can i say' || lowerText === 'what can i say to henry'
+        || lowerText === 'commands' || lowerText === 'show commands' || lowerText === 'command list') {
+      sendReply(
+        '**\uD83E\uDD16 Henry — Command Guide**\n\n' +
+        '**\uD83D\uDCBC Business**\n' +
+        '  gm \u00B7 business summary \u00B7 cash flow \u00B7 total profit\n' +
+        '  who owes me \u00B7 aging report \u00B7 revenue by client\n' +
+        '  revenue this month vs last month \u00B7 what did I earn in May\n' +
+        '  accounting export \u00B7 tax report \u00B7 export jobs\n\n' +
+        '**\uD83D\uDCCB Jobs**\n' +
+        '  show jobs \u00B7 show bids \u00B7 overdue jobs\n' +
+        '  new job: [title] for [client] | $[amount]\n' +
+        '  J-XXXXX done \u00B7 mark J-XXXXX as paid \u00B7 J-XXXXX paid in full\n' +
+        '  rename J-XXXXX \u00B7 log 3 hours on J-XXXXX \u00B7 J-XXXXX work log\n' +
+        '  bill [client] \u00B7 bill all complete jobs \u00B7 Pat paid $500 on J-XXXXX\n' +
+        '  recurring: [job] every week $85 \u00B7 show recurring jobs\n\n' +
+        '**\uD83D\uDC65 Clients**\n' +
+        '  show clients \u00B7 show me everything about Pat\n' +
+        '  log a call with Karen \u00B7 text Karen: [message]\n' +
+        '  show communication log for Pat\n\n' +
+        '**\uD83D\uDCBB Mac Controls**\n' +
+        '  system info \u00B7 battery \u00B7 disk space\n' +
+        '  brighter \u00B7 dimmer \u00B7 brightness 70\n' +
+        '  volume 50 \u00B7 louder \u00B7 mute \u00B7 unmute\n' +
+        '  sleep \u00B7 lock screen \u00B7 restart \u00B7 shut down\n' +
+        '  take a screenshot \u00B7 list apps \u00B7 quit [app]\n' +
+        '  scan my computer \u00B7 clean up big files\n\n' +
+        '**\uD83D\uDCF1 Companion \u00B7 \uD83D\uDCD6 Personal**\n' +
+        '  companion url \u00B7 pair my phone\n' +
+        '  journal: [entry] \u00B7 habit consistency \u00B7 notepad\n' +
+        '  set a timer for 25 minutes \u00B7 read Psalm 23\n' +
+        '  run: [command] \u00B7 look up: [topic]\n' +
+        '  back up my data \u00B7 setup henry \u00B7 what\'s new'
+      );
       return;
     }
 
@@ -4970,6 +5009,84 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ── Jobs completed count ─────────────────────────────────────────────────
+    // ── Revenue this month vs last month ───────────────────────────────────
+    if (/^(?:revenue|earnings?|income)(?: this)? month(?: vs| versus| compared? to| compared with)?(?: last| prev(?:ious)?)? month|month(?:ly)? comparison|how(?:'s| is)(?: my)? (?:month|revenue) (?:vs|doing|going|tracking)/.test(lowerText)) {
+      const _mcNow = new Date();
+      const _mcThisY = _mcNow.getFullYear();
+      const _mcThisM = String(_mcNow.getMonth()+1).padStart(2,'0');
+      const _mcLastD = new Date(_mcNow.getFullYear(), _mcNow.getMonth(), 0);
+      const _mcLastY = _mcLastD.getFullYear();
+      const _mcLastM = String(_mcLastD.getMonth()+1).padStart(2,'0');
+      const _mcThis = (dbGetOne("SELECT COALESCE(SUM(COALESCE(paid_amount,invoice_amount,bid_amount,0)),0) as n FROM jobs WHERE status IN ('paid','invoiced','complete') AND strftime('%Y-%m',COALESCE(paid_date,invoiced_date,updated_at))=?", _mcThisY+'-'+_mcThisM) as any)?.n||0;
+      const _mcLast = (dbGetOne("SELECT COALESCE(SUM(COALESCE(paid_amount,invoice_amount,bid_amount,0)),0) as n FROM jobs WHERE status IN ('paid','invoiced','complete') AND strftime('%Y-%m',COALESCE(paid_date,invoiced_date,updated_at))=?", _mcLastY+'-'+_mcLastM) as any)?.n||0;
+      const _mcDiff = _mcThis - _mcLast;
+      const _mcPct = _mcLast > 0 ? Math.round((_mcDiff/_mcLast)*100) : 0;
+      const _mcMonths = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+      sendReply('**\uD83D\uDCCA Month Comparison**\n\n' +
+        _mcMonths[_mcNow.getMonth()] + ': **$' + (_mcThis as number).toFixed(2) + '**\n' +
+        _mcMonths[_mcLastD.getMonth()] + ': $' + (_mcLast as number).toFixed(2) + '\n' +
+        '\nChange: ' + (_mcDiff >= 0 ? '\u2191' : '\u2193') + ' **$' + Math.abs(_mcDiff).toFixed(2) + '** (' + (_mcDiff >= 0 ? '+' : '') + _mcPct + '%)' +
+        (_mcThis > _mcLast ? '\n\uD83D\uDCC8 Up from last month!' : _mcThis < _mcLast ? '\n\uD83D\uDCC9 Down from last month.' : '\n\u2194 Same as last month.'));
+      return;
+    }
+
+    // ── What did I earn in [month] ───────────────────────────────────────────
+    {
+      const _mEarnM = lowerText.match(/^(?:what did i (?:earn|make|bring in)|(?:revenue|earnings?|income) (?:in|for))\s+(?:in\s+)?([a-z]+)(?:\s+(\d{4}))?/i)
+                   || lowerText.match(/^([a-z]+)\s+(?:revenue|earnings?|income|total)/i)
+                   || lowerText.match(/^(?:show|how much|total)(?: (?:did i|i))? (?:earn|make|revenue|income)(?: in)?\s+([a-z]+)(?:\s+(\d{4}))?/i);
+      if (_mEarnM) {
+        const _months: Record<string,string> = {jan:'01',feb:'02',mar:'03',apr:'04',may:'05',jun:'06',jul:'07',aug:'08',sep:'09',oct:'10',nov:'11',dec:'12',january:'01',february:'02',march:'03',april:'04',june:'06',july:'07',august:'08',september:'09',october:'10',november:'11',december:'12'};
+        const _mWord = (_mEarnM[1]||'').toLowerCase().slice(0,9);
+        const _mNum = _months[_mWord];
+        if (_mNum) {
+          const _mYear = _mEarnM[2] || new Date().getFullYear().toString();
+          const _mKey = _mYear+'-'+_mNum;
+          const _mJobs = dbGet("SELECT job_number,client_name,title,COALESCE(paid_amount,invoice_amount,bid_amount,0) as amt,status FROM jobs WHERE status IN ('paid','invoiced','complete') AND strftime('%Y-%m',COALESCE(paid_date,invoiced_date,updated_at))=? ORDER BY COALESCE(paid_date,updated_at) DESC", _mKey) as any[];
+          const _mRev = _mJobs.reduce((s: number,j: any)=>s+j.amt, 0);
+          const _mNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+          const _mName = _mNames[parseInt(_mNum)-1];
+          if (!_mJobs.length) { sendReply('No revenue recorded for ' + _mName + ' ' + _mYear + '.'); return; }
+          const _mLines = ['**' + _mName + ' ' + _mYear + ' — $' + _mRev.toFixed(2) + ' (' + _mJobs.length + ' jobs)**', ''];
+          _mJobs.forEach((j: any) => _mLines.push('  \u2022 ' + j.job_number + ' ' + j.client_name + ': ' + j.title.slice(0,25) + ' ($' + j.amt.toFixed(0) + ') [' + j.status + ']'));
+          sendReply(_mLines.join('\n')); return;
+        }
+      }
+    }
+
+    // ── Overdue / stale jobs ─────────────────────────────────────────────────
+    if (/^(?:what|show|list)(?: (?:me|all))?(?: (?:my|the))? (?:overdue|stale|stuck|old|aging)(?: jobs?)?$/.test(lowerText)
+        || /^(?:jobs?|work)(?: that(?:'s| is| are))? (?:overdue|stuck|stale|old|not moving|not progressing)$/.test(lowerText)
+        || lowerText === 'overdue jobs' || lowerText === 'stale jobs' || lowerText === 'stuck jobs') {
+      const _ojBids = dbGet("SELECT job_number,client_name,title,bid_amount,status,created_at FROM jobs WHERE status='bid' AND created_at < date('now','-14 days') ORDER BY created_at ASC") as any[];
+      const _ojSched = dbGet("SELECT job_number,client_name,title,bid_amount,status,scheduled_date FROM jobs WHERE status='scheduled' AND scheduled_date < date('now') ORDER BY scheduled_date ASC") as any[];
+      const _ojComp = dbGet("SELECT job_number,client_name,title,bid_amount,status,updated_at FROM jobs WHERE status='complete' AND updated_at < date('now','-7 days') ORDER BY updated_at ASC") as any[];
+      if (!_ojBids.length && !_ojSched.length && !_ojComp.length) { sendReply('\u2705 No overdue or stale jobs — everything is moving!'); return; }
+      const _ojLines: string[] = ['**\u23F0 Overdue / Stale Jobs**', ''];
+      if (_ojSched.length) { _ojLines.push('**Past due scheduled jobs:**'); _ojSched.forEach((j: any) => _ojLines.push('  \u2022 ' + j.job_number + ' ' + j.client_name + ': ' + j.title.slice(0,28) + ' — was due ' + (j.scheduled_date||'?'))); _ojLines.push(''); }
+      if (_ojComp.length) { _ojLines.push('**Completed but not invoiced (7+ days):**'); _ojComp.forEach((j: any) => _ojLines.push('  \u2022 ' + j.job_number + ' ' + j.client_name + ': ' + j.title.slice(0,28) + ' — say \'bill ' + j.client_name.split(' ')[0] + "'")); _ojLines.push(''); }
+      if (_ojBids.length) { _ojLines.push('**Open bids older than 14 days:**'); _ojBids.forEach((j: any) => _ojLines.push('  \u2022 ' + j.job_number + ' ' + j.client_name + ': ' + j.title.slice(0,28) + ' ($' + (j.bid_amount||0).toFixed(0) + ')')); }
+      sendReply(_ojLines.join('\n')); return;
+    }
+
+    // ── Backup status / last backup ──────────────────────────────────────────
+    if (/^(?:when was|show|last)(?: my| the)? (?:last )?backup|backup (?:status|info|history)|my backups?$/.test(lowerText)) {
+      try {
+        const { execSync: _bkx } = await import('child_process') as typeof import('child_process');
+        const _bkDir = require('os').homedir() + '/Library/Application Support/henry-ai-desktop/backups/';
+        const _bkFiles = _bkx('ls -lt "' + _bkDir + '" 2>/dev/null | grep henry_.*\.db | head -5', {encoding:'utf8',timeout:3000,shell:'/bin/bash'}).trim();
+        if (!_bkFiles) { sendReply('No backup files found. Say **"back up my data"** to create one.'); return; }
+        const _bkLines = _bkFiles.split('\n').map((l: string) => {
+          const parts = l.trim().split(/\s+/);
+          const fname = parts[parts.length-1];
+          const date = parts.slice(5,8).join(' ');
+          return '  \u2022 ' + fname + ' — ' + date;
+        });
+        sendReply('\uD83D\uDCBE **Backups** (' + _bkDir.replace(require('os').homedir(),'~') + ')\n\n' + _bkLines.join('\n') + '\n\nSay **"back up my data"** to create a new backup now.');
+      } catch(e) { sendReply('Could not read backup files: ' + String(e).slice(0,60)); }
+      return;
+    }
+
     // ── Busiest month ─────────────────────────────────────────────────────
     if (/^(?:busiest|most active|best) month(?: this year| so far|ever)?$/.test(lowerText)||lowerText==='best month') {
       const _yr2 = new Date().getFullYear().toString();
