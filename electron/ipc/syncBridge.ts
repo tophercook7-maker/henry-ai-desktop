@@ -1818,6 +1818,73 @@ self.addEventListener('fetch', (event) => {
       }
     }
 
+    // P_JOBAMT: Job amount / worth lookup
+    {
+      const _jaM = lowerText.match(/^(?:how much is|what(?:'s| is)(?: the)? (?:value|worth|amount|price|bid|cost) of?|what(?:'s| is)(?: job)?) ([j]-\d{4,6})(?:'s)?(?: (?:worth|value|amount|bid|cost))?$/i)
+                || lowerText.match(/([j]-\d{4,6})(?:'s)? (?:amount|worth|value|bid|cost|price)$/i)
+                || lowerText.match(/^(?:value|worth|amount|bid|cost|price) (?:of|for) ([j]-\d{4,6})$/i);
+      if (_jaM) {
+        const _jaN = (_jaM[1]||_jaM[2]||'').toUpperCase();
+        const _jaJob = dbGetOne('SELECT job_number,client_name,title,bid_amount,invoice_amount,paid_amount,status FROM jobs WHERE UPPER(job_number)=? LIMIT 1', _jaN) as any;
+        if (!_jaJob) { sendReply('Job ' + _jaN + ' not found.'); return; }
+        const _jaAmt = _jaJob.paid_amount||_jaJob.invoice_amount||_jaJob.bid_amount||0;
+        sendReply('\uD83D\uDCCB **' + _jaN + '** — ' + _jaJob.client_name + ': ' + _jaJob.title.slice(0,35) + '\n\n' +
+          'Amount: **$' + (_jaAmt as number).toFixed(2) + '**\n' +
+          'Status: ' + _jaJob.status +
+          (_jaJob.bid_amount&&_jaJob.bid_amount!==_jaAmt ? '\nBid: $'+(_jaJob.bid_amount as number).toFixed(2) : '') +
+          (_jaJob.invoice_amount ? '\nInvoiced: $'+(_jaJob.invoice_amount as number).toFixed(2) : '') +
+          (_jaJob.paid_amount ? '\nPaid: $'+(_jaJob.paid_amount as number).toFixed(2) : ''));
+        return;
+      }
+    }
+
+    // P_RESCHEDULE: Reschedule a job
+    {
+      const _rsM = lowerText.match(/^(?:reschedule|move|change|update)(?: the)?(?: schedule for)? ([j]-\d{4,6})(?: to| for)? (.+)$/i)
+               || lowerText.match(/^(?:schedule|set)(?: the date for)? ([j]-\d{4,6})(?: to| for) (.+)$/i);
+      if (_rsM) {
+        const _rsNum = (_rsM[1]||'').toUpperCase();
+        const _rsWhen = (_rsM[2]||'').trim();
+        const _rsJob = dbGetOne('SELECT id,job_number,client_name,title,scheduled_date FROM jobs WHERE UPPER(job_number)=? LIMIT 1', _rsNum) as any;
+        if (!_rsJob) { sendReply('Job ' + _rsNum + ' not found.'); return; }
+        // Parse natural date: 'next monday', 'june 10', ISO date, or plain text
+        const _rsDayNames = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
+        const _rsNow = new Date();
+        let _rsDate = _rsWhen;
+        const _rsLow = _rsWhen.toLowerCase();
+        if (_rsLow === 'today') { _rsDate = _rsNow.toISOString().slice(0,10); }
+        else if (_rsLow === 'tomorrow') { const d=new Date(_rsNow); d.setDate(d.getDate()+1); _rsDate=d.toISOString().slice(0,10); }
+        else {
+          const _rsDIdx = _rsDayNames.findIndex(d=>_rsLow.includes(d));
+          if (_rsDIdx >= 0) {
+            const _rsCur = _rsNow.getDay();
+            let _rsDiff = _rsDIdx - _rsCur;
+            if (_rsDiff <= 0 || _rsLow.includes('next')) _rsDiff += 7;
+            const _rsD = new Date(_rsNow); _rsD.setDate(_rsNow.getDate()+_rsDiff);
+            _rsDate = _rsD.toISOString().slice(0,10);
+          }
+        }
+        dbRun('UPDATE jobs SET scheduled_date=?,updated_at=? WHERE id=?', _rsDate, new Date().toISOString(), _rsJob.id);
+        sendReply('\uD83D\uDCC5 **' + _rsNum + '** rescheduled to **' + _rsDate + '**\n' + _rsJob.client_name + ': ' + _rsJob.title.slice(0,35) +
+          (_rsJob.scheduled_date ? '\n(was: ' + _rsJob.scheduled_date + ')' : ''));
+        return;
+      }
+    }
+
+    // P_PAYHISTORY: Payment history / YTD collected
+    if (/^(?:show(?: my)?|view|list)(?: my)? (?:payment|payment history|payments?(?: history| received| collected)?)$|^payment history$|^payments? received$/.test(lowerText)
+        || /^how much(?: have i| did i)? (?:collect(?:ed)?|receive(?:d)?|get paid)(?: this year| ytd| all time)?$|^(?:total |ytd )?collected(?: this year)?$|^how much have i (?:been paid|collected|received)(?: this year)?$|^what have i collected$/.test(lowerText)) {
+      const _phJobs = dbGet("SELECT job_number,client_name,title,paid_amount,paid_date FROM jobs WHERE status='paid' AND paid_amount>0 ORDER BY COALESCE(paid_date,updated_at) DESC") as any[];
+      const _phYr   = new Date().getFullYear().toString();
+      const _phYTD  = _phJobs.filter((j: any)=>(j.paid_date||'').startsWith(_phYr));
+      const _phAll  = _phJobs.reduce((s: number,j: any)=>s+(j.paid_amount||0), 0);
+      const _phYTDn = _phYTD.reduce((s: number,j: any)=>s+(j.paid_amount||0), 0);
+      if (!_phJobs.length) { sendReply('No payments recorded yet. Say **"mark J-XXXXX as paid"** or **"Pat paid $X on J-XXXXX"** to record one.'); return; }
+      const _phLines = ['**\uD83D\uDCB0 Payments Received**', '', _phYr + ' YTD: **$' + _phYTDn.toFixed(2) + '** (' + _phYTD.length + ' jobs)', 'All time: **$' + _phAll.toFixed(2) + '** (' + _phJobs.length + ' jobs)', ''];
+      _phJobs.slice(0,8).forEach((j: any)=>_phLines.push('  \u2022 ' + j.job_number + ' ' + j.client_name + ' — $' + (j.paid_amount||0).toFixed(0) + (j.paid_date?' ('+j.paid_date.slice(0,10)+')':'')));
+      sendReply(_phLines.join('\n')); return;
+    }
+
     // P_PAID: Mark job as paid in full
     {
       const _mPaidM = lowerText.match(/^(?:mark|set)(?: job)? ([j]-\d{4,6}) (?:as |as fully )?paid(?: in full)?(?:\s+\$?([\d,]+))?/i)
