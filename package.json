@@ -153,7 +153,8 @@
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
-      "notarize": false
+      "notarize": false,
+      "identity": "Developer ID Application: Christopher Cook (NFS22LSQRC)"
     },
     "dmg": {
       "sign": false,

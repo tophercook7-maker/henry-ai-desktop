@@ -81,4 +81,4 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: true
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
-          APPLE_TEAM_ID: DG7D6X8W8C
+          APPLE_TEAM_ID: NFS22LSQRC
