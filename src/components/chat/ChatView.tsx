@@ -353,7 +353,11 @@ export default function ChatView() {
   } = useStore();
 
   const [selectedEngine, setSelectedEngine] = useState<'companion' | 'worker'>('companion');
-  const [operatingMode, setOperatingMode] = useState<HenryOperatingMode>(readStoredOperatingMode);
+  const [operatingMode, setOperatingMode] = useState<HenryOperatingMode>(() => {
+    const m = readStoredOperatingMode();
+    // Never restore design3d or writer mode on startup — always start in companion
+    return (m === 'design3d' || m === 'writer') ? 'companion' : m;
+  });
   const [biblicalSourceProfileId, setBiblicalSourceProfileId] =
     useState<BibleSourceProfileId>(readStoredBiblicalProfile);
   const [writerDocumentTypeId, setWriterDocumentTypeId] = useState<WriterDocumentTypeId>(
@@ -2504,108 +2508,6 @@ What do you want to tackle first?`);
               className="text-[10px] text-henry-text-muted hover:text-henry-text px-2 py-1 rounded-lg hover:bg-henry-surface/40 transition-all flex items-center gap-1"
               title="Export conversation as Markdown"
             >⬇ Export</button>
-          </div>
-        )}
-        {recoveryBannerOpen && recoverySnapshot && (
-          <div className="max-w-3xl mx-auto mb-4 rounded-lg border border-henry-accent/25 bg-henry-surface/30 px-3 py-2.5 text-xs text-henry-text">
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-henry-accent/90">
-                  Recovered session
-                </p>
-                <p className="text-[10px] text-henry-text-muted mt-1 leading-relaxed">
-                  Henry restores selected context and summary state, not full hidden replay.
-                </p>
-                <ul className="mt-2 space-y-0.5 text-[10px] text-henry-text-dim">
-                  <li>
-                    <span className="text-henry-text-muted">Thread:</span>{' '}
-                    {recoveryConvMissing ? (
-                      <span className="text-amber-400/90">Previous conversation no longer available</span>
-                    ) : recoveryThreadTitle ? (
-                      <span className="text-henry-text">{recoveryThreadTitle}</span>
-                    ) : (
-                      <span className="text-henry-text-dim">None selected last time</span>
-                    )}
-                    {recoveryConvRestored && (
-                      <span className="text-henry-text-muted"> — messages loaded</span>
-                    )}
-                  </li>
-                  <li>
-                    <span className="text-henry-text-muted">Mode:</span> {resumeModeLabel(operatingMode)}
-                  </li>
-                  {operatingMode === 'biblical' && bibleProfileRecovery && (
-                    <li>
-                      <span className="text-henry-text-muted">Bible source:</span> {bibleProfileRecovery.label}
-                    </li>
-                  )}
-                  {writerActiveDraftPath?.trim() && (
-                    <li className="break-all">
-                      <span className="text-henry-text-muted">Writer draft:</span>{' '}
-                      {writerActiveDraftPath.trim()}
-                      {recoveryStale?.writerDraftStale && (
-                        <span className="text-amber-400/90"> — path not found in workspace</span>
-                      )}
-                    </li>
-                  )}
-                  {design3dRefPath?.trim() && (
-                    <li className="break-all">
-                      <span className="text-henry-text-muted">Design3D reference:</span>{' '}
-                      {design3dRefPath.trim()}
-                      {recoveryStale?.design3dRefStale && (
-                        <span className="text-amber-400/90"> — path not found in workspace</span>
-                      )}
-                    </li>
-                  )}
-                  {activeWorkspaceContext && (
-                    <li className="break-all">
-                      <span className="text-henry-text-muted">Workspace context:</span>{' '}
-                      {activeWorkspaceContext.label} ({activeWorkspaceContext.path})
-                      {recoveryStale?.workspaceContextStale && (
-                        <span className="text-amber-400/90"> — path not found in workspace</span>
-                      )}
-                    </li>
-                  )}
-                  {recoverySnapshot.lastExportPackRelativeDir && (
-                    <li className="break-all">
-                      <span className="text-henry-text-muted">Last export pack:</span>{' '}
-                      {recoverySnapshot.lastExportPackRelativeDir}
-                      {recoveryStale?.exportPackStale && (
-                        <span className="text-amber-400/90"> — manifest missing (folder may have moved)</span>
-                      )}
-                    </li>
-                  )}
-                </ul>
-              </div>
-              <button
-                type="button"
-                onClick={handleRecoveryDismiss}
-                className="shrink-0 text-[10px] text-henry-text-muted hover:text-henry-text"
-                aria-label="Dismiss recovery notice"
-              >
-                ×
-              </button>
-            </div>
-            <div className="flex flex-wrap gap-2 mt-2.5">
-              {recoverySnapshot.lastConversationId &&
-                conversations.some((c) => c.id === recoverySnapshot.lastConversationId) && (
-                  <button
-                    type="button"
-                    disabled={isStreaming}
-                    onClick={() => void handleResumeLastThread()}
-                    className="px-2.5 py-1 rounded-md bg-henry-accent/85 text-white text-[10px] font-medium hover:bg-henry-accent disabled:opacity-40"
-                  >
-                    Resume last thread
-                  </button>
-                )}
-              <button
-                type="button"
-                disabled={isStreaming}
-                onClick={handleSessionStartClean}
-                className="px-2.5 py-1 rounded-md border border-henry-border/50 text-[10px] text-henry-text-muted hover:text-henry-text disabled:opacity-40"
-              >
-                Start clean
-              </button>
-            </div>
           </div>
         )}
         {messages.length === 0 && !isStreaming ? (
