@@ -39,9 +39,14 @@ jobs:
           hdiutil detach "/Volumes/Henry AI" 2>/dev/null || true
           hdiutil detach "/Volumes/Henry AI 1" 2>/dev/null || true
 
+      - name: Build Vite (Mac)
+        run: npx vite build
+        env:
+          NODE_ENV: production
+
       - name: Build Mac DMG (unsigned)
         timeout-minutes: 8
-        run: npm run build:mac:unsigned
+        run: npx electron-builder --mac --config.mac.identity=null --config.compression=normal --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DEBUG: electron-builder
@@ -71,8 +76,13 @@ jobs:
         run: npm run rebuild
         continue-on-error: true
 
+      - name: Build Vite (Windows)
+        run: npx vite build
+        env:
+          NODE_ENV: production
+
       - name: Build Windows installer
-        run: npm run build:win
+        run: npx electron-builder --win --x64 --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ELECTRON_BUILDER_ALLOW_UNRESOLVED_DEPENDENCIES: true
@@ -107,8 +117,13 @@ jobs:
       - name: Rebuild native modules for Electron
         run: npm run rebuild
 
+      - name: Build Vite (Linux)
+        run: npx vite build
+        env:
+          NODE_ENV: production
+
       - name: Build Linux AppImage + deb
-        run: npm run build:linux
+        run: npx electron-builder --linux --x64 --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
