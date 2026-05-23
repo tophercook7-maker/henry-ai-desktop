@@ -3234,6 +3234,25 @@ const DISCOVERY_MODES: Array<{
   },
 ];
 
+// ── Quick action pills for the clean welcome screen ──────────────────────────
+const QUICK_CHIPS = [
+  { icon: '☀️', label: 'Morning brief',        text: 'gm' },
+  { icon: '📋', label: 'My jobs',              text: 'show jobs' },
+  { icon: '💰', label: 'Who owes me',          text: 'who owes me' },
+  { icon: '📊', label: 'Business summary',     text: 'business summary' },
+  { icon: '💸', label: 'Cash flow',            text: 'cash flow' },
+  { icon: '🧾', label: 'Needs invoicing',      text: 'what jobs need invoicing' },
+  { icon: '👥', label: 'Clients',              text: 'show clients' },
+  { icon: '🎯', label: 'Focus now',            text: 'what should I work on today' },
+  { icon: '💪', label: 'Habits',               text: 'habit consistency' },
+  { icon: '📒', label: 'Journal',              text: 'show journal' },
+  { icon: '🖥', label: 'System info',          text: 'system info' },
+  { icon: '🔋', label: 'Battery',              text: 'battery status' },
+  { icon: '🖨', label: 'Print',                text: 'print' },
+  { icon: '📸', label: 'Screenshot',           text: 'take a screenshot' },
+  { icon: '🌙', label: 'Wrap up',              text: 'gn' },
+];
+
 function EmptyChat({
   onModeAndInject,
   proactiveSuggestion,
@@ -3242,59 +3261,41 @@ function EmptyChat({
   proactiveSuggestion?: string | null;
 }) {
   return (
-    <div className="h-full flex items-start justify-center pt-8 pb-6 overflow-y-auto">
-      <div className="w-full max-w-2xl px-4 animate-fade-in">
+    <div className="h-full flex flex-col items-center justify-center pb-6 overflow-y-auto">
+      <div className="w-full max-w-xl px-5 animate-fade-in">
 
-        {/* Proactive suggestion from initiative engine */}
+        {/* Henry identity — minimal, centered */}
+        <div className="text-center mb-6">
+          <div className="w-14 h-14 mx-auto mb-3 rounded-2xl bg-henry-accent/10 border border-henry-accent/20 flex items-center justify-center text-3xl">🤖</div>
+          <h2 className="text-lg font-semibold text-henry-text">Henry AI</h2>
+          <p className="text-[12px] text-henry-text-muted mt-1">Type anything, or tap a quick action below</p>
+        </div>
+
+        {/* Proactive suggestion */}
         {proactiveSuggestion && (
-          <div className="mb-5 flex items-start gap-3 px-4 py-3 rounded-xl bg-henry-surface/40 border border-henry-border/30">
-            <div className="shrink-0 mt-0.5 w-5 h-5 rounded-full bg-henry-accent/15 flex items-center justify-center">
-              <span className="text-[9px] text-henry-accent font-bold">H</span>
-            </div>
-            <p className="text-[13px] text-henry-text leading-relaxed">{proactiveSuggestion}</p>
+          <div className="mb-5 flex items-start gap-2.5 px-3.5 py-3 rounded-xl bg-henry-accent/6 border border-henry-accent/15">
+            <span className="shrink-0 text-henry-accent text-sm mt-0.5">💡</span>
+            <p className="text-[12px] text-henry-text leading-relaxed">{proactiveSuggestion}</p>
           </div>
         )}
 
-        <div className="text-center mb-7">
-          <div className="text-5xl mb-3">🧠</div>
-          <h2 className="text-xl font-bold text-henry-text mb-1">Henry AI</h2>
-          <p className="text-sm text-henry-text-dim">
-            What would you like to do? Click any example below to get started, or just type anything.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {DISCOVERY_MODES.map(({ mode, icon, title, desc, examples }) => (
-            <div
-              key={mode}
-              className="p-4 rounded-xl bg-henry-surface/30 border border-henry-border/20 hover:border-henry-accent/20 transition-colors"
+        {/* Quick action chips — scrollable single row */}
+        <div className="flex flex-wrap gap-2 justify-center">
+          {QUICK_CHIPS.map(({ icon, label, text }) => (
+            <button
+              key={label}
+              onClick={() => onModeAndInject('companion', text)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-henry-surface/50 border border-henry-border/30 text-[11px] text-henry-text-muted hover:text-henry-text hover:border-henry-accent/30 hover:bg-henry-hover/40 transition-all active:scale-95"
             >
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-base">{icon}</span>
-                <span className="font-semibold text-henry-text text-sm">{title}</span>
-              </div>
-              <p className="text-[11px] text-henry-text-muted mb-3 leading-relaxed">{desc}</p>
-              <div className="space-y-1.5">
-                {examples.map((ex) => (
-                  <button
-                    key={ex}
-                    onClick={() => onModeAndInject(mode, ex)}
-                    className="w-full text-left text-[11px] px-2.5 py-1.5 rounded-lg bg-henry-surface/50 border border-henry-border/10 text-henry-text-dim hover:text-henry-text hover:border-henry-accent/30 hover:bg-henry-hover/30 transition-all"
-                  >
-                    "{ex}"
-                  </button>
-                ))}
-              </div>
-            </div>
+              <span>{icon}</span>
+              <span>{label}</span>
+            </button>
           ))}
         </div>
 
-        <p className="text-center text-[10px] text-henry-text-muted mt-5">
-          <span className="text-henry-text">Local</span> = free &amp; private (Ollama on your machine)
-          {' · '}
-          <span className="text-henry-text">Cloud</span> = more power (GPT-4, Claude, Gemini)
-          {' · '}
-          Change mode anytime using the dropdown below
+        {/* Hint */}
+        <p className="text-center text-[10px] text-henry-text-muted/60 mt-5">
+          Voice: tap the mic · Change AI model: use the dropdown · System commands work too
         </p>
       </div>
     </div>

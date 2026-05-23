@@ -5851,6 +5851,96 @@ self.addEventListener('fetch', (event) => {
       sendReply('🔌 Tunnel stopped. Companion only accessible on home WiFi now.');
       return;
     }
+    // ── COMPUTER AUDIT / SCAN ──────────────────────────────────────────────
+    if (/^(?:scan(?: my)? computer|audit(?: my)? computer|computer audit|computer scan|scan(?: my)? mac|what(?:'s| is) on(?: my)? computer|full computer report|henry scan|organize my computer)/.test(lowerText)) {
+      sendReply('\uD83D\uDD0D **Scanning your computer...** (15-30 seconds)');
+      try {
+        const { execSync: _ax } = await import('child_process') as typeof import('child_process');
+        const _oh = require('os').homedir();
+        const _sver = _ax('sw_vers -productVersion', {encoding:'utf8',timeout:3000}).trim();
+        const _chip = _ax('sysctl -n machdep.cpu.brand_string 2>/dev/null || echo Apple', {encoding:'utf8',timeout:2000,shell:'/bin/bash'}).trim();
+        const _mem = (parseInt(_ax('sysctl -n hw.memsize', {encoding:'utf8',timeout:2000}).trim())/1073741824).toFixed(0);
+        const _hn = _ax('hostname', {encoding:'utf8',timeout:1000}).trim();
+        const _df = _ax('df -h / | tail -1', {encoding:'utf8',timeout:3000,shell:'/bin/bash'}).split(/\s+/);
+        const _duD = _ax('timeout 4 du -sh ~/Desktop 2>/dev/null | cut -f1 || echo "?"', {encoding:'utf8',timeout:5000,shell:'/bin/bash'}).trim();
+        const _duL = _ax('timeout 4 du -sh ~/Downloads 2>/dev/null | cut -f1 || echo "?"', {encoding:'utf8',timeout:5000,shell:'/bin/bash'}).trim();
+        const _duO = _ax('timeout 4 du -sh ~/Documents 2>/dev/null | cut -f1 || echo "?"', {encoding:'utf8',timeout:5000,shell:'/bin/bash'}).trim();
+        const _big = _ax('timeout 12 find ~/Desktop ~/Downloads -maxdepth 2 -size +50M -not -path "*/.*" 2>/dev/null | head -20', {encoding:'utf8',timeout:14000,shell:'/bin/bash'}).trim();
+        const _bigArr = _big ? _big.split('\n').filter(Boolean) : [];
+        const _aps = _ax('osascript -e "tell application \\"System Events\\" to get name of every process whose background only is false"', {encoding:'utf8',timeout:5000,shell:'/bin/bash'}).trim().split(',').map((a: string)=>a.trim()).filter(Boolean);
+        const _li = _ax('osascript -e "tell application \\"System Events\\" to get the name of every login item"', {encoding:'utf8',timeout:5000,shell:'/bin/bash'}).trim();
+        const _prn = _ax('lpstat -p 2>/dev/null | grep -oE "printer [^ ]+" | sed "s/printer //"', {encoding:'utf8',timeout:3000,shell:'/bin/bash'}).trim();
+        const _bat = _ax('pmset -g batt 2>/dev/null | grep -oE "[0-9]+%" | head -1', {encoding:'utf8',timeout:3000,shell:'/bin/bash'}).trim();
+        const _R = [
+          '\uD83D\uDCBB **Computer Audit — ' + _hn + '**',
+          '',
+          '**\uD83D\uDDA5 System**',
+          '  macOS ' + _sver + ' \u00B7 ' + _chip.slice(0,30) + ' \u00B7 ' + _mem + 'GB RAM \u00B7 Battery: ' + (_bat||'N/A'),
+          '',
+          '**\uD83D\uDCBE Disk**',
+          '  Free: **' + (_df[3]||'?') + '** \u00B7 Used: ' + (_df[2]||'?') + ' of ' + (_df[1]||'?'),
+          '  Desktop: ' + (_duD||'?') + ' \u00B7 Downloads: ' + (_duL||'?') + ' \u00B7 Documents: ' + (_duO||'?'),
+          '',
+          '**\uD83D\uDEA8 Large Files (50MB+) — ' + _bigArr.length + ' found**',
+        ];
+        _bigArr.slice(0,8).forEach((f: string) => _R.push('  \u2022 ' + f.replace(_oh, '~')));
+        if (_bigArr.length > 8) _R.push('  ...and ' + (_bigArr.length-8) + ' more — say **"clean up big files"** for full list');
+        if (!_bigArr.length) _R.push('  \u2705 No large files in Desktop/Downloads/Documents');
+        _R.push('');
+        _R.push('**\uD83D\uDCE6 Running Apps (' + _aps.length + ')**');
+        _R.push('  ' + _aps.slice(0,10).join(', ') + (_aps.length>10 ? ' +' + (_aps.length-10) + ' more' : ''));
+        if (_li) { _R.push(''); _R.push('**\uD83D\uDD04 Startup Items**'); _R.push('  ' + _li); }
+        _R.push('');
+        _R.push('**\uD83D\uDCA1 Actions — say these to Henry:**');
+        if (_bigArr.length > 3) _R.push('  \u26A0\uFE0F **"clean up big files"** — review ' + _bigArr.length + ' large files');
+        _R.push('  \uD83D\uDCCA **"disk space"** — detailed storage breakdown');
+        _R.push('  \uD83D\uDCF7 **"take a screenshot"** — save to Desktop');
+        _R.push('  \uD83D\uDDA8 **"print"** — send to ' + (_prn||'printer'));
+        _R.push('  \uD83D\uDCC4 **"export jobs"** — save job data to CSV');
+        _R.push('  \uD83D\uDE34 **"sleep"** / **"lock screen"** / **"brightness 70"**');
+        // Save HTML report to Desktop
+        const _dt = (() => { const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); })();
+        const _rp = _oh + '/Desktop/henry_audit_' + _dt + '.html';
+        const _rows = (tbl: string, rows: string[]) => '<table style="width:100%;border-collapse:collapse"><tr style="background:#1e1b4b"><th style="padding:8px;text-align:left">' + tbl + '</th></tr>' + rows.map(r=>'<tr><td style="padding:8px;border-top:1px solid #1f2937;font-family:monospace;font-size:12px">' + r + '</td></tr>').join('') + '</table>';
+        const _htm = '<html><head><title>Henry Audit ' + _dt + '</title><style>*{box-sizing:border-box}body{font-family:-apple-system,sans-serif;background:#0a0a0f;color:#e0dfd8;padding:32px;max-width:960px;margin:0 auto}h1{color:#a78bfa;margin-bottom:4px}h2{color:#7dd3fc;margin:24px 0 8px}.card{background:#111827;border:1px solid #1f2937;border-radius:12px;padding:16px;margin-bottom:16px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.action{display:inline-block;background:#1e1b4b;border:1px solid #4c1d95;border-radius:8px;padding:10px 16px;margin:6px 4px;color:#a78bfa;text-decoration:none;font-size:14px;cursor:pointer}.action:hover{background:#2e1065}.warn{color:#fbbf24}.ok{color:#34d399}th{color:#a78bfa}</style></head><body>' +
+          '<h1>\uD83D\uDCBB Henry Computer Audit</h1><p style="color:#888">' + _hn + ' \u00B7 macOS ' + _sver + ' \u00B7 ' + _chip.slice(0,30) + ' \u00B7 ' + _mem + 'GB \u00B7 ' + new Date().toLocaleString() + '</p>' +
+          '<div class="grid"><div class="card"><h2>\uD83D\uDCBE Storage</h2><p>Free: <b style="color:#34d399">' + (_df[3]||'?') + '</b> of ' + (_df[1]||'?') + '</p><p>Desktop: ' + _duD + ' \u00B7 Downloads: ' + _duL + ' \u00B7 Documents: ' + _duO + '</p></div>' +
+          '<div class="card"><h2>\uD83D\uDD0C Hardware</h2><p>Battery: ' + (_bat||'N/A') + '<br>Printer: ' + (_prn||'none') + '<br>Running apps: ' + _aps.length + '</p></div></div>' +
+          (_bigArr.length ? '<div class="card"><h2 class="warn">\uD83D\uDEA8 Large Files — ' + _bigArr.length + ' files over 50MB</h2>' + _rows('File', _bigArr.map((f: string)=>f.replace(_oh,'~'))) + '</div>' : '<div class="card"><h2 class="ok">\u2705 No large files found</h2></div>') +
+          '<div class="card"><h2>\uD83D\uDCE6 Apps Running</h2><p style="font-size:13px;color:#888">' + _aps.join(', ') + '</p></div>' +
+          (_li ? '<div class="card"><h2>\uD83D\uDD04 Startup Items</h2><p>' + _li + '</p></div>' : '') +
+          '<div class="card"><h2>\uD83D\uDCA1 Quick Actions — type these in Henry</h2>' +
+          '<a class="action" onclick="navigator.clipboard.writeText(\'clean up big files\'); alert(\'Copied!\');">\uD83D\uDEA8 Clean up big files</a>' +
+          '<a class="action" onclick="navigator.clipboard.writeText(\'disk space\'); alert(\'Copied!\');">\uD83D\uDCCA Disk space</a>' +
+          '<a class="action" onclick="navigator.clipboard.writeText(\'take a screenshot\'); alert(\'Copied!\');">\uD83D\uDCF7 Screenshot</a>' +
+          '<a class="action" onclick="navigator.clipboard.writeText(\'export jobs\'); alert(\'Copied!\');">\uD83D\uDCC4 Export jobs</a>' +
+          '<a class="action" onclick="navigator.clipboard.writeText(\'sleep\'); alert(\'Copied!\');">\uD83D\uDE34 Sleep</a>' +
+          '<a class="action" onclick="navigator.clipboard.writeText(\'lock screen\'); alert(\'Copied!\');">\uD83D\uDD12 Lock</a>' +
+          '</div></body></html>';
+        require('fs').writeFileSync(_rp, _htm);
+        _ax('open "' + _rp + '"', {timeout:3000,shell:'/bin/bash'});
+        _R.push('');
+        _R.push('\uD83D\uDCCB **HTML report opened in browser** — action buttons let you copy commands instantly');
+        sendReply(_R.join('\n'));
+      } catch(e) { sendReply('Scan failed: ' + String(e).slice(0,80)); }
+      return;
+    }
+
+    // ── Clean up / find big files ─────────────────────────────────────────────
+    if (/^(?:clean up(?: big| large)? files?|show(?: me)?(?: my)? big files?|find large files?|big files)$/.test(lowerText)) {
+      try {
+        const { execSync: _cx } = await import('child_process') as typeof import('child_process');
+        const _br = _cx('timeout 15 find ~/Desktop ~/Downloads -maxdepth 2 -size +50M -not -path "*/.*" 2>/dev/null | xargs du -sh 2>/dev/null | sort -rh | head -20', {encoding:'utf8',timeout:17000,shell:'/bin/bash'}).trim();
+        if (!_br) { sendReply('\uD83D\uDCBE No files over 50MB found in Desktop/Downloads/Documents.'); return; }
+        const _bl = _br.split('\n');
+        const _bm = ['\uD83D\uDEA8 **Large files (50MB+):**', ''];
+        _bl.forEach((l: string, i: number) => _bm.push((i+1) + '. ' + l.replace(require('os').homedir(),'~')));
+        _bm.push('', '\uD83D\uDCC1 Say **"run: open ~/Downloads"** to open Finder and delete manually');
+        sendReply(_bm.join('\n'));
+      } catch(e) { sendReply('Could not scan: ' + String(e).slice(0,60)); }
+      return;
+    }
+
     // ── Export jobs to CSV ─────────────────────────────────────────────────
     if (/^(?:export|download)(?: (?:my|all))? jobs?(?: to)?(?:(?: (?:a|as|to))? (?:csv|spreadsheet|excel))?$/.test(lowerText) || lowerText === 'export jobs') {
       try {
