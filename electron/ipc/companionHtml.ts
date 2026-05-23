@@ -177,6 +177,7 @@ html,body{width:100%;height:100%;height:100dvh;background:#000;overflow:hidden;f
         <line x1="12" y1="19" x2="12" y2="23"/>
         <line x1="8" y1="23" x2="16" y2="23"/>
       </svg>
+    <button id="always-btn" onclick="toggleAlwaysListen()" style="background:rgba(124,58,237,.15);border:1px solid rgba(124,58,237,.3);border-radius:8px;padding:5px 8px;color:#a78bfa;font-size:10px;cursor:pointer;font-family:inherit;white-space:nowrap" title="Always listen mode">Always Off</button>
     </button>
     <textarea id="msg-in" rows="1" placeholder="Ask Henry anything… or tap 🎤"></textarea>
     <button id="send-btn">↑</button>
@@ -392,6 +393,22 @@ function sendKbKey(key, mod) {
 // ── Voice recognition ──────────────────────────────────────────────────────
 var _sr = null;
 var _micActive = false;
+  // Always-listen mode toggle
+  var _alwaysOn = false;
+  function toggleAlwaysListen() {
+    _alwaysOn = !_alwaysOn;
+    var ab = document.getElementById('always-btn');
+    if (ab) {
+      ab.style.background = _alwaysOn ? 'rgba(239,68,68,.25)' : 'rgba(124,58,237,.15)';
+      ab.style.color = _alwaysOn ? '#fca5a5' : '#a78bfa';
+      ab.textContent = _alwaysOn ? 'Listening...' : 'Always Off';
+    }
+    if (_alwaysOn) startListening();
+    else stopListening();
+  }
+  function startListening() { toggleMic(); }
+  function stopListening() { try { if(window._micRec) window._micRec.stop(); } catch(e){} }
+
 function toggleMic() {
   if (_micActive) { stopMic(); return; }
   var SR = window.SpeechRecognition || window.webkitSpeechRecognition;

@@ -5941,6 +5941,94 @@ self.addEventListener('fetch', (event) => {
       return;
     }
 
+    // ── Recurring job setup ─────────────────────────────────────────────────
+    {
+      const _recM = lowerText.match(/^(?:set up|create|add)(?: a)? recurring(?: job)?[:\s]+(.{5,60}?)(?:\s+every\s+([\d]+)\s+(day|week|month)s?)?(?:\s+\$?([\d,]+))?$/i)
+               || lowerText.match(/^recurring[:\s]+(.{5,60}?)(?:\s+every\s+([\d]+)\s+(day|week|month)s?)?(?:\s+\$?([\d,]+))?$/i);
+      if (_recM) {
+        const _recTitle = (_recM[1]||'').trim();
+        const _recN = parseInt(_recM[2]||'1');
+        const _recUnit = (_recM[3]||'week').toLowerCase();
+        const _recAmt = parseFloat((_recM[4]||'0').replace(/,/g,''));
+        const _recInterval = _recN + ' ' + _recUnit + (_recN!==1?'s':'');
+        const _recDue = new Date();
+        if (_recUnit==='day') _recDue.setDate(_recDue.getDate()+_recN);
+        else if (_recUnit==='week') _recDue.setDate(_recDue.getDate()+_recN*7);
+        else _recDue.setMonth(_recDue.getMonth()+_recN);
+        const _recId = Date.now().toString(36)+Math.random().toString(36).slice(2);
+        dbRun('INSERT INTO reminders (id,title,notes,due_at,repeat,done,created_at,updated_at) VALUES (?,?,?,?,?,0,?,?)',
+          _recId, _recTitle, 'Recurring every ' + _recInterval + (_recAmt>0?' · $'+_recAmt.toFixed(2):''),
+          _recDue.toISOString(), _recInterval, new Date().toISOString(), new Date().toISOString());
+        sendReply('\uD83D\uDD04 Recurring job set up:\n**' + _recTitle + '**\nEvery ' + _recInterval + (_recAmt>0?' · $'+_recAmt.toFixed(2):'') + '\nNext due: ' + _recDue.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}));
+        return;
+      }
+    }
+
+    // ── Show recurring jobs ──────────────────────────────────────────────────
+    if (/^(?:show|list)(?: my| all)? recurring(?: jobs?)?$/.test(lowerText) || lowerText === 'recurring jobs') {
+      const _rjRows = dbGet("SELECT title,notes,due_at,repeat FROM reminders WHERE done=0 AND repeat IS NOT NULL AND repeat!='' ORDER BY due_at ASC") as any[];
+      if (!_rjRows.length) { sendReply('No recurring jobs set up yet.\n\nSet one up: "recurring: mow Pat\'s lawn every 2 weeks $85"'); return; }
+      const _rjLines = ['**\uD83D\uDD04 Recurring Jobs (' + _rjRows.length + ')**', ''];
+      for (const r of _rjRows) {
+        const _rjDue = new Date(r.due_at).toLocaleDateString('en-US',{month:'short',day:'numeric'});
+        _rjLines.push('  \u2022 **' + r.title + '** \u2014 every ' + r.repeat + ' \u2014 next: ' + _rjDue);
+        if (r.notes) _rjLines.push('    ' + r.notes);
+      }
+      sendReply(_rjLines.join('\n')); return;
+    }
+
+    // ── Batch invoice all complete jobs ─────────────────────────────────────
+    if (/^(?:bill|invoice)(?: all)?(?: my)? (?:all )?(?:complete|done|finished|outstanding)(?: jobs?)?$/.test(lowerText)
+        || lowerText === 'bill all complete jobs' || lowerText === 'invoice all complete' || lowerText === 'generate all invoices') {
+      const _biJobs = dbGet("SELECT id,job_number,client_name,title,bid_amount FROM jobs WHERE status='complete' ORDER BY updated_at DESC") as any[];
+      if (!_biJobs.length) { sendReply('No complete uninvoiced jobs right now. \u2713'); return; }
+      const _biTotal = _biJobs.reduce((s: number,j: any) => s+(j.bid_amount||0), 0);
+      const _biNow = new Date().toISOString();
+      const _biDate = (() => { const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); })();
+      for (const j of _biJobs) {
+        dbRun('UPDATE jobs SET status=?,invoice_amount=?,invoiced_date=?,invoice_sent=1,updated_at=? WHERE id=?',
+          'invoiced', j.bid_amount, _biDate, _biNow, j.id);
+      }
+      sendReply('\uD83E\uDDFE **Invoiced ' + _biJobs.length + ' jobs — $' + _biTotal.toFixed(2) + ' total**\n\n' +
+        _biJobs.map((j: any) => '  \u2022 ' + j.job_number + ' ' + j.client_name + ': ' + j.title.slice(0,28) + ' ($' + (j.bid_amount||0).toFixed(0) + ')').join('\n') +
+        '\n\nAll marked invoiced. Say **"email invoice for J-XXXXX"** to send individually.');
+      return;
+    }
+
+    // ── Average days to get paid ─────────────────────────────────────────────
+    if (/^(?:average|avg) days? to (?:get paid|payment|pay)|how long (?:does it take|to get paid)|payment velocity|pay velocity/.test(lowerText)) {
+      const _pvJobs = dbGet("SELECT client_name, invoiced_date, paid_date FROM jobs WHERE status='paid' AND invoiced_date IS NOT NULL AND paid_date IS NOT NULL AND invoiced_date != '' AND paid_date != ''") as any[];
+      if (!_pvJobs.length) { sendReply('Not enough paid jobs with invoice dates yet to calculate payment velocity.'); return; }
+      const _pvDays = _pvJobs.map((j: any) => Math.max(0, Math.round((new Date(j.paid_date).getTime()-new Date(j.invoiced_date).getTime())/86400000)));
+      const _pvAvg = Math.round(_pvDays.reduce((s: number,d: number)=>s+d,0)/_pvDays.length);
+      const _pvMin = Math.min(..._pvDays); const _pvMax = Math.max(..._pvDays);
+      // Find fastest payer
+      const _pvByClient: Record<string,number[]> = {};
+      _pvJobs.forEach((j: any, idx: number) => { if (!_pvByClient[j.client_name]) _pvByClient[j.client_name]=[]; _pvByClient[j.client_name].push(_pvDays[idx]); });
+      const _pvRanked = Object.entries(_pvByClient).map(([n,days])=>({n,avg:Math.round(days.reduce((a,b)=>a+b,0)/days.length)})).sort((a,b)=>a.avg-b.avg);
+      const _pvLines = ['**\uD83D\uDCB8 Payment Velocity**', '',
+        'Average: **' + _pvAvg + ' days** from invoice to paid',
+        'Fastest: ' + _pvMin + ' days \u00B7 Slowest: ' + _pvMax + ' days',
+        'Based on: ' + _pvJobs.length + ' paid jobs', ''];
+      if (_pvRanked.length > 1) {
+        _pvLines.push('**By client:**');
+        _pvRanked.forEach(({n,avg}) => _pvLines.push('  ' + n + ': ' + avg + ' day' + (avg!==1?'s':'')));
+      }
+      sendReply(_pvLines.join('\n')); return;
+    }
+
+    // ── Which client pays fastest ────────────────────────────────────────────
+    if (/^which(?: client| one)? pays?(?: the)? fastest|fastest payer|best paying client/.test(lowerText)) {
+      const _fpJobs = dbGet("SELECT client_name, invoiced_date, paid_date FROM jobs WHERE status='paid' AND invoiced_date IS NOT NULL AND paid_date IS NOT NULL AND invoiced_date != '' AND paid_date != ''") as any[];
+      if (!_fpJobs.length) { sendReply('No paid jobs with invoice dates yet.'); return; }
+      const _fpByClient: Record<string,number[]> = {};
+      _fpJobs.forEach((j: any) => { const days=Math.max(0,Math.round((new Date(j.paid_date).getTime()-new Date(j.invoiced_date).getTime())/86400000)); if (!_fpByClient[j.client_name]) _fpByClient[j.client_name]=[]; _fpByClient[j.client_name].push(days); });
+      const _fpRanked = Object.entries(_fpByClient).map(([n,d])=>({n,avg:Math.round(d.reduce((a,b)=>a+b,0)/d.length),count:d.length})).sort((a,b)=>a.avg-b.avg);
+      const _fpLines = ['**\uD83C\uDFC6 Clients by payment speed:**', ''];
+      _fpRanked.forEach(({n,avg,count},i) => _fpLines.push('  ' + (i===0?'\uD83E\uDD47':i===1?'\uD83E\uDD48':i===2?'\uD83E\uDD49':'  ') + ' **' + n + '** \u2014 avg ' + avg + ' day' + (avg!==1?'s':'') + ' (' + count + ' payment' + (count!==1?'s':'') + ')'));
+      sendReply(_fpLines.join('\n')); return;
+    }
+
     // ── Export jobs to CSV ─────────────────────────────────────────────────
     if (/^(?:export|download)(?: (?:my|all))? jobs?(?: to)?(?:(?: (?:a|as|to))? (?:csv|spreadsheet|excel))?$/.test(lowerText) || lowerText === 'export jobs') {
       try {
@@ -6133,10 +6221,13 @@ self.addEventListener('fetch', (event) => {
 
     // ══════════════════════════════════════════════════════════════════════════
 
-    const tunnelUrlMatch = lowerText === 'tunnel url' || lowerText === 'my tunnel url' || lowerText === 'public url' || lowerText === 'remote url';
+    const tunnelUrlMatch = lowerText === 'tunnel url' || lowerText === 'my tunnel url' || lowerText === 'public url' || lowerText === 'remote url' || lowerText === 'companion url' || lowerText === "what's the companion url" || lowerText === 'what is the companion url' || lowerText === 'phone url' || lowerText === 'my url' || /^(?:what(?:'s| is)(?: the| my)? (?:tunnel|companion|remote|phone|public) url|companion link|henry url)$/.test(lowerText);
     if (tunnelUrlMatch) {
       const _tu2 = getTunnelUrl();
-      sendReply(_tu2 ? '🌐 **Your public companion URL:**\n\n' + _tu2 + '/\n\nShare this link — works from anywhere.' : '❌ No tunnel active. Say "start tunnel" to create one.');
+      const _tu3 = (dbGetOne("SELECT value FROM settings WHERE key='last_tunnel_url'") as any)?.value || _tu2;
+      sendReply(_tu3
+        ? '**\uD83C\uDF10 Companion URL:**\n' + _tu3 + '/\n\nWorks from anywhere · Open on phone/tablet · Bookmark it\n\nSame WiFi shortcut: http://127.0.0.1:4242\n\nSay "pair my phone" for full QR pairing screen.'
+        : 'No tunnel active yet. Henry starts it automatically on launch — try again in 10 seconds.');
       return;
     }
 
