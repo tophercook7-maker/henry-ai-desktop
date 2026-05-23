@@ -7,7 +7,6 @@ on:
   workflow_dispatch:
 
 jobs:
-  # ── Windows x64 installer ────────────────────────────────────────────────────
   build-windows:
     runs-on: windows-latest
     steps:
@@ -15,11 +14,10 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: '22'
 
       - name: Install dependencies
-        run: npm ci
+        run: NODE_ENV=development npm install --include=dev --legacy-peer-deps
 
       - name: Build Vite
         run: npx vite build
@@ -40,7 +38,6 @@ jobs:
             release2/*.yml
           retention-days: 5
 
-  # ── Mac (signed + notarized) — runs when you have Developer ID cert in CI ───
   build-mac-signed:
     runs-on: macos-14
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
@@ -49,11 +46,10 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: '22'
 
       - name: Install dependencies
-        run: npm ci
+        run: NODE_ENV=development npm install --include=dev --legacy-peer-deps
 
       - name: Import Developer ID certificate
         if: env.CERTIFICATE_P12 != ''
