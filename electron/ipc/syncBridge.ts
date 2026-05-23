@@ -5625,32 +5625,71 @@ self.addEventListener('fetch', (event) => {
                      || lowerText === 'gm' || lowerText === 'good morning' || lowerText === 'morning';
     if (morningMatch) {
       try {
-        const today = new Date().toISOString().slice(0,10);
-        const now = new Date();
-        const dayName = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][now.getDay()];
-        const month = ['January','February','March','April','May','June','July','August','September','October','November','December'][now.getMonth()];
+        const _gmNow = new Date();
+        const _gmToday = _gmNow.toISOString().slice(0,10);
+        const _gmDay = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][_gmNow.getDay()];
+        const _gmMon = ['January','February','March','April','May','June','July','August','September','October','November','December'][_gmNow.getMonth()];
+        const _gmDate = _gmDay + ', ' + _gmMon + ' ' + _gmNow.getDate();
+        const _ownerName = (dbGetOne("SELECT value FROM settings WHERE key='owner_name'") as any)?.value || 'Topher';
 
-        const tasks = dbGet<{title:string}>(
-          "SELECT title FROM personal_tasks WHERE status!='done' ORDER BY priority DESC, created_at ASC LIMIT 3"
-        ) as {title:string}[];
-        const rems = dbGet<{title:string;due_at:string}>(
-          "SELECT title, due_at FROM reminders WHERE done=0 ORDER BY due_at ASC LIMIT 3"
-        ) as {title:string;due_at:string}[];
-        const habits = dbGet<{name:string;icon:string}>(
-          "SELECT h.name, h.icon FROM habits h WHERE h.active=1 AND h.id NOT IN (SELECT habit_id FROM habit_logs WHERE date=?) ORDER BY h.created_at ASC",
-          today
-        ) as {name:string;icon:string}[];
-        const goals = dbGet<{title:string}>(
-          "SELECT title FROM goals WHERE status!='done' ORDER BY priority_score DESC LIMIT 2"
-        ) as {title:string}[];
-        const lines = [`Good morning, Topher! ${dayName}, ${month} ${now.getDate()}.\n`];
-        if (rems.length) lines.push('⏰ Reminders: ' + rems.map(r => r.title).join(', '));
-        if (habits.length) lines.push('○ Habits to do: ' + habits.map(h => h.icon + ' ' + h.name).join(', '));
-        if (tasks.length) lines.push('✓ Top tasks: ' + tasks.map(t => t.title).join(', '));
-        if (goals.length) lines.push('◎ Active goals: ' + goals.map(g => g.title).join(', '));
-        lines.push('\nHave a great day!');
-        sendReply(lines.join('\n'));
-      } catch { sendReply('Good morning, Topher! Could not load your full brief right now.'); }
+        // Jobs scheduled today
+        const _gmJobs = dbGet("SELECT job_number,client_name,title,bid_amount,status FROM jobs WHERE scheduled_date=? AND status NOT IN ('paid','cancelled') ORDER BY status", _gmToday) as any[];
+        // Jobs that need invoicing (complete, not invoiced)
+        const _gmInv = dbGet("SELECT COUNT(*) as n FROM jobs WHERE status='complete'") as any[];
+        const _gmInvCount = (_gmInv[0]?.n||0);
+        // Outstanding balance
+        const _gmOwe = (dbGetOne("SELECT COALESCE(SUM(invoice_amount-paid_amount),0) as n FROM jobs WHERE status='invoiced'") as any)?.n||0;
+        // Overdue invoices (30+ days)
+        const _gmOverdue = (dbGetOne("SELECT COUNT(*) as n FROM jobs WHERE status='invoiced' AND invoiced_date < date('now','-30 days')") as any)?.n||0;
+        // Habits not yet done today
+        const _gmHabits = dbGet("SELECT h.name,h.icon FROM habits h WHERE h.active=1 AND h.id NOT IN (SELECT habit_id FROM habit_logs WHERE date=?) ORDER BY h.created_at ASC LIMIT 4", _gmToday) as any[];
+        // Top 3 tasks
+        const _gmTasks = dbGet("SELECT title FROM personal_tasks WHERE status!='done' ORDER BY priority DESC, created_at ASC LIMIT 3") as any[];
+        // Reminders due today or overdue
+        const _gmRems = dbGet("SELECT title FROM reminders WHERE done=0 AND due_at <= ? ORDER BY due_at ASC LIMIT 3", _gmToday + 'T23:59:59') as any[];
+        // Battery
+        const { execSync: _gmEx } = await import('child_process') as typeof import('child_process');
+        let _gmBat = '';
+        try { _gmBat = _gmEx('pmset -g batt 2>/dev/null | grep -oE "[0-9]+%"', {encoding:'utf8',timeout:2000,shell:'/bin/bash'}).trim(); } catch {}
+
+        const _gmLines: string[] = [];
+        _gmLines.push('**Good morning, ' + _ownerName + '!** ' + _gmDate + (_gmBat?' \uD83D\uDD0B'+_gmBat:''));
+        _gmLines.push('');
+
+        // Business pulse
+        _gmLines.push('**\uD83D\uDCBC Business today**');
+        if (_gmJobs.length) {
+          _gmLines.push('  Scheduled: ' + _gmJobs.map((j: any) => j.job_number+' '+j.client_name).join(', '));
+        } else {
+          _gmLines.push('  No jobs scheduled today');
+        }
+        if (_gmOwe > 0) _gmLines.push('  Outstanding: **$' + (_gmOwe as number).toFixed(2) + '** awaiting payment');
+        if (_gmInvCount > 0) _gmLines.push('  \u26A0\uFE0F ' + _gmInvCount + ' job' + (_gmInvCount!==1?'s':'') + ' ready to invoice — say **"bill all complete jobs"**');
+        if (_gmOverdue > 0) _gmLines.push('  \uD83D\uDD34 ' + _gmOverdue + ' overdue invoice' + (_gmOverdue!==1?'s':'')+' (30+ days) — say **"aging report"**');
+
+        // Habits
+        if (_gmHabits.length) {
+          _gmLines.push('');
+          _gmLines.push('**\uD83D\uDCAA Habits** — ' + _gmHabits.map((h: any) => (h.icon||'\u25A2')+' '+h.name).join(' \u00B7 '));
+        }
+
+        // Tasks
+        if (_gmTasks.length) {
+          _gmLines.push('');
+          _gmLines.push('**\u2713 Top tasks**');
+          _gmTasks.forEach((t: any) => _gmLines.push('  \u25A2 ' + t.title));
+        }
+
+        // Reminders
+        if (_gmRems.length) {
+          _gmLines.push('');
+          _gmLines.push('**\u23F0 Due today** — ' + _gmRems.map((r: any) => r.title).join(' \u00B7 '));
+        }
+
+        _gmLines.push('');
+        _gmLines.push('Have a great day! \uD83D\uDD28');
+        sendReply(_gmLines.join('\n'));
+      } catch { sendReply('Good morning! Could not load full brief — try again in a moment.'); }
       return;
     }
 
@@ -6029,6 +6068,62 @@ self.addEventListener('fetch', (event) => {
       sendReply(_fpLines.join('\n')); return;
     }
 
+    // ── QuickBooks / Accounting CSV export ────────────────────────────────────
+    if (/^(?:export|quickbooks|qbo|accounting|tax)(?: (?:export|report|data|csv))?(?:(?: to)? (?:quickbooks|qbo|accounting|csv))?$/.test(lowerText)
+        || lowerText === 'export to quickbooks' || lowerText === 'qbo export' || lowerText === 'accounting export'
+        || lowerText === 'tax report' || lowerText === 'monthly pnl' || lowerText === 'profit and loss') {
+      try {
+        const { execSync: _qbx } = await import('child_process') as typeof import('child_process');
+        const _yr = new Date().getFullYear();
+        // ── Revenue rows from paid/invoiced jobs ──────────────────────────
+        const _revJobs = dbGet("SELECT job_number,client_name,title,paid_amount,invoice_amount,bid_amount,paid_date,invoiced_date,updated_at FROM jobs WHERE status IN ('paid','invoiced') ORDER BY COALESCE(paid_date,invoiced_date,updated_at) DESC") as any[];
+        // ── Expense rows from transactions ────────────────────────────────
+        const _expRows = dbGet("SELECT description,amount,type,created_at FROM transactions WHERE type='expense' ORDER BY created_at DESC") as any[];
+        // ── Materials from job_log ────────────────────────────────────────
+        const _matRows = dbGet("SELECT j.job_number,j.client_name,jm.material,jm.unit_cost,jm.quantity,jm.created_at FROM job_materials jm JOIN jobs j ON j.id=jm.job_id ORDER BY jm.created_at DESC LIMIT 100") as any[];
+
+        const _qbDate = (() => { const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); })();
+        const _biz = (dbGetOne("SELECT value FROM settings WHERE key='business_name'") as any)?.value||'My Business';
+
+        // Build revenue CSV
+        const _revHdr = 'Date,Invoice #,Client,Description,Amount,Status';
+        const _revData = _revJobs.map((j: any) => {
+          const _d = j.paid_date||j.invoiced_date||j.updated_at||'';
+          const _amt = j.paid_amount||j.invoice_amount||j.bid_amount||0;
+          return [_d.slice(0,10),j.job_number,'"'+j.client_name+'"','"'+j.title.replace(/"/g,"'")+'"',_amt.toFixed(2),j.status].join(',');
+        });
+        const _revTotal = _revJobs.reduce((s: number,j: any)=>s+(j.paid_amount||j.invoice_amount||j.bid_amount||0), 0);
+        const _revCsv = [_revHdr,..._revData,'','TOTAL,,,,'+_revTotal.toFixed(2)].join('\n');
+
+        // Build expense CSV
+        const _expHdr = 'Date,Category,Description,Amount';
+        const _expData = _expRows.map((e: any) => [e.created_at.slice(0,10),'Expenses','"'+(e.description||'').replace(/"/g,"'")+'"',(e.amount||0).toFixed(2)].join(','));
+        const _matData = _matRows.map((m: any) => [m.created_at.slice(0,10),'Materials','"'+m.client_name+': '+(m.material||'').replace(/"/g,"'")+'"',((m.unit_cost||0)*(m.quantity||1)).toFixed(2)].join(','));
+        const _expTotal = _expRows.reduce((s: number,e: any)=>s+(e.amount||0), 0);
+        const _matTotal = _matRows.reduce((s: number,m: any)=>s+(m.unit_cost||0)*(m.quantity||1), 0);
+        const _expCsv = [_expHdr,..._expData,..._matData,'','TOTAL,,,'+(_expTotal+_matTotal).toFixed(2)].join('\n');
+
+        // Write files
+        const _qbRevPath = require('os').homedir() + '/Desktop/henry_revenue_' + _qbDate + '.csv';
+        const _qbExpPath = require('os').homedir() + '/Desktop/henry_expenses_' + _qbDate + '.csv';
+        require('fs').writeFileSync(_qbRevPath, _revCsv);
+        require('fs').writeFileSync(_qbExpPath, _expCsv);
+        _qbx('open -R "' + _qbRevPath + '"', {timeout:3000,shell:'/bin/bash'});
+
+        const _profit = _revTotal - _expTotal - _matTotal;
+        sendReply('\uD83D\uDCCA **Accounting Export — ' + _biz + '**\n\n' +
+          'Revenue:  **$' + _revTotal.toFixed(2) + '** (' + _revJobs.length + ' jobs)\n' +
+          'Expenses: $' + _expTotal.toFixed(2) + ' (' + _expRows.length + ' entries)\n' +
+          'Materials:$' + _matTotal.toFixed(2) + ' (' + _matRows.length + ' entries)\n' +
+          'Net Profit: **$' + _profit.toFixed(2) + '**\n\n' +
+          '\uD83D\uDCCE Saved to Desktop:\n' +
+          '  \u2022 henry_revenue_' + _qbDate + '.csv\n' +
+          '  \u2022 henry_expenses_' + _qbDate + '.csv\n\n' +
+          'Import both into QuickBooks, Wave, FreshBooks, or Excel.');
+      } catch(e) { sendReply('Export failed: ' + String(e).slice(0,80)); }
+      return;
+    }
+
     // ── Export jobs to CSV ─────────────────────────────────────────────────
     if (/^(?:export|download)(?: (?:my|all))? jobs?(?: to)?(?:(?: (?:a|as|to))? (?:csv|spreadsheet|excel))?$/.test(lowerText) || lowerText === 'export jobs') {
       try {
@@ -6048,6 +6143,41 @@ self.addEventListener('fetch', (event) => {
 
 
     // ══════════════════════════════════════════════════════════════════════════
+    // ── Platform detection + cross-platform command helpers ───────────────────
+    const _isMac = process.platform === 'darwin';
+    const _isWin = process.platform === 'win32';
+    const _isLinux = process.platform === 'linux';
+
+    // These helpers return the right command per OS — groundwork for Windows support
+    // Currently only Mac is fully implemented; Win/Linux stubs are ready to fill
+    const _sysVolCmd = (vol: number) => _isMac
+      ? 'osascript -e "set volume output volume ' + vol + '"'
+      : _isWin ? 'nircmd setsysvolume ' + Math.round(vol*655.35)  // nircmd 0-65535
+      : 'amixer sset Master ' + vol + '%';
+    const _sysVolGet = () => _isMac
+      ? 'osascript -e "output volume of (get volume settings)"'
+      : _isWin ? 'powershell -c "(Get-AudioDevice -Playback).Volume"'
+      : 'amixer sget Master | grep -oP "\\d+(?=%)" | head -1';
+    const _sysSleep = () => _isMac
+      ? 'osascript -e "tell application \\"System Events\\" to sleep"'
+      : _isWin ? 'rundll32.exe powrprof.dll,SetSuspendState 0,1,0'
+      : 'systemctl suspend';
+    const _sysLock = () => _isMac
+      ? 'osascript -e "tell application \\"System Events\\" to keystroke \\"q\\" using {command down, control down}"'
+      : _isWin ? 'rundll32.exe user32.dll,LockWorkStation'
+      : 'loginctl lock-session';
+    const _sysShutdown = () => _isMac
+      ? 'osascript -e "tell application \\"System Events\\" to shut down"'
+      : _isWin ? 'shutdown /s /t 5'
+      : 'shutdown -h +0';
+    const _sysRestart = () => _isMac
+      ? 'osascript -e "tell application \\"System Events\\" to restart"'
+      : _isWin ? 'shutdown /r /t 5'
+      : 'shutdown -r +0';
+    const _printerList = () => _isMac || _isLinux
+      ? 'lpstat -p 2>/dev/null'
+      : 'powershell -c "Get-Printer | Select-Object Name,PrinterStatus"';
+
     // ── SYSTEM CONTROLS (Mac automation) ─────────────────────────────────────
     // ══════════════════════════════════════════════════════════════════════════
     if (/^(?:system|mac|computer|machine) (?:info|status|specs?|about|details)|what computer(?: am i| is this)|tell me about this mac$/.test(lowerText)
