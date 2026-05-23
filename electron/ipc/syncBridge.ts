@@ -1986,6 +1986,63 @@ self.addEventListener('fetch', (event) => {
       }
     }
 
+    // P_INSTALL: Install guide — before AI
+    if (/^(?:how do i|how to)(?: install| set up| get) henry(?: on(?: another| a)? (?:computer|pc|mac|windows)?)?$|^install guide$|^henry install$/.test(lowerText)) {
+      const _igBiz = (dbGetOne("SELECT value FROM settings WHERE key='business_name'") as any)?.value||'Henry AI';
+      sendReply('**\uD83D\uDCBB Installing Henry AI on Another Computer**\n\n' +
+        '**Step 1: Get the installer**\n' +
+        '  • Mac: Henry-AI-2.2.0-arm64.dmg (or x64 for Intel Mac)\n' +
+        '  • Windows: Henry-AI-Setup-2.2.0-x64.exe\n\n' +
+        '**Step 2: Install**\n' +
+        '  Mac: Double-click .dmg → drag to Applications\n' +
+        '  Windows: Run the .exe installer → follow prompts\n\n' +
+        '**Step 3: First launch**\n' +
+        '  Say \'setup henry\' for guided setup\n' +
+        '  Henry learns the machine automatically on startup\n\n' +
+        '**Step 4: Pair phone**\n' +
+        '  Say \'pair my phone\' for the companion URL\n\n' +
+        '**Mac permissions (if asked):**\n' +
+        '  System Settings → Privacy → Screen Recording → Allow Henry\n' +
+        '  System Settings → Privacy → Accessibility → Allow Henry\n\n' +
+        'Each install is independent — their data stays on their machine.');
+      return;
+    }
+
+    // P_PROPOSAL: Contractor proposal — before maker quote handler
+    {
+      const _ppropM = lowerText.match(/^(?:draft|generate|write|create)(?: a| an)?(?: (?:formal|professional))? (?:proposal|estimate|quote)(?: for)? ([\w][\w\s]{1,25}?)(?:\s+(?:for\s+)?\$?([\d,]+))?$/i)
+                   || lowerText.match(/^(?:proposal|estimate)(?: for)? ([\w][\w\s]{1,25}?)(?:\s+\$?([\d,]+))?$/i);
+      if (_ppropM && !/laser|maker|engraving/i.test(_ppropM[1]||'')) {
+        const _pc = (_ppropM[1]||'').trim();
+        const _pa = parseFloat((_ppropM[2]||'0').replace(/,/g,''));
+        if (_pc.length >= 2) {
+          const _pCC = dbGetOne("SELECT name,email,phone FROM contacts WHERE LOWER(name) LIKE ? LIMIT 1", '%'+_pc.split(' ')[0].toLowerCase()+'%') as any;
+          const _pBiz = (dbGetOne("SELECT value FROM settings WHERE key='business_name'") as any)?.value||'My Business';
+          const _pOwn = (dbGetOne("SELECT value FROM settings WHERE key='owner_name'") as any)?.value||'';
+          const _pT = (dbGetOne("SELECT value FROM settings WHERE key='payment_terms'") as any)?.value||'50% deposit, balance on completion';
+          const _pDate = new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+          sendReply(
+            '**\uD83D\uDCCB Proposal — ' + (_pCC?.name||_pc) + (_pa>0?' — $'+_pa.toFixed(0):'') + '**\n' +
+            _pBiz + ' \u00B7 ' + _pDate + '\n\n' +
+            '**Prepared for:** ' + (_pCC?.name||_pc) + (_pCC?.email?' (' + _pCC.email + ')':'') + '\n\n' +
+            '**\uD83D\uDD28 Scope of Work**\n' +
+            '  \u2022 [Describe the specific work here]\n' +
+            '  \u2022 [Materials included: posts, boards, hardware]\n' +
+            '  \u2022 [Timeline: approximately X days]\n\n' +
+            '**\uD83D\uDCB0 Pricing**\n' +
+            (_pa>0?'  Total: **$'+_pa.toFixed(2)+'**\n':'  Labor: $______\n') +
+            '  Materials: included\n' +
+            '  Terms: ' + _pT + '\n\n' +
+            '**\u2705 Includes:** labor, equipment, cleanup, 1-year warranty\n\n' +
+            'Client signature: __________________ Date: __________\n\n' +
+            '\u2014 ' + (_pOwn||_pBiz) + (_pCC?.phone?' \u00B7 '+_pCC.phone:'') + '\n\n' +
+            '_Copy, fill in the blanks, email or text._'
+          );
+          return;
+        }
+      }
+    }
+
     // P_MAPS: Maps / Navigation — priority dispatch (before AI)
     {
       const _pmapsM = lowerText.match(/^(?:open maps?|navigate|directions?|drive|maps? to|take me to|get me to)(?: to)? (.{3,40})$/i);
@@ -2141,8 +2198,10 @@ self.addEventListener('fetch', (event) => {
 
     // ── P6: Job search by keyword ─────────────────────────────────────────────
     {
-      const _jsM = lowerText.match(/^(?:search(?: for)?|find)(?: (?:a|my))? jobs?[:\s]+(.+)/i)
-                || lowerText.match(/^(?:show|find) jobs?(?: with| about| containing| matching)[:\s]+(.+)/i);
+      const _jsM = !lowerText.match(/(?:over|under|above|below|greater|less than|>|<)\s*\$?[\d,]+/i) && (
+                    lowerText.match(/^(?:search(?: for)?|find)(?: (?:a|my))? jobs?[:\s]+(.+)/i)
+                 || lowerText.match(/^(?:show|find) jobs?(?: with| about| containing| matching)[:\s]+(.+)/i)
+                   );
       if (_jsM) {
         const _jsQ = (_jsM[1]||_jsM[2]||'').trim();
         const _jsJobs = dbGet("SELECT job_number,client_name,title,status,bid_amount FROM jobs WHERE (LOWER(title) LIKE ? OR LOWER(client_name) LIKE ? OR LOWER(notes) LIKE ?) AND status!='cancelled' ORDER BY created_at DESC LIMIT 15",
@@ -2335,6 +2394,90 @@ self.addEventListener('fetch', (event) => {
         return "Honestly? I'm sharpest on maker business math, habits, and code execution — that's where I have real data. Weakest spot right now: habit_logs only has 1 entry, so streaks are meaningless. The more you log daily, the better I get. I'm built for Topher's world specifically — that specificity is the whole point.";
       }
       // ── Explain the setup / what Henry does ───────────────────────────────────
+    // ── Contractor proposal / estimate generator ──────────────────────────────
+    {
+      const _propM = lowerText.match(/^(?:draft|generate|write|create)(?: a| an)?(?: (?:formal|professional|detailed))? (?:proposal|estimate|quote)(?: for)? ([\w][\w\s]{1,25}?)(?:\s+(?:for\s+)?\$?([\d,]+))?$/i)
+                 || lowerText.match(/^(?:proposal|estimate)(?: for)? ([\w][\w\s]{1,25}?)(?:\s+\$?([\d,]+))?$/i);
+      if (_propM) {
+        const _propClient = (_propM[1]||'').trim();
+        const _propAmt = parseFloat((_propM[2]||'0').replace(/,/g,''));
+        const _propContact = dbGetOne("SELECT name,email,phone FROM contacts WHERE LOWER(name) LIKE ? LIMIT 1", '%'+_propClient.split(' ')[0].toLowerCase()+'%') as any;
+        const _propBiz = (dbGetOne("SELECT value FROM settings WHERE key='business_name'") as any)?.value||'My Business';
+        const _propOwner = (dbGetOne("SELECT value FROM settings WHERE key='owner_name'") as any)?.value||'Topher';
+        const _propTerms = (dbGetOne("SELECT value FROM settings WHERE key='payment_terms'") as any)?.value||'50% deposit, balance on completion';
+        const _propDate = (() => { const d=new Date(); return d.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}); })();
+        const _propLines = [
+          '**\uD83D\uDCCB Proposal — ' + (_propContact?.name||_propClient) + (_propAmt>0?' — $'+_propAmt.toFixed(0):'') + '**\n',
+          _propBiz.toUpperCase(),
+          _propDate,
+          '',
+          '**Prepared for:** ' + (_propContact?.name||_propClient),
+          _propContact?.email ? '**Email:** ' + _propContact.email : '',
+          '',
+          '**\uD83D\uDD28 Scope of Work**',
+          '  \u2022 [Describe the job — e.g. Build cedar privacy fence, 6ft x 80ft]',
+          '  \u2022 [Materials included: posts, boards, hardware]',
+          '  \u2022 [Timeline: approximately X days]',
+          '',
+          '**\uD83D\uDCB0 Pricing**',
+          _propAmt>0 ? '  Total: **$' + _propAmt.toFixed(2) + '**' : '  Labor: $______',
+          '  Materials: included / quoted separately',
+          '  Payment terms: ' + _propTerms,
+          '',
+          '**\u2705 This proposal includes:**',
+          '  \u2022 All labor and equipment',
+          '  \u2022 Cleanup and haul-off',
+          '  \u2022 [X]-year workmanship warranty',
+          '',
+          '**Accepted by:** ________________ Date: ________',
+          '',
+          '\u2014',
+          _propOwner + ' · ' + _propBiz,
+          _propContact?.phone||'',
+        ].filter((l: string)=>l!=='undefined'&&l!==undefined);
+        sendReply(_propLines.join('\n'));
+        return;
+      }
+    }
+
+    // ── Contractor proposal / estimate generator ─────────────────────────────
+    {
+      const _propM = lowerText.match(/^(?:draft|generate|write|create)(?: a| an)?(?: (?:formal|professional))? (?:proposal|estimate|quote)(?: for)? ([\w][\w\s]{1,25}?)(?:\s+(?:for\s+)?\$?([\d,]+))?$/i)
+                 || lowerText.match(/^(?:proposal|estimate)(?: for)? ([\w][\w\s]{1,25}?)(?:\s+\$?([\d,]+))?$/i);
+      if (_propM) {
+        const _propClient = (_propM[1]||'').trim();
+        const _propAmt = parseFloat((_propM[2]||'0').replace(/,/g,''));
+        if (_propClient.length < 2) { /* fall through */ } else {
+          const _propC = dbGetOne("SELECT name,email,phone FROM contacts WHERE LOWER(name) LIKE ? LIMIT 1", '%'+_propClient.split(' ')[0].toLowerCase()+'%') as any;
+          const _propBiz = (dbGetOne("SELECT value FROM settings WHERE key='business_name'") as any)?.value||'My Business';
+          const _propOwner = (dbGetOne("SELECT value FROM settings WHERE key='owner_name'") as any)?.value||'Topher';
+          const _propTerms = (dbGetOne("SELECT value FROM settings WHERE key='payment_terms'") as any)?.value||'50% deposit, balance on completion';
+          const _propDate = new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+          sendReply(
+            '**\uD83D\uDCCB Proposal — ' + (_propC?.name||_propClient) + (_propAmt>0?' — $'+_propAmt.toFixed(0):'') + '**\n' +
+            _propBiz + ' \u00B7 ' + _propDate + '\n\n' +
+            '**Prepared for:** ' + (_propC?.name||_propClient) + (_propC?.email?' (' + _propC.email + ')':'') + '\n\n' +
+            '**\uD83D\uDD28 Scope of Work**\n' +
+            '  \u2022 [Describe the job here]\n' +
+            '  \u2022 [Materials included/excluded]\n' +
+            '  \u2022 [Timeline: approximately X days]\n\n' +
+            '**\uD83D\uDCB0 Pricing**\n' +
+            (_propAmt>0 ? '  Total: **$' + _propAmt.toFixed(2) + '**\n' : '  Labor: $______\n') +
+            '  Materials: included\n' +
+            '  Payment terms: ' + _propTerms + '\n\n' +
+            '**\u2705 This proposal includes:**\n' +
+            '  \u2022 All labor and equipment\n' +
+            '  \u2022 Cleanup and haul-off\n' +
+            '  \u2022 1-year workmanship warranty\n\n' +
+            'Accepted by: ________________ Date: ________\n\n' +
+            '\u2014 ' + _propOwner + ' \u00B7 ' + _propBiz + (_propC?.phone?' \u00B7 '+_propC.phone:'') + '\n\n' +
+            '_Copy this text, fill in the blanks, and paste into an email._'
+          );
+          return;
+        }
+      }
+    }
+
     // ── What's new / changelog ─────────────────────────────────────────────────
     if (/^(?:what(?:'s| is)(?: the)? new|changelog|what(?:'s| have you) (?:changed|added|improved|got|gotten)(?: lately| recently)?|what(?:'s| can) henry do (?:now|new|differently))/.test(lowerText)
         || lowerText === "what's new" || lowerText === 'henry changelog' || lowerText === "what's new in henry") {
@@ -4698,7 +4841,7 @@ self.addEventListener('fetch', (event) => {
     }
 
         // ── Universal search ────────────────────────────────────────────────────────
-    const universalSearchMatch = !/^(?:find|show|search)(?: me)?(?: some)? (?:videos?|pictures?|photos?|images?|tutorials?)/i.test(lowerText) && !/^search(?: the)? web/i.test(lowerText) && !/^search for:/i.test(lowerText) && !/^look up:/i.test(lowerText) && lowerText.match(/^(?:search(?: (?:my|all))?(?: (?:notes?|memory|tasks?|everything|data))?(?:\s+for)?|find(?: everything about| all about| (?:my notes?|tasks?) (?:about|for|with))?)[:\s]+(.+)/i)
+    const universalSearchMatch = !/^(?:find|show|search)(?: me)?(?: some)? (?:videos?|pictures?|photos?|images?|tutorials?)/i.test(lowerText) && !/^search(?: the)? web/i.test(lowerText) && !/(?:over|under|above|below|greater|less than|>|<)\s*\$?[\d,]+/i.test(lowerText) && !/^search for:/i.test(lowerText) && !/^look up:/i.test(lowerText) && lowerText.match(/^(?:search(?: (?:my|all))?(?: (?:notes?|memory|tasks?|everything|data))?(?:\s+for)?|find(?: everything about| all about| (?:my notes?|tasks?) (?:about|for|with))?)[:\s]+(.+)/i)
                                || lowerText.match(/^(?:show (?:everything|all)(?: about))[:\s]+(.+)/i);
     if (universalSearchMatch) {
       const keyword = (universalSearchMatch[2] || universalSearchMatch[1] || '').trim().toLowerCase();
@@ -5395,6 +5538,66 @@ self.addEventListener('fetch', (event) => {
       const _wkLines = ['**' + _wkLabel + ' — $' + _wkRev.toFixed(2) + ' (' + _wkJobs.length + ' jobs)**', ''];
       _wkJobs.forEach((j: any) => _wkLines.push('  \u2022 ' + j.job_number + ' ' + j.client_name + ': ' + j.title.slice(0,28) + ' ($' + j.amt.toFixed(0) + ')'));
       sendReply(_wkLines.join('\n')); return;
+    }
+
+    // ── Top clients by revenue ────────────────────────────────────────────────
+    if (/^(?:show(?: my)?|list|who(?:'s| is| are)(?: my)?|what(?:'s| is))(?: my| the)? (?:top|best|biggest|highest)(?: \d+)? clients?(?: by revenue)?$|^top(?: \d+)? clients?$|^best clients?$|^biggest clients?$/.test(lowerText)) {
+      const _tcN = parseInt(lowerText.match(/top (\d+)/)?.[1]||'5');
+      const _tcRows = dbGet("SELECT client_name, COUNT(*) as cnt, COALESCE(SUM(COALESCE(paid_amount,invoice_amount,bid_amount,0)),0) as rev FROM jobs GROUP BY LOWER(client_name) ORDER BY rev DESC LIMIT ?", Math.min(_tcN, 10)) as any[];
+      if (!_tcRows.length) { sendReply('No client revenue data yet. Create some jobs first.'); return; }
+      const _tcLines = ['**\uD83C\uDFC6 Top Clients by Revenue**', ''];
+      _tcRows.forEach(({client_name: n, cnt: c, rev: r}: any, i: number) => {
+        const _medal = i===0?'\uD83E\uDD47':i===1?'\uD83E\uDD48':i===2?'\uD83E\uDD49':'  ';
+        _tcLines.push(' ' + _medal + ' **' + n + '** \u2014 ' + c + ' job' + (c!==1?'s':'') + ' \u2014 **$' + (r as number).toFixed(0) + '**');
+      });
+      sendReply(_tcLines.join('\n')); return;
+    }
+
+    // ── Best / highest-paying job ────────────────────────────────────────────
+    if (/^(?:(?:what(?:'s| is| was)(?: my)?|show my)(?: (?:best|biggest|highest|most valuable|most profitable|highest[- ]paying|highest[- ]revenue))(?: paying)? job(?:s)?)$|^best job$|^biggest job$|^what job made me the most(?: money)?$|^highest(?: paying)? job$|^most profitable job$/.test(lowerText)) {
+      const _bjRow = dbGetOne("SELECT job_number,client_name,title,COALESCE(paid_amount,invoice_amount,bid_amount,0) as amt,status FROM jobs ORDER BY COALESCE(paid_amount,invoice_amount,bid_amount,0) DESC LIMIT 1") as any;
+      if (!_bjRow) { sendReply('No jobs yet.'); return; }
+      const _bjTop3 = dbGet("SELECT job_number,client_name,title,COALESCE(paid_amount,invoice_amount,bid_amount,0) as amt,status FROM jobs ORDER BY COALESCE(paid_amount,invoice_amount,bid_amount,0) DESC LIMIT 3") as any[];
+      const _bjLines = ['**\uD83C\uDFC6 Highest-paying jobs:**', ''];
+      _bjTop3.forEach(({job_number: n, client_name: c, title: t, amt: a, status: s}: any, i: number) => {
+        const _m = i===0?'\uD83E\uDD47':i===1?'\uD83E\uDD48':'\uD83E\uDD49';
+        _bjLines.push(' ' + _m + ' **' + n + '** ' + c + ': ' + t.slice(0,30) + ' — **$' + (a as number).toFixed(0) + '** [' + s + ']');
+      });
+      sendReply(_bjLines.join('\n')); return;
+    }
+
+    // ── Jobs filter by amount ────────────────────────────────────────────────
+    {
+      const _jfM = lowerText.match(/^(?:find|show|list)(?: (?:all|my))? jobs?(?: (?:over|above|greater than|more than|>))\s*\$?([\d,]+)/i)
+               || lowerText.match(/^(?:find|show|list)(?: (?:all|my))? jobs?(?: (?:under|below|less than|<))\s*\$?([\d,]+)/i)
+               || lowerText.match(/^jobs?(?: (?:over|above|>))\s*\$?([\d,]+)/i)
+               || lowerText.match(/^jobs?(?: (?:under|below|<))\s*\$?([\d,]+)/i);
+      if (_jfM) {
+        const _jfAmt = parseFloat((_jfM[1]||'').replace(/,/g,''));
+        const _jfOver = /over|above|greater|more|>/.test(lowerText);
+        const _jfRows = dbGet(
+          'SELECT job_number,client_name,title,COALESCE(bid_amount,invoice_amount,0) as amt,status FROM jobs WHERE COALESCE(bid_amount,invoice_amount,0) ' + (_jfOver ? '>' : '<') + ' ? ORDER BY COALESCE(bid_amount,invoice_amount,0) DESC LIMIT 20',
+          _jfAmt
+        ) as any[];
+        if (!_jfRows.length) { sendReply('No jobs ' + (_jfOver?'over':'under') + ' $' + _jfAmt.toFixed(0) + '.'); return; }
+        const _jfTotal = _jfRows.reduce((s: number,j: any)=>s+(j.amt||0), 0);
+        const _jfLines = ['**Jobs ' + (_jfOver?'over':'under') + ' $' + _jfAmt.toFixed(0) + ' (' + _jfRows.length + ') — $' + _jfTotal.toFixed(0) + ' total**', ''];
+        _jfRows.forEach((j: any) => _jfLines.push('  \u2022 ' + j.job_number + ' [' + j.status + '] ' + j.client_name + ': ' + j.title.slice(0,28) + ' ($' + (j.amt||0).toFixed(0) + ')'));
+        sendReply(_jfLines.join('\n')); return;
+      }
+    }
+
+    // ── Job count this month / year ─────────────────────────────────────────
+    if (/^how many jobs(?: did i do| have i done| did i complete)?(?: this)?(?: month| year| week)?\??$|^job count$/.test(lowerText)) {
+      const _jcNow = new Date();
+      const _jcYr = _jcNow.getFullYear().toString();
+      const _jcMo = _jcYr + '-' + String(_jcNow.getMonth()+1).padStart(2,'0');
+      const _jcMonth = (dbGetOne("SELECT COUNT(*) as n FROM jobs WHERE strftime('%Y-%m',created_at)=?", _jcMo) as any)?.n||0;
+      const _jcYear  = (dbGetOne("SELECT COUNT(*) as n FROM jobs WHERE strftime('%Y',created_at)=?", _jcYr) as any)?.n||0;
+      const _jcTotal = (dbGetOne("SELECT COUNT(*) as n FROM jobs") as any)?.n||0;
+      const _jcPaid  = (dbGetOne("SELECT COUNT(*) as n FROM jobs WHERE status='paid'") as any)?.n||0;
+      sendReply('**\uD83D\uDCCB Job Count**\n\nThis month: **' + _jcMonth + '**\nThis year: **' + _jcYear + '**\nAll time: **' + _jcTotal + '** (' + _jcPaid + ' paid)');
+      return;
     }
 
     // ── Busiest month ─────────────────────────────────────────────────────
