@@ -4432,6 +4432,100 @@ self.addEventListener('fetch', (event) => {
       sendReply(_isLines.join('\n')); return;
     }
 
+    // ── Invoice history ────────────────────────────────────────────────────────
+    if (/^(?:show(?: my)?|list(?: all)?)(?: my)? invoice(?:s| history)$|^invoice history$|^all invoices$/.test(lowerText)) {
+      const _ihRows = dbGet("SELECT job_number,client_name,title,invoice_amount,paid_amount,invoiced_date,paid_date,status FROM jobs WHERE status IN ('invoiced','paid') ORDER BY invoiced_date DESC") as any[];
+      if (!_ihRows.length) { sendReply('No invoices sent yet. Say **"send invoice for J-XXXXX"** to create one.'); return; }
+      const _ihTotal = _ihRows.reduce((s: number,j: any)=>s+(j.invoice_amount||0), 0);
+      const _ihPaid = _ihRows.reduce((s: number,j: any)=>s+(j.paid_amount||0), 0);
+      const _ihLines = ['**\uD83E\uDDFE Invoice History (' + _ihRows.length + ') — $' + _ihTotal.toFixed(0) + ' invoiced, $' + _ihPaid.toFixed(0) + ' paid**', ''];
+      for (const j of _ihRows) {
+        const _ihOwed = Math.max(0,(j.invoice_amount||0)-(j.paid_amount||0));
+        const _ihIcon = j.status==='paid' ? '\u2705' : '\u23F3';
+        _ihLines.push('  ' + _ihIcon + ' ' + j.job_number + ' ' + j.client_name + ': $' + (j.invoice_amount||0).toFixed(0) + (_ihOwed>0?' (**$'+_ihOwed.toFixed(0)+' owed**)':'') + ' — ' + (j.invoiced_date||'').slice(0,10));
+      }
+      sendReply(_ihLines.join('\n')); return;
+    }
+
+    // ── Unpaid invoices ──────────────────────────────────────────────────────
+    if (/^(?:what|show|list)(?: (?:are|my|all|the))? (?:unpaid|outstanding|open)(?: invoices?| bills?)$|^unpaid invoices?$|^what invoices? are (?:unpaid|outstanding|open)$|^show (?:me )?(?:all )?(?:unpaid|outstanding)(?: invoices?)?$/.test(lowerText)) {
+      const _uiRows = dbGet("SELECT job_number,client_name,title,invoice_amount,paid_amount,invoiced_date FROM jobs WHERE status='invoiced' ORDER BY invoiced_date ASC") as any[];
+      if (!_uiRows.length) { sendReply('\u2705 No unpaid invoices — all caught up!'); return; }
+      const _uiOwed = _uiRows.reduce((s: number,j: any)=>s+Math.max(0,(j.invoice_amount||0)-(j.paid_amount||0)), 0);
+      const _uiLines = ['**\uD83D\uDCB8 Unpaid Invoices — $' + _uiOwed.toFixed(2) + ' total owed**', ''];
+      for (const j of _uiRows) {
+        const _owed = Math.max(0,(j.invoice_amount||0)-(j.paid_amount||0));
+        const _days = Math.floor((Date.now()-new Date(j.invoiced_date||Date.now()).getTime())/86400000);
+        _uiLines.push('  \u2022 ' + j.job_number + ' **' + j.client_name + '**: $' + _owed.toFixed(0) + ' — sent ' + _days + ' days ago');
+      }
+      _uiLines.push('');
+      _uiLines.push('Say **"Pat paid $X on J-XXXXX"** to record a payment');
+      sendReply(_uiLines.join('\n')); return;
+    }
+
+    // ── Client full report ────────────────────────────────────────────────────
+    {
+      const _crM = lowerText.match(/^(?:client|full|complete)(?: (?:report|summary|profile|overview))(?: for)? ([\w][\w\s]{1,25})$/i)
+               || lowerText.match(/^(?:everything about|full profile for|show me everything about) ([\w][\w\s]{1,25})$/i);
+      if (_crM) {
+        const _crName = (_crM[1]||'').trim();
+        const _crFirst = _crName.split(' ')[0].toLowerCase();
+        const _crContact = dbGetOne("SELECT name,phone,email,notes FROM contacts WHERE LOWER(name) LIKE ? LIMIT 1", '%'+_crFirst+'%') as any;
+        const _crJobs = dbGet("SELECT job_number,title,status,bid_amount,invoice_amount,paid_amount,created_at FROM jobs WHERE LOWER(client_name) LIKE ? ORDER BY created_at DESC", '%'+_crFirst+'%') as any[];
+        if (!_crContact && !_crJobs.length) { sendReply('No client found matching "' + _crName + '".'); return; }
+        const _crRev = _crJobs.reduce((s: number,j: any)=>s+(j.paid_amount||j.invoice_amount||j.bid_amount||0), 0);
+        const _crOwed = _crJobs.reduce((s: number,j: any)=>s+(j.status==='invoiced'?Math.max(0,(j.invoice_amount||0)-(j.paid_amount||0)):0), 0);
+        const _crLines: string[] = [
+          '**\uD83D\uDC64 ' + (_crContact?.name||_crName) + '**',
+          ''
+        ];
+        if (_crContact?.phone) _crLines.push('\uD83D\uDCDE ' + _crContact.phone + (_crContact?.email?' \u00B7 ' + _crContact.email:''));
+        _crLines.push('');
+        _crLines.push('**Jobs (' + _crJobs.length + ') — $' + _crRev.toFixed(0) + ' total' + (_crOwed>0?' \u00B7 $' + _crOwed.toFixed(0) + ' owed':'') + '**');
+        for (const j of _crJobs) {
+          const _jAmt = j.paid_amount||j.invoice_amount||j.bid_amount||0;
+          _crLines.push('  \u2022 ' + j.job_number + ' [' + j.status + '] ' + j.title.slice(0,30) + ' ($' + _jAmt.toFixed(0) + ')');
+        }
+        if (_crContact?.notes) {
+          const _crNotes = _crContact.notes.split('\n').filter((l: string)=>l.trim()).slice(0,4);
+          if (_crNotes.length) { _crLines.push(''); _crLines.push('**Call log:**'); _crNotes.forEach((n: string)=>_crLines.push('  ' + n)); }
+        }
+        sendReply(_crLines.join('\n')); return;
+      }
+    }
+
+    // ── Tax estimate ─────────────────────────────────────────────────────────
+    if (/^(?:taxes?|tax estimate|taxes? (?:owed|estimate|due|this year|calculation)|estimate (?:taxes?|what i owe)|what(?:'s| is) my tax(?:es)?|how much (?:tax|taxes?) do i owe)/.test(lowerText)) {
+      const _txYr = new Date().getFullYear().toString();
+      const _txRev = (dbGetOne("SELECT COALESCE(SUM(COALESCE(paid_amount,invoice_amount,bid_amount,0)),0) as n FROM jobs WHERE status IN ('paid','invoiced') AND strftime('%Y',COALESCE(paid_date,invoiced_date,updated_at))=?", _txYr) as any)?.n||0;
+      const _txExp = (dbGetOne("SELECT COALESCE(SUM(amount),0) as n FROM transactions WHERE type='expense' AND strftime('%Y',created_at)=?", _txYr) as any)?.n||0;
+      const _txNet = Math.max(0, _txRev - _txExp);
+      const _txSE = _txNet * 0.1413;  // 14.13% self-employment tax
+      const _txInc = Math.max(0, _txNet - _txSE/2) * 0.22;  // ~22% federal bracket estimate
+      const _txTotal = _txSE + _txInc;
+      sendReply('**\uD83D\uDCDD Tax Estimate — ' + _txYr + '** (rough estimate only)\n\n' +
+        'Revenue: $' + (_txRev as number).toFixed(0) + '\n' +
+        'Expenses: -$' + (_txExp as number).toFixed(0) + '\n' +
+        'Net profit: **$' + _txNet.toFixed(0) + '**\n\n' +
+        'Self-employment tax (14.13%): $' + _txSE.toFixed(0) + '\n' +
+        'Federal income tax (~22%): $' + _txInc.toFixed(0) + '\n' +
+        'Total estimate: **$' + _txTotal.toFixed(0) + '**\n\n' +
+        '\u26A0\uFE0F This is an estimate only — consult a CPA for exact figures.\n' +
+        'Say **"accounting export"** to get CSVs for your accountant.');
+      return;
+    }
+
+    // ── Total expenses this year ─────────────────────────────────────────────
+    if (/^(?:total|all|show)(?: (?:my|all))? expenses?(?: this year| ytd| year to date)?$|^yearly expenses?$|^expenses? this year$/.test(lowerText)) {
+      const _eyYr = new Date().getFullYear().toString();
+      const _eyRows = dbGet("SELECT description,amount,created_at FROM transactions WHERE type='expense' AND strftime('%Y',created_at)=? ORDER BY created_at DESC", _eyYr) as any[];
+      const _eyTotal = _eyRows.reduce((s: number,e: any)=>s+(e.amount||0), 0);
+      if (!_eyRows.length) { sendReply('No expenses recorded in ' + _eyYr + '.'); return; }
+      const _eyLines = ['**Expenses ' + _eyYr + ' — $' + _eyTotal.toFixed(2) + ' total**', ''];
+      _eyRows.forEach((e: any) => _eyLines.push('  \u2022 ' + (e.description||'expense') + ' — $' + (e.amount||0).toFixed(2) + ' (' + (e.created_at||'').slice(0,10) + ')'));
+      sendReply(_eyLines.join('\n')); return;
+    }
+
     // ── Aging report (outstanding invoices by age) ─────────────────────────
     if (/^(?:who has|show|list)(?: (?:me|all))?(?: clients? with)? outstanding invoices?(?: over| older than)? (?:\d+ days?|30 days?|60 days?|90 days?)|aging report|invoice aging/.test(lowerText)) {
       const _days = (lowerText.match(/(\d+)\s*days?/) || ['','30'])[1];
