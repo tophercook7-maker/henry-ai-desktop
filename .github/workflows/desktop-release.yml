@@ -29,7 +29,7 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm install --legacy-peer-deps
+        run: npm install --legacy-peer-deps --include=dev
 
       - name: Rebuild native modules for Electron
         run: npm run rebuild
@@ -50,7 +50,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: henry-mac
-          path: release/*.dmg
+          path: release2/*.dmg
           retention-days: 30
 
   # ── Windows ───────────────────────────────────────────────────────────────
@@ -65,7 +65,7 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm install --legacy-peer-deps
+        run: npm install --legacy-peer-deps --include=dev
 
       - name: Rebuild native modules for Electron
         run: npm run rebuild
@@ -81,7 +81,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: henry-win
-          path: release/*.exe
+          path: release2/*.exe
           retention-days: 30
 
   # ── Linux ─────────────────────────────────────────────────────────────────
@@ -102,7 +102,7 @@ jobs:
           sudo apt-get install -y libfuse2t64 || sudo apt-get install -y libfuse2 || true
 
       - name: Install dependencies
-        run: npm install --legacy-peer-deps
+        run: npm install --legacy-peer-deps --include=dev
 
       - name: Rebuild native modules for Electron
         run: npm run rebuild
@@ -116,14 +116,14 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: henry-linux-appimage
-          path: release/*.AppImage
+          path: release2/*.AppImage
           retention-days: 30
 
       - name: Upload Linux deb
         uses: actions/upload-artifact@v4
         with:
           name: henry-linux-deb
-          path: release/*.deb
+          path: release2/*.deb
           retention-days: 30
 
   # ── Create GitHub Release ─────────────────────────────────────────────────
