@@ -2053,6 +2053,24 @@ self.addEventListener('fetch', (event) => {
       }
     }
 
+    // P_RESTORE: Restore from backup — priority dispatch
+    if (/^(?:restore(?: from)?|recover)(?: my)?(?: data| backup| henry)?$|^restore henry$/.test(lowerText)) {
+      try {
+        const { execSync: _rbx } = await import('child_process') as typeof import('child_process');
+        const _rbDir = require('os').homedir() + '/Library/Application Support/henry-ai-desktop/backups/';
+        const _rbRaw = _rbx('ls -t "' + _rbDir + '" 2>/dev/null | grep -v prerestore | head -5', {encoding:'utf8',timeout:3000,shell:'/bin/bash'}).trim();
+        const _rbFiles = _rbRaw.split('\n').filter((f: string)=>f.endsWith('.db')&&f.length>0);
+        if (!_rbFiles.length) { sendReply('No backup files found. Say **\'back up my data\'** to create one first.'); return; }
+        const _rbLatest = _rbDir + _rbFiles[0];
+        const _rbCurrent = require('os').homedir() + '/Library/Application Support/henry-ai-desktop/henry-workspace/henry.db';
+        const _rbSafeDate = new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
+        _rbx('cp "' + _rbCurrent + '" "' + _rbDir + 'henry_prerestore_' + _rbSafeDate + '.db"', {timeout:5000,shell:'/bin/bash'});
+        _rbx('cp "' + _rbLatest + '" "' + _rbCurrent + '"', {timeout:5000,shell:'/bin/bash'});
+        sendReply('\u2705 **Restored!**\n\nSource: ' + _rbFiles[0] + '\n\u26A0\uFE0F Restart Henry AI to apply the restore fully.');
+      } catch(e) { sendReply('Restore failed: ' + String(e).slice(0,80)); }
+      return;
+    }
+
     // P_MAT: Job materials — priority dispatch
     {
       const _pmM = lowerText.match(/^(?:show|list|view|total|how much)(?: (?:all|the|for))?(?: job)? materials?(?: (?:for|on|of))? ([j]-\d{4,6})/i)
@@ -5707,6 +5725,29 @@ self.addEventListener('fetch', (event) => {
       if (_ojComp.length) { _ojLines.push('**Completed but not invoiced (7+ days):**'); _ojComp.forEach((j: any) => _ojLines.push('  \u2022 ' + j.job_number + ' ' + j.client_name + ': ' + j.title.slice(0,28) + ' — say \'bill ' + j.client_name.split(' ')[0] + "'")); _ojLines.push(''); }
       if (_ojBids.length) { _ojLines.push('**Open bids older than 14 days:**'); _ojBids.forEach((j: any) => _ojLines.push('  \u2022 ' + j.job_number + ' ' + j.client_name + ': ' + j.title.slice(0,28) + ' ($' + (j.bid_amount||0).toFixed(0) + ')')); }
       sendReply(_ojLines.join('\n')); return;
+    }
+
+    // ── Restore from backup ──────────────────────────────────────────────────
+    if (/^(?:restore(?: from)?|recover)(?: my)?(?: data| backup)?(?:(?: from)? (.+))?$|^restore henry$/.test(lowerText)) {
+      try {
+        const { execSync: _rbx } = await import('child_process') as typeof import('child_process');
+        const _rbDir = require('os').homedir() + '/Library/Application Support/henry-ai-desktop/backups/';
+        const _rbFiles = _rbx('ls -t "' + _rbDir + '" 2>/dev/null | grep henry_.*\.db | head -5', {encoding:'utf8',timeout:3000,shell:'/bin/bash'}).trim().split('\n').filter(Boolean);
+        if (!_rbFiles.length) { sendReply('No backup files found. Say **"back up my data"** first.'); return; }
+        const _rbLatest = _rbDir + _rbFiles[0];
+        const _rbCurrent = require('os').homedir() + '/Library/Application Support/henry-ai-desktop/henry-workspace/henry.db';
+        // Safety: backup current before restoring
+        const _rbSafeDate = new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
+        const _rbSafePath = _rbDir + 'henry_prerestore_' + _rbSafeDate + '.db';
+        _rbx('cp "' + _rbCurrent + '" "' + _rbSafePath + '"', {timeout:5000,shell:'/bin/bash'});
+        _rbx('cp "' + _rbLatest + '" "' + _rbCurrent + '"', {timeout:5000,shell:'/bin/bash'});
+        sendReply('\u2705 **Restored from backup!**\n\n' +
+          'Restored: ' + _rbFiles[0] + '\n' +
+          'Your current data was saved first as: henry_prerestore_' + _rbSafeDate + '.db\n\n' +
+          '\u26A0\uFE0F Restart Henry AI now for the restore to take full effect.\n' +
+          'Say **"back up my data"** regularly to keep backups fresh.');
+      } catch(e) { sendReply('Restore failed: ' + String(e).slice(0,80)); }
+      return;
     }
 
     // ── Backup status / last backup ──────────────────────────────────────────

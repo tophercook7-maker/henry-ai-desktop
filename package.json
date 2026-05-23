@@ -34,7 +34,9 @@
     "format:check": "prettier --check .",
     "prepare": "husky || true",
     "postinstall": "npx @electron/rebuild || true",
-    "build:win:arm64": "vite build && electron-builder --win --arm64"
+    "build:win:arm64": "vite build && electron-builder --win --arm64",
+    "build:mac:signed": "vite build && electron-builder --mac --arm64 --x64",
+    "release": "vite build && electron-builder --mac --win --publish always"
   },
   "lint-staged": {
     "*.{ts,tsx}": [
@@ -64,7 +66,7 @@
     "@monaco-editor/react": "^4.7.0",
     "@replit/connectors-sdk": "^0.4.0",
     "better-sqlite3": "^11.1.2",
-    "electron-updater": "^6.3.9",
+    "electron-updater": "^6.3.0",
     "highlight.js": "^11.10.0",
     "lucide-react": "^0.436.0",
     "mqtt": "^5.15.1",
@@ -125,6 +127,7 @@
       "provider": "github",
       "owner": "tophercook7-maker",
       "repo": "henry-ai-desktop",
+      "private": false,
       "releaseType": "release"
     },
     "mac": {
@@ -144,35 +147,36 @@
           ]
         }
       ],
-      "category": "public.app-category.productivity",
+      "icon": "build/icon.icns",
+      "category": "public.app-category.business",
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
-      "icon": "build/icon.icns",
-      "identity": null
+      "notarize": false
     },
     "dmg": {
-      "title": "Henry AI",
-      "backgroundColor": "#08080e",
+      "sign": false,
+      "title": "Henry AI ${version}",
+      "icon": "build/icon.icns",
+      "iconSize": 80,
+      "contents": [
+        {
+          "x": 410,
+          "y": 150,
+          "type": "link",
+          "path": "/Applications"
+        },
+        {
+          "x": 130,
+          "y": 150,
+          "type": "file"
+        }
+      ],
       "window": {
         "width": 540,
         "height": 380
-      },
-      "contents": [
-        {
-          "x": 130,
-          "y": 220,
-          "type": "file"
-        },
-        {
-          "x": 410,
-          "y": 220,
-          "type": "link",
-          "path": "/Applications"
-        }
-      ],
-      "writeUpdateInfo": false
+      }
     },
     "win": {
       "target": [
@@ -229,7 +233,7 @@
       "node_modules/bindings/**/*",
       "node_modules/file-uri-to-path/**/*"
     ],
-    "afterSign": null,
+    "afterSign": "scripts/notarize.cjs",
     "extraResources": [
       {
         "from": "resources/bin",

@@ -1,7 +1,7 @@
+import { autoUpdater } from 'electron-updater';
 import { app, BrowserWindow, shell, ipcMain, Notification, Tray, Menu, MenuItem, globalShortcut, nativeImage, systemPreferences } from 'electron';
 import path from 'path';
 import fs from 'fs';
-import { autoUpdater } from 'electron-updater';
 import { initDatabase } from './ipc/database';
 import { registerSettingsHandlers } from './ipc/settings';
 import { registerGoogleAuthHandlers } from './ipc/googleAuth';
@@ -211,7 +211,22 @@ function createWindow() {
   mainWindow.on('closed', () => { mainWindow = null; });
 }
 
+
+// ── Auto-updater setup ────────────────────────────────────────────────────────
+if (app.isPackaged) {
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.on('update-downloaded', (info) => {
+    BrowserWindow.getAllWindows().forEach(win => {
+      win.webContents.send('henry-update-ready', info.version);
+    });
+  });
+}
+
 app.whenReady().then(() => {
+  // Check for updates silently on launch
+  if (app.isPackaged) { autoUpdater.checkForUpdatesAndNotify().catch(() => {}); }
+
   const userDataPath = app.getPath('userData');
   const henryDir = path.join(userDataPath, 'henry-workspace');
   if (!fs.existsSync(henryDir)) {
