@@ -1986,6 +1986,78 @@ self.addEventListener('fetch', (event) => {
       }
     }
 
+    // P_MAT: Job materials — priority dispatch
+    {
+      const _pmM = lowerText.match(/^(?:show|list|view|total|how much)(?: (?:all|the|for))?(?: job)? materials?(?: (?:for|on|of))? ([j]-\d{4,6})/i)
+                || lowerText.match(/([j]-\d{4,6})(?: job)? materials?$/i);
+      if (_pmM) {
+        const _pmN = (_pmM[1]||_pmM[2]||'').toUpperCase();
+        const _pmJob = dbGetOne('SELECT id,job_number,client_name FROM jobs WHERE UPPER(job_number)=? LIMIT 1', _pmN) as any;
+        if (!_pmJob) { sendReply('Job ' + _pmN + ' not found.'); return; }
+        const _pmRows = dbGet('SELECT material,unit_cost,quantity FROM job_materials WHERE job_id=? ORDER BY rowid ASC', _pmJob.id) as any[];
+        if (!_pmRows.length) { sendReply('No materials recorded for ' + _pmN + '.\nSay **"add material to ' + _pmN + ': [item] $[cost]"** to add one.'); return; }
+        const _pmTot = _pmRows.reduce((s: number,m: any)=>s+(m.unit_cost||0)*(parseFloat(m.quantity)||1), 0);
+        const _pmLines = ['**\uD83D\uDCE6 Materials — ' + _pmN + ' ' + _pmJob.client_name + '**', 'Total: **$' + _pmTot.toFixed(2) + '**', ''];
+        _pmRows.forEach((m: any)=>_pmLines.push('  \u2022 ' + m.material + ' \u00D7 ' + (m.quantity||1) + ' @ $' + (m.unit_cost||0).toFixed(2)));
+        sendReply(_pmLines.join('\n')); return;
+      }
+    }
+
+    // P_HOURS: Hours logged — priority dispatch
+    if (/^(?:total|how many|show)(?: (?:my|all))? hours?(?: logged| worked| tracked)?(?:(?: this| in)? (?:month|week|year))?$|^hours? (?:logged|worked|this month|this year)$/.test(lowerText)) {
+      const _phRows = dbGet("SELECT jl.note,jl.created_at FROM job_log jl WHERE jl.note LIKE 'Labor:%'") as any[];
+      const _phParse = (n: string) => { const m=n.match(/([\d.]+)h/); return m?parseFloat(m[1]):0; };
+      const _phAll = _phRows.reduce((s: number,r: any)=>s+_phParse(r.note), 0);
+      const _phMoK = new Date().toISOString().slice(0,7);
+      const _phMo  = _phRows.filter((r: any)=>r.created_at.startsWith(_phMoK)).reduce((s: number,r: any)=>s+_phParse(r.note), 0);
+      const _phRate = parseFloat((dbGetOne("SELECT value FROM settings WHERE key='hourly_rate'") as any)?.value||'0');
+      sendReply('**\u23F1\uFE0F Hours Logged**\n\n' +
+        'This month: **' + _phMo.toFixed(1) + 'h**' + (_phRate>0?' ($'+(_phMo*_phRate).toFixed(0)+')':'') + '\n' +
+        'All time:   **' + _phAll.toFixed(1) + 'h**' + (_phRate>0?' ($'+(_phAll*_phRate).toFixed(0)+')':'') + '\n' +
+        'Log entries: ' + _phRows.length);
+      return;
+    }
+
+    // P_RPHOUR: Revenue per hour — priority dispatch
+    if (/^(?:revenue|earnings?|income|rate) per hour(?: worked)?$|^effective(?: hourly)? rate$|^how much (?:am i making|do i make) per hour$/.test(lowerText)) {
+      const _rphRev = (dbGetOne("SELECT COALESCE(SUM(COALESCE(paid_amount,invoice_amount,bid_amount,0)),0) as n FROM jobs WHERE status IN ('paid','invoiced')") as any)?.n||0;
+      const _rphL   = dbGet("SELECT note FROM job_log WHERE note LIKE 'Labor:%'") as any[];
+      const _rphHrs = _rphL.reduce((s: number,r: any)=>{ const m=r.note.match(/([\d.]+)h/); return s+(m?parseFloat(m[1]):0); }, 0);
+      if (_rphHrs < 0.5) { sendReply('Not enough logged hours. Say **"log X hours on J-XXXXX"** to track.'); return; }
+      const _rphEff = _rphRev / _rphHrs;
+      const _rphSet = parseFloat((dbGetOne("SELECT value FROM settings WHERE key='hourly_rate'") as any)?.value||'0');
+      sendReply('**\uD83D\uDCB0 Effective Hourly Rate**\n\n' +
+        'Revenue (paid/invoiced): $' + (_rphRev as number).toFixed(0) + '\n' +
+        'Hours logged: ' + _rphHrs.toFixed(1) + 'h\n' +
+        'Effective rate: **$' + _rphEff.toFixed(0) + '/hr**' +
+        (_rphSet>0?'\nYour set rate: $'+_rphSet+'/hr \u00B7 '+(_rphEff>=_rphSet?'\u2191 $'+(_rphEff-_rphSet).toFixed(0)+' above':'\u2193 $'+(_rphSet-_rphEff).toFixed(0)+' below'):''));
+      return;
+    }
+
+    // P_SCHEDJOBS: Scheduled jobs this week — priority dispatch
+    if (/^(?:what (?:jobs?|work) (?:are|do i have) (?:scheduled|planned)(?: this week| today)?|what(?:'s| is) (?:scheduled|on my schedule)(?: this week| today)?|scheduled jobs?(?: this week| today)?|jobs? (?:this week|today|scheduled)|show (?:scheduled|this week(?:'s)?) jobs?)/.test(lowerText)) {
+      const _sjNow = new Date();
+      const _sjFmt = (d: Date) => d.toISOString().slice(0,10);
+      const _sjToday = /today/.test(lowerText);
+      let _sjRows: any[];
+      if (_sjToday) {
+        _sjRows = dbGet("SELECT job_number,client_name,title,scheduled_date,status,bid_amount FROM jobs WHERE scheduled_date=? AND status NOT IN ('cancelled','paid') ORDER BY scheduled_date", _sjFmt(_sjNow)) as any[];
+      } else {
+        const _sjMon = new Date(_sjNow); _sjMon.setDate(_sjNow.getDate()-(_sjNow.getDay()||7)+1);
+        const _sjSun = new Date(_sjMon); _sjSun.setDate(_sjMon.getDate()+6);
+        _sjRows = dbGet("SELECT job_number,client_name,title,scheduled_date,status,bid_amount FROM jobs WHERE scheduled_date BETWEEN ? AND ? AND status NOT IN ('cancelled','paid') ORDER BY scheduled_date", _sjFmt(_sjMon), _sjFmt(_sjSun)) as any[];
+      }
+      // Natural-language dates (monday, june 10, etc.)
+      const _sjNatDays = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
+      const _sjNat = (dbGet("SELECT job_number,client_name,title,scheduled_date,status,bid_amount FROM jobs WHERE scheduled_date IS NOT NULL AND LENGTH(scheduled_date)<15 AND status NOT IN ('cancelled','paid') ORDER BY created_at DESC LIMIT 30") as any[]).filter((j: any)=>_sjNatDays.some((d: string)=>(j.scheduled_date||'').toLowerCase().includes(d)));
+      const _sjAll = [..._sjRows, ..._sjNat.filter((n: any)=>!_sjRows.find((s: any)=>s.job_number===n.job_number))];
+      const _sjLabel = _sjToday ? 'Today' : 'This Week';
+      if (!_sjAll.length) { sendReply('No jobs scheduled for ' + _sjLabel.toLowerCase() + '. Say **"schedule J-XXXXX for Monday"** to add one.'); return; }
+      const _sjLines = ['**\uD83D\uDCC5 Scheduled Jobs — ' + _sjLabel + ' (' + _sjAll.length + ')**', ''];
+      _sjAll.forEach((j: any)=>_sjLines.push('  \u2022 ' + j.job_number + ' [' + j.status + '] ' + j.client_name + ': ' + j.title.slice(0,30) + (j.scheduled_date?' (' + j.scheduled_date + ')':'') + (j.bid_amount>0?' $'+j.bid_amount.toFixed(0):'')));
+      sendReply(_sjLines.join('\n')); return;
+    }
+
     // P_INSTALL: Install guide — before AI
     if (/^(?:how do i|how to)(?: install| set up| get) henry(?: on(?: another| a)? (?:computer|pc|mac|windows)?)?$|^install guide$|^henry install$/.test(lowerText)) {
       const _igBiz = (dbGetOne("SELECT value FROM settings WHERE key='business_name'") as any)?.value||'Henry AI';
@@ -5344,6 +5416,85 @@ self.addEventListener('fetch', (event) => {
                      || lowerText.match(/^(?:what(?:'s| is)(?: the)? (?:profit|margin|cost|labor cost)|how much(?: did i)? make|how much profit|labor cost|work log|work logged|hours logged|material cost)(?: on| from| for)?\s+([j]-\d{4,6})/i)
                      || lowerText.match(/^([j]-\d{4,6})(?:'s)? (?:details?|info|breakdown|work log|labor|hours|profit|cost|margin|materials?)$/i)
                      || lowerText.match(/^(?:show|list|what)(?: all)? work (?:logged|done) (?:on|for) ([j]-\d{4,6})/i);
+    // ── Job materials (local SQL) ────────────────────────────────────────────
+    {
+      const _jmatM = lowerText.match(/^(?:show|list|view|total|how much)(?: (?:all|the|in|for))?(?: job)? materials?(?: (?:for|on|of))? ([j]-\d{4,6})/i)
+                  || lowerText.match(/([j]-\d{4,6})(?: job)? materials?$/i);
+      if (_jmatM) {
+        const _jmN = (_jmatM[1]||_jmatM[2]||'').toUpperCase();
+        const _jmJob = dbGetOne('SELECT id,job_number,client_name FROM jobs WHERE UPPER(job_number)=? LIMIT 1', _jmN) as any;
+        if (!_jmJob) { sendReply('Job ' + _jmN + ' not found.'); return; }
+        const _jmRows = dbGet('SELECT material,unit_cost,quantity FROM job_materials WHERE job_id=? ORDER BY rowid ASC', _jmJob.id) as any[];
+        if (!_jmRows.length) { sendReply('No materials recorded for ' + _jmN + '.\nSay **"add material to ' + _jmN + ': [item] $[cost]"** to add one.'); return; }
+        const _jmTot = _jmRows.reduce((s: number,m: any)=>s+(m.unit_cost||0)*(parseFloat(m.quantity)||1), 0);
+        const _jmLines = ['**\uD83D\uDCE6 Materials — ' + _jmN + ' ' + _jmJob.client_name + '**', 'Total: **$' + _jmTot.toFixed(2) + '**', ''];
+        _jmRows.forEach((m: any) => _jmLines.push('  \u2022 ' + m.material + ' \u00D7 ' + (m.quantity||1) + ' @ $' + (m.unit_cost||0).toFixed(2)));
+        sendReply(_jmLines.join('\n')); return;
+      }
+    }
+
+    // ── Total hours logged ─────────────────────────────────────────────────────
+    if (/^(?:total|how many|show)(?: (?:my|all))? hours?(?: logged| worked| tracked)?(?:(?: this| in)? (?:month|week|year))?$|^hours? (?:logged|worked|this month|this year)$/.test(lowerText)) {
+      const _hlRows = dbGet("SELECT jl.note,jl.created_at FROM job_log jl WHERE jl.note LIKE 'Labor:%'") as any[];
+      const _hlParse = (note: string) => { const m = note.match(/([\d.]+)h/); return m ? parseFloat(m[1]) : 0; };
+      const _hlAll  = _hlRows.reduce((s: number,r: any)=>s+_hlParse(r.note), 0);
+      const _hlMoK  = new Date().toISOString().slice(0,7);
+      const _hlMo   = _hlRows.filter((r: any)=>r.created_at.startsWith(_hlMoK)).reduce((s: number,r: any)=>s+_hlParse(r.note), 0);
+      const _hlRate = parseFloat((dbGetOne("SELECT value FROM settings WHERE key='hourly_rate'") as any)?.value||'0');
+      sendReply('**\u23F1\uFE0F Hours Logged**\n\n' +
+        'This month: **' + _hlMo.toFixed(1) + 'h**' + (_hlRate>0?' ($'+(_hlMo*_hlRate).toFixed(0)+' @ $'+_hlRate+'/hr)':'') + '\n' +
+        'All time:   **' + _hlAll.toFixed(1) + 'h**' + (_hlRate>0?' ($'+(_hlAll*_hlRate).toFixed(0)+')':'') + '\n' +
+        'Log entries: ' + _hlRows.length);
+      return;
+    }
+
+    // ── Revenue per hour worked ───────────────────────────────────────────────
+    if (/^(?:revenue|earnings?|income|rate) per hour(?: worked)?$|^effective(?: hourly)? rate$|^how much (?:am i making|do i make) per hour$/.test(lowerText)) {
+      const _rphRev = (dbGetOne("SELECT COALESCE(SUM(COALESCE(paid_amount,invoice_amount,bid_amount,0)),0) as n FROM jobs WHERE status IN ('paid','invoiced')") as any)?.n||0;
+      const _rphLogs = dbGet("SELECT note FROM job_log WHERE note LIKE 'Labor:%'") as any[];
+      const _rphHrs = _rphLogs.reduce((s: number,r: any)=>{ const m=r.note.match(/([\d.]+)h/); return s+(m?parseFloat(m[1]):0); }, 0);
+      if (_rphHrs < 0.5) { sendReply('Not enough logged hours to calculate.\nSay **"log X hours on J-XXXXX"** to track time.'); return; }
+      const _rphEff = _rphRev / _rphHrs;
+      const _rphSet = parseFloat((dbGetOne("SELECT value FROM settings WHERE key='hourly_rate'") as any)?.value||'0');
+      sendReply('**\uD83D\uDCB0 Effective Hourly Rate**\n\n' +
+        'Revenue: $' + (_rphRev as number).toFixed(0) + '\n' +
+        'Hours logged: ' + _rphHrs.toFixed(1) + 'h\n' +
+        'Effective rate: **$' + _rphEff.toFixed(0) + '/hr**' +
+        (_rphSet>0?'\nYour set rate: $'+_rphSet+'/hr \u00B7 Diff: '+(_rphEff>=_rphSet?'\u2191 $'+(_rphEff-_rphSet).toFixed(0)+' above':'\u2193 $'+(_rphSet-_rphEff).toFixed(0)+' below'):''));
+      return;
+    }
+
+    // ── Jobs scheduled this week / today ─────────────────────────────────────
+    if (/^(?:what(?:'s| is| are)(?: my)?|show(?: me)?|list)(?: my)? (?:scheduled (?:jobs?|work)|jobs?(?: (?:scheduled|for|this week|today|upcoming)))(?: this week| today)?$|^(?:today(?:'s| is my)?|this week(?:'s)?) (?:jobs?|schedule|work)$|^scheduled jobs?$|^jobs? (?:this week|today)$/.test(lowerText)) {
+      const _wjNow = new Date();
+      const _wjFmt = (d: Date) => d.toISOString().slice(0,10);
+      const _wjToday = /today/.test(lowerText);
+      // ISO-date scheduled jobs
+      let _wjSql: any[];
+      if (_wjToday) {
+        _wjSql = dbGet("SELECT job_number,client_name,title,scheduled_date,status,bid_amount FROM jobs WHERE scheduled_date=? AND status NOT IN ('cancelled','paid') ORDER BY scheduled_date", _wjFmt(_wjNow)) as any[];
+      } else {
+        const _wjMon = new Date(_wjNow); _wjMon.setDate(_wjNow.getDate()-(_wjNow.getDay()||7)+1);
+        const _wjSun = new Date(_wjMon); _wjSun.setDate(_wjMon.getDate()+6);
+        _wjSql = dbGet("SELECT job_number,client_name,title,scheduled_date,status,bid_amount FROM jobs WHERE scheduled_date BETWEEN ? AND ? AND status NOT IN ('cancelled','paid') ORDER BY scheduled_date", _wjFmt(_wjMon), _wjFmt(_wjSun)) as any[];
+      }
+      // Also grab jobs with natural-language dates (monday, june 10, etc.)
+      const _wjNatDays = _wjToday
+        ? ['today','now']
+        : ['monday','tuesday','wednesday','thursday','friday','saturday','sunday','this week','next week'];
+      const _wjAllSched = dbGet("SELECT job_number,client_name,title,scheduled_date,status,bid_amount FROM jobs WHERE scheduled_date IS NOT NULL AND LENGTH(scheduled_date)<12 AND status NOT IN ('cancelled','paid') ORDER BY created_at DESC LIMIT 30") as any[];
+      const _wjNat = _wjAllSched.filter((j: any)=>_wjNatDays.some((d: string)=>(j.scheduled_date||'').toLowerCase().includes(d)));
+      const _wjAll = [..._wjSql, ..._wjNat.filter((n: any)=>!_wjSql.find((s: any)=>s.job_number===n.job_number))];
+      const _wjLabel = _wjToday ? 'Today' : 'This Week';
+      if (!_wjAll.length) { sendReply('No jobs scheduled for ' + _wjLabel.toLowerCase() + '. Say **"schedule J-XXXXX for Monday"** to add one.'); return; }
+      const _wjLines = ['**\uD83D\uDCC5 Scheduled — ' + _wjLabel + ' (' + _wjAll.length + ' jobs)**', ''];
+      _wjAll.forEach((j: any)=>_wjLines.push('  \u2022 ' + j.job_number + ' [' + j.status + '] ' + j.client_name + ': ' + j.title.slice(0,30) + (j.scheduled_date?' (' + j.scheduled_date + ')':'') + (j.bid_amount>0?' $'+j.bid_amount.toFixed(0):'')));
+      sendReply(_wjLines.join('\n')); return;
+    }
+
+
+
+
     if (_jobDetailM) {
       const _jdNum = (_jobDetailM[1]||_jobDetailM[2]||'').toUpperCase();
       const _jdJob = dbGetOne("SELECT * FROM jobs WHERE UPPER(job_number)=? LIMIT 1", _jdNum) as any;
