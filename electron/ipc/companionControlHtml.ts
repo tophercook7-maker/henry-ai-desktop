@@ -353,12 +353,26 @@ function computeFit() {
 }
 function fitToScreen() {
   computeFit();
-  zoom = baseFit;
+  // R3-Fix 8/9: 15% margin (was 0%, then 8% — both insufficient for some
+  // portrait iPad geometries where stage.getBoundingClientRect was returning
+  // pre-safe-area dimensions on initial render, leaving the bottom of the
+  // Mac screen tucked behind the toolbar.
+  zoom = baseFit * 0.85;
   const rect = stage.getBoundingClientRect();
   panX = (rect.width  - macW * zoom) / 2;
   panY = (rect.height - macH * zoom) / 2;
   applyTransform();
 }
+// R3-Fix 9: re-fit whenever the viewport geometry can change. iPad orientation
+// flips and Stage Manager resizes both invalidate the previously-computed
+// baseFit. Without this, rotating the iPad after pairing leaves the screen
+// either zoomed too far (cutoff) or floating with massive black bars.
+window.addEventListener('resize', () => { if (macW && macH) fitToScreen(); });
+window.addEventListener('orientationchange', () => {
+  // The resize event fires before the new viewport dimensions are committed,
+  // so wait a tick for layout to settle.
+  setTimeout(() => { if (macW && macH) fitToScreen(); }, 200);
+});
 function setZoom(newZoom, focusClientX, focusClientY) {
   const stageRect = stage.getBoundingClientRect();
   const fx = (focusClientX != null ? focusClientX : (stageRect.width  / 2 + stageRect.left)) - stageRect.left;
