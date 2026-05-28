@@ -12,6 +12,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import type { CompanionDeviceCapability, SyncServerState } from '../../sync/types';
 import { buildPairCodePayload } from '../../sync/deviceLink';
+import RemoteControlPanel from './RemoteControlPanel';
 
 // Detect Electron by checking if the sync server is reachable
 // (window.__ELECTRON__ and __isElectron are unreliable due to contextBridge sandbox)
@@ -151,6 +152,9 @@ export default function DeviceLinkPanel() {
 
   return (
     <div className="space-y-4">
+      {/* Remote Control (NEW) — surfaces Henry ID + PIN + QR for iPad pairing */}
+      <RemoteControlPanel />
+
       {/* Server status */}
       <div className="bg-henry-surface rounded-2xl border border-henry-border/20 p-4">
         <div className="flex items-center justify-between">

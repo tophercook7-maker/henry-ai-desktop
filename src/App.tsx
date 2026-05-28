@@ -3,6 +3,7 @@ import Layout from './components/layout/Layout';
 import SetupWizard from './components/wizard/SetupWizard';
 import ElectronAutoSetup from './components/wizard/ElectronAutoSetup';
 import ClipboardAIToast from './components/ClipboardAIToast';
+import ToastHost from './components/ui/Toast';
 import ErrorBoundary from './components/ErrorBoundary';
 import { useStore } from './store';
 import type { Task } from './types';
@@ -781,6 +782,11 @@ export default function App() {
 
       {/* Clipboard AI toast */}
       <ClipboardAIToast />
+
+      {/* R3-Fix 1: global toast + confirm-modal host. Components dispatch
+          via the imperative `toast` / `confirmDialog` API exported from
+          ui/Toast — no context plumbing needed. */}
+      <ToastHost />
     </div>
     </ErrorBoundary>
   );

@@ -35,6 +35,37 @@ import crypto from 'crypto';
 import os from 'os';
 import fs from 'fs';
 import { ipcMain, BrowserWindow, webContents } from 'electron';
+
+/* === henry-remote-control v1 === */
+import {
+  pair as authPair,
+  verifyAuthHeader as authVerify,
+  getHenryId as authHenryId,
+  getCurrentPin as authCurrentPin,
+  rotateSessionPin as authRotatePin,
+  setUnattendedPassword as authSetUnattended,
+  listPairedDevices as authListDevices,
+  unpairDevice as authUnpair,
+} from './companionAuth';
+import {
+  requestSession as remoteRequest,
+  getActiveSession as remoteActive,
+  getActiveSessionFor as remoteActiveFor,
+  endActiveSession as remoteEnd,
+  readRecentSessions as remoteRecent,
+} from './remoteSession';
+import { attachScreenWs as remoteAttachScreenWs } from './companionScreenWs';
+import { PAIR_HTML as REMOTE_PAIR_HTML, CONTROL_HTML as REMOTE_CONTROL_HTML } from './companionControlHtml';
+
+/* === henry-remote-control v2-pencil === */
+import {
+  handleDisplays as remoteV2Displays,
+  handleClick as remoteV2Click,
+  handleMove as remoteV2Move,
+  handleDrag as remoteV2Drag,
+  handleScroll as remoteV2Scroll,
+} from './companionRemoteInput';
+
 import {
   COMPANION_DEFAULT_DEVICE_CAPABILITIES,
   type SyncServerState,
@@ -182,9 +213,21 @@ function loadCompanionTokens(): void {
     if (row?.value) {
       const data = JSON.parse(row.value) as {tokens:[string,string][];devices:[string,DeviceInfo][]};
       if (data.tokens) for (const [k,v] of data.tokens) companionTokens.set(k, v);
-      if (data.devices) for (const [k,v] of data.devices) linkedDevices.set(k, v);
+      // R3-Fix 5: prune decommissioned devices on load. Without this, every
+      // phone you ever paired (and unlinked) lived in the JSON blob forever
+      // and was re-serialized on every heartbeat. 90 days no-see → drop.
+      const ninetyDaysAgo = Date.now() - 90 * 24 * 60 * 60 * 1000;
+      let pruned = 0;
+      if (data.devices) for (const [k,v] of data.devices) {
+        const lastSeenMs = v?.lastSeen ? new Date(v.lastSeen).getTime() : 0;
+        if (lastSeenMs && lastSeenMs < ninetyDaysAgo) { pruned++; continue; }
+        linkedDevices.set(k, v);
+      }
+      if (pruned > 0) console.log(`[SyncBridge] Pruned ${pruned} stale companion device(s) (>90d since last seen)`);
     }
-  } catch { /* ignore */ }
+  } catch (e) {
+    console.warn('[SyncBridge] loadCompanionTokens failed:', e instanceof Error ? e.message : e);
+  }
 }
 let pairToken: string | null = null;
 let pairTokenExpiry = 0;
@@ -232,6 +275,43 @@ function corsHeaders(res: http.ServerResponse): void {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+}
+
+// Source-classification helpers for hardening dangerous companion routes.
+// The HTTP server binds 0.0.0.0:4242 AND cloudflare tunnel forwards remote
+// traffic to 127.0.0.1, so loopback alone is not safe — we also reject any
+// request carrying forward-proxy headers that local Henry clients never set.
+function _looksLikeTunnel(req: http.IncomingMessage): boolean {
+  return !!(
+    req.headers['cf-connecting-ip'] ||
+    req.headers['x-forwarded-for'] ||
+    req.headers['cf-ray']
+  );
+}
+function _isLoopback(req: http.IncomingMessage): boolean {
+  const a = (req.socket.remoteAddress || '').replace('::ffff:', '');
+  return (a === '127.0.0.1' || a === '::1') && !_looksLikeTunnel(req);
+}
+function _isPrivateLan(req: http.IncomingMessage): boolean {
+  const a = (req.socket.remoteAddress || '').replace('::ffff:', '');
+  if (_looksLikeTunnel(req)) return false;
+  if (a === '127.0.0.1' || a === '::1') return true;
+  // RFC1918 + link-local
+  if (/^10\./.test(a)) return true;
+  if (/^192\.168\./.test(a)) return true;
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(a)) return true;
+  if (/^169\.254\./.test(a)) return true; // link-local
+  if (/^fe80:/i.test(a) || /^fd/i.test(a)) return true; // IPv6 link-local + ULA
+  return false;
+}
+function _denyDangerous(req: http.IncomingMessage, res: http.ServerResponse, kind: 'loopback' | 'lan'): boolean {
+  const ok = kind === 'loopback' ? _isLoopback(req) : _isPrivateLan(req);
+  if (ok) return false;
+  const a = (req.socket.remoteAddress || '').replace('::ffff:', '');
+  console.warn(`[SyncBridge] BLOCKED dangerous route ${req.url} from ${a} tunneled=${_looksLikeTunnel(req)} (required: ${kind})`);
+  res.writeHead(403, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ ok: false, error: 'forbidden_source' }));
+  return true;
 }
 
 function validateToken(req: http.IncomingMessage): string | null {
@@ -337,8 +417,15 @@ export function setSyncDb(db: import('better-sqlite3').Database): void {
         _bkx('mkdir -p "' + _bkDir + '" && cp "' + db.name + '" "' + _bkDir + '/' + _bkFile + '"', {timeout:3000,shell:'/bin/bash'});
         _bkx('cd "' + _bkDir + '" && ls -t henry_*.db 2>/dev/null | tail -n +8 | xargs rm -f 2>/dev/null || true', {timeout:2000,shell:'/bin/bash'});
       }
-    } catch {}
-  } catch {}
+    } catch (e) {
+      // R2-Fix 7: was silent — DB-backup-on-startup failures (disk full,
+      // locked DB, missing parent dir) meant the user had zero protection
+      // and no indication.
+      console.warn('[SyncBridge] DB backup failed:', e instanceof Error ? e.message : e);
+    }
+  } catch (e) {
+    console.warn('[SyncBridge] DB backup setup failed:', e instanceof Error ? e.message : e);
+  }
 }
 
 function dbGet<T>(sql: string, ...params: unknown[]): T[] {
@@ -354,14 +441,21 @@ function dbRun(sql: string, ...params: unknown[]): void {
   try {
     if (!_db) return;
     _db.prepare(sql).run(...params);
-  } catch { /* ignore */ }
+  } catch (e) {
+    // R2-Fix 7: was silent — write failures (schema drift, locked DB,
+    // constraint violation) showed up as "data didn't save" with no log.
+    // We don't rethrow because too many call sites assume void return;
+    // logging is the minimum surface to make these diagnosable.
+    console.error('[SyncBridge] dbRun failed:', sql.slice(0, 120), '|', e instanceof Error ? e.message : e);
+  }
 }
 
 function dbGetOne<T>(sql: string, ...params: unknown[]): T | null {
   if (!_db) return null;
   try {
     return (_db.prepare(sql).get(...params) as T) ?? null;
-  } catch {
+  } catch (e) {
+    console.error('[SyncBridge] dbGetOne failed:', sql.slice(0, 120), '|', e instanceof Error ? e.message : e);
     return null;
   }
 }
@@ -497,9 +591,159 @@ async function handleRequest(
     res.end(html);
     return;
   }
+  /* === henry-remote-control v1 === */
+  // ── Remote control: pairing ─────────────────────────────────────────────
+  if (path === '/sync/pair' && req.method === 'POST') {
+    try {
+      const body: any = await readBody(req);
+      const ip = (req.socket.remoteAddress || 'unknown').replace('::ffff:', '');
+      if (!body || !body.id || !body.pin) {
+        res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify({ ok: false, error: 'missing_fields' }));
+        return;
+      }
+      const result = authPair({
+        ip, id: String(body.id), pin: String(body.pin),
+        deviceId: body.deviceId ? String(body.deviceId) : undefined,
+        deviceName: body.deviceName ? String(body.deviceName) : undefined,
+      });
+      res.writeHead(result.ok ? 200 : 401, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      res.end(JSON.stringify(result));
+    } catch (e: any) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: String(e?.message || e) }));
+    }
+    return;
+  }
+
+  // R2-Fix 2: these four routes expose pairing secrets (PIN, paired-device
+  // list, unattended password). They previously did a raw remoteAddress
+  // check, which is bypassable by cloudflare-tunneled requests that arrive
+  // at 127.0.0.1. Use the central _denyDangerous helper to also reject any
+  // request carrying cf-connecting-ip / x-forwarded-for / cf-ray.
+  if (path === '/sync/pairing-info' && req.method === 'GET') {
+    if (_denyDangerous(req, res, 'loopback')) return;
+    const pin = authCurrentPin();
+    const active = remoteActive();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      henryId: authHenryId(),
+      pin: pin.pin,
+      pinExpiresAt: pin.expiresAt,
+      pairedDevices: authListDevices(),
+      activeSession: active ? { deviceName: active.deviceName, deviceId: active.deviceId } : null,
+      recentSessions: remoteRecent(20),
+    }));
+    return;
+  }
+
+  if (path === '/sync/pin/rotate' && req.method === 'POST') {
+    if (_denyDangerous(req, res, 'loopback')) return;
+    const pin = authRotatePin();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ pin }));
+    return;
+  }
+
+  if (path === '/sync/unattended' && req.method === 'POST') {
+    if (_denyDangerous(req, res, 'loopback')) return;
+    const body: any = await readBody(req);
+    const ok = authSetUnattended(body?.password ?? null);
+    res.writeHead(ok ? 200 : 400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok }));
+    return;
+  }
+
+  if (path && path.startsWith('/sync/unpair/') && req.method === 'POST') {
+    if (_denyDangerous(req, res, 'loopback')) return;
+    const id = decodeURIComponent(path.replace('/sync/unpair/', ''));
+    authUnpair(id);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true }));
+    return;
+  }
+
+  // ── Remote control: HTML pages ──────────────────────────────────────────
+  if (path === '/companion/pair' && req.method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.end(REMOTE_PAIR_HTML);
+    return;
+  }
+
+  if (path === '/companion/control' && req.method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.end(REMOTE_CONTROL_HTML);
+    return;
+  }
+
+  // ── Remote control: session lifecycle ───────────────────────────────────
+  if (path === '/companion/session/request' && req.method === 'POST') {
+    const sess = authVerify(req.headers.authorization as string | undefined);
+    if (!sess) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'unauthorized' }));
+      return;
+    }
+    if (remoteActive()) {
+      res.writeHead(409, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, reason: 'busy' }));
+      return;
+    }
+    const r = await remoteRequest(sess.deviceId, sess.name);
+    res.writeHead(r ? 200 : 403, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(r ? { ok: true } : { ok: false, reason: 'denied' }));
+    return;
+  }
+
+  if (path === '/companion/session/end' && req.method === 'POST') {
+    const sess = authVerify(req.headers.authorization as string | undefined);
+    if (!sess) { res.writeHead(401); res.end(); return; }
+    if (remoteActiveFor(sess.deviceId)) remoteEnd('user_ended');
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true }));
+    return;
+  }
+
+  /* === henry-remote-control v2-pencil === */
+  // ── v2 multi-display + pencil input ──────────────────────────────────
+  if (path === '/companion/displays' && req.method === 'POST') {
+    await remoteV2Displays(req, res); return;
+  }
+  if (path === '/companion/v2/click' && req.method === 'POST') {
+    await remoteV2Click(req, res); return;
+  }
+  if (path === '/companion/v2/move' && req.method === 'POST') {
+    await remoteV2Move(req, res); return;
+  }
+  if (path === '/companion/v2/drag' && req.method === 'POST') {
+    await remoteV2Drag(req, res); return;
+  }
+  if (path === '/companion/v2/scroll' && req.method === 'POST') {
+    await remoteV2Scroll(req, res); return;
+  }
+  /* === end v2-pencil === */
+
+  if (path === '/companion/session/ping' && req.method === 'POST') {
+    const sess = authVerify(req.headers.authorization as string | undefined);
+    if (!sess) { res.writeHead(401); res.end(); return; }
+    const active = remoteActiveFor(sess.deviceId);
+    if (active) active.touch();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: !!active }));
+    return;
+  }
+  /* === end henry-remote-control v1 === */
+
      // ── Internal Computer Control (called from renderer to bypass webMock) ──
+  // SECURITY: these routes execute arbitrary shell / osascript, so they MUST
+  // be restricted to loopback. The x-henry-internal header alone is forgeable
+  // by any device on the LAN (server listens on 0.0.0.0). Cloudflare tunnel
+  // forwards remote requests to 127.0.0.1, so loopback alone is insufficient
+  // — _denyDangerous(loopback) also rejects forward-proxy headers.
   const isInternal = req.headers['x-henry-internal'] === 'true';
   if (isInternal && req.method === 'POST') {
+    if (_denyDangerous(req, res, 'loopback')) return;
+
     if (path === '/computer/shell') {
       const body = await readBody<{command: string}>(req);
       if (!body) { jsonResponse(res, 400, {success: false, error: 'Bad request'}); return; }
@@ -584,7 +828,12 @@ async function handleRequest(
   }
 
   // ── Internal sync state endpoints (called from renderer to bypass webMock) ──
+  // R2-Fix 8: these mint/revoke pair tokens, list linked devices, and read the
+  // tunnel URL. The `x-henry-internal: true` header alone is forgeable from any
+  // LAN device — without this loopback check, a phone on the same WiFi could
+  // POST /sync/generate-pair-internal and mint itself a valid pair token.
   if (isInternal) {
+    if (_denyDangerous(req, res, 'loopback')) return;
     if (path === '/sync/start-internal') {
       jsonResponse(res, 200, { ok: serverRunning, port: currentPort });
       return;
@@ -633,8 +882,14 @@ async function handleRequest(
     return;
   }
 
-  // Live screen endpoint — no auth, returns fresh screenshot as JPEG
+  // Live screen endpoint — returns a fresh JPEG of the Mac desktop.
+  // R2-Fix 1: previously had ZERO auth and was tunnel-reachable, so any
+  // person with the cloudflare URL could screenshot the user's screen on
+  // demand. Now restricted to private LAN (and explicitly NOT tunnel).
+  // For LAN snooping resistance, anything beyond same-WiFi requires a
+  // paired-device flow (use /companion/control + /ws/screen instead).
   if (path === '/screen' && req.method === 'GET') {
+    if (_denyDangerous(req, res, 'lan')) return;
     try {
       const { execSync } = await import('child_process') as typeof import('child_process');
       const tmp = os.tmpdir() + '/henry_live_' + Date.now() + '.jpg';
@@ -675,6 +930,16 @@ async function handleRequest(
   if (path.startsWith('/companion/') && ['tap','scroll','key','type'].some(k => path === '/companion/' + k) && req.method === 'POST') {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Content-Type', 'application/json');
+    // R2-Fix 9: these v1 endpoints previously had NO auth. Any device on the LAN
+    // could drive the Mac (click, scroll, keystroke). Now require a paired-device
+    // JWT plus an active consented session — matches the v2 endpoints in
+    // companionRemoteInput.ts. tap/scroll are still served here for back-compat
+    // with the v1 mobile companion; the new control surface uses /companion/v2/*.
+    const _v1sess = authVerify(req.headers.authorization as string | undefined);
+    if (!_v1sess) { res.writeHead(401); res.end(JSON.stringify({ ok:false, error:'unauthorized' })); return; }
+    const _v1active = remoteActiveFor(_v1sess.deviceId);
+    if (!_v1active) { res.writeHead(409); res.end(JSON.stringify({ ok:false, error:'no_active_session' })); return; }
+    _v1active.touch();
     const { execFile: _ef } = await import('child_process') as typeof import('child_process');
     const _osa = (appleScript: string): Promise<string> => new Promise((resolve, reject) =>
       _ef('osascript', ['-e', appleScript], { timeout: 5000 }, (err, stdout) => err ? reject(err) : resolve(stdout))
@@ -743,15 +1008,49 @@ async function handleRequest(
         res.writeHead(200); res.end(JSON.stringify({ ok:true }));
 
       } else if (path === '/companion/key') {
+        // Fix F: accept BOTH the iPad-friendly modifier names ("Meta", "Control",
+        // "Alt", "Shift", and aliases like "Cmd"/"Cmd down") AND the legacy
+        // already-formatted AppleScript strings ("command down" etc.).
         const rawKey = String(bodyC.key||'');
-        const mods = (Array.isArray(bodyC.modifiers) ? bodyC.modifiers as string[] : [])
-          .filter((m:string) => ['command down','shift down','option down','control down','command key','shift key','option key','control key'].includes(m));
-        const modsNorm = mods.map((m:string) => m.includes(' key') ? m.replace(' key',' down') : m);
+        const MOD_ALIASES: Record<string, string> = {
+          'meta':'command down', 'cmd':'command down', 'command':'command down',
+          'command down':'command down', 'command key':'command down',
+          'ctrl':'control down', 'control':'control down',
+          'control down':'control down', 'control key':'control down',
+          'alt':'option down', 'opt':'option down', 'option':'option down',
+          'option down':'option down', 'option key':'option down',
+          'shift':'shift down', 'shift down':'shift down', 'shift key':'shift down',
+        };
+        const rawMods = Array.isArray(bodyC.modifiers) ? bodyC.modifiers as string[] : [];
+        const modsNorm = rawMods
+          .map((m:string) => MOD_ALIASES[String(m||'').toLowerCase().trim()])
+          .filter(Boolean);
         const usingStr = modsNorm.length ? ' using {' + modsNorm.join(', ') + '}' : '';
-        const keyCodes: Record<string,number> = { return:36, escape:53, delete:51, tab:48, space:49, up:126, down:125, left:123, right:124 };
-        if (keyCodes[rawKey.toLowerCase()] !== undefined) {
-          await _osa('tell application "System Events" to key code ' + keyCodes[rawKey.toLowerCase()] + usingStr);
+        // Key aliases: accept "Up"/"Up arrow"/"ArrowUp", "Return"/"Enter", etc.
+        const KEY_ALIASES: Record<string, string> = {
+          'enter':'return', 'return':'return',
+          'esc':'escape', 'escape':'escape',
+          'backspace':'delete', 'delete':'delete',
+          'tab':'tab', 'space':'space', ' ':'space',
+          'up':'up', 'up arrow':'up', 'arrowup':'up',
+          'down':'down', 'down arrow':'down', 'arrowdown':'down',
+          'left':'left', 'left arrow':'left', 'arrowleft':'left',
+          'right':'right', 'right arrow':'right', 'arrowright':'right',
+          'home':'home', 'end':'end',
+          'pageup':'pageup', 'page up':'pageup',
+          'pagedown':'pagedown', 'page down':'pagedown',
+        };
+        const keyCodes: Record<string,number> = {
+          return:36, escape:53, delete:51, tab:48, space:49,
+          up:126, down:125, left:123, right:124,
+          home:115, end:119, pageup:116, pagedown:121,
+        };
+        const aliased = KEY_ALIASES[rawKey.toLowerCase().trim()];
+        if (aliased && keyCodes[aliased] !== undefined) {
+          await _osa('tell application "System Events" to key code ' + keyCodes[aliased] + usingStr);
         } else {
+          // Allow single printable character with modifiers (Cmd+C, Cmd+Shift+T, etc.).
+          // AppleScript keystroke takes the literal character.
           const safeKey = rawKey.slice(0,1).replace(/[^a-zA-Z0-9 ]/,'');
           if (safeKey) await _osa('tell application "System Events" to keystroke "' + safeKey + '"' + usingStr);
         }
@@ -1101,56 +1400,14 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  if (path === '/sync/pair' && req.method === 'POST') {
-    const body = await readBody<PairRequest>(req);
-    if (!body) { jsonResponse(res, 400, { error: 'Bad request' }); return; }
-    if (!pairToken || Date.now() > pairTokenExpiry) {
-      jsonResponse(res, 403, { error: 'Pair token expired or not set' });
-      return;
-    }
-    if (body.pairToken !== pairToken) {
-      jsonResponse(res, 403, { error: 'Invalid pair token' });
-      return;
-    }
-
-    const deviceId = generateToken(12);
-    const companionToken = generateToken(32);
-    companionTokens.set(companionToken, deviceId);
-
-    const ap = body.appleProduct;
-    const appleProduct: DeviceInfo['appleProduct'] =
-      ap === 'ipad' ? 'ipad' : ap === 'iphone' ? 'iphone' : 'unknown';
-
-    const device: DeviceInfo = {
-      id: deviceId,
-      name: body.deviceName ?? 'Unknown',
-      platform: (body.platform as DeviceInfo['platform']) ?? 'ios',
-      linkedAt: new Date().toISOString(),
-      lastSeen: new Date().toISOString(),
-      lastSyncAt: new Date().toISOString(),
-      pushToken: body.pushToken,
-      linkStatus: 'linked',
-      capabilities: [...COMPANION_DEFAULT_DEVICE_CAPABILITIES],
-      appleProduct,
-    };
-    linkedDevices.set(deviceId, device);
-
-    // Invalidate pair token after use
-    pairToken = null;
-
-    // Notify renderer
-    notifyRenderer('henry:companion:device-linked', { device });
-    saveCompanionTokens(); // Persist for server restarts
-
-    const resp: PairResponse = {
-      companionToken,
-      deviceId,
-      desktopName: os.hostname(),
-    };
-    jsonResponse(res, 200, resp);
-    return;
-  }
-
+  // R2-Fix 10: previously a second POST /sync/pair handler lived here, doing
+  // pairToken-based pairing for the legacy OnboardingWizard QR flow. It was
+  // dead code — the line-596 handler (PIN-based, from companionAuth) matches
+  // the same path first and returns. The legacy QR onboarding flow doesn't
+  // work today (pairCode is undefined at setup time), so this handler was
+  // unreachable and confusing. Removed. The pairToken state machine
+  // (/sync/state-internal, /sync/generate-pair-internal, etc.) is still
+  // exposed but currently has no consumer — to be cleaned up in Phase 5.
 
   // ── Companion web app routes — no token required (local network, web page) ──
   // The companion HTML served at http://MAC-IP:4242 makes these calls.
@@ -8725,7 +8982,9 @@ self.addEventListener('fetch', (event) => {
   // ── Companion data endpoints ─────────────────────────────────────────────
 
   // Live Mac screenshot → returns { image: 'data:image/png;base64,...' }
+  // R2-Fix 1: also leaks the entire desktop. Same protection as /screen.
   if (path === '/sync/mac/screen' && req.method === 'GET') {
+    if (_denyDangerous(req, res, 'lan')) return;
     try {
       const { execSync: _scx } = await import('child_process');
       const _scos = await import('os');
@@ -8777,7 +9036,9 @@ self.addEventListener('fetch', (event) => {
   }
 
   // Toggle a habit for today from companion
+  // R2-Fix 3: was unauthenticated and tunnel-accessible — locked to LAN.
   if (path === '/sync/mac/habit-toggle' && req.method === 'POST') {
+    if (_denyDangerous(req, res, 'lan')) return;
     try {
       const body = await readBody(req) as { habit_id: string; date: string };
       const today = body.date || new Date().toISOString().slice(0, 10);
@@ -8796,8 +9057,13 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Quick shell run from companion (no sensitive ops)
+  // Quick shell run from companion
+  // SECURITY: this executes arbitrary shell. The "blocked dangerous commands"
+  // regex below is trivially bypassable (e.g. `\rm`, `${IFS}sudo`, env tricks).
+  // Restricted to loopback only — no LAN, no tunnel. Existing companion HTML
+  // does not call this route, so locking it down has no UX impact.
   if (path === '/sync/mac/run' && req.method === 'POST') {
+    if (_denyDangerous(req, res, 'loopback')) return;
     try {
       const body = await readBody(req) as { command: string };
       const { execSync } = await import('child_process');
@@ -8814,7 +9080,12 @@ self.addEventListener('fetch', (event) => {
   }
 
   // Open an app from companion
+  // SECURITY: when action is click/rightclick/key/type, this drives macOS input
+  // events. Restricted to private LAN or loopback — never via cloudflare tunnel.
+  // The `open` (app-launch) action is also gated the same way to prevent
+  // remote-attacker app launches.
   if (path === '/sync/mac/open-app' && req.method === 'POST') {
+    if (_denyDangerous(req, res, 'lan')) return;
     try {
       const body = await readBody(req) as { app?: string; action?: string; x?: number; y?: number; key?: string; modifiers?: string; text?: string };
       const { execSync: _oaExec } = await import('child_process');
@@ -8872,6 +9143,7 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (path === '/sync/mac/tasks/create' && req.method === 'POST') {
+    if (_denyDangerous(req, res, 'lan')) return; // R2-Fix 3
     const body = await readBody<Record<string,unknown>>(req);
     const data: Record<string,unknown> = body || {};
     const id = String(data.id || Date.now().toString(36)+Math.random().toString(36).slice(2));
@@ -8887,6 +9159,7 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (path === '/sync/mac/tasks/complete' && req.method === 'POST') {
+    if (_denyDangerous(req, res, 'lan')) return; // R2-Fix 3
     const body = await readBody<Record<string,unknown>>(req);
     const data: Record<string,unknown> = body || {};
     const id = String(data.id || '');
@@ -8905,6 +9178,7 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (path === '/sync/mac/goals' && req.method === 'POST') {
+    if (_denyDangerous(req, res, 'lan')) return; // R2-Fix 3
     const body = await readBody<{action:string;id:string;updates:Record<string,unknown>}>(req);
     if (!body || !body.id) { jsonResponse(res, 400, { error: 'id required' }); return; }
     try {
@@ -8919,6 +9193,7 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (path === '/sync/mac/reminders/create' && req.method === 'POST') {
+    if (_denyDangerous(req, res, 'lan')) return; // R2-Fix 3
     const body = await readBody<Record<string,unknown>>(req);
     const data: Record<string,unknown> = body || {};
     const title = String(data.title || '').trim();
@@ -8934,6 +9209,7 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (path === '/sync/mac/reminders/done' && req.method === 'POST') {
+    if (_denyDangerous(req, res, 'lan')) return; // R2-Fix 3
     const body = await readBody<Record<string,unknown>>(req);
     const data: Record<string,unknown> = body || {};
     const id = String(data.id || '');
@@ -8944,6 +9220,7 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (path === '/sync/mac/journal/create' && req.method === 'POST') {
+    if (_denyDangerous(req, res, 'lan')) return; // R2-Fix 3
     const body = await readBody<Record<string,unknown>>(req);
     const data: Record<string,unknown> = body || {};
     const content = String(data.content || '').trim();
@@ -9004,6 +9281,7 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (path === '/sync/mac/health/log' && req.method === 'POST') {
+    if (_denyDangerous(req, res, 'lan')) return; // R2-Fix 3
     const body = await readBody<Record<string,unknown>>(req);
     const data: Record<string,unknown> = body || {};
     const category = String(data.category || '').trim();
@@ -9245,6 +9523,14 @@ export function startSyncServer(port = 4242): SyncServerState {
       try { jsonResponse(res, 500, { error: 'Internal error' }); } catch { /* ignore */ }
     });
   });
+
+  // Attach remote-control screen-stream WebSocket on /ws/screen
+  try {
+    remoteAttachScreenWs(server);
+    console.log('[SyncBridge] Remote-control screen WS attached on /ws/screen');
+  } catch (e) {
+    console.error('[SyncBridge] Failed to attach screen WS:', e);
+  }
 
   server.listen(port, '0.0.0.0', async () => {
     console.log(`[SyncBridge] Sync server listening on port ${port}`);

@@ -791,14 +791,20 @@ app.whenReady().then(() => {
   }, 3000);
 
   // Check for updates 30 seconds after launch (silently)
-  setTimeout(() => {
+  const updaterFirstTimer = setTimeout(() => {
     try { autoUpdater.checkForUpdates().catch(() => {}); } catch { /* ignore */ }
   }, 30_000);
 
-  // Check every 4 hours
-  setInterval(() => {
+  // R3-Fix 5: keep the interval ref so we can clear it on quit. Electron
+  // tears everything down at process exit anyway, but unreferenced
+  // long-running intervals make the app harder to test and clean-shutdown.
+  const updaterInterval = setInterval(() => {
     try { autoUpdater.checkForUpdates().catch(() => {}); } catch { /* ignore */ }
   }, 4 * 60 * 60 * 1000);
+  app.on('will-quit', () => {
+    clearTimeout(updaterFirstTimer);
+    clearInterval(updaterInterval);
+  });
 
   // ── Auto-updater ────────────────────────────────────────────────────────────
   autoUpdater.autoDownload = true;

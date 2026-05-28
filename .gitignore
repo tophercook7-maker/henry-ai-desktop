@@ -57,8 +57,15 @@ dist/
 dist-electron/
 
 
-# macOS Finder copy artifacts (e.g. "file 2.tsx")
-*\ 2\.*
-*\ 3\.*
+# macOS Finder / iCloud copy artifacts (e.g. "file 2.tsx", "file 4.tsx")
+*\ [0-9]*\.*
 henry-proxy/.wrangler/
 release2/
+
+# Local archive of byte-identical numbered duplicates (created 2026-05-26)
+.archive-*/
+
+# Backups created by editing sessions (`*.before-*`, `*.backup-*`, and
+# iCloud-numbered duplicates) moved here by tooling so they stay out of
+# git and the typecheck globs.
+_backups/

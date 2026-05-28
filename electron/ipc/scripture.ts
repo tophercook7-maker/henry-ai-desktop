@@ -268,7 +268,26 @@ export function registerScriptureHandlers(db: Database.Database, getWindow?: Win
          WHERE LOWER(text) LIKE ? ORDER BY book, chapter, verse_start LIMIT ?`
       ).all('%' + query.toLowerCase() + '%', limit) as { book: string; chapter: number; verse: number; text: string }[];
       return rows;
-    } catch { return []; }
+    } catch (e) {
+      console.error('[scripture:searchKeyword] failed:', e instanceof Error ? e.message : e);
+      return [];
+    }
+  });
+
+  // R2-Fix 9: preload.ts calls 'scripture:search' (no -Keyword suffix) and
+  // had NO handler — the call silently returned undefined in production.
+  // Alias to scripture:searchKeyword so both names work.
+  ipcMain.handle('scripture:search', async (_event, query: string, limit = 20) => {
+    try {
+      const rows = db.prepare(
+        `SELECT book, chapter, verse_start as verse, text FROM scripture_entries
+         WHERE LOWER(text) LIKE ? ORDER BY book, chapter, verse_start LIMIT ?`
+      ).all('%' + String(query || '').toLowerCase() + '%', limit) as { book: string; chapter: number; verse: number; text: string }[];
+      return rows;
+    } catch (e) {
+      console.error('[scripture:search] failed:', e instanceof Error ? e.message : e);
+      return [];
+    }
   });
 
   ipcMain.handle('scripture:count', async () => {

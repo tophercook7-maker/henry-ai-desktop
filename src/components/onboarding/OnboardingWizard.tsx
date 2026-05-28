@@ -102,13 +102,21 @@ export default function OnboardingWizard({ onComplete }: Props) {
   useEffect(() => { refreshAiState(); }, [refreshAiState, providers]);
 
   // ── Mobile pairing ────────────────────────────────────────────────────────
+  // R3-Fix 7: rewritten to use the new PIN-based pair flow with credentials
+  // embedded in the URL fragment. The legacy pairToken handler was removed in
+  // Phase 2 (it had a duplicate /sync/pair route and the consumer side was
+  // never wired up), so the old `buildPairCodePayload(pairToken)` QR was
+  // structurally dead. The new pattern matches RemoteControlPanel: the QR
+  // encodes `http://<lan-ip>:<port>/companion/pair#id=...&pin=...`, the pair
+  // page autofills both fields from the fragment and submits — iPad camera
+  // scan → instant pair, no typing.
   const generatePair = useCallback(async () => {
     setGenerating(true);
     try {
       const state = await syncFetch<any>('/sync/state-internal');
       if (!state?.running) await syncFetch('/sync/start-internal', {});
-      const result = await syncFetch<{ token: string }>('/sync/generate-pair-internal', {});
-      if (!result?.token) return;
+      const info = await syncFetch<{ henryId: string; pin: string; pinExpiresAt: number }>('/sync/pairing-info');
+      if (!info?.henryId || !info?.pin) return;
       const fresh = await syncFetch<any>('/sync/state-internal');
       if (fresh?.tunnelUrl) setTunnelUrl(fresh.tunnelUrl);
       const ipRes = await syncFetch<{ output?: string }>('/computer/shell',
@@ -116,9 +124,12 @@ export default function OnboardingWizard({ onComplete }: Props) {
       const localIp = ipRes?.output?.trim() || '192.168.1.x';
       const port = fresh?.port || 4242;
       setLanUrl(`http://${localIp}:${port}`);
-      const payload = buildPairCodePayload(localIp, port, result.token);
+      const payload = `http://${localIp}:${port}/companion/pair#id=${encodeURIComponent(info.henryId)}&pin=${encodeURIComponent(info.pin)}`;
       setPairCode(payload);
-      setPairExpiry(Date.now() + 5 * 60 * 1000);
+      // PIN rotates every 30 min on the server; align our local countdown
+      // with the actual expiry returned by /sync/pairing-info so we don't
+      // show stale data after rotation.
+      setPairExpiry(info.pinExpiresAt || (Date.now() + 30 * 60 * 1000));
     } finally { setGenerating(false); }
   }, []);
 

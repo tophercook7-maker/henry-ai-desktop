@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { incrementUsage, getTodayUsage, getRemainingRequests, isNearLimit, canUseHenryProxy } from '../../henry/proxyUsage';
 import { hasUsableBackend } from '../../henry/backendStatus';
+import { toast, promptDialog } from '../ui/Toast';
 import { useStore } from '../../store';
 import { useAmbientStore } from '../../henry/ambientStateStore';
 import type { HenryLeanMemoryParts, Message } from '../../types';
@@ -830,11 +831,13 @@ export default function ChatView() {
   async function handleSaveWriterDraft(markdown: string) {
     const root = settings.workspace_path?.trim();
     if (!root) {
-      window.alert('Set a workspace folder in Settings before saving drafts.');
+      toast.error('Set a workspace folder in Settings before saving drafts.');
       return;
     }
     const suggested = defaultWriterDraftRelativePath(writerDocumentTypeId);
-    const input = window.prompt('Save as path (relative to workspace):', suggested);
+    // R3-Fix 1: was window.prompt() — native dialog ignored dark theme +
+    // blocked renderer thread. Now uses the in-app prompt modal.
+    const input = await promptDialog('Save as path (relative to workspace):', { defaultValue: suggested, confirmLabel: 'Save' });
     if (input === null) return;
     const relPath = input.trim() || suggested;
     setSaveWorkspaceDraftBusy(true);
@@ -847,9 +850,9 @@ export default function ChatView() {
         workspaceHint: root,
       });
       await window.henryAPI.writeFile(relPath, withMeta);
-      window.alert(`Saved to workspace:\n${relPath}`);
+      toast.success(`Saved to workspace: ${relPath}`);
     } catch (e: unknown) {
-      window.alert(`Save failed: ${e instanceof Error ? e.message : String(e)}`);
+      toast.error(`Save failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setSaveWorkspaceDraftBusy(false);
     }
@@ -858,11 +861,11 @@ export default function ChatView() {
   async function handleSaveDesign3dPlan(markdown: string) {
     const root = settings.workspace_path?.trim();
     if (!root) {
-      window.alert('Set a workspace folder in Settings before saving plans.');
+      toast.error('Set a workspace folder in Settings before saving plans.');
       return;
     }
     const suggested = defaultDesign3DPlanRelativePath(design3dWorkflowTypeId);
-    const input = window.prompt('Save as path (relative to workspace):', suggested);
+    const input = await promptDialog('Save as path (relative to workspace):', { defaultValue: suggested, confirmLabel: 'Save' });
     if (input === null) return;
     const relPath = input.trim() || suggested;
     setSaveWorkspaceDraftBusy(true);
@@ -872,9 +875,9 @@ export default function ChatView() {
         referencePath: design3dRefPath,
       });
       await window.henryAPI.writeFile(relPath, withMeta);
-      window.alert(`Saved to workspace:\n${relPath}`);
+      toast.success(`Saved to workspace: ${relPath}`);
     } catch (e: unknown) {
-      window.alert(`Save failed: ${e instanceof Error ? e.message : String(e)}`);
+      toast.error(`Save failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setSaveWorkspaceDraftBusy(false);
     }

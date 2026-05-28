@@ -33,6 +33,27 @@ function safeJSON<T>(key: string, fallback: T): T {
   try { return JSON.parse(localStorage.getItem(key) || 'null') ?? fallback; } catch { return fallback; }
 }
 
+const DISMISS_KEY = 'henry:momentum:broken_dismissed_until';
+
+/**
+ * Silence the 'broken' state for `hours` hours. The underlying signals
+ * (failed tasks, expired connections) are still computed; the engine just
+ * skips the broken-branch return until the dismissal expires. Useful when
+ * the user has acknowledged the issue and doesn't want the panel nagging.
+ */
+export function dismissMomentumBroken(hours = 24): void {
+  try {
+    localStorage.setItem(DISMISS_KEY, String(Date.now() + hours * 60 * 60 * 1000));
+  } catch { /* localStorage may be unavailable in tests */ }
+}
+
+function isBrokenDismissed(now: number): boolean {
+  try {
+    const until = Number(localStorage.getItem(DISMISS_KEY) || '0');
+    return until > now;
+  } catch { return false; }
+}
+
 export function computeMomentum(): MomentumSnapshot {
   const now = Date.now();
 
@@ -67,7 +88,11 @@ export function computeMomentum(): MomentumSnapshot {
   };
 
   // ── BROKEN: fundamental blockers ─────────────────────────────────────────
-  if (failed.length > 1 || expired.length > 1) {
+  // R3-Fix 5: skip broken-branch entirely while the user has dismissed it.
+  // The dismissal expires after 24h (or whatever the dismiss call passed),
+  // so chronic failures will resurface — but the panel won't nag every
+  // session about the same set of stale failed tasks.
+  if ((failed.length > 1 || expired.length > 1) && !isBrokenDismissed(now)) {
     const reason = failed.length > 1
       ? `${failed.length} tasks failed — something is blocking progress.`
       : `${expired.length} connections expired — integrations are not working.`;

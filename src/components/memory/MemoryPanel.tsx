@@ -13,6 +13,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { sendToHenry } from '../../actions/store/chatBridgeStore';
 import { useStore } from '../../store';
+import { confirmDialog, toast } from '../ui/Toast';
 
 const api = (typeof window !== 'undefined' ? (window as any).henryAPI : null) as Record<string, (...a: any[]) => Promise<any>> | null;
 
@@ -124,9 +125,15 @@ export default function MemoryPanel() {
   }
   async function delFact(id: string) {
     if (!api?.deletePersonalMemory) return;
-    if (!confirm('Delete this memory?')) return;
-    await api.deletePersonalMemory(id);
-    void reload();
+    // R3-Fix 1: was native confirm() — replaced with in-app modal.
+    if (!(await confirmDialog('Delete this memory?', { destructive: true, confirmLabel: 'Delete' }))) return;
+    try {
+      await api.deletePersonalMemory(id);
+      toast.success('Memory deleted');
+      void reload();
+    } catch (e) {
+      toast.error(`Delete failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
   }
 
   // ── Edit handlers (in-place) ───────────────────────────────────────────

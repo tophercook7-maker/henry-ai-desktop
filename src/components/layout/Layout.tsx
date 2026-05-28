@@ -284,7 +284,11 @@ export default function Layout() {
           {currentView === 'slack' && <PanelBoundary><SlackPanel /></PanelBoundary>}
           {currentView === 'captures' && <PanelBoundary><CapturesPanel /></PanelBoundary>}
           {currentView === 'memory' && <PanelBoundary><MemoryPanel /></PanelBoundary>}
-          {currentView === 'recorder' && <PanelBoundary><RecorderPanel /></PanelBoundary>}
+          {/* Fix H: 'recorder' is already taken by MeetingRecorderPanel above.
+              SQLite-backed RecorderPanel (voice memos) gets its own route. */}
+          {currentView === 'memos' && <PanelBoundary><RecorderPanel /></PanelBoundary>}
+          {/* Fix H: TaskQueueView was imported but had no render branch — exposed under 'queue'. */}
+          {currentView === 'queue' && <PanelBoundary><TaskQueueView /></PanelBoundary>}
           {currentView === 'weekly' && <PanelBoundary><WeeklyReviewPanel /></PanelBoundary>}
           {currentView === 'stripe' && <PanelBoundary><StripePanel /></PanelBoundary>}
           {currentView === 'gcal' && <PanelBoundary><GCalPanel /></PanelBoundary>}

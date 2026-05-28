@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useStore } from '../../store';
 
-type ViewType = 'today' | 'chat' | 'companion' | 'secretary' | 'contacts' | 'tasks' | 'files' | 'workspace' | 'terminal' | 'computer' | 'printer' | 'costs' | 'settings' | 'journal' | 'focus' | 'recorder' | 'modes' | 'reminders' | 'crm' | 'finance' | 'lists' | 'printstudio' | 'machines' | 'materials' | 'production' | 'waste' | 'maintenance' | 'imagegen' | 'videogen' | 'integrations' | 'github' | 'linear' | 'notion' | 'slack' | 'captures' | 'weekly' | 'health' | 'goals' | 'hq' | 'setup' | 'memory' | 'recorder' | 'prayer' | 'quoting'
+// R2-Fix 9: keep this in sync with src/types/index.ts ViewType.
+type ViewType = 'today' | 'chat' | 'companion' | 'secretary' | 'contacts' | 'tasks' | 'files' | 'workspace' | 'terminal' | 'computer' | 'printer' | 'costs' | 'settings' | 'journal' | 'focus' | 'recorder' | 'memos' | 'queue' | 'modes' | 'reminders' | 'crm' | 'finance' | 'lists' | 'printstudio' | 'machines' | 'materials' | 'production' | 'waste' | 'maintenance' | 'imagegen' | 'videogen' | 'integrations' | 'github' | 'linear' | 'notion' | 'slack' | 'captures' | 'weekly' | 'health' | 'goals' | 'hq' | 'setup' | 'memory' | 'prayer' | 'quoting'
   | 'scripture';
 
 // Core nav — the things you actually use daily
@@ -17,6 +18,8 @@ const CORE_NAV: { id: ViewType; icon: string; label: string }[] = [
   { id: 'captures',   icon: '⊕',  label: 'Captures' },
   { id: 'memory',     icon: '🧠', label: 'Memory' },
   { id: 'recorder',   icon: '🎙', label: 'Recorder' },
+  // R2-Fix 9: SQLite-backed voice memos (was unreachable — see Layout.tsx).
+  { id: 'memos',      icon: '🗂', label: 'Voice Memos' },
   { id: 'focus',      icon: '◈',  label: 'Focus' },
 ];
 
@@ -25,6 +28,8 @@ const BUSINESS_NAV: { id: ViewType; icon: string; label: string }[] = [
   { id: 'crm',        icon: '◇',  label: 'Clients' },
   { id: 'finance',    icon: '◆',  label: 'Finance' },
   { id: 'tasks',      icon: '☐',  label: 'Tasks' },
+  // R2-Fix 9: TaskQueueView was imported in Layout.tsx but unreachable.
+  { id: 'queue',      icon: '⊟',  label: 'Queue' },
 ];
 
 const MORE_NAV: { id: ViewType; icon: string; label: string }[] = [

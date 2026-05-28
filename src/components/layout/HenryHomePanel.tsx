@@ -15,7 +15,7 @@ import { useInitiativeStore } from '../../henry/initiativeStore';
 import { useStore } from '../../store';
 import { getFocusNow } from '../../henry/getFocusNow';
 import { getQuickInsight } from '../../henry/henryInsight';
-import { computeMomentum, type MomentumSnapshot } from '../../henry/momentumEngine';
+import { computeMomentum, dismissMomentumBroken, type MomentumSnapshot } from '../../henry/momentumEngine';
 import { computeInstinctFromState, type InstinctResult } from '../../henry/instinctEngine';
 import { wakeWordManager } from '../../henry/wakeWord';
 
@@ -244,6 +244,18 @@ export default function HenryHomePanel({ onClose }: Props) {
               <span className={`text-[12px] font-medium capitalize ${MOMENTUM_COLOR[momentum.state]}`}>
                 {momentum.state}
               </span>
+              {/* R3-Fix 6: dismiss button only for the 'broken' state — the
+                  other states are informational and don't need silencing. */}
+              {momentum.state === 'broken' && (
+                <button
+                  type="button"
+                  onClick={() => { dismissMomentumBroken(); setMomentum(computeMomentum()); }}
+                  className="ml-auto text-[10px] text-henry-text-muted hover:text-henry-text px-2 py-0.5 rounded hover:bg-henry-border/20"
+                  title="Hide this for 24 hours"
+                >
+                  Dismiss
+                </button>
+              )}
             </div>
             <p className="text-[11px] text-henry-text-muted leading-relaxed">{momentum.reason}</p>
             {momentum.oneNextStep && (

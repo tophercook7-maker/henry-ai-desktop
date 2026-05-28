@@ -241,6 +241,34 @@ export const HEALTH_CHECKS: HealthCheck[] = [
   },
 
   {
+    id: 'accessibility',
+    name: 'Accessibility Permission',
+    category: 'recommended',
+    description: 'Required for iPad remote control — lets Henry move the mouse and type',
+    check: async () => {
+      try {
+        const { systemPreferences } = require('electron');
+        const ok = systemPreferences.isTrustedAccessibilityClient(false);
+        return ok
+          ? { ok: true }
+          : { ok: false, detail: 'Accessibility not granted — System Settings → Privacy → Accessibility' };
+      } catch {
+        return { ok: true };
+      }
+    },
+    fix: async (): Promise<FixResult> => {
+      try {
+        const { systemPreferences, shell } = require('electron');
+        systemPreferences.isTrustedAccessibilityClient(true);
+        await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility');
+        return { success: false, message: 'Opening Accessibility settings — enable Henry AI, then restart' };
+      } catch (e) {
+        return { success: false, message: 'Could not open Accessibility settings: ' + String(e) };
+      }
+    },
+  },
+
+  {
     id: 'disk_space',
     name: 'Disk Space',
     category: 'recommended',

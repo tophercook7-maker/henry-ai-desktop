@@ -109,17 +109,28 @@ export default function TodayPanel() {
       // Log the capture
       await api.captureSave?.({ id, text, routedTo: route });
       setCapture('');
-      // Refresh live data
-      // Load today's habits
+      // R3-Fix 2: refresh the daily enrichments. The blocks of code below
+      // used to live inline here — which meant habits/verse/nudge/word
+      // only loaded if the user submitted a capture first, and the panel
+      // showed an "Add habits" placeholder on first visit. Extracted into
+      // a single function called from both here and a mount useEffect.
+      loadDailyEnrichments();
+    void api.tasksList?.({ status: 'todo' }).then((t: any[]) => setLiveData(d => ({...d, dueTasks: (t||[]).length}))).catch(() => {});
+    } catch { /* non-critical */ }
+    setCaptureSaving(false);
+  }
+
+  // R3-Fix 2: daily enrichments — habits / verse / nudge / henry-word /
+  // calendar. Previously buried inside the handleCapture submit handler,
+  // which meant they NEVER loaded for users who didn't capture anything.
+  function loadDailyEnrichments() {
     const api3 = (window as any).henryAPI;
-    let mounted = true;
     if (api3?.healthHabitList) {
       const today2 = new Date().toISOString().slice(0, 10);
       Promise.all([
         api3.healthHabitList().catch(() => []),
         api3.healthHabitLogsForDate?.(today2).catch(() => []),
       ]).then(([habits2, logs2]: any[]) => {
-        if (!mounted) return;
         setTodayHabits((habits2 || []).map((h: any) => ({
           habit: h,
           done: (logs2 || []).some((l: any) => l.habit_id === h.id && l.count >= h.target_per_day),
@@ -131,7 +142,6 @@ export default function TodayPanel() {
     const api4 = (window as any).henryAPI;
     if (api4?.scriptureSearch) {
       const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000);
-      // Cycle through classic verses by day
       const classicVerses = ['John 3:16','Psalm 23:1','Romans 8:28','Proverbs 3:5','Jeremiah 29:11',
         'Philippians 4:13','Isaiah 40:31','Joshua 1:9','Matthew 6:33','Psalm 46:1'];
       const todayVerse = classicVerses[dayOfYear % classicVerses.length];
@@ -143,18 +153,19 @@ export default function TodayPanel() {
     // Proactive nudge — check for streaks and suggestions
     const api5 = (window as any).henryAPI;
     if (api5?.journalList && api5?.healthHabitList) {
-      const [jEntries, habits5] = await Promise.all([
+      Promise.all([
         api5.journalList?.().catch(() => []),
         api5.healthHabitList?.().catch(() => []),
-      ]);
-      const today5 = new Date().toISOString().slice(0,10);
-      const yesterday5 = new Date(Date.now() - 86400000).toISOString().slice(0,10);
-      const hasJournalToday = (jEntries||[]).some((e:any) => e.date === today5);
-      const hasJournalYesterday = (jEntries||[]).some((e:any) => e.date === yesterday5);
-      const hour5 = new Date().getHours();
-      if (!hasJournalToday && !hasJournalYesterday && (jEntries||[]).length > 5 && hour5 >= 18) {
-        setNudge("You haven't journaled in a few days. Even 2-3 sentences helps. ✍");
-      }
+      ]).then(([jEntries]: any[]) => {
+        const today5 = new Date().toISOString().slice(0,10);
+        const yesterday5 = new Date(Date.now() - 86400000).toISOString().slice(0,10);
+        const hasJournalToday = (jEntries||[]).some((e:any) => e.date === today5);
+        const hasJournalYesterday = (jEntries||[]).some((e:any) => e.date === yesterday5);
+        const hour5 = new Date().getHours();
+        if (!hasJournalToday && !hasJournalYesterday && (jEntries||[]).length > 5 && hour5 >= 18) {
+          setNudge("You haven't journaled in a few days. Even 2-3 sentences helps. ✍");
+        }
+      }).catch(() => {});
     }
 
     // Henry's word for today — generate once, cache all day
@@ -162,7 +173,6 @@ export default function TodayPanel() {
     if (cachedWord) {
       setHenryWord(cachedWord);
     } else {
-      // Generate in background (non-blocking)
       const ownerName = localStorage.getItem('henry:owner_name') || 'friend';
       const hour5 = new Date().getHours();
       const greeting = hour5 < 12 ? 'morning' : hour5 < 17 ? 'afternoon' : 'evening';
@@ -198,11 +208,14 @@ export default function TodayPanel() {
         }
       }).catch(() => {});
     }
-
-    void api.tasksList?.({ status: 'todo' }).then((t: any[]) => setLiveData(d => ({...d, dueTasks: (t||[]).length}))).catch(() => {});
-    } catch { /* non-critical */ }
-    setCaptureSaving(false);
   }
+
+  // R3-Fix 2: run the daily enrichments on mount as well, not only after
+  // a capture submit. This was the panel's biggest first-impression bug.
+  useEffect(() => {
+    loadDailyEnrichments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Pull live data from SQLite (useEffect not useState — never call APIs in render)
   useEffect(() => {

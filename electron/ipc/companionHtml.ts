@@ -17,11 +17,11 @@ export function buildCompanionHtml(macName: string): string {
   <meta name="apple-mobile-web-app-title" content="Henry AI">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="theme-color" content="#0a0a0f">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black">
-<meta name="mobile-web-app-capable" content="yes">
+<!-- R2-Fix 8: removed duplicate meta tags here. Originals had a second
+     apple-mobile-web-app-status-bar-style="black" overriding the
+     translucent setting (broke safe-area-inset under the notch), plus
+     duplicate mobile-web-app-capable and theme-color. -->
 <link rel="manifest" href="data:application/json;base64,eyJuYW1lIjoiSGVucnkgQUkiLCJzaG9ydF9uYW1lIjoiSGVucnkiLCJkaXNwbGF5Ijoic3RhbmRhbG9uZSIsImJhY2tncm91bmRfY29sb3IiOiIjMDAwMDAwIiwidGhlbWVfY29sb3IiOiIjMDAwMDAwIiwiaWNvbnMiOlt7InNyYyI6Imljb24iLCJzaXplcyI6IjE5MngxOTIiLCJ0eXBlIjoiaW1hZ2UvcG5nIn1dfQ==">
-<meta name="theme-color" content="#000">
 <title>Henry</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
@@ -87,8 +87,11 @@ html,body{width:100%;height:100%;height:100dvh;background:#000;overflow:hidden;f
   border-top:1px solid rgba(255,255,255,.08);
 }
 #msg-in{
+  /* R2-Fix 8: font-size MUST be >=16px or iOS Safari zooms the entire page
+     in when this input is focused. Was 15px → jarring auto-zoom every time
+     the user tapped the chat input on iPad/iPhone. */
   flex:1;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.15);
-  border-radius:18px;padding:8px 14px;font-size:15px;color:#fff;
+  border-radius:18px;padding:8px 14px;font-size:16px;color:#fff;
   outline:none;resize:none;font-family:inherit;max-height:80px;
   overflow-y:auto;line-height:1.4;-webkit-overflow-scrolling:touch;
 }

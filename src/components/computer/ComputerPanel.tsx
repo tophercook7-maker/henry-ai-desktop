@@ -107,14 +107,16 @@ function parseCommand(text: string): { shell: string; description: string }[] {
 
   // Fallback: treat as raw shell command if it looks like one
   // Fallback: treat as raw shell command if it looks like one
-  if (t.startsWith('mkdir') || t.startsWith('open') || t.startsWith('cp') || 
+  if (t.startsWith('mkdir') || t.startsWith('open') || t.startsWith('cp') ||
       t.startsWith('mv') || t.startsWith('rm') || t.startsWith('ls') ||
       t.startsWith('echo') || t.startsWith('touch') || t.startsWith('osascript')) {
     return [{ shell: text, description: `Running: ${text}` }];
   }
 
-  // Last resort: ask Finder to open Desktop (show something useful)
-  return [{ shell: `echo "Command: ${text.replace(/"/g, '')}"`, description: `Processing: ${text}` }];
+  // R3-Fix 4: unrecognized — return empty so run() can surface a clear
+  // "I don't recognize that" instead of echoing the text and falsely
+  // reporting "Complete" as if something happened.
+  return [];
 }
 
 export default function ComputerPanel() {
@@ -181,6 +183,19 @@ export default function ComputerPanel() {
 
     try {
       const actions = parseCommand(cmd);
+      // R3-Fix 4: handle unrecognized commands honestly. Previously the
+      // parser fell back to `echo "Command: ..."` which always succeeded
+      // and showed "Complete" — users thought the command ran when nothing
+      // actually happened.
+      if (actions.length === 0) {
+        setSteps(prev => [...prev, {
+          type: 'result',
+          label: "✗ I don't recognize that command",
+          detail: 'Try plain-English phrases like "take a screenshot", "open Finder", "what time is it", or a literal shell command starting with ls, mkdir, open, cp, mv, rm, echo, touch, or osascript.',
+        }]);
+        setRunning(false);
+        return;
+      }
       for (const action of actions) {
         setSteps(prev => [...prev, { type: 'action', label: action.description }]);
         const result = await execOnMac(action.shell);

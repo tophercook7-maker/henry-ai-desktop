@@ -16,6 +16,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useCapturesStore, selectActiveCaptures, selectUnroutedCaptures } from '../../ambient/capturesStore';
+import { confirmDialog } from '../ui/Toast';
 import type { CapturedNote } from '../../ambient/capturesStore';
 import {
   NOTE_CATEGORY_LABELS,
@@ -501,8 +502,9 @@ export default function CapturesPanel() {
           <span>Captures are stored locally on this device.</span>
           {captures.length > 0 && (
             <button
-              onClick={() => {
-                if (window.confirm('Clear all captures? This cannot be undone.')) clearAll();
+              onClick={async () => {
+                // R3-Fix 1: in-app confirm instead of native window.confirm.
+                if (await confirmDialog('Clear all captures? This cannot be undone.', { destructive: true, confirmLabel: 'Clear all' })) clearAll();
               }}
               className="hover:text-henry-error/80 transition-colors"
             >
