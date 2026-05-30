@@ -109,7 +109,7 @@ export async function runHenryOllamaToolAgent(params: {
 }): Promise<HenryOllamaToolTurnResult> {
   const dev = params.devHooks?.onEvent;
   const tools = buildHenryToolDefinitions();
-  let messages = toOllamaMessages(params.systemPrompt, params.history);
+  const messages = toOllamaMessages(params.systemPrompt, params.history);
   let toolsExecuted = 0;
 
   const finish = (out: HenryOllamaToolTurnResult): HenryOllamaToolTurnResult => {

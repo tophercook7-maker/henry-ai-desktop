@@ -21,7 +21,7 @@ interface Props {
 
 export default function ModelPreview3D({ triangles, name, className = '' }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const sceneRef = useRef<any>(null);
 
   useEffect(() => {
@@ -198,7 +198,7 @@ export default function ModelPreview3D({ triangles, name, className = '' }: Prop
   );
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 function updateCamera(camera: any, s: { theta: number; phi: number; radius: number }) {
   camera.position.set(
     s.radius * Math.sin(s.phi) * Math.sin(s.theta),

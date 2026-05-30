@@ -38,7 +38,7 @@ interface ProviderRow {
 }
 
 let db: Database.Database;
-let activeExecutions: Map<string, TaskExecution> = new Map();
+const activeExecutions: Map<string, TaskExecution> = new Map();
 let getWindow: WindowGetter;
 let workspaceRoot: string;
 

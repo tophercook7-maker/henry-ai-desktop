@@ -811,12 +811,17 @@ async function handleRequest(
     }
     if (path === '/computer/osascript') {
       const body = await readBody<{script: string}>(req);
-      if (!body) { jsonResponse(res, 400, {ok: false, error: 'Bad request'}); return; }
+      if (!body || typeof body.script !== 'string') { jsonResponse(res, 400, {ok: false, error: 'Bad request'}); return; }
       try {
-        const { exec } = await import('child_process');
+        // R4-Fix 2: use execFile (no shell) instead of exec with manual
+        // single-quote escaping. The previous escape covered ASCII `'` but
+        // not Unicode quotes — and even with a perfect escape, the exec
+        // shell layer is strictly more attack surface than execFile passing
+        // the script as a process argument with zero shell parsing.
+        const { execFile } = await import('child_process');
         const result = await new Promise<string>((resolve, reject) => {
-          exec(`osascript -e '${body.script.replace(/'/g, "'\''")}'`, (err, stdout) => {
-            err ? reject(err) : resolve(stdout.trim());
+          execFile('osascript', ['-e', body.script], { timeout: 10000 }, (err, stdout) => {
+            err ? reject(err) : resolve(String(stdout).trim());
           });
         });
         jsonResponse(res, 200, {ok: true, output: result});
@@ -1866,7 +1871,11 @@ self.addEventListener('fetch', (event) => {
         const _njTitle = _njDesc.replace(/\bfor\s+[A-Z][\w\s]{1,25}/i,'').replace(/\$[\d,]+/,'').replace(/\|.*/,'').trim() || _njDesc.slice(0,50);
         const _njcCap = _njClient ? _njClient.split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ') : '';
         const _njcFullName = dbGetOne("SELECT name FROM contacts WHERE LOWER(name) LIKE ? LIMIT 1", '%' + (_njcCap||'').split(' ')[0].toLowerCase() + '%') as any;
-        const _njcFinalClient = _njcFullName?.name || _njcFinalClient;
+        // R4-Fix 4: was `_njcFullName?.name || _njcFinalClient` — the second
+        // half referenced the variable being declared (always undefined). Fall
+        // back to the capitalized partial name from above when the DB lookup
+        // doesn't find a full match.
+        const _njcFinalClient = _njcFullName?.name || _njcCap;
         const _njNum = 'J-' + Date.now().toString().slice(-5);
         const _njId = Date.now().toString(36) + Math.random().toString(36).slice(2);
         dbRun('INSERT INTO jobs (id,job_number,client_name,title,status,bid_amount,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)',
@@ -3638,7 +3647,7 @@ self.addEventListener('fetch', (event) => {
         try {
           // Try exact first, then fuzzy on any word
           const words = hint.split(/\s+/).filter(w => w.length > 3);
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+           
           let g: any = dbGetOne("SELECT id, title FROM goals WHERE LOWER(title) LIKE ? AND status='active' LIMIT 1", '%' + hint + '%');
           if (!g && words.length) {
             for (let _wi = 0; _wi < words.length && !g; _wi++) {
@@ -4342,9 +4351,9 @@ self.addEventListener('fetch', (event) => {
     if (healthLogMatch) {
       try {
         const today = new Date().toISOString().slice(0,10);
-        let value = parseFloat(healthLogMatch[1] || '1');
-        let unit = (healthLogMatch[2] || '').toLowerCase();
-        let label = (healthLogMatch[3] || healthLogMatch[2] || 'health').trim();
+        const value = parseFloat(healthLogMatch[1] || '1');
+        const unit = (healthLogMatch[2] || '').toLowerCase();
+        const label = (healthLogMatch[3] || healthLogMatch[2] || 'health').trim();
         let category = 'custom';
         if (unit.includes('oz') || unit.includes('glass') || label.includes('water')) category = 'water';
         else if (unit.includes('step')) category = 'steps';
@@ -4761,7 +4770,7 @@ self.addEventListener('fetch', (event) => {
       const _amj = dbGetOne("SELECT id,title FROM jobs WHERE UPPER(job_number)=? LIMIT 1", _amn) as any;
       if (!_amj) { sendReply('Job ' + _amn + ' not found.'); return; }
       const _ami = _addMatM[2].split(/[,;]/).map((s: string) => s.trim()).filter(Boolean);
-      let _addedItems: string[] = [];
+      const _addedItems: string[] = [];
       for (const item of _ami) {
         const _costM = item.match(/\$([\d.]+)\s*(?:each|ea\.?|per)?/i);
         const _qtyM = item.match(/^(\d+)\s*(?:x|X|@)?\s/);
@@ -7428,7 +7437,7 @@ self.addEventListener('fetch', (event) => {
       const { execSync: _dkx } = await import('child_process') as typeof import('child_process');
       const _dkOut = _dkx('df -h / | tail -1', {encoding:'utf8',timeout:3000,shell:'/bin/bash'}).split(/\s+/);
       const _theVault = _dkx('df -h /Volumes/TheVault 2>/dev/null | tail -1', {encoding:'utf8',timeout:2000,shell:'/bin/bash'}).split(/\s+/);
-      let _dkLines = ['\uD83D\uDCBE **Storage**', '', 'Mac (/): ' + _dkOut[2] + ' used, **' + _dkOut[3] + ' free** of ' + _dkOut[1]];
+      const _dkLines = ['\uD83D\uDCBE **Storage**', '', 'Mac (/): ' + _dkOut[2] + ' used, **' + _dkOut[3] + ' free** of ' + _dkOut[1]];
       if (_theVault.length > 3) _dkLines.push('TheVault: ' + _theVault[2] + ' used, **' + _theVault[3] + ' free** of ' + _theVault[1]);
       sendReply(_dkLines.join('\n')); return;
     }
@@ -8447,7 +8456,7 @@ self.addEventListener('fetch', (event) => {
           signal: AbortSignal.timeout(28000),
         });
         const _3dJson = await _3dResp.json() as {choices?:{message:{content:string}}[]};
-        let _scad = (_3dJson.choices?.[0]?.message?.content||'').trim()
+        const _scad = (_3dJson.choices?.[0]?.message?.content||'').trim()
           .replace(/^```(?:openscad|scad)?\n?/im,'').replace(/\n?```$/,'').trim();
         if (!_scad || !_scad.includes(';')) { sendReply('❌ AI could not generate valid code. Try a simpler description.'); return; }
         const { writeFileSync:_wf3, unlinkSync:_ul3, copyFileSync:_cf3, statSync:_st3 } = await import('fs') as typeof import('fs');

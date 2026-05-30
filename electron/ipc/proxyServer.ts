@@ -69,7 +69,7 @@ function handleSocks5(client: net.Socket): void {
         portOffset = 8;
       } else if (atyp === 0x03) {
         // Domain name
-        const len = request[4];
+        const len = Number(request[4]);
         host = request.slice(5, 5 + len).toString('utf8');
         portOffset = 5 + len;
       } else if (atyp === 0x04) {
@@ -83,7 +83,7 @@ function handleSocks5(client: net.Socket): void {
         client.destroy(); return;
       }
 
-      const port = (request[portOffset] << 8) | request[portOffset + 1];
+      const port = (Number(request[portOffset]) << 8) | Number(request[portOffset + 1]);
 
       // Connect to destination
       const remote = net.createConnection({ host, port }, () => {

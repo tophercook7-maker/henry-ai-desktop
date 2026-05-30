@@ -403,7 +403,7 @@ export function registerMakerStudioHandlers(database: Database.Database) {
     spools?: unknown[]; jobs?: unknown[]; bom?: unknown[];
   }) => {
     try {
-      let migrated = { spools: 0, jobs: 0, bom: 0 };
+      const migrated = { spools: 0, jobs: 0, bom: 0 };
       const now = new Date().toISOString();
 
       // Spools → materials (category=filament)

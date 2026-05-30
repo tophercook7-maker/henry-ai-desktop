@@ -1723,8 +1723,8 @@ What do you want to tackle first?`);
 
     // Use Henry Cloud Proxy if no personal Groq key is set
     let effectiveApiKey = apiKey;
-    let effectiveProvider = companionProvider;
-    let effectiveModel = companionModel;
+    const effectiveProvider = companionProvider;
+    const effectiveModel = companionModel;
     let useProxy = false;
     if (companionProvider === 'groq' && (!apiKey || apiKey.length < 10) && HENRY_PROXY_ENABLED && canUseHenryProxy()) {
       useProxy = true;

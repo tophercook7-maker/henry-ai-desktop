@@ -208,7 +208,7 @@ export function registerScriptureHandlers(db: Database.Database, getWindow?: Win
     );
 
     let imported = 0;
-    let errors: string[] = [];
+    const errors: string[] = [];
 
     for (const bookFile of target) {
       try {

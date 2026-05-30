@@ -54,7 +54,7 @@ const LOCAL_PATTERNS: Array<{
     respond: (t) => {
       try {
         const expr = t.replace(/[=?]/g, '').trim();
-        // eslint-disable-next-line no-new-func
+         
         const result = Function('"use strict"; return (' + expr + ')')();
         if (typeof result === 'number' && isFinite(result)) return `${expr} = ${result.toLocaleString()}`;
       } catch { /* not math */ }

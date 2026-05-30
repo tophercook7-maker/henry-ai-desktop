@@ -246,7 +246,7 @@ export function registerComputerHandlers(winGetter: WindowGetter) {
       } catch { cpuPercent = Math.random() * 30 + 10; }
 
       // Battery
-      let battery = { percent: null as number|null, charging: false, time: '' };
+      const battery = { percent: null as number|null, charging: false, time: '' };
       try {
         const battOut = execSync('pmset -g batt', { encoding: 'utf8', timeout: 2000 });
         const bp = battOut.match(/(\d+)%/);
@@ -278,7 +278,7 @@ export function registerComputerHandlers(winGetter: WindowGetter) {
       } catch { runningApps = []; }
 
       // Disk usage
-      let disk = { total: 0, free: 0 };
+      const disk = { total: 0, free: 0 };
       try {
         const dfOut = execSync("df -k / | tail -1", { encoding: 'utf8', timeout: 2000 });
         const parts = dfOut.trim().split(/\s+/);

@@ -85,7 +85,7 @@ export default function AutoSetupPanel() {
       const d = r.ok ? await r.json() as {version?:string} : null;
       patch('sync', { status: r.ok?'ok':'missing', description: r.ok ? `Running v${d?.version||'?'}` : 'Not responding' });
     } catch { patch('sync', { status:'missing', description:'Not responding' }); }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, []); // Run once on mount — user hits 'Recheck' manually
 
   useEffect(() => { void runChecks(); }, [runChecks]);

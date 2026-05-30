@@ -3,7 +3,7 @@
  * Provides Mac / Windows / Linux equivalents for every system command Henry uses.
  * Import this wherever platform-specific shell commands are needed.
  */
-import { execSync, execSyncOptionsWithStringEncoding } from 'child_process';
+import { execSync, ExecSyncOptionsWithStringEncoding } from 'child_process';
 import * as os from 'os';
 import * as path from 'path';
 
@@ -12,8 +12,11 @@ export const IS_WIN   = process.platform === 'win32';
 export const IS_LINUX = process.platform === 'linux';
 
 const SHELL_OPT = IS_WIN ? { shell: true } : { shell: '/bin/bash' };
-const enc  = (t = 3000): execSyncOptionsWithStringEncoding =>
-  ({ encoding: 'utf8', timeout: t, ...(IS_WIN ? { shell: true } : { shell: '/bin/bash' }) });
+// R4-Fix 3: explicit cast — execSync's options type expects shell as
+// `string | undefined`, but Node accepts `true` on Windows (uses default
+// cmd.exe). The branching breaks the type narrowing, so we coerce.
+const enc  = (t = 3000): ExecSyncOptionsWithStringEncoding =>
+  ({ encoding: 'utf8', timeout: t, ...(IS_WIN ? { shell: true } : { shell: '/bin/bash' }) }) as ExecSyncOptionsWithStringEncoding;
 
 /** Safely run a command; return '' on failure */
 export function tryExec(cmd: string, timeoutMs = 4000): string {

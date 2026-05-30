@@ -76,7 +76,7 @@ export function applyOllamaBrainDefaultsIfNeeded(): void {
           return [];
         }
       })();
-      let o = provs.find((p) => p.id === 'ollama');
+      const o = provs.find((p) => p.id === 'ollama');
       const modelsJson = JSON.stringify([model, 'llama3.1', 'mistral']);
       if (!o) {
         provs.push({

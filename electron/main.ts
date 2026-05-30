@@ -35,7 +35,7 @@ process.on('uncaughtException', (err) => {
 
 
 let mainWindow: BrowserWindow | null = null;
-let tray: Tray | null = null;
+const tray: Tray | null = null;
 
 export function getMainWindow(): BrowserWindow | null {
   if (mainWindow && !mainWindow.isDestroyed()) return mainWindow;

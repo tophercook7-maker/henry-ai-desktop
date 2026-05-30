@@ -116,7 +116,7 @@ export default function ExportPackBuilder({
     setError(null);
     const createdAt = new Date().toISOString();
     const baseDir = buildExportRelativeDir(t, createdAt);
-    let finalArtifacts: ExportArtifactItem[] = artifacts.map((a) => ({ ...a }));
+    const finalArtifacts: ExportArtifactItem[] = artifacts.map((a) => ({ ...a }));
 
     try {
       if (copySmallFiles) {
