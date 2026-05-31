@@ -9522,9 +9522,24 @@ export function stopTunnel(): void {
   _tunnelProc?.kill(); _tunnelProc = null; _tunnelUrl = null; _tunnelStarting = false;
 }
 
-export function startSyncServer(port = 4242): SyncServerState {
+export function startSyncServer(port = 4242, host?: string): SyncServerState {
   if (server) return getSyncState();
   currentPort = port;
+
+  // Security: bind to loopback (127.0.0.1) by default so the companion server
+  // is NOT reachable by other devices on the same network (coffee-shop wifi,
+  // Airbnb, etc.). Direct same-network access is opt-in via the `sync_allow_lan`
+  // setting. Tunnel-based companion access (cloudflared) works on loopback
+  // regardless, so the common remote-access path is unaffected.
+  let bindHost = host;
+  if (!bindHost) {
+    let allowLan = false;
+    try {
+      const row = dbGetOne<{ value: string }>('SELECT value FROM settings WHERE key=?', 'sync_allow_lan');
+      allowLan = row?.value === 'true' || row?.value === '1';
+    } catch { /* default to loopback on any read failure */ }
+    bindHost = allowLan ? '0.0.0.0' : '127.0.0.1';
+  }
 
   server = http.createServer((req, res) => {
     handleRequest(req, res).catch((err) => {
@@ -9541,8 +9556,8 @@ export function startSyncServer(port = 4242): SyncServerState {
     console.error('[SyncBridge] Failed to attach screen WS:', e);
   }
 
-  server.listen(port, '0.0.0.0', async () => {
-    console.log(`[SyncBridge] Sync server listening on port ${port}`);
+  server.listen(port, bindHost, async () => {
+    console.log(`[SyncBridge] Sync server listening on ${bindHost}:${port} (${bindHost === '0.0.0.0' ? 'LAN-reachable' : 'loopback-only — set sync_allow_lan=true for direct LAN'})`);
     serverRunning = true;
     loadCompanionTokens(); // Restore tokens from previous session
     // Auto-start cloudflare tunnel for remote companion access
