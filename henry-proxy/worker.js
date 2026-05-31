@@ -16,6 +16,23 @@
 const GROQ_API = 'https://api.groq.com/openai/v1/chat/completions';
 const FREE_DAILY_LIMIT = 50;
 const PRO_DAILY_LIMIT = 2000;
+const PRO_MAX_TOKENS = 8192;   // cap output to bound per-request cost on the hosted paid tier
+
+// Pricing — single source of truth. Surfaced at GET /v1/pricing so the desktop
+// app and the website can read one canonical set of numbers instead of drifting.
+// Cost basis (2026): Groq 8B $0.05/$0.08 per 1M in/out, 70B $0.59/$0.79; a typical
+// Henry request (~1.5k in + 0.4k out) costs ~$0.0001 (8B) to ~$0.0012 (70B).
+// Loaded cost to serve a hosted user is ~$1–4/mo; monthly price clears it 4–15x.
+const PRICING = {
+  currency: 'USD',
+  plans: {
+    free:     { price: 0,     period: 'forever',  label: 'Free (BYOK / Local)', note: 'Bring your own Groq/OpenAI key or run Ollama. Unlimited, fully local.' },
+    monthly:  { price: 14.99, period: 'month',    label: 'Henry Pro',           note: 'Hosted AI included — no API key needed.' },
+    annual:   { price: 149,   period: 'year',     label: 'Henry Pro (Annual)',  note: '~2 months free vs monthly.' },
+    lifetime: { price: 299,   period: 'one-time', label: 'Henry Pro Lifetime',  note: 'Never pay again.' },
+    setup:    { price: 129,   period: 'one-time', label: 'Setup Help',          note: '30-minute white-glove setup call.' },
+  },
+};
 
 // KV namespace bound as HENRY_KV in wrangler.toml
 // License keys stored as KV entries: license:KEY → { tier, owner, created }
@@ -37,7 +54,12 @@ export default {
 
     // Health check
     if (url.pathname === '/health') {
-      return Response.json({ ok: true, version: '1.0.0', service: 'henry-proxy' }, { headers: corsHeaders });
+      return Response.json({ ok: true, version: '1.1.0', service: 'henry-proxy' }, { headers: corsHeaders });
+    }
+
+    // Pricing — canonical source of truth for app + website
+    if (url.pathname === '/v1/pricing') {
+      return Response.json(PRICING, { headers: corsHeaders });
     }
 
     // Chat completions proxy
@@ -71,7 +93,10 @@ async function handleChat(request, env, corsHeaders) {
   if (licenseKey && env.HENRY_KV) {
     try {
       const licenseData = await env.HENRY_KV.get(`license:${licenseKey}`, { type: 'json' });
-      if (licenseData?.active) {
+      // For monthly/annual plans the license carries an `expires` ISO date.
+      // Lifetime licenses omit it. A lapsed subscription silently falls back to free.
+      const notExpired = !licenseData?.expires || Date.now() < new Date(licenseData.expires).getTime();
+      if (licenseData?.active && notExpired) {
         tier = licenseData.tier || 'pro';
         dailyLimit = tier === 'pro' ? PRO_DAILY_LIMIT : FREE_DAILY_LIMIT;
       }
@@ -88,7 +113,7 @@ async function handleChat(request, env, corsHeaders) {
       if (count >= dailyLimit) {
         return Response.json({
           error: {
-            message: `Henry free tier limit reached (${dailyLimit} requests/day). Upgrade to Pro at henry.ai for unlimited access, or add your own Groq key in Settings.`,
+            message: `Henry free tier limit reached (${dailyLimit} requests/day). Upgrade to Henry Pro at henrysworkshop.app, or add your own Groq key in Settings for unlimited local use.`,
             type: 'rate_limit',
             tier,
             limit: dailyLimit,
@@ -110,6 +135,9 @@ async function handleChat(request, env, corsHeaders) {
   // Safety: cap max_tokens for free tier
   if (tier === 'free') {
     body.max_tokens = Math.min(body.max_tokens || 1024, 1024);
+  } else {
+    // Bound per-request output cost on the hosted paid tier (fair use).
+    body.max_tokens = Math.min(body.max_tokens || PRO_MAX_TOKENS, PRO_MAX_TOKENS);
   }
 
   // Force fast model on free tier to manage costs
