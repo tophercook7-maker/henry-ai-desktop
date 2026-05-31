@@ -4,8 +4,10 @@
  * Catches React render errors anywhere in the component tree.
  * When a crash occurs it:
  *   1. Logs it to the self-repair error store (persisted in localStorage)
- *   2. Automatically dispatches a henry_action_prompt event so Henry
- *      opens in chat with the error pre-filled
+ *   2. In dev mode only (henry:dev_mode = 'true'), dispatches a
+ *      henry_action_prompt event so Henry opens in chat with the error
+ *      pre-filled. Normal users never see React internals — the crash is
+ *      still logged silently to the self-repair store for later review.
  *   3. Shows a clean recovery UI with a reload button
  *
  * Wrap the entire app (or a subtree) with this component.
@@ -57,27 +59,34 @@ export class HenrySelfRepairBoundary extends Component<Props, State> {
 
     this.setState({ errorId: entry.id, componentStack });
 
-    // 2. Tell Henry about the crash (with a short delay so the DOM settles)
-    setTimeout(() => {
-      try {
-        const prompt =
-          `I just caught a render crash in the app.\n\n` +
-          `Error: ${error.message}\n` +
-          `Component: ${extractTopComponent(componentStack)}\n\n` +
-          `Can you diagnose this and fix it? The error ID is ${entry.id}.`;
+    // 2. In DEV MODE ONLY, tell Henry about the crash so it can self-diagnose.
+    //    Normal users must never see React internals dumped into chat or get
+    //    yanked to the chat view — the crash is already logged above for review.
+    let devMode = false;
+    try { devMode = localStorage.getItem('henry:dev_mode') === 'true'; } catch { /* default off */ }
 
-        window.dispatchEvent(
-          new CustomEvent('henry_action_prompt', { detail: { prompt } })
-        );
+    if (devMode) {
+      setTimeout(() => {
+        try {
+          const prompt =
+            `I just caught a render crash in the app.\n\n` +
+            `Error: ${error.message}\n` +
+            `Component: ${extractTopComponent(componentStack)}\n\n` +
+            `Can you diagnose this and fix it? The error ID is ${entry.id}.`;
 
-        // Also switch to chat view so Henry is visible
-        window.dispatchEvent(
-          new CustomEvent('henry_navigate', { detail: { view: 'chat' } })
-        );
-      } catch {
-        // Never throw inside componentDidCatch
-      }
-    }, 800);
+          window.dispatchEvent(
+            new CustomEvent('henry_action_prompt', { detail: { prompt } })
+          );
+
+          // Also switch to chat view so Henry is visible
+          window.dispatchEvent(
+            new CustomEvent('henry_navigate', { detail: { view: 'chat' } })
+          );
+        } catch {
+          // Never throw inside componentDidCatch
+        }
+      }, 800);
+    }
   }
 
   handleReload = () => {
