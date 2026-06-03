@@ -2414,8 +2414,8 @@ self.addEventListener('fetch', (event) => {
       const _igBiz = (dbGetOne("SELECT value FROM settings WHERE key='business_name'") as any)?.value||'Henry AI';
       sendReply('**\uD83D\uDCBB Installing Henry AI on Another Computer**\n\n' +
         '**Step 1: Get the installer**\n' +
-        '  • Mac: Henry-AI-2.2.0-arm64.dmg (or x64 for Intel Mac)\n' +
-        '  • Windows: Henry-AI-Setup-2.2.0-x64.exe\n\n' +
+        '  • Mac: Henry.AI-2.3.0-arm64.dmg (or x64 for Intel Mac)\n' +
+        '  • Windows: Henry-AI-Setup-2.3.0-x64.exe\n\n' +
         '**Step 2: Install**\n' +
         '  Mac: Double-click .dmg → drag to Applications\n' +
         '  Windows: Run the .exe installer → follow prompts\n\n' +
@@ -2782,7 +2782,7 @@ self.addEventListener('fetch', (event) => {
         const knowledgeAnswer = (() => {
       // Version / identity
       if (/^(?:what version|which version|your version|version number|what.*version are you)/.test(lowerText) || lowerText === 'version') {
-        return 'Henry AI v2.2.0 — your Mac AI: reads files, runs code, runs local AI, remembers your business.\n\n150+ instant local commands, all <20ms.\n\n🔩 Iron Gateway v2: 10 free AI providers — Groq (llama-4-scout, llama-3.3-70b, qwen3), Gemini 2.0+1.5 Flash, Cerebras, OpenRouter. Round-robin with auto-failover.\n\nSay \'what can you do\' to see everything.';
+        return 'Henry AI v2.3.0 — your Mac AI: reads files, runs code, runs local AI, remembers your business.\n\n150+ instant local commands, all <20ms.\n\n🔩 Iron Gateway v2: 10 free AI providers — Groq (llama-4-scout, llama-3.3-70b, qwen3), Gemini 2.0+1.5 Flash, Cerebras, OpenRouter. Round-robin with auto-failover.\n\nSay \'what can you do\' to see everything.';
       }
       if (/^(?:what can you do|capabilities|features|what are you capable of|what do you do|your features)/.test(lowerText) || lowerText === 'help') {
         return '\uD83E\uDDE0 **Henry \u2014 What I Can Do**\n\n' + [
@@ -2904,7 +2904,7 @@ self.addEventListener('fetch', (event) => {
     // ── What's new / changelog ─────────────────────────────────────────────────
     if (/^(?:what(?:'s| is)(?: the)? new|changelog|what(?:'s| have you) (?:changed|added|improved|got|gotten)(?: lately| recently)?|what(?:'s| can) henry do (?:now|new|differently))/.test(lowerText)
         || lowerText === "what's new" || lowerText === 'henry changelog' || lowerText === "what's new in henry") {
-      sendReply('**Henry v2.2.0 — Latest additions:**\n\n' +
+      sendReply('**Henry v2.3.0 — Latest additions:**\n\n' +
         '\uD83D\uDCBC **Business:**\n' +
         '  \u2022 Cash flow snapshot (pipeline view)\n' +
         '  \u2022 Partial payments on specific jobs\n' +
