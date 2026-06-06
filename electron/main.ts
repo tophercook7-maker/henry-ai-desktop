@@ -749,15 +749,15 @@ app.whenReady().then(() => {
       const _isWin32 = process.platform === 'win32';
       try {
         cloudflaredPath = _isWin32
-          ? execSync('where cloudflared', { encoding: 'utf8', shell: true }).trim().split('\n')[0].trim()
+          ? execSync('where cloudflared', { encoding: 'utf8' }).trim().split('\n')[0].trim()
           : execSync('which cloudflared', { encoding: 'utf8' }).trim();
       } catch {
         // Not found — try to install
         console.log('[Henry] cloudflared not found — installing...');
         try {
           if (_isWin32) {
-            execSync('winget install Cloudflare.cloudflared --silent', { timeout: 120000, stdio: 'ignore', shell: true });
-            try { cloudflaredPath = execSync('where cloudflared', { encoding: 'utf8', shell: true }).trim().split('\n')[0].trim(); } catch { /* still not found */ }
+            execSync('winget install Cloudflare.cloudflared --silent', { timeout: 120000, stdio: 'ignore' });
+            try { cloudflaredPath = execSync('where cloudflared', { encoding: 'utf8' }).trim().split('\n')[0].trim(); } catch { /* still not found */ }
           } else {
             const brewPath = execSync('which brew', { encoding: 'utf8' }).trim();
             if (brewPath) {

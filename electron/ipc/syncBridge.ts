@@ -412,7 +412,7 @@ export function setSyncDb(db: import('better-sqlite3').Database): void {
     const _bkFile = 'henry_' + new Date().toISOString().slice(0,10) + '.db';
     try {
       if (process.platform === 'win32') {
-        _bkx('mkdir "' + _bkDir.replace(/\//g,'\\') + '" 2>nul && copy "' + db.name.replace(/\//g,'\\') + '" "' + (_bkDir + '\\' + _bkFile).replace(/\//g,'\\') + '"', {timeout:3000,shell:true});
+        _bkx('mkdir "' + _bkDir.replace(/\//g,'\\') + '" 2>nul && copy "' + db.name.replace(/\//g,'\\') + '" "' + (_bkDir + '\\' + _bkFile).replace(/\//g,'\\') + '"', {timeout:3000});
       } else {
         _bkx('mkdir -p "' + _bkDir + '" && cp "' + db.name + '" "' + _bkDir + '/' + _bkFile + '"', {timeout:3000,shell:'/bin/bash'});
         _bkx('cd "' + _bkDir + '" && ls -t henry_*.db 2>/dev/null | tail -n +8 | xargs rm -f 2>/dev/null || true', {timeout:2000,shell:'/bin/bash'});
@@ -2311,7 +2311,7 @@ self.addEventListener('fetch', (event) => {
           if (IS_MAC) {
             _dndx('defaults -currentHost write ~/Library/Preferences/ByHost/com.apple.notificationcenterui doNotDisturb -bool ' + (_pdndOff?'false':'true'), {timeout:3000,shell:'/bin/bash'});
           } else if (IS_WIN) {
-            _dndx('powershell -NoProfile -c "Set-ItemProperty HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Notifications\\Settings -Name NOC_GLOBAL_SETTING_TOASTS_ENABLED -Value ' + (_pdndOff?'1':'0') + '"', {timeout:3000,shell:true});
+            _dndx('powershell -NoProfile -c "Set-ItemProperty HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Notifications\\Settings -Name NOC_GLOBAL_SETTING_TOASTS_ENABLED -Value ' + (_pdndOff?'1':'0') + '"', {timeout:3000});
           }
           sendReply(_pdndOff ? '\uD83D\uDD14 Do Not Disturb **off** — notifications on' : '\uD83D\uDD15 Do Not Disturb **on** — you\'re in focus mode');
         } catch { sendReply(_pdndOff ? '\uD83D\uDD14 DND off' : '\uD83D\uDD15 DND on — use Control Centre if this didn\'t take effect'); }
@@ -2480,7 +2480,7 @@ self.addEventListener('fetch', (event) => {
         const { execSync: _mpx2 } = await import('child_process') as typeof import('child_process');
         const _mUrl = IS_WIN ? 'bingmaps:?q=' + encodeURIComponent(_pmAddr) : 'maps://?q=' + encodeURIComponent(_pmAddr);
         if (IS_MAC) _mpx2('open "' + _mUrl + '"', {timeout:3000,shell:'/bin/bash'});
-        else if (IS_WIN) _mpx2('start "" "' + _mUrl + '"', {timeout:3000,shell:true});
+        else if (IS_WIN) _mpx2('start "" "' + _mUrl + '"', {timeout:3000});
         else _mpx2('xdg-open "https://maps.google.com/maps?q=' + encodeURIComponent(_pmAddr) + '"', {timeout:3000,shell:'/bin/bash'});
         sendReply('\uD83D\uDDFA\uFE0F Maps opened: **' + _pmAddr + '**' + (_pmClient?' (' + _pmClient.name + ')':''));
         return;
@@ -2497,7 +2497,7 @@ self.addEventListener('fetch', (event) => {
         if (_pmC?.notes) { const _al = _pmC.notes.split('\n').find((l: string)=>/\d+.*(?:st|ave|rd|blvd|dr|ln|ct|way|hwy)/i.test(l)); if (_al) _pmA=_al.trim(); }
         const { execSync: _mpx3 } = await import('child_process') as typeof import('child_process');
         if (IS_MAC) _mpx3('open "maps://?q=' + encodeURIComponent(_pmA) + '"', {timeout:3000,shell:'/bin/bash'});
-        else if (IS_WIN) _mpx3('start "" "bingmaps:?q=' + encodeURIComponent(_pmA) + '"', {timeout:3000,shell:true});
+        else if (IS_WIN) _mpx3('start "" "bingmaps:?q=' + encodeURIComponent(_pmA) + '"', {timeout:3000});
         else _mpx3('xdg-open "https://maps.google.com/maps?q=' + encodeURIComponent(_pmA) + '"', {timeout:3000,shell:'/bin/bash'});
         sendReply('\uD83D\uDDFA\uFE0F Maps opened: **' + _pmA + '**' + (_pmC?' (' + _pmC.name + ')':''));
         return;
@@ -2515,7 +2515,7 @@ self.addEventListener('fetch', (event) => {
           if (IS_MAC) {
             _dndx('defaults -currentHost write ~/Library/Preferences/ByHost/com.apple.notificationcenterui doNotDisturb -bool ' + (_pdndOff?'false':'true'), {timeout:3000,shell:'/bin/bash'});
           } else if (IS_WIN) {
-            _dndx('powershell -NoProfile -c "Set-ItemProperty HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Notifications\\Settings -Name NOC_GLOBAL_SETTING_TOASTS_ENABLED -Value ' + (_pdndOff?'1':'0') + '"', {timeout:3000,shell:true});
+            _dndx('powershell -NoProfile -c "Set-ItemProperty HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Notifications\\Settings -Name NOC_GLOBAL_SETTING_TOASTS_ENABLED -Value ' + (_pdndOff?'1':'0') + '"', {timeout:3000});
           }
           sendReply(_pdndOff ? '\uD83D\uDD14 Do Not Disturb **off**' : '\uD83D\uDD15 Do Not Disturb **on** — focus mode active');
         } catch { sendReply(_pdndOff ? '\uD83D\uDD14 DND off' : '\uD83D\uDD15 DND on'); }
@@ -3480,7 +3480,7 @@ self.addEventListener('fetch', (event) => {
         const _ipCmd = process.platform === 'darwin' ? 'ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null' :
           process.platform === 'linux' ? "hostname -I 2>/dev/null | awk '{print $1}'" :
           "for /f \"tokens=2 delims=:\" %i in ('ipconfig ^| findstr /r \"IPv4\"') do echo %i";
-        const _ip = _pn(_ipCmd, { encoding:'utf8', shell: process.platform === 'win32' ? true : '/bin/bash', timeout:2000 }).trim().split('\n')[0].trim();
+        const _ip = _pn(_ipCmd, { encoding:'utf8', shell: process.platform === 'win32' ? undefined : '/bin/bash', timeout:2000 }).trim().split('\n')[0].trim();
         const _localUrl = 'http://' + (_ip || 'YOUR-MAC-IP') + ':4242';
         const _turl = getTunnelUrl();
         const _bestUrl = _turl || _localUrl;
@@ -3511,7 +3511,7 @@ self.addEventListener('fetch', (event) => {
           const _launchCmd = process.platform === 'darwin' ? 'open -a "' + _knownApps[_appKey] + '"' :
             process.platform === 'win32' ? 'start "" "' + _knownApps[_appKey] + '"' :
             'xdg-open "' + _knownApps[_appKey] + '" 2>/dev/null || ' + _knownApps[_appKey].toLowerCase().replace(/ /g,'-');
-          _eal(_launchCmd, { timeout: 3000, shell: process.platform !== 'darwin' });
+          _eal(_launchCmd, { timeout: 3000 });
           sendReply('🚀 Opened **' + _knownApps[_appKey] + '**');
         } catch { sendReply('Could not open ' + _knownApps[_appKey] + '. Is it installed?'); }
         return;
@@ -7530,7 +7530,7 @@ self.addEventListener('fetch', (event) => {
         } else if (process.platform === 'linux') {
           _tExec('notify-send "Henry" "Timer done!" 2>/dev/null || true', {timeout:3000,shell:'/bin/bash'});
         } else {
-          _tExec('powershell -command "New-BurntToastNotification -Text \'Henry\', \'Timer done!\'"', {timeout:3000,shell:true});
+          _tExec('powershell -command "New-BurntToastNotification -Text \'Henry\', \'Timer done!\'"', {timeout:3000});
         }
       } catch {}
         sendReply('⏰ **' + _tLabel + ' timer done!**');
@@ -9011,7 +9011,7 @@ self.addEventListener('fetch', (event) => {
       } else {
         // Windows — PowerShell screenshot
         const _winTmp = _tmp.replace(/\\/g, '/');
-        _scx(`powershell -NoProfile -Command "Add-Type -Assembly System.Drawing,System.Windows.Forms; $s=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds; $b=New-Object System.Drawing.Bitmap $s.Width,$s.Height; [System.Drawing.Graphics]::FromImage($b).CopyFromScreen(0,0,0,0,$s.Size); $b.Save('${_winTmp}')"`, { timeout: 8000, shell: true });
+        _scx(`powershell -NoProfile -Command "Add-Type -Assembly System.Drawing,System.Windows.Forms; $s=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds; $b=New-Object System.Drawing.Bitmap $s.Width,$s.Height; [System.Drawing.Graphics]::FromImage($b).CopyFromScreen(0,0,0,0,$s.Size); $b.Save('${_winTmp}')"`, { timeout: 8000 });
       }
       const _buf = _scfs.default.readFileSync(_tmp);
       try { _scfs.default.unlinkSync(_tmp); } catch {}
@@ -9125,7 +9125,7 @@ self.addEventListener('fetch', (event) => {
         const _launchCmd = process.platform === 'darwin' ? 'open -a "' + (body.app||'Finder').replace(/"/g,'') + '"' :
           process.platform === 'win32' ? 'start "" "' + (body.app||'').replace(/"/g,'') + '"' :
           'xdg-open "' + (body.app||'').replace(/"/g,'') + '" 2>/dev/null';
-        _oaExec(_launchCmd, { timeout: 3000, shell: process.platform !== 'darwin' });
+        _oaExec(_launchCmd, { timeout: 3000 });
       }
       jsonResponse(res, 200, { ok: true });
     } catch (e) {
