@@ -18,6 +18,7 @@ import { registerOllamaCleanup } from './ipc/ollamaManager';
 import { registerTerminalHandlers } from './ipc/terminal';
 import { registerComputerHandlers } from './ipc/computer';
 import { registerPrinterHandlers } from './ipc/printer';
+import { registerSessionStoreHandlers } from './ipc/sessionStore';
 import { registerSyncBridgeIpc, setSyncDb, startSyncServer } from './ipc/syncBridge';
 import { runDiagnostic, saveReport } from './ipc/selfRepair';
 
@@ -422,6 +423,7 @@ app.whenReady().then(() => {
   registerTerminalHandlers(getMainWindow, henryDir);
   registerComputerHandlers(getMainWindow);
   registerPrinterHandlers(getMainWindow);
+  registerSessionStoreHandlers(henryDir);
 
   // ── Companion Sync Bridge ────────────────────────────────────────────────
   setSyncDb(db);

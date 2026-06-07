@@ -1395,6 +1395,29 @@ const henryAPI: Window['henryAPI'] = {
   }),
   onPrinterData: (cb) => on('printer:data', cb),
 
+  // ── Session History (web stubs) ───────────────────────────────────────
+  // Persistent session history requires the desktop app's Python/SQLite
+  // bridge; in the web build these degrade to empty results.
+  sessionCheckDeps: async () => ({
+    available: false,
+    error: 'Session history requires the Henry desktop app.',
+  }),
+  sessionCreate: async () => ({ ok: false, error: 'Session history requires the Henry desktop app.' }),
+  sessionEnd: async () => ({ ok: false, error: 'Session history requires the Henry desktop app.' }),
+  sessionResume: async () => ({ ok: false, error: 'Session history requires the Henry desktop app.' }),
+  sessionBranch: async () => ({ ok: false, error: 'Session history requires the Henry desktop app.' }),
+  sessionList: async () => ({ ok: true, result: { sessions: [], total: 0 } }),
+  sessionSearch: async () => ({ ok: true, result: { results: [] } }),
+  sessionAddMessage: async () => ({ ok: false, error: 'Session history requires the Henry desktop app.' }),
+  sessionGetMessages: async () => ({ ok: true, result: { messages: [] } }),
+  sessionGet: async () => ({ ok: false, error: 'Session history requires the Henry desktop app.' }),
+  sessionSetTitle: async () => ({ ok: false, error: 'Session history requires the Henry desktop app.' }),
+  sessionArchive: async () => ({ ok: false, error: 'Session history requires the Henry desktop app.' }),
+  sessionUpdateTokens: async () => ({ ok: false, error: 'Session history requires the Henry desktop app.' }),
+  sessionDelete: async () => ({ ok: false, error: 'Session history requires the Henry desktop app.' }),
+  sessionExport: async () => ({ ok: false, error: 'Session history requires the Henry desktop app.' }),
+  sessionStats: async () => ({ ok: true, result: { sessions: 0, messages: 0, fts_enabled: false } }),
+
   getCostLog: async (period?: string) => {
     // Messages are stored at flat key 'henry:messages', NOT per-conversation keys
     const allMessages = getStore<import('./types').Message[]>('henry:messages', []);

@@ -404,6 +404,24 @@ contextBridge.exposeInMainWorld('henryAPI', {
     return () => ipcRenderer.removeListener('printer:data', handler);
   },
 
+  // ── Session History (persistent conversation store + FTS search) ──
+  sessionCheckDeps: () => ipcRenderer.invoke('session:checkDeps'),
+  sessionCreate: (params: Record<string, unknown>) => ipcRenderer.invoke('session:create', params),
+  sessionEnd: (params: Record<string, unknown>) => ipcRenderer.invoke('session:end', params),
+  sessionResume: (params: Record<string, unknown>) => ipcRenderer.invoke('session:resume', params),
+  sessionBranch: (params: Record<string, unknown>) => ipcRenderer.invoke('session:branch', params),
+  sessionList: (params: Record<string, unknown>) => ipcRenderer.invoke('session:list', params),
+  sessionSearch: (params: Record<string, unknown>) => ipcRenderer.invoke('session:search', params),
+  sessionAddMessage: (params: Record<string, unknown>) => ipcRenderer.invoke('session:addMessage', params),
+  sessionGetMessages: (params: Record<string, unknown>) => ipcRenderer.invoke('session:getMessages', params),
+  sessionGet: (params: Record<string, unknown>) => ipcRenderer.invoke('session:get', params),
+  sessionSetTitle: (params: Record<string, unknown>) => ipcRenderer.invoke('session:setTitle', params),
+  sessionArchive: (params: Record<string, unknown>) => ipcRenderer.invoke('session:archive', params),
+  sessionUpdateTokens: (params: Record<string, unknown>) => ipcRenderer.invoke('session:updateTokens', params),
+  sessionDelete: (params: Record<string, unknown>) => ipcRenderer.invoke('session:delete', params),
+  sessionExport: (params: Record<string, unknown>) => ipcRenderer.invoke('session:export', params),
+  sessionStats: () => ipcRenderer.invoke('session:stats', {}),
+
   // ── Cost Tracking ─────────────────────────────────────────
   getCostLog: (period?: string) => ipcRenderer.invoke('cost:getAll', period),
 

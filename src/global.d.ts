@@ -164,6 +164,15 @@ declare global {
     message?: string;
   }
 
+  // Uniform envelope returned by every session:* IPC handler. `result` holds
+  // the SessionStore command output (shape varies by command); on failure
+  // `ok` is false and `error` carries the Python-side message.
+  interface HenrySessionResult<T = unknown> {
+    ok: boolean;
+    result?: T;
+    error?: string;
+  }
+
   interface HenryComputerShellResult {
     success: boolean;
     output: string;
@@ -353,6 +362,25 @@ declare global {
     printerStatus: () => Promise<{ connected: boolean; port?: string; baudRate?: number }>;
     printerPrintGcode: (gcode: string) => Promise<{ success: boolean; sent?: number; total?: number; error?: string }>;
     onPrinterData: (cb: (data: HenryPrinterData) => void) => () => void;
+
+    // ── Session History (persistent conversation store + FTS search) ──
+    // Each call resolves to { ok: true, result } or { ok: false, error }.
+    sessionCheckDeps: () => Promise<{ available: boolean; ftsEnabled?: boolean; journalMode?: string; error?: string; installHint?: string }>;
+    sessionCreate: (params: Record<string, unknown>) => Promise<HenrySessionResult>;
+    sessionEnd: (params: Record<string, unknown>) => Promise<HenrySessionResult>;
+    sessionResume: (params: Record<string, unknown>) => Promise<HenrySessionResult>;
+    sessionBranch: (params: Record<string, unknown>) => Promise<HenrySessionResult>;
+    sessionList: (params: Record<string, unknown>) => Promise<HenrySessionResult>;
+    sessionSearch: (params: Record<string, unknown>) => Promise<HenrySessionResult>;
+    sessionAddMessage: (params: Record<string, unknown>) => Promise<HenrySessionResult>;
+    sessionGetMessages: (params: Record<string, unknown>) => Promise<HenrySessionResult>;
+    sessionGet: (params: Record<string, unknown>) => Promise<HenrySessionResult>;
+    sessionSetTitle: (params: Record<string, unknown>) => Promise<HenrySessionResult>;
+    sessionArchive: (params: Record<string, unknown>) => Promise<HenrySessionResult>;
+    sessionUpdateTokens: (params: Record<string, unknown>) => Promise<HenrySessionResult>;
+    sessionDelete: (params: Record<string, unknown>) => Promise<HenrySessionResult>;
+    sessionExport: (params: Record<string, unknown>) => Promise<HenrySessionResult>;
+    sessionStats: () => Promise<HenrySessionResult>;
 
     getCostLog: (period?: string) => Promise<unknown[]>;
 
