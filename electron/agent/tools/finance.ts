@@ -14,8 +14,8 @@
  * so the model's answers stay honest about the data source.
  */
 
-import type Database from 'better-sqlite3';
-import type { AgentContext, ToolDefinition, ToolResult } from '../types';
+import type Database from "better-sqlite3";
+import type { ToolDefinition, ToolResult } from "../types";
 
 type Row = Record<string, unknown>;
 
@@ -28,8 +28,8 @@ function fail(error: string, retryable = false): ToolResult {
 }
 
 function num(v: unknown, fallback = 0): number {
-  if (typeof v === 'number' && Number.isFinite(v)) return v;
-  if (typeof v === 'string') {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string") {
     const n = parseFloat(v);
     return Number.isFinite(n) ? n : fallback;
   }
@@ -54,7 +54,7 @@ function nextQuoteNumber(db: Database.Database): string {
     const n = parseInt(row.quote_number.slice(prefix.length), 10);
     if (Number.isFinite(n)) next = n + 1;
   }
-  return `${prefix}${String(next).padStart(4, '0')}`;
+  return `${prefix}${String(next).padStart(4, "0")}`;
 }
 
 /** Recompute subtotal/tax/total from line items. Mirrors quoting.ts. */
@@ -74,9 +74,9 @@ function recomputeTotals(db: Database.Database, quoteId: string): void {
     if (Number(it.taxable) === 1) taxable += total;
     else nonTaxable += total;
   }
-  const quote = db.prepare(`SELECT tax_rate FROM quotes WHERE id = ?`).get(quoteId) as
-    | { tax_rate?: number }
-    | undefined;
+  const quote = db
+    .prepare(`SELECT tax_rate FROM quotes WHERE id = ?`)
+    .get(quoteId) as { tax_rate?: number } | undefined;
   const taxRate = num(quote?.tax_rate, 0);
   const subtotal = taxable + nonTaxable;
   const taxAmount = taxable * (taxRate / 100);
@@ -91,26 +91,29 @@ function recomputeTotals(db: Database.Database, quoteId: string): void {
   );
 }
 
-export function financeTools(_context: AgentContext): ToolDefinition[] {
+export function financeTools(): ToolDefinition[] {
   return [
     // ── quote_list ───────────────────────────────────────────────────────
     {
-      name: 'quote_list',
+      name: "quote_list",
       description:
-        'List quotes with their status (draft, sent, accepted, declined, ' +
-        'expired) and total. Optionally filter by status or a search query.',
-      category: 'finance',
-      safetyLevel: 'silent',
+        "List quotes with their status (draft, sent, accepted, declined, " +
+        "expired) and total. Optionally filter by status or a search query.",
+      category: "finance",
+      safetyLevel: "silent",
       inputSchema: {
-        type: 'object',
+        type: "object",
         properties: {
           status: {
-            type: 'string',
-            enum: ['draft', 'sent', 'accepted', 'declined', 'expired'],
-            description: 'Filter by quote status.',
+            type: "string",
+            enum: ["draft", "sent", "accepted", "declined", "expired"],
+            description: "Filter by quote status.",
           },
-          query: { type: 'string', description: 'Match project, customer, or quote number.' },
-          limit: { type: 'number', description: 'Max results (default 50).' },
+          query: {
+            type: "string",
+            description: "Match project, customer, or quote number.",
+          },
+          limit: { type: "number", description: "Max results (default 50)." },
         },
         additionalProperties: false,
       },
@@ -119,13 +122,13 @@ export function financeTools(_context: AgentContext): ToolDefinition[] {
           const where: string[] = [];
           const args: unknown[] = [];
           if (params.status) {
-            where.push('status = ?');
+            where.push("status = ?");
             args.push(String(params.status));
           }
-          const q = params.query ? String(params.query).trim() : '';
+          const q = params.query ? String(params.query).trim() : "";
           if (q) {
             where.push(
-              '(project_title LIKE ? OR customer_name LIKE ? OR customer_company LIKE ? OR quote_number LIKE ?)',
+              "(project_title LIKE ? OR customer_name LIKE ? OR customer_company LIKE ? OR quote_number LIKE ?)",
             );
             const l = `%${q}%`;
             args.push(l, l, l, l);
@@ -137,7 +140,7 @@ export function financeTools(_context: AgentContext): ToolDefinition[] {
               `SELECT id, quote_number, project_title, customer_name, status, total, currency,
                       valid_until, sent_at, updated_at
                FROM quotes
-               ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+               ${where.length ? "WHERE " + where.join(" AND ") : ""}
                ORDER BY datetime(updated_at) DESC
                LIMIT ?`,
             )
@@ -151,21 +154,24 @@ export function financeTools(_context: AgentContext): ToolDefinition[] {
 
     // ── quote_get ────────────────────────────────────────────────────────
     {
-      name: 'quote_get',
-      description: 'Get full detail for one quote by id, including its line items.',
-      category: 'finance',
-      safetyLevel: 'silent',
+      name: "quote_get",
+      description:
+        "Get full detail for one quote by id, including its line items.",
+      category: "finance",
+      safetyLevel: "silent",
       inputSchema: {
-        type: 'object',
-        properties: { id: { type: 'string', description: 'Quote id.' } },
-        required: ['id'],
+        type: "object",
+        properties: { id: { type: "string", description: "Quote id." } },
+        required: ["id"],
         additionalProperties: false,
       },
       async execute(params, { db }) {
         try {
-          const id = String(params.id ?? '');
-          if (!id) return fail('id is required');
-          const quote = db.prepare(`SELECT * FROM quotes WHERE id = ?`).get(id) as Row | undefined;
+          const id = String(params.id ?? "");
+          if (!id) return fail("id is required");
+          const quote = db
+            .prepare(`SELECT * FROM quotes WHERE id = ?`)
+            .get(id) as Row | undefined;
           if (!quote) return fail(`No quote found for id "${id}"`);
           const lineItems = db
             .prepare(
@@ -181,67 +187,75 @@ export function financeTools(_context: AgentContext): ToolDefinition[] {
 
     // ── quote_create ─────────────────────────────────────────────────────
     {
-      name: 'quote_create',
+      name: "quote_create",
       description:
-        'Create a new draft quote for a job. Provide a project title, optional ' +
-        'customer details, and line items (description, quantity, unit cost, ' +
-        'kind). The draft appears in Henry\'s Quotes panel for review.',
-      category: 'finance',
-      safetyLevel: 'notify',
+        "Create a new draft quote for a job. Provide a project title, optional " +
+        "customer details, and line items (description, quantity, unit cost, " +
+        "kind). The draft appears in Henry's Quotes panel for review.",
+      category: "finance",
+      safetyLevel: "notify",
       confirmPrompt: (p) =>
         `Create a draft quote "${String(p.project_title)}"` +
-        (p.customer_name ? ` for ${String(p.customer_name)}` : ''),
+        (p.customer_name ? ` for ${String(p.customer_name)}` : ""),
       inputSchema: {
-        type: 'object',
+        type: "object",
         properties: {
-          project_title: { type: 'string', description: 'Title of the job/project.' },
-          customer_name: { type: 'string' },
-          customer_email: { type: 'string' },
-          customer_phone: { type: 'string' },
-          tax_rate: { type: 'number', description: 'Tax rate as a percent, e.g. 8.5.' },
-          notes: { type: 'string' },
+          project_title: {
+            type: "string",
+            description: "Title of the job/project.",
+          },
+          customer_name: { type: "string" },
+          customer_email: { type: "string" },
+          customer_phone: { type: "string" },
+          tax_rate: {
+            type: "number",
+            description: "Tax rate as a percent, e.g. 8.5.",
+          },
+          notes: { type: "string" },
           line_items: {
-            type: 'array',
-            description: 'Line items for the quote.',
+            type: "array",
+            description: "Line items for the quote.",
             items: {
-              type: 'object',
+              type: "object",
               properties: {
                 kind: {
-                  type: 'string',
+                  type: "string",
                   enum: [
-                    'material',
-                    'labor',
-                    'machine_time',
-                    'setup',
-                    'markup',
-                    'discount',
-                    'shipping',
-                    'other',
+                    "material",
+                    "labor",
+                    "machine_time",
+                    "setup",
+                    "markup",
+                    "discount",
+                    "shipping",
+                    "other",
                   ],
                 },
-                description: { type: 'string' },
-                quantity: { type: 'number' },
-                unit: { type: 'string' },
-                unit_cost: { type: 'number' },
-                taxable: { type: 'boolean' },
+                description: { type: "string" },
+                quantity: { type: "number" },
+                unit: { type: "string" },
+                unit_cost: { type: "number" },
+                taxable: { type: "boolean" },
               },
-              required: ['description'],
+              required: ["description"],
             },
           },
         },
-        required: ['project_title'],
+        required: ["project_title"],
         additionalProperties: false,
       },
       async execute(params, { db }) {
         try {
-          const projectTitle = String(params.project_title ?? '').trim();
-          if (!projectTitle) return fail('project_title is required');
+          const projectTitle = String(params.project_title ?? "").trim();
+          if (!projectTitle) return fail("project_title is required");
 
-          const id = genId('quote');
+          const id = genId("quote");
           const quoteNumber = nextQuoteNumber(db);
           const now = new Date().toISOString();
           const validDays = 30;
-          const validUntil = new Date(Date.now() + validDays * 86_400_000).toISOString();
+          const validUntil = new Date(
+            Date.now() + validDays * 86_400_000,
+          ).toISOString();
 
           db.prepare(
             `INSERT INTO quotes (
@@ -255,9 +269,9 @@ export function financeTools(_context: AgentContext): ToolDefinition[] {
             params.customer_name ? String(params.customer_name) : null,
             params.customer_email ? String(params.customer_email) : null,
             params.customer_phone ? String(params.customer_phone) : null,
-            'draft',
+            "draft",
             num(params.tax_rate, 0),
-            'USD',
+            "USD",
             validDays,
             validUntil,
             params.notes ? String(params.notes) : null,
@@ -265,7 +279,9 @@ export function financeTools(_context: AgentContext): ToolDefinition[] {
             now,
           );
 
-          const items = Array.isArray(params.line_items) ? params.line_items : [];
+          const items = Array.isArray(params.line_items)
+            ? params.line_items
+            : [];
           const insItem = db.prepare(
             `INSERT INTO quote_line_items (
                id, quote_id, kind, description, quantity, unit, unit_cost, taxable, sort_order
@@ -274,12 +290,12 @@ export function financeTools(_context: AgentContext): ToolDefinition[] {
           items.forEach((raw, i) => {
             const it = (raw ?? {}) as Row;
             insItem.run(
-              genId('qli'),
+              genId("qli"),
               id,
-              it.kind ? String(it.kind) : 'other',
-              String(it.description ?? ''),
+              it.kind ? String(it.kind) : "other",
+              String(it.description ?? ""),
               num(it.quantity, 1),
-              it.unit ? String(it.unit) : 'ea',
+              it.unit ? String(it.unit) : "ea",
               num(it.unit_cost, 0),
               it.taxable === false || it.taxable === 0 ? 0 : 1,
               i,
@@ -288,7 +304,9 @@ export function financeTools(_context: AgentContext): ToolDefinition[] {
 
           recomputeTotals(db, id);
 
-          const quote = db.prepare(`SELECT * FROM quotes WHERE id = ?`).get(id) as Row;
+          const quote = db
+            .prepare(`SELECT * FROM quotes WHERE id = ?`)
+            .get(id) as Row;
           return ok({ id, quote_number: quoteNumber, quote });
         } catch (e) {
           return fail(e instanceof Error ? e.message : String(e));
@@ -298,17 +316,17 @@ export function financeTools(_context: AgentContext): ToolDefinition[] {
 
     // ── invoice_list ─────────────────────────────────────────────────────
     {
-      name: 'invoice_list',
+      name: "invoice_list",
       description:
-        'List outstanding invoices with their amount and due date. (Until the ' +
-        'QuickBooks connector lands, invoices are derived from quotes that have ' +
-        'been sent or accepted — these are the current receivables.)',
-      category: 'finance',
-      safetyLevel: 'silent',
+        "List outstanding invoices with their amount and due date. (Until the " +
+        "QuickBooks connector lands, invoices are derived from quotes that have " +
+        "been sent or accepted — these are the current receivables.)",
+      category: "finance",
+      safetyLevel: "silent",
       inputSchema: {
-        type: 'object',
+        type: "object",
         properties: {
-          limit: { type: 'number', description: 'Max results (default 50).' },
+          limit: { type: "number", description: "Max results (default 50)." },
         },
         additionalProperties: false,
       },
@@ -331,7 +349,7 @@ export function financeTools(_context: AgentContext): ToolDefinition[] {
             overdue: r.due_date != null && String(r.due_date) < nowIso,
           }));
           return ok({
-            source: 'quotes (sent/accepted) — no dedicated invoices table yet',
+            source: "quotes (sent/accepted) — no dedicated invoices table yet",
             invoices,
             count: invoices.length,
           });
@@ -343,19 +361,19 @@ export function financeTools(_context: AgentContext): ToolDefinition[] {
 
     // ── finance_summary ──────────────────────────────────────────────────
     {
-      name: 'finance_summary',
+      name: "finance_summary",
       description:
-        'Summarize the money picture: revenue recorded this month, total ' +
-        'outstanding receivables, and how many receivables are overdue. Great ' +
-        'for a morning briefing.',
-      category: 'finance',
-      safetyLevel: 'silent',
+        "Summarize the money picture: revenue recorded this month, total " +
+        "outstanding receivables, and how many receivables are overdue. Great " +
+        "for a morning briefing.",
+      category: "finance",
+      safetyLevel: "silent",
       inputSchema: {
-        type: 'object',
+        type: "object",
         properties: {
           month: {
-            type: 'string',
-            description: 'Month as YYYY-MM (default: current month).',
+            type: "string",
+            description: "Month as YYYY-MM (default: current month).",
           },
         },
         additionalProperties: false,
@@ -397,10 +415,11 @@ export function financeTools(_context: AgentContext): ToolDefinition[] {
           return ok({
             month,
             revenueThisMonth: Math.round(revenueThisMonth * 100) / 100,
-            outstandingReceivables: Math.round(num(recvRow?.total, 0) * 100) / 100,
+            outstandingReceivables:
+              Math.round(num(recvRow?.total, 0) * 100) / 100,
             openReceivableCount: num(recvRow?.count, 0),
             overdueCount: num(overdueRow?.count, 0),
-            note: 'Receivables derived from sent/accepted quotes pending the QuickBooks connector.',
+            note: "Receivables derived from sent/accepted quotes pending the QuickBooks connector.",
           });
         } catch (e) {
           return fail(e instanceof Error ? e.message : String(e));

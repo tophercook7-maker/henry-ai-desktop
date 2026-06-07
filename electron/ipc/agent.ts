@@ -10,27 +10,43 @@
  * driven from `ai.ts` when a request carries tools.
  */
 
-import { ipcMain, type BrowserWindow } from 'electron';
-import type Database from 'better-sqlite3';
-import { registry } from '../agent/toolRegistry';
-import { registerAllTools } from '../agent/registerTools';
-import { resolveConfirmation } from '../agent/toolRunner';
+import { ipcMain, type BrowserWindow } from "electron";
+import type Database from "better-sqlite3";
+import { registry } from "../agent/toolRegistry";
+import { registerAllTools } from "../agent/tools";
+import { resolveConfirmation } from "../agent/toolRunner";
 
 type WindowGetter = () => BrowserWindow | null;
 
-export function registerAgentHandlers(db: Database.Database, getWindow: WindowGetter): void {
-  // Populate the registry with the Sprint 1 tool kits.
-  registerAllTools({ db, getWindow });
+export function registerAgentHandlers(
+  _db: Database.Database,
+  _getWindow: WindowGetter,
+): void {
+  // Populate the registry with every shipped tool kit. Tools receive their
+  // runtime AgentContext (db, window, sessionId) from the ToolRunner at
+  // execute time, so registration needs no context of its own.
+  registerAllTools(registry);
 
   // Tool catalogue for the renderer (name, description, safety tier, category).
-  ipcMain.handle('agent:list-tools', () => registry.describe());
+  ipcMain.handle("agent:list-tools", () => registry.describe());
 
   // Renderer's decision on a confirm-tier tool. `editedArgs` lets the user
   // tweak the params (e.g. message body) before the action runs.
   ipcMain.handle(
-    'agent:confirm-response',
-    (_e, payload: { id: string; approved: boolean; editedArgs?: Record<string, unknown> }) => {
-      const matched = resolveConfirmation(payload.id, payload.approved, payload.editedArgs);
+    "agent:confirm-response",
+    (
+      _e,
+      payload: {
+        id: string;
+        approved: boolean;
+        editedArgs?: Record<string, unknown>;
+      },
+    ) => {
+      const matched = resolveConfirmation(
+        payload.id,
+        payload.approved,
+        payload.editedArgs,
+      );
       return { ok: matched };
     },
   );
