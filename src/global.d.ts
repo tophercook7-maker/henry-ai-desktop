@@ -203,6 +203,36 @@ declare global {
     data?: string;
   }
 
+  // ── Agent: confirm-tier tool gate ───────────────────────────
+  interface HenryConfirmRequest {
+    id: string;
+    toolName: string;
+    args: Record<string, unknown>;
+    description: string;
+    safetyLevel: 'confirm';
+  }
+
+  // ── Scheduler: Henry's Routines ─────────────────────────────
+  interface HenryRoutine {
+    id: string;
+    name: string;
+    description: string | null;
+    cronExpression: string;
+    prompt: string;
+    enabled: number; // 1 | 0
+    lastRunAt: string | null;
+    nextRunAt: string | null;
+    createdAt: string;
+  }
+
+  interface HenryRoutineInput {
+    name: string;
+    description?: string;
+    cronExpression: string;
+    prompt: string;
+    enabled?: boolean;
+  }
+
   interface HenryAPI {
     getSettings: () => Promise<Record<string, string>>;
     saveSetting: (key: string, value: string) => Promise<boolean>;
@@ -396,6 +426,21 @@ declare global {
 
     whisperTranscribe?: (audioBlob: Blob, apiKey: string) => Promise<string>;
     createTask?: (params: { description: string; type: string; priority?: number; payload?: unknown }) => Promise<{ id: string }>;
+
+    // ── Agent (tool layer) ────────────────────────────────────
+    listTools?: () => Promise<Array<{ name: string; description: string; safetyLevel: string; category: string }>>;
+    confirmTool?: (id: string, approved: boolean, editedArgs?: Record<string, unknown>) => Promise<{ ok: boolean }>;
+    onAgentConfirmRequired?: (cb: (req: HenryConfirmRequest) => void) => () => void;
+    onAgentToolNotify?: (cb: (data: { tool: string; message: string; ok: boolean }) => void) => () => void;
+
+    // ── Scheduler (Henry's Routines) ──────────────────────────
+    listRoutines?: () => Promise<{ ok: boolean; result?: HenryRoutine[]; error?: string }>;
+    addRoutine?: (task: HenryRoutineInput) => Promise<{ ok: boolean; result?: HenryRoutine; error?: string }>;
+    toggleRoutine?: (id: string, enabled: boolean) => Promise<{ ok: boolean; result?: HenryRoutine | null; error?: string }>;
+    runRoutineNow?: (id: string) => Promise<{ ok: boolean; result?: { ok: boolean; content?: string; error?: string }; error?: string }>;
+    deleteRoutine?: (id: string) => Promise<{ ok: boolean; result?: boolean; error?: string }>;
+    onSchedulerTaskStarted?: (cb: (data: { id: string; name: string }) => void) => () => void;
+    onSchedulerTaskCompleted?: (cb: (data: { id: string; name: string; ok: boolean; sessionId?: string; content?: string; error?: string }) => void) => () => void;
 
     // ── Companion Sync Bridge ─────────────────────────────────────────────
     getLocalGatewayStatus?: () => Promise<{ active: boolean; url?: string } | null>;

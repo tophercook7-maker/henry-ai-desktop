@@ -150,6 +150,26 @@ async function callStore(command: string, payload: Record<string, unknown>): Pro
 }
 
 /**
+ * Programmatic session creation for the agent layer. The scheduler opens a
+ * fresh session per Routine run so its output (and tool-call audit trail) lands
+ * in conversation history with a recognizable title. Returns the new session id
+ * (or null if the bridge isn't initialized yet, in which case callers fall back
+ * to a generated id — `add-message` auto-creates the row anyway).
+ */
+export async function createSessionRecord(payload: {
+  id?: string;
+  title?: string;
+  model?: string;
+  system_prompt?: string;
+}): Promise<string | null> {
+  if (!scriptPath || !dbPath) return null; // bridge not yet initialized
+  const result = (await callStore('create', payload as Record<string, unknown>)) as
+    | { id?: string }
+    | undefined;
+  return result?.id ?? null;
+}
+
+/**
  * Programmatic log helper for the agent layer. Appends a message (typically a
  * `tool` role row) to a session without going through the renderer IPC round
  * trip. Safe to call before the bridge is initialized — it no-ops in that case

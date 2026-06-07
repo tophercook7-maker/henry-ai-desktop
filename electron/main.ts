@@ -20,6 +20,8 @@ import { registerComputerHandlers } from './ipc/computer';
 import { registerPrinterHandlers } from './ipc/printer';
 import { registerSessionStoreHandlers } from './ipc/sessionStore';
 import { registerAgentHandlers } from './ipc/agent';
+import { registerSchedulerHandlers } from './ipc/scheduler';
+import { HenryScheduler } from './agent/scheduler';
 import { registerSyncBridgeIpc, setSyncDb, startSyncServer } from './ipc/syncBridge';
 import { runDiagnostic, saveReport } from './ipc/selfRepair';
 
@@ -38,6 +40,7 @@ process.on('uncaughtException', (err) => {
 
 let mainWindow: BrowserWindow | null = null;
 const tray: Tray | null = null;
+let henryScheduler: HenryScheduler | null = null;
 
 export function getMainWindow(): BrowserWindow | null {
   if (mainWindow && !mainWindow.isDestroyed()) return mainWindow;
@@ -427,6 +430,14 @@ app.whenReady().then(() => {
   registerSessionStoreHandlers(henryDir);
   registerAgentHandlers(db, getMainWindow);
 
+  // ── Agent Scheduler (Henry's Routines) ───────────────────────────────────
+  // Registered after the agent tool kit so the registry is populated before any
+  // Routine fires. init() seeds the four default Routines (disabled) on first
+  // run and registers every enabled one with node-cron.
+  henryScheduler = new HenryScheduler(db, getMainWindow);
+  registerSchedulerHandlers(henryScheduler);
+  henryScheduler.init();
+
   // ── Companion Sync Bridge ────────────────────────────────────────────────
   setSyncDb(db);
   registerSyncBridgeIpc();
@@ -728,6 +739,7 @@ app.whenReady().then(() => {
   // Unregister on quit
   app.on('will-quit', () => {
     globalShortcut.unregisterAll();
+    henryScheduler?.shutdown();
   });
 
   // Auto-start sync server so companion devices can connect immediately

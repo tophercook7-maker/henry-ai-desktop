@@ -71,6 +71,7 @@
     "highlight.js": "^11.10.0",
     "lucide-react": "^0.436.0",
     "mqtt": "^5.15.1",
+    "node-cron": "^4.2.1",
     "openai": "^4.56.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",

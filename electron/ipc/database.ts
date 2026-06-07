@@ -190,6 +190,34 @@ function migrateDatabaseSchema(db: Database.Database) {
 
   // Memory Blueprint — full 7-layer schema migration
   migrateMemoryBlueprintSchema(db);
+
+  // Agent layer — Sprint 3 scheduler (Henry's Routines).
+  migrateSchedulerSchema(db);
+}
+
+/**
+ * Idempotent migration for the agent scheduler (design §3). One row per
+ * scheduled Routine; `HenryScheduler` (electron/agent/scheduler.ts) loads the
+ * enabled ones at startup and registers them with node-cron. Column names are
+ * camelCase to match the scheduler's `ScheduledTask` shape directly.
+ */
+function migrateSchedulerSchema(db: Database.Database) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS scheduled_tasks (
+      id             TEXT PRIMARY KEY,
+      name           TEXT NOT NULL,
+      description    TEXT,
+      cronExpression TEXT NOT NULL,
+      prompt         TEXT NOT NULL,
+      enabled        INTEGER NOT NULL DEFAULT 1,
+      lastRunAt      TEXT,
+      nextRunAt      TEXT,
+      createdAt      TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_enabled
+      ON scheduled_tasks (enabled);
+  `);
 }
 
 /**

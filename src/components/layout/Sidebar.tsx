@@ -3,7 +3,7 @@ import { useStore } from '../../store';
 
 // R2-Fix 9: keep this in sync with src/types/index.ts ViewType.
 type ViewType = 'today' | 'chat' | 'companion' | 'secretary' | 'contacts' | 'tasks' | 'files' | 'workspace' | 'terminal' | 'computer' | 'printer' | 'costs' | 'settings' | 'journal' | 'focus' | 'recorder' | 'memos' | 'queue' | 'modes' | 'reminders' | 'crm' | 'finance' | 'lists' | 'printstudio' | 'machines' | 'materials' | 'production' | 'waste' | 'maintenance' | 'imagegen' | 'videogen' | 'integrations' | 'github' | 'linear' | 'notion' | 'slack' | 'captures' | 'weekly' | 'health' | 'goals' | 'hq' | 'setup' | 'memory' | 'prayer' | 'quoting'
-  | 'scripture';
+  | 'scripture' | 'routines';
 
 // Core nav — the things you actually use daily
 // Everything else is accessible but not cluttering the rail
@@ -30,6 +30,8 @@ const BUSINESS_NAV: { id: ViewType; icon: string; label: string }[] = [
   { id: 'tasks',      icon: '☐',  label: 'Tasks' },
   // R2-Fix 9: TaskQueueView was imported in Layout.tsx but unreachable.
   { id: 'queue',      icon: '⊟',  label: 'Queue' },
+  // Sprint 3: Henry's Routines — scheduled autonomous runs.
+  { id: 'routines',   icon: '🕐', label: 'Routines' },
 ];
 
 const MORE_NAV: { id: ViewType; icon: string; label: string }[] = [

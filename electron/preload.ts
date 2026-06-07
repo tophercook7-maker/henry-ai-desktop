@@ -128,6 +128,25 @@ contextBridge.exposeInMainWorld('henryAPI', {
     return () => ipcRenderer.removeListener('agent:tool-notify', handler);
   },
 
+  // ── Scheduler (Henry's Routines) ──────────────────────────
+  listRoutines: () => ipcRenderer.invoke('scheduler:list'),
+  addRoutine: (task: Record<string, unknown>) => ipcRenderer.invoke('scheduler:add', task),
+  toggleRoutine: (id: string, enabled: boolean) =>
+    ipcRenderer.invoke('scheduler:toggle', { id, enabled }),
+  runRoutineNow: (id: string) => ipcRenderer.invoke('scheduler:run-now', { id }),
+  deleteRoutine: (id: string) => ipcRenderer.invoke('scheduler:delete', { id }),
+  // Main → renderer events: a Routine started / finished running.
+  onSchedulerTaskStarted: (cb: (data: unknown) => void) => {
+    const handler = (_e: IpcRendererEvent, data: unknown) => cb(data);
+    ipcRenderer.on('scheduler:task-started', handler);
+    return () => ipcRenderer.removeListener('scheduler:task-started', handler);
+  },
+  onSchedulerTaskCompleted: (cb: (data: unknown) => void) => {
+    const handler = (_e: IpcRendererEvent, data: unknown) => cb(data);
+    ipcRenderer.on('scheduler:task-completed', handler);
+    return () => ipcRenderer.removeListener('scheduler:task-completed', handler);
+  },
+
   // ── Tasks ─────────────────────────────────────────────────
   getTasks: (filter?: TaskListFilter) => ipcRenderer.invoke('task:list', filter),
   submitTask: (task: TaskSubmission) => ipcRenderer.invoke('task:submit', task),

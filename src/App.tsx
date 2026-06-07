@@ -19,6 +19,7 @@ import { buildMemoryContext } from './henry/memoryPipeline';
 import { useCapturesStore } from './ambient/capturesStore';
 import { registerShortcuts, buildShortcuts } from './henry/keyboardShortcuts';
 import CompanionApp from './components/mobile/CompanionApp';
+import ConfirmToolModal from './components/agent/ConfirmToolModal';
 
 // Check if companion mode is active
 // Logic: on native, default to companion mode if paired (unless user explicitly chose full mode)
@@ -788,6 +789,11 @@ export default function App() {
           via the imperative `toast` / `confirmDialog` API exported from
           ui/Toast — no context plumbing needed. */}
       <ToastHost />
+
+      {/* Agent confirmation gate — any confirm-tier tool (send message/email,
+          create event, run command) raised by a chat turn or a scheduled
+          Routine surfaces here for the user's approval. */}
+      <ConfirmToolModal />
     </div>
     </ErrorBoundary>
   );
