@@ -8,6 +8,7 @@
 import { ipcMain } from 'electron';
 import fs from 'fs';
 import path from 'path';
+import { safeResolve } from './_pathSafety';
 
 // Extensions that are always binary — skip UTF-8 decode entirely
 const BINARY_EXTS = new Set([
@@ -35,14 +36,11 @@ function hasBinaryBytes(buf: Buffer): boolean {
 }
 
 export function registerFilesystemHandlers(workspacePath: string) {
-  // All handlers use safePath which throws on traversal — errors are caught per-call
-  // Resolve and validate that requested paths are inside the workspace
+  // All handlers use safePath which throws on traversal — errors are caught
+  // per-call. Backed by the shared safeResolve (correct prefix check + symlink
+  // hardening); see electron/ipc/_pathSafety.ts.
   function safePath(requestedPath: string): string {
-    const resolved = path.resolve(workspacePath, requestedPath);
-    if (!resolved.startsWith(path.resolve(workspacePath))) {
-      throw new Error('Access denied: path is outside workspace.');
-    }
-    return resolved;
+    return safeResolve(workspacePath, requestedPath);
   }
 
   // Read directory

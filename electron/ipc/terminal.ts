@@ -8,8 +8,11 @@
 
 import { ipcMain, BrowserWindow } from 'electron';
 import { spawn, ChildProcess } from 'child_process';
+import { randomUUID } from 'crypto';
 import path from 'path';
 import os from 'os';
+import { isInsideRoot } from './_pathSafety';
+import { classifyCommand } from './_commandSafety';
 
 type WindowGetter = () => BrowserWindow | null;
 
@@ -24,31 +27,16 @@ function safeSend(getWin: WindowGetter, channel: string, data: unknown) {
 let getWindow: WindowGetter;
 const activeProcesses: Map<string, ChildProcess> = new Map();
 
-// Commands that are always blocked for safety
-const BLOCKED_COMMANDS = [
-  'rm -rf /',
-  'rm -rf /*',
-  'mkfs',
-  'dd if=',
-  ':(){:|:&};:',
-  'shutdown',
-  'reboot',
-  'halt',
-];
-
 /**
- * Validate that the requested cwd is within the allowed root (workspace or home).
- * Falls back to workspacePath if cwd is outside allowed bounds.
+ * Validate that the requested cwd is within an allowed root (workspace or home).
+ * Falls back to workspacePath if cwd is outside allowed bounds. Uses the shared
+ * isInsideRoot so the sibling-prefix bug can't reopen here.
  */
 function safeCwd(requestedCwd: string | undefined, workspacePath: string): string {
   if (!requestedCwd) return workspacePath;
   const resolved = path.resolve(requestedCwd);
-  const allowedRoots = [
-    path.resolve(workspacePath),
-    path.resolve(os.homedir()),
-  ];
-  const isAllowed = allowedRoots.some((root) => resolved.startsWith(root + path.sep) || resolved === root);
-  if (!isAllowed) {
+  const allowedRoots = [path.resolve(workspacePath), path.resolve(os.homedir())];
+  if (!allowedRoots.some((root) => isInsideRoot(resolved, root))) {
     console.warn(`[terminal] cwd "${resolved}" outside allowed roots — falling back to workspace.`);
     return workspacePath;
   }
@@ -66,20 +54,18 @@ export function registerTerminalHandlers(winGetter: WindowGetter, workspacePath:
     channelId?: string;
   }) => {
     try {
-      // Safety check — block known dangerous commands
-      const lowerCmd = params.command.toLowerCase();
-      for (const blocked of BLOCKED_COMMANDS) {
-        if (lowerCmd.includes(blocked)) {
-          return {
-            success: false,
-            exitCode: -1,
-            stdout: '',
-            stderr: `Command blocked for safety: contains "${blocked}"`,
-          };
-        }
+      // Safety check — refuse catastrophic commands (shared classifier).
+      const verdict = classifyCommand(params.command);
+      if (verdict.blocked) {
+        return {
+          success: false,
+          exitCode: -1,
+          stdout: '',
+          stderr: `Command blocked for safety: ${verdict.reason}.`,
+        };
       }
 
-      const execId = crypto.randomUUID();
+      const execId = randomUUID();
       // Guard against path traversal in cwd
       const cwd = safeCwd(params.cwd, workspacePath);
       const timeout = params.timeout || 30000; // Default 30s timeout

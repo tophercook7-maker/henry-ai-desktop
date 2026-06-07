@@ -11,6 +11,7 @@ import type Database from 'better-sqlite3';
 import fs from 'fs/promises';
 import path from 'path';
 import { callAI } from './ai';
+import { safeResolve } from './_pathSafety';
 import {
   buildWorkerAITaskSystemPrompt,
   buildWorkerCodeGenSystemPrompt,
@@ -78,12 +79,9 @@ function normalizeTaskError(error: unknown): string {
 }
 
 function resolveWorkspacePath(requestedPath: string): string {
-  const resolved = path.resolve(workspaceRoot, requestedPath);
-  const root = path.resolve(workspaceRoot);
-  if (!resolved.startsWith(root)) {
-    throw new Error('Access denied: path is outside workspace.');
-  }
-  return resolved;
+  // Shared safeResolve: correct prefix check (no sibling-dir escape) + symlink
+  // hardening. See electron/ipc/_pathSafety.ts.
+  return safeResolve(workspaceRoot, requestedPath);
 }
 
 function getWorkerEngineConfig(): { workerProviderId: string; workerModel: string; provider: ProviderRow } {
