@@ -10,6 +10,7 @@ import {
 } from '../../henry/connectionStore';
 import { useStore } from '../../store';
 import type { ConnectionStatus } from '../../connections/types/connectionTypes';
+import { confirmDialog } from '../ui/Toast';
 
 const CATEGORY_LABELS: Record<string, string> = {
   dev: 'Developer Tools',
@@ -79,8 +80,8 @@ function ConnectModal({
     }, 400);
   }
 
-  function disconnect() {
-    if (!confirm(`Disconnect ${svc.name}? Your saved key will be removed.`)) return;
+  async function disconnect() {
+    if (!(await confirmDialog(`Disconnect ${svc.name}? Your saved key will be removed.`, { destructive: true, confirmLabel: 'Disconnect' }))) return;
     disconnectService(svc.id);
     onClose();
   }

@@ -15,6 +15,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { confirmDialog } from '../ui/Toast';
 
 type PrayerStatus = 'active' | 'answered' | 'archived';
 
@@ -215,7 +216,7 @@ export default function PrayerPanel() {
   }
 
   async function remove(id: string) {
-    if (!confirm('Delete this prayer? This cannot be undone.')) return;
+    if (!(await confirmDialog('Delete this prayer? This cannot be undone.', { destructive: true, confirmLabel: 'Delete' }))) return;
     const api = (window as { henryAPI?: any }).henryAPI;
     try {
       await api?.prayerDelete?.(id);

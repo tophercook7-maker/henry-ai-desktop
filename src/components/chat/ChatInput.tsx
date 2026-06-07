@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useStore } from '../../store';
 import { transcribeWithGroq } from '../../henry/ttsService';
 import { useAmbientStore } from '../../henry/ambientStateStore';
+import { toast } from '../ui/Toast';
 
 interface ChatInputProps {
   onSend: (content: string) => void;
@@ -153,7 +154,7 @@ export default function ChatInput({
         } catch { /* SpeechRecognition not available — graceful degrade */ }
       }
     } catch {
-      alert('Microphone access denied. Please allow microphone permission.');
+      toast.error('Microphone access denied. Please allow microphone permission.');
     }
   }
 

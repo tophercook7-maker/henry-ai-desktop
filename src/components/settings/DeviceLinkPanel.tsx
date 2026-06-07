@@ -13,6 +13,7 @@ import { useEffect, useState, useCallback } from 'react';
 import type { CompanionDeviceCapability, SyncServerState } from '../../sync/types';
 import { buildPairCodePayload } from '../../sync/deviceLink';
 import RemoteControlPanel from './RemoteControlPanel';
+import { toast } from '../ui/Toast';
 
 // Detect Electron by checking if the sync server is reachable
 // (window.__ELECTRON__ and __isElectron are unreliable due to contextBridge sandbox)
@@ -92,8 +93,8 @@ export default function DeviceLinkPanel() {
     try {
       const result = await syncFetch('/sync/start-tunnel', {});
       if (result?.url) setTunnelUrl(result.url);
-      else alert('cloudflared not installed.\nRun: brew install cloudflared\nThen restart Henry.');
-    } catch { alert('Failed to start tunnel'); }
+      else toast.error('cloudflared not installed.\nRun: brew install cloudflared\nThen restart Henry.');
+    } catch { toast.error('Failed to start tunnel'); }
     finally { setTunnelLoading(false); }
   }
 

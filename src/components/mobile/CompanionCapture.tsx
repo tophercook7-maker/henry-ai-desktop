@@ -16,6 +16,7 @@ import { sendCapture } from '../../sync/syncClient';
 import type { CapturePayload, CaptureType } from '../../sync/types';
 import { hapticLight, hapticMedium, hapticSuccess, hapticError } from '../../capacitor';
 import { isNative } from '../../capacitor';
+import { toast } from '../ui/Toast';
 
 type CaptureMode = 'text' | 'voice' | 'image' | 'file';
 
@@ -43,7 +44,7 @@ export default function CompanionCapture({ onDone }: Props) {
 
   async function startVoice() {
     if (!isNative) {
-      alert('Voice recording requires the native app on iPhone/iPad.');
+      toast.info('Voice recording requires the native app on iPhone/iPad.');
       return;
     }
     try {

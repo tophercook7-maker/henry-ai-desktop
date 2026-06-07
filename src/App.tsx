@@ -608,6 +608,7 @@ export default function App() {
       <ErrorBoundary>
         <div className="h-screen w-screen flex flex-col overflow-hidden bg-henry-bg">
           <CompanionApp />
+          <ToastHost />
         </div>
       </ErrorBoundary>
     );

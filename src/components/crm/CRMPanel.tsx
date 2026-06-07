@@ -5,6 +5,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { sendToHenry } from '../../actions/store/chatBridgeStore';
 import { useStore } from '../../store';
+import { toast } from '../ui/Toast';
 
 interface Contact {
   id: string; name: string; email?: string; phone?: string;
@@ -112,7 +113,7 @@ export default function CRMPanel() {
       const d = daysSince(ct.last_contact || (ct as any).last_contacted_at);
       return d !== null && d > 14 && ct.stage !== 'lost';
     }).slice(0, 5);
-    if (!overdue.length) { alert('No contacts overdue for follow-up (14+ days).'); return; }
+    if (!overdue.length) { toast.info('No contacts overdue for follow-up (14+ days).'); return; }
     setBulkDrafting(true);
     setBulkResult('');
     const ownerName = localStorage.getItem('henry:owner_name') || 'you';
@@ -366,7 +367,7 @@ export default function CRMPanel() {
                       created_at: new Date().toISOString(),
                       updated_at: new Date().toISOString(),
                     }).catch(() => {});
-                    alert('✓ Follow-up reminder set for ' + dateStr);
+                    toast.success('Follow-up reminder set for ' + dateStr);
                   }},
                   { label: '📅 Next steps', fn: () => { sendToHenry(`What should my next steps be with ${selected.name}? They are in the ${selected.stage} stage. Last contacted ${daysSince(selected.last_contact || selected.last_contacted_at) ?? '?'} days ago. Notes: ${selected.notes || 'none'}.`); setCurrentView('chat'); } },
                 ].map(a => (

@@ -13,6 +13,7 @@
  * quote's materials/labor — so an accepted quote becomes a job in one click.
  */
 import { useEffect, useMemo, useState, useCallback } from 'react';
+import { toast, confirmDialog } from '../ui/Toast';
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -326,7 +327,7 @@ export default function QuotingPanel() {
 
   const deleteQuote = async () => {
     if (!active) return;
-    if (!confirm(`Delete quote "${active.project_title}"? This cannot be undone.`)) return;
+    if (!(await confirmDialog(`Delete quote "${active.project_title}"? This cannot be undone.`, { destructive: true, confirmLabel: 'Delete' }))) return;
     const a = api();
     if (!a) return;
     await a.quoteDelete(active.id);
@@ -406,7 +407,7 @@ export default function QuotingPanel() {
       await reloadActive(active.id);
       await reloadList();
       await reloadSummary();
-      alert(`Created production run. View it in the Runs panel.`);
+      toast.success('Created production run. View it in the Runs panel.');
     }
   };
 
