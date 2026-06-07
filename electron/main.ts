@@ -19,6 +19,7 @@ import { registerTerminalHandlers } from './ipc/terminal';
 import { registerComputerHandlers } from './ipc/computer';
 import { registerPrinterHandlers } from './ipc/printer';
 import { registerSessionStoreHandlers } from './ipc/sessionStore';
+import { registerAgentHandlers } from './ipc/agent';
 import { registerSyncBridgeIpc, setSyncDb, startSyncServer } from './ipc/syncBridge';
 import { runDiagnostic, saveReport } from './ipc/selfRepair';
 
@@ -424,6 +425,7 @@ app.whenReady().then(() => {
   registerComputerHandlers(getMainWindow);
   registerPrinterHandlers(getMainWindow);
   registerSessionStoreHandlers(henryDir);
+  registerAgentHandlers(db, getMainWindow);
 
   // ── Companion Sync Bridge ────────────────────────────────────────────────
   setSyncDb(db);

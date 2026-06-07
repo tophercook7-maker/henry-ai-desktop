@@ -11,6 +11,8 @@
 
 import { ipcMain, BrowserWindow } from 'electron';
 import type Database from 'better-sqlite3';
+import type { ModelTool } from '../agent/types';
+import type { ModelCompletion, RunnerMessage } from '../agent/toolRunner';
 
 type WindowGetter = () => BrowserWindow | null;
 
@@ -43,6 +45,15 @@ interface AiRequest {
    * endpoint from settings instead of defaulting to localhost:11434.
    */
   apiUrl?: string;
+  /**
+   * When present and non-empty, enables the agent tool-calling loop: the
+   * request is delegated to the ToolRunner, which uses the live tool registry
+   * (the contents of this array are an enable-flag — the registry is the
+   * source of truth). Tool-less requests keep the original streaming path.
+   */
+  tools?: ModelTool[];
+  /** Session id for the tool-call audit log (agent runs only). */
+  sessionId?: string;
 }
 
 // ── Pricing ───────────────────────────────────────────────────
@@ -666,6 +677,208 @@ async function streamGroq(
   }
 }
 
+// ── Tool-calling completions (agent loop) ─────────────────────
+// Non-streaming model rounds that return tool calls alongside text. The
+// ToolRunner drives the loop; these functions just do one round per provider.
+
+interface ToolCompletionParams {
+  provider: string;
+  model: string;
+  apiKey: string;
+  apiUrl?: string;
+  temperature?: number;
+  maxTokens?: number;
+  signal?: AbortSignal;
+  messages: RunnerMessage[];
+  modelTools: ModelTool[];
+}
+
+function safeParseArgs(raw: unknown): Record<string, unknown> {
+  if (raw && typeof raw === 'object') return raw as Record<string, unknown>;
+  if (typeof raw === 'string' && raw.trim()) {
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {};
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
+/** RunnerMessage[] → OpenAI chat messages (assistant tool_calls + tool role). */
+function toOpenAIMessages(messages: RunnerMessage[]): unknown[] {
+  return messages.map((m) => {
+    if (m.role === 'assistant' && m.toolCalls?.length) {
+      return {
+        role: 'assistant',
+        content: m.content || null,
+        tool_calls: m.toolCalls.map((tc) => ({
+          id: tc.id,
+          type: 'function',
+          function: { name: tc.name, arguments: JSON.stringify(tc.arguments ?? {}) },
+        })),
+      };
+    }
+    if (m.role === 'tool') {
+      return { role: 'tool', tool_call_id: m.toolCallId, content: m.content };
+    }
+    return { role: m.role, content: m.content };
+  });
+}
+
+/** RunnerMessage[] → Anthropic system + messages (tool_use / tool_result blocks). */
+function toAnthropicMessages(messages: RunnerMessage[]): { system?: string; messages: unknown[] } {
+  let system: string | undefined;
+  const out: unknown[] = [];
+  for (const m of messages) {
+    if (m.role === 'system') {
+      system = m.content;
+      continue;
+    }
+    if (m.role === 'assistant' && m.toolCalls?.length) {
+      const content: unknown[] = [];
+      if (m.content) content.push({ type: 'text', text: m.content });
+      for (const tc of m.toolCalls) {
+        content.push({ type: 'tool_use', id: tc.id, name: tc.name, input: tc.arguments ?? {} });
+      }
+      out.push({ role: 'assistant', content });
+      continue;
+    }
+    if (m.role === 'tool') {
+      out.push({
+        role: 'user',
+        content: [{ type: 'tool_result', tool_use_id: m.toolCallId, content: m.content }],
+      });
+      continue;
+    }
+    out.push({ role: m.role, content: m.content });
+  }
+  return { system, messages: out };
+}
+
+async function callOpenAIToolsCompletion(params: ToolCompletionParams): Promise<ModelCompletion> {
+  const url =
+    params.provider === 'groq'
+      ? 'https://api.groq.com/openai/v1/chat/completions'
+      : 'https://api.openai.com/v1/chat/completions';
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${params.apiKey}` },
+    body: JSON.stringify({
+      model: params.model,
+      messages: toOpenAIMessages(params.messages),
+      tools: params.modelTools,
+      tool_choice: 'auto',
+      temperature: params.temperature ?? 0.7,
+      max_tokens: params.maxTokens ?? 4096,
+    }),
+    signal: params.signal,
+  });
+  if (!response.ok) {
+    const error = (await response.json().catch(() => ({}))) as { error?: { message?: string } };
+    throw new Error(error.error?.message || `Tool completion error: ${response.status}`);
+  }
+  const data = (await response.json()) as {
+    choices?: Array<{ message?: { content?: string; tool_calls?: Array<{ id: string; function?: { name?: string; arguments?: string } }> } }>;
+    usage?: { prompt_tokens?: number; completion_tokens?: number };
+  };
+  const msg = data.choices?.[0]?.message ?? {};
+  const toolCalls = (msg.tool_calls ?? []).map((tc) => ({
+    id: tc.id,
+    name: tc.function?.name ?? '',
+    arguments: safeParseArgs(tc.function?.arguments),
+  }));
+  return {
+    content: msg.content ?? '',
+    toolCalls,
+    usage: data.usage
+      ? { input: data.usage.prompt_tokens ?? 0, output: data.usage.completion_tokens ?? 0 }
+      : undefined,
+  };
+}
+
+async function callAnthropicToolsCompletion(params: ToolCompletionParams): Promise<ModelCompletion> {
+  const { system, messages } = toAnthropicMessages(params.messages);
+  const tools = params.modelTools.map((t) => ({
+    name: t.function.name,
+    description: t.function.description,
+    input_schema: t.function.parameters,
+  }));
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': params.apiKey,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model: params.model,
+      max_tokens: params.maxTokens ?? 4096,
+      system,
+      messages,
+      tools,
+      temperature: params.temperature ?? 0.7,
+    }),
+    signal: params.signal,
+  });
+  if (!response.ok) {
+    const error = (await response.json().catch(() => ({}))) as { error?: { message?: string } };
+    throw new Error(error.error?.message || `Tool completion error: ${response.status}`);
+  }
+  const data = (await response.json()) as {
+    content?: Array<{ type: string; text?: string; id?: string; name?: string; input?: Record<string, unknown> }>;
+    usage?: { input_tokens?: number; output_tokens?: number };
+  };
+  let content = '';
+  const toolCalls: ModelCompletion['toolCalls'] = [];
+  for (const block of data.content ?? []) {
+    if (block.type === 'text' && block.text) content += block.text;
+    else if (block.type === 'tool_use') {
+      toolCalls.push({ id: block.id ?? '', name: block.name ?? '', arguments: block.input ?? {} });
+    }
+  }
+  return {
+    content,
+    toolCalls,
+    usage: data.usage
+      ? { input: data.usage.input_tokens ?? 0, output: data.usage.output_tokens ?? 0 }
+      : undefined,
+  };
+}
+
+/**
+ * Runs one model round with tools attached. OpenAI and Groq use the OpenAI
+ * function-calling format; Anthropic uses its tool_use blocks. Providers
+ * without tool support degrade to a plain text completion (no tool calls).
+ */
+export async function callAIWithTools(params: ToolCompletionParams): Promise<ModelCompletion> {
+  switch (params.provider) {
+    case 'openai':
+    case 'groq':
+      return callOpenAIToolsCompletion(params);
+    case 'anthropic':
+      return callAnthropicToolsCompletion(params);
+    default: {
+      // Graceful fallback — provider has no tool support in Sprint 1.
+      const flat: AiMessage[] = params.messages.map((m) => ({
+        role: m.role === 'tool' ? 'user' : m.role,
+        content: m.content,
+      }));
+      const r = await callAI({
+        provider: params.provider,
+        model: params.model,
+        apiKey: params.apiKey,
+        messages: flat,
+        temperature: params.temperature,
+        maxTokens: params.maxTokens,
+        signal: params.signal,
+      });
+      return { content: r.content, toolCalls: [], usage: r.usage };
+    }
+  }
+}
+
 // ── Active Streams (for cancellation) ─────────────────────────
 
 const activeStreams = new Map<string, AbortController>();
@@ -706,6 +919,50 @@ export function registerAIHandlers(_db: Database.Database, getWindow: WindowGett
     const onError = (error: string) => {
       safeSend(getWindow, 'ai:stream:error', { channelId, error });
     };
+
+    // ── Agent tool-calling path ───────────────────────────────────────────
+    // When the payload carries tools, delegate the whole turn to the
+    // ToolRunner (registry is the source of truth) and stream the final
+    // answer as one chunk + done. Tool-less requests keep the path below.
+    if (Array.isArray(params.tools) && params.tools.length > 0) {
+      try {
+        const [{ runToolConversation }, { registry }, { getDb }] = await Promise.all([
+          import('../agent/toolRunner'),
+          import('../agent/toolRegistry'),
+          import('./database'),
+        ]);
+        const context = {
+          db: getDb(),
+          getWindow,
+          sessionId: params.sessionId,
+        };
+        const complete = (msgs: RunnerMessage[], modelTools: ModelTool[]) =>
+          callAIWithTools({
+            provider: params.provider,
+            model: params.model,
+            apiKey: params.apiKey,
+            apiUrl: params.apiUrl,
+            temperature: params.temperature,
+            maxTokens: params.maxTokens,
+            signal: controller.signal,
+            messages: msgs,
+            modelTools,
+          });
+        const result = await runToolConversation({
+          registry,
+          context,
+          messages: params.messages as RunnerMessage[],
+          complete,
+        });
+        onChunk(result.content);
+        onDone(result.content, result.usage);
+      } catch (err: unknown) {
+        onError(err instanceof Error ? err.message : 'Agent run error');
+      } finally {
+        activeStreams.delete(channelId);
+      }
+      return { started: true, channelId };
+    }
 
     try {
       switch (params.provider) {

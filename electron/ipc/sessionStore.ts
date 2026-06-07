@@ -149,6 +149,25 @@ async function callStore(command: string, payload: Record<string, unknown>): Pro
   return parsed.result;
 }
 
+/**
+ * Programmatic log helper for the agent layer. Appends a message (typically a
+ * `tool` role row) to a session without going through the renderer IPC round
+ * trip. Safe to call before the bridge is initialized — it no-ops in that case
+ * rather than throwing, so tool execution is never blocked by logging.
+ */
+export async function recordSessionMessage(payload: {
+  session_id: string;
+  role: string;
+  content?: string;
+  tool_name?: string;
+  tool_calls?: unknown;
+  tool_call_id?: string;
+  token_count?: number;
+}): Promise<void> {
+  if (!scriptPath || !dbPath) return; // bridge not yet initialized
+  await callStore('add-message', payload as Record<string, unknown>);
+}
+
 // Wrap a handler so renderer callers get a uniform { ok, result } | { ok, error }.
 function handler(command: string) {
   return async (_event: unknown, payload: Record<string, unknown>) => {

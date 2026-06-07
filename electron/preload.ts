@@ -108,6 +108,26 @@ contextBridge.exposeInMainWorld('henryAPI', {
     };
   },
 
+  // ── Agent (tool layer) ────────────────────────────────────
+  // Catalogue of registered tools (name, description, safety tier, category).
+  listTools: () => ipcRenderer.invoke('agent:list-tools'),
+  // Respond to a confirm-tier tool the runner is waiting on. `editedArgs`
+  // optionally overrides the params (e.g. an edited message body) before run.
+  confirmTool: (id: string, approved: boolean, editedArgs?: Record<string, unknown>) =>
+    ipcRenderer.invoke('agent:confirm-response', { id, approved, editedArgs }),
+  // Main → renderer events: a confirm-tier tool is awaiting approval.
+  onAgentConfirmRequired: (cb: (req: unknown) => void) => {
+    const handler = (_e: IpcRendererEvent, data: unknown) => cb(data);
+    ipcRenderer.on('agent:confirm-required', handler);
+    return () => ipcRenderer.removeListener('agent:confirm-required', handler);
+  },
+  // Main → renderer events: a notify-tier tool just ran (toast).
+  onAgentToolNotify: (cb: (data: unknown) => void) => {
+    const handler = (_e: IpcRendererEvent, data: unknown) => cb(data);
+    ipcRenderer.on('agent:tool-notify', handler);
+    return () => ipcRenderer.removeListener('agent:tool-notify', handler);
+  },
+
   // ── Tasks ─────────────────────────────────────────────────
   getTasks: (filter?: TaskListFilter) => ipcRenderer.invoke('task:list', filter),
   submitTask: (task: TaskSubmission) => ipcRenderer.invoke('task:submit', task),
