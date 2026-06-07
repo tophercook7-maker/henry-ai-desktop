@@ -118,11 +118,14 @@ async function logToolCall(
 ): Promise<void> {
   if (!context.sessionId) return;
   try {
-    const { recordSessionMessage } = await import('../ipc/sessionStore');
+    const { recordSessionMessage, toolCallBlocks } = await import('../ipc/sessionStore');
     await recordSessionMessage({
       session_id: context.sessionId,
       role: 'tool',
-      content: JSON.stringify({ args: call.arguments, result }),
+      kind: 'tool_result',
+      // Structured content (tool_use + tool_result blocks) instead of an opaque
+      // JSON string, so the call is searchable and renderable as an action.
+      content: toolCallBlocks(call.name, call.id, call.arguments, result, !result.ok),
       tool_name: call.name,
       tool_call_id: call.id,
     });

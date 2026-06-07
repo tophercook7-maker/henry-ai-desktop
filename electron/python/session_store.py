@@ -181,6 +181,90 @@ def local_clock() -> datetime:
 
 
 # ===========================================================================
+# Message content convention (forward-compatible with the agent layer)
+# ===========================================================================
+# A message's ``content`` is EITHER a plain string (text-only) OR a list of
+# typed "blocks", so one message can represent tool use and agent actions — not
+# just text. This is the canonical shape every writer (chat UI, tool runner,
+# scheduler, future computer-use layer) should use, so the whole corpus stays
+# uniform:
+#
+#   {"type": "text",        "text": str}
+#   {"type": "tool_use",    "id": str, "name": str, "input": dict}
+#   {"type": "tool_result", "tool_use_id": str, "content": Any, "is_error": bool}
+#   {"type": "image",       "uri"|"artifact_id": str, "alt": str}    # reference, never inline bytes
+#   {"type": "action",      "kind": str, "target": str, "params": dict,
+#                            "status": str, "duration_ms": int}      # desktop / web / API automation
+#   {"type": "observation", "source": str, "data": Any}             # screenshot ref, DOM, API response
+#
+# The store is permissive — it never rejects an unknown block shape. List/dict
+# content is JSON-encoded on write (see SessionStore._encode_content), and a
+# flattened, human-readable projection is stored alongside in
+# ``messages.content_text`` so FTS indexes the *text* of blocks rather than the
+# raw JSON envelope. The matching block-builder helpers live on the TypeScript
+# side (electron/ipc/sessionStore.ts) for the agent layer to import.
+
+CONTENT_BLOCK_TYPES = (
+    "text", "tool_use", "tool_result", "image", "action", "observation",
+)
+
+
+def _stringify(value: Any) -> str:
+    """Compact, searchable string for an arbitrary JSON-ish value."""
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    try:
+        return json.dumps(value, ensure_ascii=False, separators=(" ", " "))
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def _block_text(block: Any) -> str:
+    """Extract searchable text from a single content block."""
+    if not isinstance(block, dict):
+        return _stringify(block)
+    btype = block.get("type")
+    if btype == "text":
+        return str(block.get("text") or "")
+    if btype == "tool_use":
+        return " ".join(filter(None, [
+            str(block.get("name") or ""), _stringify(block.get("input")),
+        ]))
+    if btype == "tool_result":
+        return flatten_content_text(block.get("content"))
+    if btype == "image":
+        return str(block.get("alt") or "")  # uri/artifact_id intentionally not indexed
+    if btype == "action":
+        return " ".join(filter(None, [
+            str(block.get("kind") or ""), str(block.get("target") or ""),
+            _stringify(block.get("params")),
+        ]))
+    if btype == "observation":
+        return _stringify(block.get("data"))
+    # Unknown/empty block: index whatever text-ish fields it carries.
+    return _stringify(block)
+
+
+def flatten_content_text(content: Any) -> str:
+    """Project message content (string or block list) to plain searchable text.
+
+    Populates ``messages.content_text`` so FTS matches the meaningful text of
+    tool/action blocks instead of the encoded JSON envelope.
+    """
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return " ".join(t for t in (_block_text(b) for b in content) if t).strip()
+    if isinstance(content, dict):
+        return _block_text(content)
+    return _stringify(content)
+
+
+# ===========================================================================
 # WAL-compatibility fallback
 # ===========================================================================
 # SQLite's WAL mode needs shared-memory + fcntl byte-range locks that don't
@@ -228,7 +312,7 @@ def apply_wal_with_fallback(conn: sqlite3.Connection) -> str:
 # Schema
 # ===========================================================================
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -238,6 +322,7 @@ CREATE TABLE IF NOT EXISTS schema_version (
 CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY,
     title TEXT,
+    origin TEXT,
     model TEXT,
     model_config TEXT,
     system_prompt TEXT,
@@ -267,7 +352,9 @@ CREATE TABLE IF NOT EXISTS messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id TEXT NOT NULL REFERENCES sessions(id),
     role TEXT NOT NULL,
+    kind TEXT,
     content TEXT,
+    content_text TEXT,
     tool_call_id TEXT,
     tool_calls TEXT,
     tool_name TEXT,
@@ -299,7 +386,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(content);
 CREATE TRIGGER IF NOT EXISTS messages_fts_insert AFTER INSERT ON messages BEGIN
     INSERT INTO messages_fts(rowid, content) VALUES (
         new.id,
-        COALESCE(new.content, '') || ' ' || COALESCE(new.tool_name, '') || ' ' || COALESCE(new.tool_calls, '')
+        COALESCE(new.content_text, '') || ' ' || COALESCE(new.tool_name, '') || ' ' || COALESCE(new.tool_calls, '')
     );
 END;
 
@@ -311,7 +398,7 @@ CREATE TRIGGER IF NOT EXISTS messages_fts_update AFTER UPDATE ON messages BEGIN
     DELETE FROM messages_fts WHERE rowid = old.id;
     INSERT INTO messages_fts(rowid, content) VALUES (
         new.id,
-        COALESCE(new.content, '') || ' ' || COALESCE(new.tool_name, '') || ' ' || COALESCE(new.tool_calls, '')
+        COALESCE(new.content_text, '') || ' ' || COALESCE(new.tool_name, '') || ' ' || COALESCE(new.tool_calls, '')
     );
 END;
 """
@@ -329,7 +416,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts_trigram USING fts5(
 CREATE TRIGGER IF NOT EXISTS messages_fts_trigram_insert AFTER INSERT ON messages BEGIN
     INSERT INTO messages_fts_trigram(rowid, content) VALUES (
         new.id,
-        COALESCE(new.content, '') || ' ' || COALESCE(new.tool_name, '') || ' ' || COALESCE(new.tool_calls, '')
+        COALESCE(new.content_text, '') || ' ' || COALESCE(new.tool_name, '') || ' ' || COALESCE(new.tool_calls, '')
     );
 END;
 
@@ -341,7 +428,7 @@ CREATE TRIGGER IF NOT EXISTS messages_fts_trigram_update AFTER UPDATE ON message
     DELETE FROM messages_fts_trigram WHERE rowid = old.id;
     INSERT INTO messages_fts_trigram(rowid, content) VALUES (
         new.id,
-        COALESCE(new.content, '') || ' ' || COALESCE(new.tool_name, '') || ' ' || COALESCE(new.tool_calls, '')
+        COALESCE(new.content_text, '') || ' ' || COALESCE(new.tool_name, '') || ' ' || COALESCE(new.tool_calls, '')
     );
 END;
 """
@@ -476,15 +563,56 @@ class SessionStore:
 
     # ── Schema init ──────────────────────────────────────────────────────
 
+    # Columns that may be missing on databases created by an earlier schema
+    # version. Adding a column is a cheap, backward-compatible ALTER, so new
+    # fields land here and are reconciled on every open (Beets/sqlite-utils
+    # pattern) — no version-gated migration chain needed for plain additions.
+    _EXPECTED_COLUMNS = {
+        "sessions": {"origin": "TEXT"},
+        "messages": {"kind": "TEXT", "content_text": "TEXT"},
+    }
+
+    def _reconcile_columns(self, cursor: sqlite3.Cursor) -> None:
+        for table, cols in self._EXPECTED_COLUMNS.items():
+            existing = {
+                r[1] for r in cursor.execute(f'PRAGMA table_info("{table}")').fetchall()
+            }
+            for name, decl in cols.items():
+                if name not in existing:
+                    try:
+                        cursor.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
+                    except sqlite3.OperationalError as exc:
+                        logger.debug("ADD COLUMN %s.%s skipped: %s", table, name, exc)
+
+    def _backfill_content_text(self, cursor: sqlite3.Cursor) -> None:
+        """Populate messages.content_text from existing content (v1→v2).
+
+        When FTS triggers are in place, each UPDATE reindexes that row via the
+        AFTER UPDATE trigger, so this doubles as the FTS rebuild.
+        """
+        rows = cursor.execute(
+            "SELECT id, content FROM messages WHERE content_text IS NULL"
+        ).fetchall()
+        for r in rows:
+            text = flatten_content_text(self._decode_content(r["content"]))
+            cursor.execute(
+                "UPDATE messages SET content_text = ? WHERE id = ?", (text, r["id"])
+            )
+
     def _init_schema(self) -> None:
         cursor = self._conn.cursor()
         cursor.executescript(SCHEMA_SQL)
+        # Add any columns missing on a pre-existing database (idempotent).
+        self._reconcile_columns(cursor)
 
         row = cursor.execute("SELECT version FROM schema_version LIMIT 1").fetchone()
         if row is None:
             cursor.execute(
                 "INSERT INTO schema_version (version) VALUES (?)", (SCHEMA_VERSION,)
             )
+            stored_version = SCHEMA_VERSION
+        else:
+            stored_version = row["version"] if isinstance(row, sqlite3.Row) else row[0]
 
         # Unique title index — best effort (titles are optional/nullable).
         try:
@@ -495,14 +623,34 @@ class SessionStore:
         except sqlite3.OperationalError:
             pass
 
+        # v2 switched FTS to index messages.content_text (the flattened block
+        # text) instead of the raw content column. On a pre-v2 DB the old
+        # triggers reference new.content, so drop them and let the FTS DDL
+        # recreate them; the content_text backfill below then reindexes every
+        # row through the new AFTER UPDATE trigger.
+        needs_fts_migration = stored_version < 2
+
         if self._sqlite_supports_fts5(cursor):
+            if needs_fts_migration:
+                self._drop_fts_triggers(cursor)
             self._fts_enabled = self._ensure_fts_schema(cursor, FTS_SQL)
             if self._fts_enabled:
                 self._ensure_fts_schema(cursor, FTS_TRIGRAM_SQL)
+            if needs_fts_migration:
+                self._backfill_content_text(cursor)
         else:
             # Triggers targeting unreadable virtual tables would break message
-            # writes — drop them so core persistence keeps working.
+            # writes — drop them so core persistence keeps working. Still
+            # backfill content_text so the column is correct for a future
+            # FTS-capable runtime.
             self._drop_fts_triggers(cursor)
+            if needs_fts_migration:
+                self._backfill_content_text(cursor)
+
+        if stored_version < SCHEMA_VERSION:
+            cursor.execute(
+                "UPDATE schema_version SET version = ?", (SCHEMA_VERSION,)
+            )
 
         self._conn.commit()
 
@@ -594,21 +742,26 @@ class SessionStore:
         session_id: str,
         *,
         title: Optional[str] = None,
+        origin: Optional[str] = None,
         model: Optional[str] = None,
         model_config: Optional[Dict[str, Any]] = None,
         system_prompt: Optional[str] = None,
         parent_session_id: Optional[str] = None,
         cwd: Optional[str] = None,
     ) -> None:
+        # ``origin`` records what triggered the session — 'chat', 'webhook',
+        # 'schedule', 'api', 'automation', etc. Lets the agent layer
+        # distinguish a user chat from a routine/webhook-driven run.
         def _do(conn: sqlite3.Connection) -> None:
             conn.execute(
                 """INSERT OR IGNORE INTO sessions
-                   (id, title, model, model_config, system_prompt,
+                   (id, title, origin, model, model_config, system_prompt,
                     parent_session_id, cwd, started_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     session_id,
                     self.sanitize_title(title),
+                    origin,
                     model,
                     json.dumps(model_config) if model_config else None,
                     system_prompt,
@@ -840,9 +993,9 @@ class SessionStore:
         query = f"""
             SELECT s.*,
                 COALESCE(
-                    (SELECT SUBSTR(REPLACE(REPLACE(m.content, X'0A', ' '), X'0D', ' '), 1, 63)
+                    (SELECT SUBSTR(REPLACE(REPLACE(m.content_text, X'0A', ' '), X'0D', ' '), 1, 63)
                      FROM messages m
-                     WHERE m.session_id = s.id AND m.role = 'user' AND m.content IS NOT NULL
+                     WHERE m.session_id = s.id AND m.role = 'user' AND m.content_text IS NOT NULL
                      ORDER BY m.timestamp, m.id LIMIT 1),
                     ''
                 ) AS _preview_raw,
@@ -903,6 +1056,7 @@ class SessionStore:
         session_id: str,
         role: str,
         content: Any = None,
+        kind: Optional[str] = None,
         tool_name: Optional[str] = None,
         tool_calls: Any = None,
         tool_call_id: Optional[str] = None,
@@ -913,11 +1067,16 @@ class SessionStore:
         """Append a message to a session. Returns the message row id.
 
         Increments the session's ``message_count`` (and ``tool_call_count``
-        when tool calls are present). Structured ``content`` (multimodal lists,
-        dicts) is JSON-encoded transparently.
+        when tool calls are present). Structured ``content`` (block lists, see
+        the content convention near the top of this module) is JSON-encoded
+        transparently, and a flattened ``content_text`` projection is stored
+        for FTS. ``kind`` is an optional discriminator
+        ('chat'/'tool_call'/'tool_result'/'action'/'observation') so agent
+        actions can be queried without parsing JSON.
         """
         tool_calls_json = json.dumps(tool_calls) if tool_calls else None
         stored_content = self._encode_content(content)
+        content_text = flatten_content_text(content)
         num_tool_calls = (
             (len(tool_calls) if isinstance(tool_calls, list) else 1)
             if tool_calls is not None
@@ -927,13 +1086,16 @@ class SessionStore:
         def _do(conn: sqlite3.Connection) -> int:
             cur = conn.execute(
                 """INSERT INTO messages
-                   (session_id, role, content, tool_call_id, tool_calls,
-                    tool_name, timestamp, token_count, finish_reason, reasoning)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   (session_id, role, kind, content, content_text, tool_call_id,
+                    tool_calls, tool_name, timestamp, token_count, finish_reason,
+                    reasoning)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     session_id,
                     role,
+                    kind,
                     stored_content,
+                    content_text,
                     tool_call_id,
                     tool_calls_json,
                     tool_name,
@@ -972,13 +1134,16 @@ class SessionStore:
                 tool_calls_json = json.dumps(tool_calls) if tool_calls else None
                 conn.execute(
                     """INSERT INTO messages
-                       (session_id, role, content, tool_call_id, tool_calls,
-                        tool_name, timestamp, token_count, finish_reason, reasoning)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       (session_id, role, kind, content, content_text, tool_call_id,
+                        tool_calls, tool_name, timestamp, token_count, finish_reason,
+                        reasoning)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         session_id,
                         msg.get("role", "unknown"),
+                        msg.get("kind"),
                         self._encode_content(msg.get("content")),
+                        flatten_content_text(msg.get("content")),
                         msg.get("tool_call_id"),
                         tool_calls_json,
                         msg.get("tool_name"),
@@ -1027,6 +1192,47 @@ class SessionStore:
                     msg["tool_calls"] = []
             result.append(msg)
         return result
+
+    def list_tool_calls(self, limit: int = 200) -> List[Dict[str, Any]]:
+        """Audit log: every tool-call message across all sessions, newest first.
+
+        Backs the agent "Audit Log" panel (design §5). Each ``tool`` role message
+        is written by the ToolRunner with ``content`` carrying ``{args, result}``
+        and ``tool_name`` set. We join the session title so the UI can show which
+        run a call belonged to. Ordered by id DESC (true insertion order) which
+        is robust against clock regressions, then capped at ``limit``.
+        """
+        limit = max(1, min(int(limit or 200), 1000))
+        with self._lock:
+            rows = self._conn.execute(
+                """SELECT m.id, m.session_id, m.role, m.content, m.tool_name,
+                          m.tool_call_id, m.timestamp, s.title AS session_title
+                   FROM messages m
+                   LEFT JOIN sessions s ON s.id = m.session_id
+                   WHERE m.role = 'tool'
+                   ORDER BY m.id DESC
+                   LIMIT ?""",
+                (limit,),
+            ).fetchall()
+        result = []
+        for row in rows:
+            msg = dict(row)
+            if "content" in msg:
+                msg["content"] = self._decode_content(msg["content"])
+            result.append(msg)
+        return result
+
+    def clear_tool_calls(self) -> int:
+        """Delete every tool-call message (the audit log "Clear history" action).
+
+        Removes only ``role = 'tool'`` rows, leaving the surrounding user/
+        assistant conversation intact. Returns the number of rows deleted.
+        """
+        def _do(conn: sqlite3.Connection) -> int:
+            cur = conn.execute("DELETE FROM messages WHERE role = 'tool'")
+            return cur.rowcount or 0
+
+        return self._execute_write(_do)
 
     # =========================================================================
     # Token / cost accounting
@@ -1240,7 +1446,7 @@ class SessionStore:
                 for tok in tokens:
                     esc = tok.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
                     token_clauses.append(
-                        "(m.content LIKE ? ESCAPE '\\' OR m.tool_name LIKE ? ESCAPE '\\' "
+                        "(m.content_text LIKE ? ESCAPE '\\' OR m.tool_name LIKE ? ESCAPE '\\' "
                         "OR m.tool_calls LIKE ? ESCAPE '\\')"
                     )
                     params += [f"%{esc}%", f"%{esc}%", f"%{esc}%"]
@@ -1248,7 +1454,7 @@ class SessionStore:
                 where += _role_clause("m", params)
                 sql = f"""
                     SELECT m.id, m.session_id, m.role,
-                           substr(m.content, max(1, instr(m.content, ?) - 40), 120) AS snippet,
+                           substr(m.content_text, max(1, instr(m.content_text, ?) - 40), 120) AS snippet,
                            m.content, m.timestamp, m.tool_name,
                            s.title, s.model, s.started_at AS session_started
                     FROM messages m
@@ -1409,6 +1615,7 @@ def _cmd_create(store: SessionStore, p: Dict[str, Any]) -> Any:
     sid = store.create_session(
         p.get("id") or p.get("session_id"),
         title=p.get("title"),
+        origin=p.get("origin"),
         model=p.get("model"),
         model_config=p.get("model_config"),
         system_prompt=p.get("system_prompt"),
@@ -1474,11 +1681,12 @@ def _cmd_add_message(store: SessionStore, p: Dict[str, Any]) -> Any:
     # Auto-create the session if it doesn't exist yet, so the renderer can add
     # the first message without a separate create round-trip.
     if store.get_session(sid) is None:
-        store.create_session(sid, title=p.get("title"))
+        store.create_session(sid, title=p.get("title"), origin=p.get("origin"))
     msg_id = store.append_message(
         sid,
         _require(p, "role"),
         content=p.get("content"),
+        kind=p.get("kind"),
         tool_name=p.get("tool_name"),
         tool_calls=p.get("tool_calls"),
         tool_call_id=p.get("tool_call_id"),
@@ -1496,6 +1704,14 @@ def _cmd_get_messages(store: SessionStore, p: Dict[str, Any]) -> Any:
             include_inactive=bool(p.get("include_inactive", False)),
         )
     }
+
+
+def _cmd_list_tool_calls(store: SessionStore, p: Dict[str, Any]) -> Any:
+    return {"tool_calls": store.list_tool_calls(limit=int(p.get("limit", 200)))}
+
+
+def _cmd_clear_tool_calls(store: SessionStore, p: Dict[str, Any]) -> Any:
+    return {"deleted": store.clear_tool_calls()}
 
 
 def _cmd_get(store: SessionStore, p: Dict[str, Any]) -> Any:
@@ -1551,6 +1767,8 @@ _COMMANDS: Dict[str, Callable[[SessionStore, Dict[str, Any]], Any]] = {
     "search": _cmd_search,
     "add-message": _cmd_add_message,
     "get-messages": _cmd_get_messages,
+    "list-tool-calls": _cmd_list_tool_calls,
+    "clear-tool-calls": _cmd_clear_tool_calls,
     "get": _cmd_get,
     "set-title": _cmd_set_title,
     "archive": _cmd_archive,

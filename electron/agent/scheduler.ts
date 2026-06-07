@@ -305,12 +305,14 @@ export class HenryScheduler {
       sessionId =
         (await createSessionRecord({
           title: `Routine: ${task.name}`,
+          origin: "schedule",
           system_prompt: SCHEDULED_RUN_SYSTEM_PROMPT,
         }).catch(() => null)) ?? randomUUID();
 
       await recordSessionMessage({
         session_id: sessionId,
         role: "user",
+        kind: "chat",
         content: task.prompt,
       }).catch(() => {});
 
@@ -319,6 +321,7 @@ export class HenryScheduler {
       await recordSessionMessage({
         session_id: sessionId,
         role: "assistant",
+        kind: "chat",
         content,
       }).catch(() => {});
 
