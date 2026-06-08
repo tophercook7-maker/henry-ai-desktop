@@ -1,13 +1,17 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type ComponentType } from 'react';
+import { Shield } from 'lucide-react';
 import { useStore } from '../../store';
 
 // R2-Fix 9: keep this in sync with src/types/index.ts ViewType.
 type ViewType = 'today' | 'chat' | 'companion' | 'secretary' | 'contacts' | 'tasks' | 'files' | 'workspace' | 'terminal' | 'computer' | 'printer' | 'costs' | 'settings' | 'journal' | 'focus' | 'recorder' | 'memos' | 'queue' | 'modes' | 'reminders' | 'crm' | 'finance' | 'lists' | 'printstudio' | 'machines' | 'materials' | 'production' | 'waste' | 'maintenance' | 'imagegen' | 'videogen' | 'integrations' | 'github' | 'linear' | 'notion' | 'slack' | 'captures' | 'weekly' | 'health' | 'goals' | 'hq' | 'setup' | 'memory' | 'prayer' | 'quoting'
-  | 'scripture';
+  | 'scripture' | 'routines' | 'audit';
+
+// A nav item renders either a glyph (`icon`) or a lucide component (`lucideIcon`).
+type NavItem = { id: ViewType; icon?: string; lucideIcon?: ComponentType<{ size?: number }>; label: string };
 
 // Core nav — the things you actually use daily
 // Everything else is accessible but not cluttering the rail
-const CORE_NAV: { id: ViewType; icon: string; label: string }[] = [
+const CORE_NAV: NavItem[] = [
   { id: 'hq',         icon: '◈',  label: 'HQ' },
   { id: 'today',      icon: '⌂',  label: 'Today' },
   { id: 'chat',       icon: '◉',  label: 'Chat' },
@@ -23,16 +27,20 @@ const CORE_NAV: { id: ViewType; icon: string; label: string }[] = [
   { id: 'focus',      icon: '◈',  label: 'Focus' },
 ];
 
-const BUSINESS_NAV: { id: ViewType; icon: string; label: string }[] = [
+const BUSINESS_NAV: NavItem[] = [
   { id: 'secretary',  icon: '◻',  label: 'Secretary' },
   { id: 'crm',        icon: '◇',  label: 'Clients' },
   { id: 'finance',    icon: '◆',  label: 'Finance' },
   { id: 'tasks',      icon: '☐',  label: 'Tasks' },
   // R2-Fix 9: TaskQueueView was imported in Layout.tsx but unreachable.
   { id: 'queue',      icon: '⊟',  label: 'Queue' },
+  // Sprint 3: Henry's Routines — scheduled autonomous runs.
+  { id: 'routines',   icon: '🕐', label: 'Routines' },
+  // Sprint 4: Audit Log — "What Henry Did" feed of every tool call.
+  { id: 'audit',      lucideIcon: Shield, label: 'Audit Log' },
 ];
 
-const MORE_NAV: { id: ViewType; icon: string; label: string }[] = [
+const MORE_NAV: NavItem[] = [
   { id: 'goals',      icon: '◎',  label: 'Goals' },
   { id: 'weekly',     icon: '▦',  label: 'Weekly' },
   { id: 'lists',      icon: '≡',  label: 'Lists' },
@@ -49,7 +57,7 @@ const MORE_NAV: { id: ViewType; icon: string; label: string }[] = [
   { id: 'costs',      icon: '◌',  label: 'Costs' },
 ];
 
-const BOTTOM_NAV: { id: ViewType; icon: string; label: string }[] = [
+const BOTTOM_NAV: NavItem[] = [
   { id: 'setup',      icon: '⚙',  label: 'Setup' },
   { id: 'companion',  icon: '⊚',  label: 'Companion' },
   { id: 'settings',   icon: '⊙',  label: 'Settings' },
@@ -60,10 +68,11 @@ function NavIcon({
   active,
   onClick,
 }: {
-  item: { id: ViewType; icon: string; label: string };
+  item: NavItem;
   active: boolean;
   onClick: () => void;
 }) {
+  const LucideIcon = item.lucideIcon;
   return (
     <button
       onClick={onClick}
@@ -76,7 +85,7 @@ function NavIcon({
           : 'text-henry-text-muted hover:text-henry-text hover:bg-henry-surface/60'}
       `}
     >
-      <span className="font-light">{item.icon}</span>
+      {LucideIcon ? <LucideIcon size={18} /> : <span className="font-light">{item.icon}</span>}
       {/* Tooltip */}
       <span className="
         absolute left-full ml-2 px-2 py-1 rounded-md text-[11px] font-medium

@@ -17,6 +17,9 @@ interface ChatInputProps {
   isSearching?: boolean;
   onFileIngest?: (content: string, fileName: string) => void;
   ambientMode?: boolean;
+  /** Agent mode: when on, Henry can use his tools (calendar, messages, quotes, QuickBooks, web). */
+  agentMode?: boolean;
+  onToggleAgentMode?: () => void;
 }
 
 export default function ChatInput({
@@ -32,6 +35,8 @@ export default function ChatInput({
   isSearching = false,
   onFileIngest,
   ambientMode = false,
+  agentMode = false,
+  onToggleAgentMode,
 }: ChatInputProps) {
   const [input, setInput] = useState('');
   const [listening, setListening] = useState(false);
@@ -326,6 +331,28 @@ export default function ChatInput({
                   <line x1="8" y1="23" x2="16" y2="23" />
                 </svg>
               )}
+            </button>
+          )}
+
+          {/* Agent mode toggle — lets Henry use his tools (calendar, messages, quotes, QuickBooks, web) */}
+          {onToggleAgentMode && (
+            <button
+              onClick={onToggleAgentMode}
+              title={
+                agentMode
+                  ? 'Agent mode ON — Henry can use his tools (calendar, messages, quotes, QuickBooks, web). Sending actions still asks first.'
+                  : 'Agent mode OFF — turn on to let Henry use his tools'
+              }
+              aria-pressed={agentMode}
+              className={`p-2 rounded-lg transition-all ${
+                agentMode
+                  ? 'bg-henry-accent/20 text-henry-accent hover:bg-henry-accent/30'
+                  : 'text-henry-text-muted hover:text-henry-text hover:bg-henry-hover/50'
+              }`}
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+              </svg>
             </button>
           )}
 

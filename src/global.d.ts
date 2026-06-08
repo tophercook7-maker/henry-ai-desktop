@@ -76,6 +76,16 @@ declare global {
     maxTokens?: number;
     /** Ollama / local proxy base URL (renderer passes through to main). */
     apiUrl?: string;
+    /**
+     * Agent mode. When present and non-empty, the main process routes this turn
+     * through the agent ToolRunner (calendar, messages, quotes, QuickBooks, web)
+     * instead of a plain completion. The array is only a flag — the real tool
+     * schemas come from the main-process registry — so passing the lightweight
+     * `listTools()` catalogue (or any non-empty array) is sufficient.
+     */
+    tools?: unknown[];
+    /** Session id the agent run logs its tool-call audit trail against. */
+    sessionId?: string;
   }
 
   interface HenryAIUsage {
@@ -164,6 +174,15 @@ declare global {
     message?: string;
   }
 
+  // Uniform envelope returned by every session:* IPC handler. `result` holds
+  // the SessionStore command output (shape varies by command); on failure
+  // `ok` is false and `error` carries the Python-side message.
+  interface HenrySessionResult<T = unknown> {
+    ok: boolean;
+    result?: T;
+    error?: string;
+  }
+
   interface HenryComputerShellResult {
     success: boolean;
     output: string;
@@ -192,6 +211,36 @@ declare global {
   interface HenryPrinterData {
     type: 'response' | 'sent' | 'error' | 'disconnected';
     data?: string;
+  }
+
+  // ── Agent: confirm-tier tool gate ───────────────────────────
+  interface HenryConfirmRequest {
+    id: string;
+    toolName: string;
+    args: Record<string, unknown>;
+    description: string;
+    safetyLevel: 'confirm';
+  }
+
+  // ── Scheduler: Henry's Routines ─────────────────────────────
+  interface HenryRoutine {
+    id: string;
+    name: string;
+    description: string | null;
+    cronExpression: string;
+    prompt: string;
+    enabled: number; // 1 | 0
+    lastRunAt: string | null;
+    nextRunAt: string | null;
+    createdAt: string;
+  }
+
+  interface HenryRoutineInput {
+    name: string;
+    description?: string;
+    cronExpression: string;
+    prompt: string;
+    enabled?: boolean;
   }
 
   interface HenryAPI {
@@ -354,6 +403,28 @@ declare global {
     printerPrintGcode: (gcode: string) => Promise<{ success: boolean; sent?: number; total?: number; error?: string }>;
     onPrinterData: (cb: (data: HenryPrinterData) => void) => () => void;
 
+    // ── Session History (persistent conversation store + FTS search) ──
+    // Each call resolves to { ok: true, result } or { ok: false, error }.
+    sessionCheckDeps: () => Promise<{ available: boolean; ftsEnabled?: boolean; journalMode?: string; error?: string; installHint?: string }>;
+    sessionCreate: (params: Record<string, unknown>) => Promise<HenrySessionResult>;
+    sessionEnd: (params: Record<string, unknown>) => Promise<HenrySessionResult>;
+    sessionResume: (params: Record<string, unknown>) => Promise<HenrySessionResult>;
+    sessionBranch: (params: Record<string, unknown>) => Promise<HenrySessionResult>;
+    sessionList: (params: Record<string, unknown>) => Promise<HenrySessionResult>;
+    sessionSearch: (params: Record<string, unknown>) => Promise<HenrySessionResult>;
+    sessionAddMessage: (params: Record<string, unknown>) => Promise<HenrySessionResult>;
+    sessionGetMessages: (params: Record<string, unknown>) => Promise<HenrySessionResult>;
+    // Agent audit log (Sprint 4): every tool-call message, newest first.
+    listToolCalls?: (limit?: number) => Promise<HenrySessionResult>;
+    clearToolCalls?: () => Promise<HenrySessionResult>;
+    sessionGet: (params: Record<string, unknown>) => Promise<HenrySessionResult>;
+    sessionSetTitle: (params: Record<string, unknown>) => Promise<HenrySessionResult>;
+    sessionArchive: (params: Record<string, unknown>) => Promise<HenrySessionResult>;
+    sessionUpdateTokens: (params: Record<string, unknown>) => Promise<HenrySessionResult>;
+    sessionDelete: (params: Record<string, unknown>) => Promise<HenrySessionResult>;
+    sessionExport: (params: Record<string, unknown>) => Promise<HenrySessionResult>;
+    sessionStats: () => Promise<HenrySessionResult>;
+
     getCostLog: (period?: string) => Promise<unknown[]>;
 
     onTaskUpdate: (cb: (data: Partial<Task> & { id: string }) => void) => () => void;
@@ -368,6 +439,21 @@ declare global {
 
     whisperTranscribe?: (audioBlob: Blob, apiKey: string) => Promise<string>;
     createTask?: (params: { description: string; type: string; priority?: number; payload?: unknown }) => Promise<{ id: string }>;
+
+    // ── Agent (tool layer) ────────────────────────────────────
+    listTools?: () => Promise<Array<{ name: string; description: string; safetyLevel: string; category: string }>>;
+    confirmTool?: (id: string, approved: boolean, editedArgs?: Record<string, unknown>) => Promise<{ ok: boolean }>;
+    onAgentConfirmRequired?: (cb: (req: HenryConfirmRequest) => void) => () => void;
+    onAgentToolNotify?: (cb: (data: { tool: string; message: string; ok: boolean }) => void) => () => void;
+
+    // ── Scheduler (Henry's Routines) ──────────────────────────
+    listRoutines?: () => Promise<{ ok: boolean; result?: HenryRoutine[]; error?: string }>;
+    addRoutine?: (task: HenryRoutineInput) => Promise<{ ok: boolean; result?: HenryRoutine; error?: string }>;
+    toggleRoutine?: (id: string, enabled: boolean) => Promise<{ ok: boolean; result?: HenryRoutine | null; error?: string }>;
+    runRoutineNow?: (id: string) => Promise<{ ok: boolean; result?: { ok: boolean; content?: string; error?: string }; error?: string }>;
+    deleteRoutine?: (id: string) => Promise<{ ok: boolean; result?: boolean; error?: string }>;
+    onSchedulerTaskStarted?: (cb: (data: { id: string; name: string }) => void) => () => void;
+    onSchedulerTaskCompleted?: (cb: (data: { id: string; name: string; ok: boolean; sessionId?: string; content?: string; error?: string }) => void) => () => void;
 
     // ── Companion Sync Bridge ─────────────────────────────────────────────
     getLocalGatewayStatus?: () => Promise<{ active: boolean; url?: string } | null>;

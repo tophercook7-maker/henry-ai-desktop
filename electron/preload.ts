@@ -12,6 +12,13 @@ type AIInvokeParams = {
   messages: Array<{ role: string; content: string }>;
   temperature?: number;
   maxTokens?: number;
+  apiUrl?: string;
+  // Agent mode (off unless the caller opts in). A non-empty `tools` array tells
+  // the main process to route this turn through the agent ToolRunner; the real
+  // tool schemas come from the main-process registry, so the array is just a
+  // flag. `sessionId` ties the run's tool-call audit trail to a session.
+  tools?: unknown[];
+  sessionId?: string;
 };
 
 type TaskUpdatePayload = Partial<Task> & { id: string };
@@ -106,6 +113,45 @@ contextBridge.exposeInMainWorld('henryAPI', {
         cleanup();
       },
     };
+  },
+
+  // ── Agent (tool layer) ────────────────────────────────────
+  // Catalogue of registered tools (name, description, safety tier, category).
+  listTools: () => ipcRenderer.invoke('agent:list-tools'),
+  // Respond to a confirm-tier tool the runner is waiting on. `editedArgs`
+  // optionally overrides the params (e.g. an edited message body) before run.
+  confirmTool: (id: string, approved: boolean, editedArgs?: Record<string, unknown>) =>
+    ipcRenderer.invoke('agent:confirm-response', { id, approved, editedArgs }),
+  // Main → renderer events: a confirm-tier tool is awaiting approval.
+  onAgentConfirmRequired: (cb: (req: unknown) => void) => {
+    const handler = (_e: IpcRendererEvent, data: unknown) => cb(data);
+    ipcRenderer.on('agent:confirm-required', handler);
+    return () => ipcRenderer.removeListener('agent:confirm-required', handler);
+  },
+  // Main → renderer events: a notify-tier tool just ran (toast).
+  onAgentToolNotify: (cb: (data: unknown) => void) => {
+    const handler = (_e: IpcRendererEvent, data: unknown) => cb(data);
+    ipcRenderer.on('agent:tool-notify', handler);
+    return () => ipcRenderer.removeListener('agent:tool-notify', handler);
+  },
+
+  // ── Scheduler (Henry's Routines) ──────────────────────────
+  listRoutines: () => ipcRenderer.invoke('scheduler:list'),
+  addRoutine: (task: Record<string, unknown>) => ipcRenderer.invoke('scheduler:add', task),
+  toggleRoutine: (id: string, enabled: boolean) =>
+    ipcRenderer.invoke('scheduler:toggle', { id, enabled }),
+  runRoutineNow: (id: string) => ipcRenderer.invoke('scheduler:run-now', { id }),
+  deleteRoutine: (id: string) => ipcRenderer.invoke('scheduler:delete', { id }),
+  // Main → renderer events: a Routine started / finished running.
+  onSchedulerTaskStarted: (cb: (data: unknown) => void) => {
+    const handler = (_e: IpcRendererEvent, data: unknown) => cb(data);
+    ipcRenderer.on('scheduler:task-started', handler);
+    return () => ipcRenderer.removeListener('scheduler:task-started', handler);
+  },
+  onSchedulerTaskCompleted: (cb: (data: unknown) => void) => {
+    const handler = (_e: IpcRendererEvent, data: unknown) => cb(data);
+    ipcRenderer.on('scheduler:task-completed', handler);
+    return () => ipcRenderer.removeListener('scheduler:task-completed', handler);
   },
 
   // ── Tasks ─────────────────────────────────────────────────
@@ -403,6 +449,27 @@ contextBridge.exposeInMainWorld('henryAPI', {
     ipcRenderer.on('printer:data', handler);
     return () => ipcRenderer.removeListener('printer:data', handler);
   },
+
+  // ── Session History (persistent conversation store + FTS search) ──
+  sessionCheckDeps: () => ipcRenderer.invoke('session:checkDeps'),
+  sessionCreate: (params: Record<string, unknown>) => ipcRenderer.invoke('session:create', params),
+  sessionEnd: (params: Record<string, unknown>) => ipcRenderer.invoke('session:end', params),
+  sessionResume: (params: Record<string, unknown>) => ipcRenderer.invoke('session:resume', params),
+  sessionBranch: (params: Record<string, unknown>) => ipcRenderer.invoke('session:branch', params),
+  sessionList: (params: Record<string, unknown>) => ipcRenderer.invoke('session:list', params),
+  sessionSearch: (params: Record<string, unknown>) => ipcRenderer.invoke('session:search', params),
+  sessionAddMessage: (params: Record<string, unknown>) => ipcRenderer.invoke('session:addMessage', params),
+  sessionGetMessages: (params: Record<string, unknown>) => ipcRenderer.invoke('session:getMessages', params),
+  // Agent audit log (Sprint 4): tool-call history + clear.
+  listToolCalls: (limit?: number) => ipcRenderer.invoke('session:list-tool-calls', { limit: limit ?? 200 }),
+  clearToolCalls: () => ipcRenderer.invoke('session:clear-tool-calls', {}),
+  sessionGet: (params: Record<string, unknown>) => ipcRenderer.invoke('session:get', params),
+  sessionSetTitle: (params: Record<string, unknown>) => ipcRenderer.invoke('session:setTitle', params),
+  sessionArchive: (params: Record<string, unknown>) => ipcRenderer.invoke('session:archive', params),
+  sessionUpdateTokens: (params: Record<string, unknown>) => ipcRenderer.invoke('session:updateTokens', params),
+  sessionDelete: (params: Record<string, unknown>) => ipcRenderer.invoke('session:delete', params),
+  sessionExport: (params: Record<string, unknown>) => ipcRenderer.invoke('session:export', params),
+  sessionStats: () => ipcRenderer.invoke('session:stats', {}),
 
   // ── Cost Tracking ─────────────────────────────────────────
   getCostLog: (period?: string) => ipcRenderer.invoke('cost:getAll', period),

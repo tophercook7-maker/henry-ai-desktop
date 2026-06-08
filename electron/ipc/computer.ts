@@ -14,8 +14,14 @@ import { spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
+import { classifyCommand } from './_commandSafety';
 
 type WindowGetter = () => BrowserWindow | null;
+
+/** Escape a string for safe embedding inside an AppleScript "..." literal. */
+function appleScriptString(s: string): string {
+  return s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
 
 export function registerComputerHandlers(winGetter: WindowGetter) {
   const platform = process.platform;
@@ -131,12 +137,9 @@ export function registerComputerHandlers(winGetter: WindowGetter) {
   // ── Run shell command (with allowlist safety) ─────────────────────────
   ipcMain.handle('computer:runShell', async (_event, params: { command: string; timeout?: number }) => {
     try {  
-      const BLOCKED = ['rm -rf /', 'mkfs', 'shutdown', 'reboot', 'halt', ':(){:|:&};:'];
-      const lower = params.command.toLowerCase();
-      for (const b of BLOCKED) {
-        if (lower.includes(b)) {
-          return { success: false, error: `Command blocked: "${b}"`, output: '' };
-        }
+      const verdict = classifyCommand(params.command);
+      if (verdict.blocked) {
+        return { success: false, error: `Command blocked for safety: ${verdict.reason}.`, output: '' };
       }
       const result = await runCmd(params.command, params.timeout || 30000);
       return {
@@ -327,8 +330,11 @@ export function registerComputerHandlers(winGetter: WindowGetter) {
     return { volume: parseInt(out.trim()) || 50 };
   });
   ipcMain.handle('computer:notify', async (_e, opts: { title: string; body?: string }) => {
-    const { execSync } = await import('child_process');
-    execSync(`osascript -e 'display notification "${(opts.body||'').replace(/"/g,'')}" with title "${opts.title.replace(/"/g,'')}"'`, { timeout: 3000 });
+    // execFileSync (no shell) + AppleScript-string escaping — a title/body
+    // containing quotes can't break out and inject shell commands.
+    const { execFileSync } = await import('child_process');
+    const script = `display notification "${appleScriptString(opts.body || '')}" with title "${appleScriptString(opts.title || '')}"`;
+    execFileSync('osascript', ['-e', script], { timeout: 3000 });
     return { ok: true };
   });
 

@@ -69,3 +69,7 @@ release2/
 # iCloud-numbered duplicates) moved here by tooling so they stay out of
 # git and the typecheck globs.
 _backups/
+
+# Python bytecode (session_store.py bridge)
+__pycache__/
+*.pyc

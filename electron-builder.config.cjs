@@ -35,6 +35,18 @@ module.exports = {
     gatekeeperAssess: false,
     entitlements: 'build/entitlements.mac.plist',
     entitlementsInherit: 'build/entitlements.mac.plist',
+    // Usage strings for the macOS automation tools (agent layer Sprint 2).
+    // Shown in the system permission prompts the first time Henry drives
+    // Calendar/Messages/Mail via JXA. The Apple Events + Full Disk Access
+    // grants are surfaced to the user by the `permissions_check` tool.
+    extendInfo: {
+      NSAppleEventsUsageDescription:
+        'Henry uses automation to read your calendar and to send messages and email on your behalf — always with your confirmation.',
+      NSCalendarsUsageDescription:
+        'Henry reads and creates calendar events to brief you on your day and schedule jobs.',
+      NSContactsUsageDescription:
+        'Henry looks up contacts to message and email the right people.',
+    },
   },
 
   dmg: {

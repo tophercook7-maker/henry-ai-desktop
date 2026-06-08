@@ -190,6 +190,63 @@ function migrateDatabaseSchema(db: Database.Database) {
 
   // Memory Blueprint — full 7-layer schema migration
   migrateMemoryBlueprintSchema(db);
+
+  // Agent layer — Sprint 3 scheduler (Henry's Routines).
+  migrateSchedulerSchema(db);
+
+  // Agent layer — Sprint 4 QuickBooks invoice cache.
+  migrateInvoicesSchema(db);
+}
+
+/**
+ * Idempotent migration for the QuickBooks Online invoice cache (design §4.4,
+ * Sprint 4). `qb_sync_invoices` pulls recent invoices from the QBO REST API and
+ * upserts them here keyed by `qbId`; `qb_get_balance` reads this table locally
+ * (no API call) to total outstanding and overdue receivables. Column names are
+ * camelCase to match the tool's row shape directly.
+ */
+function migrateInvoicesSchema(db: Database.Database) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS invoices (
+      id         TEXT PRIMARY KEY,
+      qbId       TEXT UNIQUE,
+      clientName TEXT,
+      amount     REAL NOT NULL DEFAULT 0,
+      amountPaid REAL NOT NULL DEFAULT 0,
+      status     TEXT NOT NULL DEFAULT 'open',
+      dueDate    TEXT,
+      issueDate  TEXT,
+      syncedAt   TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices (status);
+    CREATE INDEX IF NOT EXISTS idx_invoices_due ON invoices (dueDate);
+  `);
+}
+
+/**
+ * Idempotent migration for the agent scheduler (design §3). One row per
+ * scheduled Routine; `HenryScheduler` (electron/agent/scheduler.ts) loads the
+ * enabled ones at startup and registers them with node-cron. Column names are
+ * camelCase to match the scheduler's `ScheduledTask` shape directly.
+ */
+function migrateSchedulerSchema(db: Database.Database) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS scheduled_tasks (
+      id             TEXT PRIMARY KEY,
+      name           TEXT NOT NULL,
+      description    TEXT,
+      cronExpression TEXT NOT NULL,
+      prompt         TEXT NOT NULL,
+      enabled        INTEGER NOT NULL DEFAULT 1,
+      lastRunAt      TEXT,
+      nextRunAt      TEXT,
+      createdAt      TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_enabled
+      ON scheduled_tasks (enabled);
+  `);
 }
 
 /**
