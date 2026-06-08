@@ -22,28 +22,33 @@ people to fix already-fixed things._
 
 ## 🔴 Real remaining priorities
 
-### 1. Expand test coverage outward from the security core
-There are now tests for the path/command-safety helpers and content blocks. The
-next highest-value targets, in order:
-- **Session store** (`electron/python/session_store.py`) — search, migration,
-  branch/resume. Drive the CLI from a vitest test or a small pytest.
+### 1. Expand test coverage outward from the security core — _in progress_
+Done so far (93 tests): path/command-safety helpers, content blocks, the **agent
+tool runner approval gate** (`toolRunner.test.ts`), the **tool safety policy**
+guard (`tools/safetyPolicy.test.ts`), and the **session store** end-to-end
+(`session_store.test.ts`: CRUD, FTS search over flattened block text, token/cost
+accounting, resume, branch, and the v1→v2 migration). Remaining targets:
 - **AI streaming** (`electron/ipc/ai.ts`) — cancellation, error propagation.
+  Coupled to providers/ipcMain; extract the stream lifecycle to a testable unit
+  first.
 - **Task queue** (`electron/ipc/taskBroker.ts`) — priority ordering, abort.
-- **The agent tool runner** (`electron/agent/toolRunner.ts`) — the confirm-tier
-  gate must be tested; it's the approval boundary for AI-initiated actions.
 
-### 2. Security review of the agent action surface
-The shell/file surfaces are hardened, but the *agent layer* is new and growing
-(`electron/agent/tools/*`: email, calendar, messages, finance, web, quickbooks).
-Each tool that sends data out or takes an irreversible action should:
-- route through the confirm-tier gate (verify none bypass it), and
-- validate/escape its own inputs (same discipline as `computer:notify`).
-Worth a dedicated pass before these ship enabled by default.
+### 2. Security review of the agent action surface — _mostly done_
+Audited every agent tool's `safetyLevel` against what it does (2026-06-07). The
+confirm-tier gate is sound (blocks before execute, fails safe) and the dangerous
+tools are correctly `confirm`; `calendar_create_event` was raised notify→confirm.
+A regression guard (`tools/safetyPolicy.test.ts`) keeps senders/money/real-world
+writes gated. Remaining:
+- Per-tool **input validation/escaping** (same discipline as the `computer:notify`
+  fix) as new tools land.
+- Decide whether private-data **reads** (`email_read_recent`,
+  `messages_read_recent`), currently `silent`, should `notify`.
 
-### 3. Python dependency fallback for the session store
-The session store needs Python 3.9+ on the user's machine. `session:checkDeps`
-reports availability — make sure the renderer degrades gracefully (clear
-"history unavailable" state) instead of erroring when Python is missing.
+### 3. Python dependency fallback for the session store — _done at the bridge_
+`electron/ipc/sessionStore.ts` degrades gracefully: every `session:*` handler
+catches and returns `{ ok: false, error }`, and `session:checkDeps` returns
+`{ available: false }` when Python is missing — nothing throws. The renderer just
+needs to check `ok`/`available` when session-history UI is built.
 
 ### 4. Finish or hide the half-built panels
 Several panels are partial (CRM, finance, secretary, meeting recorder, deeper
