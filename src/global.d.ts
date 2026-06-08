@@ -76,6 +76,16 @@ declare global {
     maxTokens?: number;
     /** Ollama / local proxy base URL (renderer passes through to main). */
     apiUrl?: string;
+    /**
+     * Agent mode. When present and non-empty, the main process routes this turn
+     * through the agent ToolRunner (calendar, messages, quotes, QuickBooks, web)
+     * instead of a plain completion. The array is only a flag — the real tool
+     * schemas come from the main-process registry — so passing the lightweight
+     * `listTools()` catalogue (or any non-empty array) is sufficient.
+     */
+    tools?: unknown[];
+    /** Session id the agent run logs its tool-call audit trail against. */
+    sessionId?: string;
   }
 
   interface HenryAIUsage {
@@ -404,6 +414,9 @@ declare global {
     sessionSearch: (params: Record<string, unknown>) => Promise<HenrySessionResult>;
     sessionAddMessage: (params: Record<string, unknown>) => Promise<HenrySessionResult>;
     sessionGetMessages: (params: Record<string, unknown>) => Promise<HenrySessionResult>;
+    // Agent audit log (Sprint 4): every tool-call message, newest first.
+    listToolCalls?: (limit?: number) => Promise<HenrySessionResult>;
+    clearToolCalls?: () => Promise<HenrySessionResult>;
     sessionGet: (params: Record<string, unknown>) => Promise<HenrySessionResult>;
     sessionSetTitle: (params: Record<string, unknown>) => Promise<HenrySessionResult>;
     sessionArchive: (params: Record<string, unknown>) => Promise<HenrySessionResult>;

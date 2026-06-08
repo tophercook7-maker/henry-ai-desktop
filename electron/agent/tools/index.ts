@@ -8,6 +8,7 @@
  *
  *   Sprint 1: memory, finance
  *   Sprint 2: calendar, messages, email (macOS automation) + permissions_check
+ *   Sprint 4: web (search + fetch), quickbooks (QBO REST API)
  */
 
 import type { ToolRegistry } from "../toolRegistry";
@@ -17,6 +18,8 @@ import { calendarTools } from "./calendar";
 import { messagesTools } from "./messages";
 import { emailTools } from "./email";
 import { permissionsTools } from "./permissions";
+import { webTools } from "./web";
+import { quickbooksTools } from "./quickbooks";
 
 export function registerAllTools(registry: ToolRegistry): void {
   registry.registerAll([
@@ -26,5 +29,7 @@ export function registerAllTools(registry: ToolRegistry): void {
     ...messagesTools(),
     ...emailTools(),
     ...permissionsTools(),
+    ...webTools(),
+    ...quickbooksTools(),
   ]);
 }

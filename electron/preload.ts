@@ -12,6 +12,13 @@ type AIInvokeParams = {
   messages: Array<{ role: string; content: string }>;
   temperature?: number;
   maxTokens?: number;
+  apiUrl?: string;
+  // Agent mode (off unless the caller opts in). A non-empty `tools` array tells
+  // the main process to route this turn through the agent ToolRunner; the real
+  // tool schemas come from the main-process registry, so the array is just a
+  // flag. `sessionId` ties the run's tool-call audit trail to a session.
+  tools?: unknown[];
+  sessionId?: string;
 };
 
 type TaskUpdatePayload = Partial<Task> & { id: string };
@@ -453,6 +460,9 @@ contextBridge.exposeInMainWorld('henryAPI', {
   sessionSearch: (params: Record<string, unknown>) => ipcRenderer.invoke('session:search', params),
   sessionAddMessage: (params: Record<string, unknown>) => ipcRenderer.invoke('session:addMessage', params),
   sessionGetMessages: (params: Record<string, unknown>) => ipcRenderer.invoke('session:getMessages', params),
+  // Agent audit log (Sprint 4): tool-call history + clear.
+  listToolCalls: (limit?: number) => ipcRenderer.invoke('session:list-tool-calls', { limit: limit ?? 200 }),
+  clearToolCalls: () => ipcRenderer.invoke('session:clear-tool-calls', {}),
   sessionGet: (params: Record<string, unknown>) => ipcRenderer.invoke('session:get', params),
   sessionSetTitle: (params: Record<string, unknown>) => ipcRenderer.invoke('session:setTitle', params),
   sessionArchive: (params: Record<string, unknown>) => ipcRenderer.invoke('session:archive', params),
