@@ -43,6 +43,7 @@ import ScripturePanel from '../scripture/ScripturePanel';
 import PrayerPanel from '../prayer/PrayerPanel';
 import QuotingPanel from '../quoting/QuotingPanel';
 import RoutinesPanel from '../routines/RoutinesPanel';
+import AuditLogPanel from '../agent/AuditLogPanel';
 import ImageGenPanel from '../imagegen/ImageGenPanel';
 import VideoGenPanel from '../videogen/VideoGenPanel';
 import IntegrationsPanel from '../integrations/IntegrationsPanel';
@@ -277,6 +278,7 @@ export default function Layout() {
           {currentView === 'prayer' && <PanelBoundary><PrayerPanel /></PanelBoundary>}
           {currentView === 'quoting' && <PanelBoundary><QuotingPanel /></PanelBoundary>}
           {currentView === 'routines' && <PanelBoundary><RoutinesPanel /></PanelBoundary>}
+          {currentView === 'audit' && <PanelBoundary><AuditLogPanel /></PanelBoundary>}
           {currentView === 'imagegen' && <PanelBoundary><ImageGenPanel /></PanelBoundary>}
       {currentView === 'videogen' && <PanelBoundary><VideoGenPanel /></PanelBoundary>}
           {currentView === 'integrations' && <PanelBoundary><IntegrationsPanel /></PanelBoundary>}

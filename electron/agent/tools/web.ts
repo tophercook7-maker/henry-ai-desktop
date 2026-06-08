@@ -18,6 +18,7 @@
  * retry policy for web_*) can have a second go.
  */
 
+import { lookup } from "dns/promises";
 import type { ToolDefinition, ToolResult } from "../types";
 
 function ok(data: unknown): ToolResult {
@@ -70,6 +71,107 @@ async function fetchWithTimeout(
       headers: { "User-Agent": USER_AGENT, ...headers },
       redirect: "follow",
     });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// ── SSRF guard ──────────────────────────────────────────────────────────────
+// `web_fetch_page` pulls a model/user-supplied URL into context. Even though
+// it is confirm-tier, a page the user approves can 30x-redirect to an internal
+// address (cloud metadata at 169.254.169.254, a LAN router, localhost admin).
+// So we resolve each hop's host to its IP(s) and refuse private / loopback /
+// link-local / unique-local ranges, and follow redirects manually so every hop
+// is re-validated rather than trusting `redirect: "follow"`.
+
+const MAX_REDIRECTS = 5;
+
+/** True if an IPv4/IPv6 literal falls in a non-public (SSRF-sensitive) range. */
+function isPrivateIp(ip: string): boolean {
+  // IPv4-mapped IPv6 (::ffff:a.b.c.d) — unwrap and check as IPv4.
+  const mapped = ip.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i);
+  if (mapped) return isPrivateIp(mapped[1]);
+
+  if (ip.includes(".")) {
+    const o = ip.split(".").map(Number);
+    if (o.length !== 4 || o.some((n) => Number.isNaN(n) || n < 0 || n > 255)) return true; // malformed → refuse
+    const [a, b] = o;
+    if (a === 0 || a === 10 || a === 127) return true;            // this-network, private, loopback
+    if (a === 169 && b === 254) return true;                      // link-local incl. 169.254.169.254 metadata
+    if (a === 172 && b >= 16 && b <= 31) return true;             // private
+    if (a === 192 && b === 168) return true;                      // private
+    if (a === 100 && b >= 64 && b <= 127) return true;            // CGNAT
+    if (a === 192 && b === 0 && o[2] === 0) return true;          // IETF protocol assignments
+    if (a >= 224) return true;                                    // multicast / reserved
+    return false;
+  }
+
+  // IPv6
+  const v6 = ip.toLowerCase();
+  if (v6 === "::1" || v6 === "::") return true;                   // loopback / unspecified
+  if (v6.startsWith("fe80") || v6.startsWith("fe9") || v6.startsWith("fea") || v6.startsWith("feb")) return true; // link-local
+  if (v6.startsWith("fc") || v6.startsWith("fd")) return true;   // unique-local (fc00::/7)
+  return false;
+}
+
+/** Resolve `hostname` and throw if it (or any literal it is) maps to a private IP. */
+async function assertPublicHost(hostname: string): Promise<void> {
+  const host = hostname.replace(/^\[|\]$/g, ""); // strip IPv6 brackets
+  // Obvious local names — block before any DNS.
+  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local")) {
+    throw new Error(`Refusing to fetch a local address: ${hostname}`);
+  }
+  // IP literal → check directly. Hostname → resolve all A/AAAA and check each.
+  const isLiteral = /^[\d.]+$/.test(host) || host.includes(":");
+  if (isLiteral) {
+    if (isPrivateIp(host)) throw new Error(`Refusing to fetch a private address: ${hostname}`);
+    return;
+  }
+  const records = await lookup(host, { all: true });
+  if (records.length === 0) throw new Error(`Could not resolve host: ${hostname}`);
+  for (const r of records) {
+    if (isPrivateIp(r.address)) {
+      throw new Error(`Refusing to fetch ${hostname} — it resolves to a private address (${r.address}).`);
+    }
+  }
+}
+
+/**
+ * Fetch a public URL with SSRF protection: validate the host, follow redirects
+ * manually (re-validating each hop), and time out. Throws on a blocked host.
+ */
+async function fetchPublicWithTimeout(
+  startUrl: string,
+  timeoutMs: number,
+  headers: Record<string, string> = {},
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    let url = startUrl;
+    for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+      const parsed = new URL(url);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        throw new Error("Only http and https URLs are supported.");
+      }
+      await assertPublicHost(parsed.hostname);
+
+      const res = await fetch(url, {
+        signal: controller.signal,
+        headers: { "User-Agent": USER_AGENT, ...headers },
+        redirect: "manual",
+      });
+
+      // Manual redirect handling so every hop is re-validated.
+      if (res.status >= 300 && res.status < 400) {
+        const loc = res.headers.get("location");
+        if (!loc) return res; // redirect without a target — hand back as-is
+        url = new URL(loc, url).toString();
+        continue;
+      }
+      return res;
+    }
+    throw new Error(`Too many redirects (>${MAX_REDIRECTS}).`);
   } finally {
     clearTimeout(timer);
   }
@@ -249,7 +351,7 @@ export function webTools(): ToolDefinition[] {
         if (cached !== undefined) return ok({ ...(cached as object), cached: true });
 
         try {
-          const res = await fetchWithTimeout(parsed.toString(), 10_000, {
+          const res = await fetchPublicWithTimeout(parsed.toString(), 10_000, {
             Accept: "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8",
           });
           if (!res.ok) {
@@ -275,7 +377,13 @@ export function webTools(): ToolDefinition[] {
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
           const timedOut = /abort/i.test(msg);
-          return fail(timedOut ? "web_fetch_page timed out after 10s" : `web_fetch_page failed: ${msg}`, true);
+          // SSRF refusals, protocol errors, and too-many-redirects are
+          // deterministic — retrying won't help, so mark them non-retryable.
+          const deterministic = /Refusing to fetch|Only http|Too many redirects|Could not resolve host/i.test(msg);
+          return fail(
+            timedOut ? "web_fetch_page timed out after 10s" : `web_fetch_page failed: ${msg}`,
+            timedOut ? true : !deterministic,
+          );
         }
       },
     },

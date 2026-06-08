@@ -135,6 +135,43 @@ async function logToolCall(
   }
 }
 
+// ── Retry/backoff (design §5 retry policy) ─────────────────────────────────
+// Honours the `retryable` flag tools already set: network reads (web_search,
+// web_fetch_page, weather, QBO transient 5xx) mark transient failures
+// retryable. We retry those a couple of times with exponential backoff. We
+// NEVER retry confirm-tier tools — senders/writes (messages_send, email_send,
+// terminal_exec, invoice/event creation) must not fire twice from one approval.
+
+const MAX_TOOL_ATTEMPTS = 3;
+const RETRY_BACKOFF_MS = [1000, 2000]; // delays before attempts 2 and 3
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+async function runToolWithRetry(
+  tool: { execute: (a: Record<string, unknown>, c: AgentContext) => Promise<ToolResult>; safetyLevel: string; name: string },
+  args: Record<string, unknown>,
+  context: AgentContext,
+): Promise<ToolResult> {
+  // Side-effecting / gated tools execute exactly once.
+  const allowRetry = tool.safetyLevel !== 'confirm';
+
+  let result: ToolResult;
+  for (let attempt = 1; attempt <= MAX_TOOL_ATTEMPTS; attempt++) {
+    try {
+      result = await tool.execute(args, context);
+    } catch (e) {
+      result = { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+    const transient = !result.ok && result.retryable === true;
+    if (!allowRetry || !transient || attempt === MAX_TOOL_ATTEMPTS) return result;
+    const delay = RETRY_BACKOFF_MS[attempt - 1] ?? 2000;
+    console.log(`[agent:tool] ${tool.name} transient failure (attempt ${attempt}/${MAX_TOOL_ATTEMPTS}) — retrying in ${delay}ms`);
+    await sleep(delay);
+  }
+  // Unreachable, but satisfies the type checker.
+  return result!;
+}
+
 // ── Single tool call: gate → execute → signal ──────────────────────────────
 
 async function executeToolCall(
@@ -164,12 +201,7 @@ async function executeToolCall(
 
   send(context, 'agent:tool-started', { tool: tool.name, args });
 
-  let result: ToolResult;
-  try {
-    result = await tool.execute(args, context);
-  } catch (e) {
-    result = { ok: false, error: e instanceof Error ? e.message : String(e) };
-  }
+  const result = await runToolWithRetry(tool, args, context);
 
   send(context, 'agent:tool-completed', { tool: tool.name, result });
 

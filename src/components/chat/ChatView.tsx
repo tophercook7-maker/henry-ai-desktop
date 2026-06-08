@@ -387,6 +387,19 @@ export default function ChatView() {
   const [ttsEnabled, setTtsEnabled] = useState(() => {
     try { return localStorage.getItem('henry_tts_enabled') === 'true'; } catch { return false; }
   });
+  // Agent mode (off by default): when on, chat turns are routed through the
+  // agent ToolRunner so Henry can use his tools. Confirm-tier actions (send a
+  // message, create an event) still pause for approval.
+  const [agentMode, setAgentMode] = useState(() => {
+    try { return localStorage.getItem('henry_agent_mode') === 'true'; } catch { return false; }
+  });
+  const toggleAgentMode = () => {
+    setAgentMode((prev) => {
+      const next = !prev;
+      try { localStorage.setItem('henry_agent_mode', String(next)); } catch { /* ignore */ }
+      return next;
+    });
+  };
   const lastSpokenMsgIdRef = useRef<string | null>(null);
   const [design3dRefPath, setDesign3dRefPath] = useState<string | null>(() =>
     readLastWorkspaceFilePath()
@@ -1968,6 +1981,13 @@ What do you want to tackle first?`);
         apiUrl: companionProvider === 'ollama'
           ? (s.ollama_base_url || 'http://localhost:11434')
           : undefined,
+        // Agent mode: a non-empty `tools` array tells the main process to route
+        // this turn through the agent ToolRunner. The real tool schemas come
+        // from the main-process registry, so the marker array is sufficient.
+        // `sessionId` ties the run's tool-call audit trail to this conversation.
+        ...(agentMode
+          ? { tools: [{ name: 'henry-agent' }], sessionId: activeConversationId || undefined }
+          : {}),
       });
 
       streamRef.current = stream;
@@ -2871,6 +2891,8 @@ What do you want to tackle first?`);
                 placeholder="Message Henry…"
                 ttsEnabled={ttsEnabled}
                 onToggleTts={toggleTts}
+                agentMode={agentMode}
+                onToggleAgentMode={toggleAgentMode}
                 onSearch={handleSearch}
                 isSearching={isSearching}
                 ambientMode={settings.ambient_mode === 'on'}
