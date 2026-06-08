@@ -312,7 +312,10 @@ export function calendarTools(): ToolDefinition[] {
         "datetimes; location, notes, and a target calendar are optional " +
         "(defaults to the primary writable calendar).",
       category: "calendar",
-      safetyLevel: "notify",
+      // confirm: writes a real event to the user's calendar, which can sync to
+      // shared/work calendars and other devices. Treated like other real-world
+      // writes (qb_create_invoice, *_send) — pause for the user first.
+      safetyLevel: "confirm",
       confirmPrompt: (p) =>
         `Create calendar event "${String(p.title)}" from ${String(p.startDate)} to ${String(
           p.endDate,
