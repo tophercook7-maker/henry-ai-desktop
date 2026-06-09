@@ -196,6 +196,68 @@ function migrateDatabaseSchema(db: Database.Database) {
 
   // Agent layer — Sprint 4 QuickBooks invoice cache.
   migrateInvoicesSchema(db);
+
+  // Project Vault — rich project fields + seed Topher's real projects.
+  migrateProjectVaultSchema(db);
+  seedProjectVault(db);
+}
+
+/**
+ * Project Vault (build plan, Phase 1.1). Adds rich fields to the existing
+ * `projects` table so each project carries the context Henry needs to be a real
+ * command center: where the code lives, the live domain, the next action, the
+ * money angle, and freeform notes. Idempotent — only adds columns that are
+ * missing, so it is safe to run on every launch.
+ */
+function migrateProjectVaultSchema(db: Database.Database) {
+  const cols = db.prepare(`PRAGMA table_info(projects)`).all() as { name: string }[];
+  const has = (n: string) => cols.some((c) => c.name === n);
+  const add = (col: string, type: string) => {
+    if (!has(col)) {
+      try { db.exec(`ALTER TABLE projects ADD COLUMN ${col} ${type}`); } catch { /* ignore odd DB states */ }
+    }
+  };
+  add('description', 'TEXT'); // human description (distinct from the AI `summary`)
+  add('repo_url', 'TEXT');
+  add('domain', 'TEXT');
+  add('next_action', 'TEXT');
+  add('money_angle', 'TEXT');
+  add('notes', 'TEXT');
+  add('last_worked_at', 'TEXT');
+}
+
+/**
+ * Seed Topher's real projects once. Idempotent by name: a project is only
+ * inserted if no project with that name already exists, so user edits and
+ * deletions are never clobbered on a later launch.
+ */
+function seedProjectVault(db: Database.Database) {
+  const SEED: Array<{ name: string; type: string; description: string; money_angle?: string; next_action?: string }> = [
+    { name: 'MixedMakerShop', type: 'business', description: 'Maker shop + web-design services. Henry\'s money engine for local website leads.', money_angle: 'Local website builds + audits + retainers', next_action: 'Find and audit 5 local leads' },
+    { name: 'Henry AI', type: 'software', description: 'Topher\'s personal AI operating system / command center.', money_angle: 'Paid product / personal leverage', next_action: 'Phase 1: Project Vault + Approval Queue' },
+    { name: 'What Do I Say?', type: 'product', description: 'Conversation / communication helper app.', money_angle: 'App revenue' },
+    { name: 'StrainSpotter', type: 'product', description: 'Strain identification / tracking product.', money_angle: 'App or affiliate revenue' },
+    { name: 'GiGi\'s Print Shop', type: 'business', description: '3D-print shop project.', money_angle: 'Print sales + custom jobs' },
+    { name: 'Tap Hub / iTap Ring', type: 'product', description: 'NFC tap hub + ring product and dashboard.', money_angle: 'Hardware + dashboard subscription' },
+    { name: 'FreshCut Property Care', type: 'business', description: 'Property care / lawn service business.', money_angle: 'Local service revenue' },
+    { name: 'Topher\'s Web Design', type: 'business', description: 'Web design service brand.', money_angle: 'Client website builds' },
+    { name: 'Book / Life Story', type: 'writing', description: 'Memoir / life story — MS journey, fatherhood, rebuilding, faith.', money_angle: 'Book sales / legacy' },
+    { name: 'Facebook Lead System', type: 'system', description: 'Facebook-based lead generation + tracking system.', money_angle: 'Lead pipeline for the service businesses' },
+  ];
+
+  const exists = db.prepare('SELECT 1 FROM projects WHERE name = ? LIMIT 1');
+  const insert = db.prepare(
+    `INSERT INTO projects (id, name, type, status, description, summary, money_angle, next_action, last_worked_at)
+     VALUES (?, ?, ?, 'active', ?, ?, ?, ?, datetime('now'))`,
+  );
+  const seed = db.transaction(() => {
+    for (const p of SEED) {
+      if (exists.get(p.name)) continue;
+      const id = `proj_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`;
+      insert.run(id, p.name, p.type, p.description, p.description, p.money_angle ?? null, p.next_action ?? null);
+    }
+  });
+  try { seed(); } catch { /* ignore seed errors on unusual DB states */ }
 }
 
 /**

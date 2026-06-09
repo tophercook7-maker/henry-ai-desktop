@@ -279,7 +279,8 @@ export function memoryTools(): ToolDefinition[] {
           const status = params.status ? String(params.status) : "active";
           const projects = db
             .prepare(
-              `SELECT id, name, type, status, summary, last_active_at, updated_at
+              `SELECT id, name, type, status, description, summary, next_action, money_angle,
+                      domain, repo_url, last_worked_at, last_active_at, updated_at
                FROM projects
                WHERE status = ?
                ORDER BY strategic_importance_score DESC, last_active_at DESC
@@ -337,6 +338,113 @@ export function memoryTools(): ToolDefinition[] {
             commitments,
             count: commitments.length,
           });
+        } catch (e) {
+          return fail(e instanceof Error ? e.message : String(e));
+        }
+      },
+    },
+
+    // ── project_get ──────────────────────────────────────────────────────
+    {
+      name: "project_get",
+      description:
+        "Get one project from the Project Vault by name (fuzzy match): its status, " +
+        "description, next action, money angle, repo, domain, and notes. Use when " +
+        "the user asks about a specific project (e.g. 'where's StrainSpotter at?').",
+      category: "memory",
+      safetyLevel: "silent",
+      inputSchema: {
+        type: "object",
+        properties: { name: { type: "string", description: "Project name (fuzzy)." } },
+        required: ["name"],
+        additionalProperties: false,
+      },
+      async execute(params, { db }) {
+        try {
+          const name = String(params.name ?? "").trim();
+          if (!name) return fail("name is required");
+          const project = db
+            .prepare(
+              `SELECT id, name, type, status, description, summary, repo_url, domain,
+                      next_action, money_angle, notes, last_worked_at, last_active_at, updated_at
+               FROM projects
+               WHERE name = ? COLLATE NOCASE OR name LIKE ?
+               ORDER BY (name = ? COLLATE NOCASE) DESC, last_active_at DESC
+               LIMIT 1`,
+            )
+            .get(name, like(name), name) as Row | undefined;
+          if (!project) return ok({ found: false, name });
+          return ok({ found: true, project });
+        } catch (e) {
+          return fail(e instanceof Error ? e.message : String(e));
+        }
+      },
+    },
+
+    // ── project_update ───────────────────────────────────────────────────
+    {
+      name: "project_update",
+      description:
+        "Update a project in the Project Vault by name. Use to change status, set " +
+        "the next action, record the money angle, repo URL, domain, description, or " +
+        "append a note. Only the fields you pass are changed.",
+      category: "memory",
+      safetyLevel: "notify",
+      confirmPrompt: (p) => `Update project "${String(p.name)}"`,
+      inputSchema: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Project name (fuzzy match)." },
+          status: { type: "string", enum: ["active", "paused", "completed", "archived"], description: "New status." },
+          next_action: { type: "string", description: "The single next action." },
+          money_angle: { type: "string", description: "How this project makes money." },
+          repo_url: { type: "string", description: "Code repository URL." },
+          domain: { type: "string", description: "Live domain." },
+          description: { type: "string", description: "Human description." },
+          note: { type: "string", description: "A note to append to the project's notes." },
+        },
+        required: ["name"],
+        additionalProperties: false,
+      },
+      async execute(params, { db }) {
+        try {
+          const name = String(params.name ?? "").trim();
+          if (!name) return fail("name is required");
+          const project = db
+            .prepare(
+              `SELECT id, notes FROM projects
+               WHERE name = ? COLLATE NOCASE OR name LIKE ?
+               ORDER BY (name = ? COLLATE NOCASE) DESC LIMIT 1`,
+            )
+            .get(name, like(name), name) as { id: string; notes: string | null } | undefined;
+          if (!project) return fail(`No project found matching "${name}".`);
+
+          const sets: string[] = [];
+          const args: unknown[] = [];
+          const setCol = (col: string, val: unknown) => { sets.push(`${col} = ?`); args.push(val); };
+
+          if (typeof params.status === "string") setCol("status", params.status);
+          if (typeof params.next_action === "string") setCol("next_action", params.next_action);
+          if (typeof params.money_angle === "string") setCol("money_angle", params.money_angle);
+          if (typeof params.repo_url === "string") setCol("repo_url", params.repo_url);
+          if (typeof params.domain === "string") setCol("domain", params.domain);
+          if (typeof params.description === "string") setCol("description", params.description);
+          if (typeof params.note === "string" && params.note.trim()) {
+            const stamp = new Date().toISOString().slice(0, 10);
+            const appended = `${project.notes ? project.notes + "\n" : ""}[${stamp}] ${params.note.trim()}`;
+            setCol("notes", appended);
+          }
+
+          if (sets.length === 0) return fail("Nothing to update — pass at least one field.");
+          setCol("last_worked_at", new Date().toISOString());
+          sets.push("updated_at = datetime('now')");
+          sets.push("last_active_at = datetime('now')");
+
+          db.prepare(`UPDATE projects SET ${sets.join(", ")} WHERE id = ?`).run(...args, project.id);
+          const updated = db
+            .prepare(`SELECT id, name, status, next_action, money_angle, repo_url, domain FROM projects WHERE id = ?`)
+            .get(project.id) as Row;
+          return ok({ updated: true, project: updated });
         } catch (e) {
           return fail(e instanceof Error ? e.message : String(e));
         }
