@@ -115,8 +115,8 @@ export class HenrySelfRepairBoundary extends Component<Props, State> {
               </svg>
             </div>
             <div>
-              <h2 className="text-white font-semibold text-base">Something crashed</h2>
-              <p className="text-henry-text-muted text-sm">Henry has been notified and is looking into it.</p>
+              <h2 className="text-white font-semibold text-base">This view ran into a problem</h2>
+              <p className="text-henry-text-muted text-sm">Your other work is safe. Reload, or try to recover this view.</p>
             </div>
           </div>
 
@@ -147,7 +147,7 @@ export class HenrySelfRepairBoundary extends Component<Props, State> {
           </div>
 
           <p className="text-henry-text-muted text-xs text-center">
-            Henry has logged this and will attempt to identify and fix the root cause.
+            The error was logged on this device. If it keeps happening, the Error ID above helps track it down.
           </p>
         </div>
       </div>

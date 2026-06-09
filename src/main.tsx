@@ -12,14 +12,6 @@ try {
   }
 } catch { /* ignore */ }
 
-window.addEventListener('error', (e) => {
-  console.error('[Henry renderer] Uncaught error:', e.error?.message || e.message);
-  // Don't show alert for minor errors - just log
-});
-window.addEventListener('unhandledrejection', (e) => {
-  console.error('[Henry renderer] Unhandled rejection:', e.reason?.message || e.reason);
-  e.preventDefault(); // Prevent default crash behavior
-});
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import { HenrySelfRepairBoundary } from './components/HenrySelfRepairBoundary';
@@ -49,6 +41,7 @@ window.addEventListener('error', (e) => {
 });
 window.addEventListener('unhandledrejection', (e) => {
   console.error('[Henry:renderer] Unhandled rejection:', e.reason);
+  e.preventDefault(); // Suppress the default "uncaught (in promise)" crash noise.
   try {
     const msg = e.reason instanceof Error
       ? e.reason.message
