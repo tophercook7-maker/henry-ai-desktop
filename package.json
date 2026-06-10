@@ -37,7 +37,7 @@
     "prepare": "husky || true",
     "postinstall": "npx @electron/rebuild || true",
     "build:win:arm64": "vite build && electron-builder --win --arm64",
-    "build:mac:signed": "vite build && electron-builder --mac --arm64 --x64",
+    "build:mac:signed": "vite build && electron-builder --mac --arm64",
     "release": "vite build && electron-builder --mac --win --publish always"
   },
   "lint-staged": {

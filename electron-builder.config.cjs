@@ -25,8 +25,10 @@ module.exports = {
 
   // macOS — unsigned builds use: electron-builder --mac --config.mac.identity=null
   mac: {
+    // Apple Silicon only (arm64). Intel (x64) is intentionally not built —
+    // re-add 'x64' here if an Intel Mac build is ever needed again.
     target: [
-      { target: 'dmg', arch: ['arm64', 'x64'] },
+      { target: 'dmg', arch: ['arm64'] },
     ],
     category: 'public.app-category.developer-tools',
     // icon: 'build/icon.icns' — add when icon file exists

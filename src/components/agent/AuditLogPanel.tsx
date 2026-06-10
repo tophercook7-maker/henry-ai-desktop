@@ -224,7 +224,7 @@ const FILTERS: { id: Filter; label: string }[] = [
   { id: 'all', label: 'All' },
   { id: 'silent', label: 'Silent' },
   { id: 'notify', label: 'Notify' },
-  { id: 'confirm', label: 'Confirm' },
+  { id: 'confirm', label: 'Approvals' },
   { id: 'failed', label: 'Failed' },
 ];
 
