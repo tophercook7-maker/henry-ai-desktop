@@ -2090,6 +2090,7 @@ What do you want to tackle first?`);
           provider: companionProvider,
           tokens_used: usage?.total_tokens,
           cost: usage?.cost,
+          routeReason: route.reason,
           created_at: new Date().toISOString(),
         };
 

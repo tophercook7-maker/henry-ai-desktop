@@ -17,6 +17,10 @@ export interface ModelRoute {
   provider: string;
   model: string;
   apiKey: string;
+  /** Which tier was chosen — drives the "why" shown to the user. */
+  tier?: 'fast' | 'balanced' | 'quality';
+  /** Plain-English reason the router picked this model (e.g. "Quick question → fast model"). */
+  reason?: string;
 }
 
 export interface STTRoute {
@@ -137,6 +141,15 @@ export function resolveChat(
       : 'balanced';
   }
 
+  // Plain-English "why" surfaced under each reply (build plan, Phase 1.3).
+  const reason = ((): string => {
+    if (preference === 'fast') return 'Fast mode (your setting)';
+    if (preference === 'quality') return 'Quality mode (your setting)';
+    if (messageTask === 'chat_fast') return 'Quick question → fast model';
+    if (messageTask === 'chat_quality') return 'Heavier task → quality model';
+    return 'Balanced default';
+  })();
+
   // Tier configs — fall through to primary if tier not configured
   const primaryProvider = settings.companion_provider || 'groq';
   const primaryModel = settings.companion_model || 'llama-3.3-70b-versatile';
@@ -183,7 +196,13 @@ export function resolveChat(
       primaryModels.length === 0 || primaryModels.includes(primaryModel)
         ? primaryModel
         : primaryModels[0];
-    return { provider: primaryProvider, model: resolvedModel, apiKey: primaryKey };
+    return {
+      provider: primaryProvider,
+      model: resolvedModel,
+      apiKey: primaryKey,
+      tier: targetTier,
+      reason: `${reason} · fell back to your primary (no key for the ${targetTier} provider)`,
+    };
   }
 
   // Validate that the chosen model actually exists in this provider's model list
@@ -198,7 +217,7 @@ export function resolveChat(
       ? chosenModel
       : providerModels[0] || chosenModel;
 
-  return { provider: chosenProvider, model: finalModel, apiKey };
+  return { provider: chosenProvider, model: finalModel, apiKey, tier: targetTier, reason };
 }
 
 /** Resolve STT route — Groq Whisper, with retry model available. */

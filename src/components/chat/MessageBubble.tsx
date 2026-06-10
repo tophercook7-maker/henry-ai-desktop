@@ -285,12 +285,22 @@ export default function MessageBubble({
           })()}
         </div>
 
-        {!isUser && !isStreaming && message.cost != null && message.cost > 0 && (
-          <div className="mt-2 flex items-center gap-3 text-[10px] text-henry-text-muted">
+        {!isUser && !isStreaming &&
+          (message.routeReason ||
+            (message.tokens_used != null && message.tokens_used > 0) ||
+            (message.cost != null && message.cost > 0)) && (
+          <div className="mt-2 flex items-center flex-wrap gap-x-3 gap-y-1 text-[10px] text-henry-text-muted">
             {message.tokens_used != null && message.tokens_used > 0 && (
               <span>{message.tokens_used.toLocaleString()} tokens</span>
             )}
-            <span>${message.cost.toFixed(6)}</span>
+            {message.cost != null && message.cost > 0 ? (
+              <span>${message.cost.toFixed(6)}</span>
+            ) : (
+              <span>free</span>
+            )}
+            {message.routeReason && (
+              <span className="text-henry-text-muted/80">· {message.routeReason}</span>
+            )}
           </div>
         )}
 
