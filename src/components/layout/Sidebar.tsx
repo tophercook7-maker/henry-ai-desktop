@@ -1,10 +1,10 @@
 import { useState, useEffect, type ComponentType } from 'react';
-import { Shield } from 'lucide-react';
+import { Shield, FolderKanban, Users } from 'lucide-react';
 import { useStore } from '../../store';
 
 // R2-Fix 9: keep this in sync with src/types/index.ts ViewType.
 type ViewType = 'today' | 'chat' | 'companion' | 'secretary' | 'contacts' | 'tasks' | 'files' | 'workspace' | 'terminal' | 'computer' | 'printer' | 'costs' | 'settings' | 'journal' | 'focus' | 'recorder' | 'memos' | 'queue' | 'modes' | 'reminders' | 'crm' | 'finance' | 'lists' | 'printstudio' | 'machines' | 'materials' | 'production' | 'waste' | 'maintenance' | 'imagegen' | 'videogen' | 'integrations' | 'github' | 'linear' | 'notion' | 'slack' | 'captures' | 'weekly' | 'health' | 'goals' | 'hq' | 'setup' | 'memory' | 'prayer' | 'quoting'
-  | 'scripture' | 'routines' | 'audit';
+  | 'scripture' | 'routines' | 'audit' | 'vault' | 'crews';
 
 // A nav item renders either a glyph (`icon`) or a lucide component (`lucideIcon`).
 type NavItem = { id: ViewType; icon?: string; lucideIcon?: ComponentType<{ size?: number }>; label: string };
@@ -28,6 +28,10 @@ const CORE_NAV: NavItem[] = [
 ];
 
 const BUSINESS_NAV: NavItem[] = [
+  // Build plan Phase 1: the Project Vault — your projects at a glance.
+  { id: 'vault',      lucideIcon: FolderKanban, label: 'Projects' },
+  // Build plan Phase 2: Agent Crews — role-based teams.
+  { id: 'crews',      lucideIcon: Users, label: 'Crews' },
   { id: 'secretary',  icon: '◻',  label: 'Secretary' },
   { id: 'crm',        icon: '◇',  label: 'Clients' },
   { id: 'finance',    icon: '◆',  label: 'Finance' },
