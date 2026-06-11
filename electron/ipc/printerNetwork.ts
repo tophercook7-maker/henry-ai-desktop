@@ -12,6 +12,8 @@
  */
 
 import { ipcMain } from 'electron';
+import fs from 'fs';
+import path from 'path';
 
 export interface NetPrinterConn {
   ip: string;
@@ -132,9 +134,49 @@ async function moonrakerCommand(conn: NetPrinterConn, action: Action, gcode?: st
   if (r.status >= 300) throw new Error(`Moonraker ${action} failed (${r.status}).`);
 }
 
+// ── Upload + (optionally) start a print ─────────────────────────────────────
+
+async function uploadGcode(conn: NetPrinterConn, gcodePath: string, print: boolean): Promise<{ started: boolean }> {
+  if (!fs.existsSync(gcodePath)) throw new Error(`G-code not found: ${gcodePath}`);
+  const buf = fs.readFileSync(gcodePath);
+  const filename = path.basename(gcodePath);
+  const form = new FormData();
+  form.append('file', new Blob([buf], { type: 'text/plain' }), filename);
+  form.append('print', String(!!print));
+
+  if (isMoonraker(conn.kind)) {
+    const res = await fetch(`${base(conn, 7125)}/server/files/upload`, { method: 'POST', body: form });
+    if (res.status >= 300) throw new Error(`Moonraker upload failed (${res.status}).`);
+    return { started: print };
+  }
+  if (isOctoPrint(conn.kind)) {
+    if (!conn.apiKey) throw new Error('OctoPrint needs an API key to upload.');
+    const res = await fetch(`${base(conn, 80)}/api/files/local`, {
+      method: 'POST',
+      headers: { 'X-Api-Key': conn.apiKey },
+      body: form,
+    });
+    if (res.status === 401 || res.status === 403) throw new Error('OctoPrint rejected the API key.');
+    if (res.status >= 300) throw new Error(`OctoPrint upload failed (${res.status}).`);
+    return { started: print };
+  }
+  throw new Error(`Sending isn't supported for "${conn.kind}" yet.`);
+}
+
 // ── IPC ─────────────────────────────────────────────────────────────────────
 
 export function registerPrinterNetworkHandlers(): void {
+  ipcMain.handle('printerNet:upload', async (_e, payload: { conn: NetPrinterConn; gcodePath: string; print?: boolean }) => {
+    try {
+      const { conn, gcodePath, print } = payload ?? ({} as { conn: NetPrinterConn; gcodePath: string; print?: boolean });
+      if (!conn?.ip) throw new Error('No printer address.');
+      const r = await uploadGcode(conn, String(gcodePath ?? ''), print !== false);
+      return { ok: true, result: r };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  });
+
   ipcMain.handle('printerNet:status', async (_e, conn: NetPrinterConn) => {
     try {
       if (!conn?.ip) throw new Error('No printer address.');

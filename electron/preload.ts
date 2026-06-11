@@ -140,11 +140,17 @@ contextBridge.exposeInMainWorld('henryAPI', {
   printerNetStatus: (conn: Record<string, unknown>) => ipcRenderer.invoke('printerNet:status', conn),
   printerNetCommand: (conn: Record<string, unknown>, action: string, gcode?: string) =>
     ipcRenderer.invoke('printerNet:command', { conn, action, gcode }),
+  printerNetUpload: (conn: Record<string, unknown>, gcodePath: string, print?: boolean) =>
+    ipcRenderer.invoke('printerNet:upload', { conn, gcodePath, print }),
 
   // ── Slicer ────────────────────────────────────────────────
   slicerStatus: () => ipcRenderer.invoke('slicer:status'),
-  slicerSlice: (params: { modelPath: string; settings?: Record<string, string | number>; outPath?: string }) =>
+  slicerSlice: (params: { modelPath: string; settings?: Record<string, string | number>; outPath?: string; printerDef?: string }) =>
     ipcRenderer.invoke('slicer:slice', params),
+  slicerProfilesList: () => ipcRenderer.invoke('slicerProfiles:list'),
+  slicerProfileCreate: (p: Record<string, unknown>) => ipcRenderer.invoke('slicerProfiles:create', p),
+  slicerProfileUpdate: (id: string, patch: Record<string, unknown>) => ipcRenderer.invoke('slicerProfiles:update', { id, patch }),
+  slicerProfileDelete: (id: string) => ipcRenderer.invoke('slicerProfiles:delete', { id }),
 
   // ── Book Engine (life material) ───────────────────────────
   listBookEntries: (filter?: { kind?: string; limit?: number }) => ipcRenderer.invoke('book:list', filter),

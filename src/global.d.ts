@@ -270,6 +270,18 @@ declare global {
     job?: string;
   }
 
+  /** A saved slicing profile (slicer_profiles table). */
+  interface HenrySlicerProfile {
+    id: string;
+    name: string;
+    material?: string | null;
+    printer_def?: string | null;
+    settings_json: string;
+    notes?: string | null;
+    created_at?: string;
+    updated_at?: string;
+  }
+
   /** A captured piece of book material (book_entries table). */
   interface HenryBookEntry {
     id: string;
@@ -547,10 +559,15 @@ declare global {
     discoverPrinters?: () => Promise<{ ok: boolean; result?: HenryDiscoveredPrinter[]; error?: string }>;
     printerNetStatus?: (conn: HenryPrinterConn) => Promise<{ ok: boolean; result?: HenryPrinterStatus; error?: string }>;
     printerNetCommand?: (conn: HenryPrinterConn, action: string, gcode?: string) => Promise<{ ok: boolean; error?: string }>;
+    printerNetUpload?: (conn: HenryPrinterConn, gcodePath: string, print?: boolean) => Promise<{ ok: boolean; result?: { started: boolean }; error?: string }>;
 
     // ── Slicer ────────────────────────────────────────────────
     slicerStatus?: () => Promise<{ ok: boolean; result?: { available: boolean; missing: string[]; version?: string; enginePath?: string; definitionsDir?: string; printerDef?: string }; error?: string }>;
-    slicerSlice?: (params: { modelPath: string; settings?: Record<string, string | number>; outPath?: string }) => Promise<{ ok: boolean; result?: { gcodePath: string; estimate: { timeSeconds?: number; filamentMm?: number; filamentGrams?: number }; bytes: number }; error?: string }>;
+    slicerSlice?: (params: { modelPath: string; settings?: Record<string, string | number>; outPath?: string; printerDef?: string }) => Promise<{ ok: boolean; result?: { gcodePath: string; estimate: { timeSeconds?: number; filamentMm?: number; filamentGrams?: number }; bytes: number }; error?: string }>;
+    slicerProfilesList?: () => Promise<{ ok: boolean; result?: HenrySlicerProfile[]; error?: string }>;
+    slicerProfileCreate?: (p: Partial<HenrySlicerProfile> & { settings?: Record<string, string> }) => Promise<{ ok: boolean; result?: HenrySlicerProfile; error?: string }>;
+    slicerProfileUpdate?: (id: string, patch: Record<string, unknown>) => Promise<{ ok: boolean; result?: HenrySlicerProfile; error?: string }>;
+    slicerProfileDelete?: (id: string) => Promise<{ ok: boolean; result?: { deleted: boolean }; error?: string }>;
 
     // ── Book Engine (life material) ───────────────────────────
     listBookEntries?: (filter?: { kind?: string; limit?: number }) => Promise<{ ok: boolean; result?: HenryBookEntry[]; error?: string }>;
