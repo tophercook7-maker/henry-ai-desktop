@@ -223,7 +223,9 @@ function wireIpc() {
   if (ipcWired) return;
   ipcWired = true;
   ipcMain.on('henry:remote:end', (_e, sessionId: string) => {
-    if (active && active.id === sessionId) active.end('user_ended');
+    try {
+      if (active && active.id === sessionId) active.end('user_ended');
+    } catch { /* never let a fire-and-forget handler throw uncaught */ }
   });
 }
 

@@ -183,9 +183,13 @@ async function qbRequest(
   if (!tokens) return { ok: false, status: 0, error: "not_connected" };
 
   const url = apiBase(db) + tokens.realmId + "/" + pathAndQuery;
+  // Hard timeout so a stalled QuickBooks API can't hang the agent/tool call.
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 15_000);
   try {
     const res = await fetch(url, {
       ...init,
+      signal: ctrl.signal,
       headers: {
         Authorization: `Bearer ${tokens.accessToken}`,
         Accept: "application/json",
@@ -212,7 +216,10 @@ async function qbRequest(
     }
     return { ok: true, status: res.status, data };
   } catch (e) {
-    return { ok: false, status: 0, error: e instanceof Error ? e.message : String(e) };
+    const aborted = e instanceof Error && /abort/i.test(e.message);
+    return { ok: false, status: 0, error: aborted ? 'QuickBooks request timed out.' : e instanceof Error ? e.message : String(e) };
+  } finally {
+    clearTimeout(timer);
   }
 }
 

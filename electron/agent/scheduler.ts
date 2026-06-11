@@ -372,8 +372,13 @@ export class HenryScheduler {
       { role: "user", content: prompt },
     ];
 
-    const complete = (msgs: RunnerMessage[], modelTools: ModelTool[]): Promise<ModelCompletion> =>
-      callAIWithTools({ provider, model, apiKey, messages: msgs, modelTools });
+    // Hard timeout per model round so a stalled provider can't hang a Routine.
+    const complete = (msgs: RunnerMessage[], modelTools: ModelTool[]): Promise<ModelCompletion> => {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 120_000);
+      return callAIWithTools({ provider, model, apiKey, messages: msgs, modelTools, signal: ctrl.signal })
+        .finally(() => clearTimeout(timer));
+    };
 
     const context = {
       db: this.db,
