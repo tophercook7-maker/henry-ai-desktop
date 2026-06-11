@@ -189,6 +189,46 @@ export const DEFAULT_CREWS: Crew[] = [
     ],
   },
   {
+    id: 'council',
+    name: 'Decision Council',
+    description: 'Put a hard decision to a room — and hear the argument, not just an answer.',
+    goal: 'Debate a decision from real angles, then make a clear call with the reasoning.',
+    agents: [
+      {
+        id: 'advocate',
+        name: 'Advocate',
+        role: 'The case for',
+        goal: 'Make the strongest honest case for doing it.',
+        systemPrompt:
+          'You argue FOR the decision. Make the strongest honest case — the upside, why it could work, what it unlocks. Be persuasive but truthful; no strawmen, no hype.',
+      },
+      {
+        id: 'skeptic',
+        name: 'Skeptic',
+        role: 'The case against',
+        goal: 'Make the strongest honest case against.',
+        systemPrompt:
+          'You argue AGAINST. Answer the Advocate directly, then make the strongest honest case against — the costs, the risks, what breaks, what you\'d regret. Push hard, stay fair.',
+      },
+      {
+        id: 'pragmatist',
+        name: 'Pragmatist',
+        role: 'What\'s realistic',
+        goal: 'Cut through to what actually matters here.',
+        systemPrompt:
+          'You are the Pragmatist. Weigh both sides against Topher\'s real situation — solo, limited time, health, money. What actually matters here? What\'s the smallest version that tests it? Name the one or two factors the call really hinges on.',
+      },
+      {
+        id: 'chair',
+        name: 'Chair',
+        role: 'The call',
+        goal: 'Make a clear decision with the reasoning.',
+        systemPrompt:
+          'You are the Chair. You\'ve heard the room. Make the call — a clear yes / no / not yet — in one line, then the few reasons that decided it, and the very next step. Decide; don\'t hedge.',
+      },
+    ],
+  },
+  {
     id: 'qa',
     name: 'QA Crew',
     description: 'Stress-test a plan or output for risks and gaps.',

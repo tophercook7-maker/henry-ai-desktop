@@ -47,6 +47,7 @@ import AuditLogPanel from '../agent/AuditLogPanel';
 import ProjectVaultPanel from '../vault/ProjectVaultPanel';
 import CrewsPanel from '../crews/CrewsPanel';
 import MoneyEnginePanel from '../money/MoneyEnginePanel';
+import BookEnginePanel from '../book/BookEnginePanel';
 import ImageGenPanel from '../imagegen/ImageGenPanel';
 import VideoGenPanel from '../videogen/VideoGenPanel';
 import IntegrationsPanel from '../integrations/IntegrationsPanel';
@@ -154,8 +155,13 @@ export default function Layout() {
         setPaletteOpen((v) => !v);
       }
     }
+    function openPalette() { setPaletteOpen(true); }
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('henry:open-palette', openPalette);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('henry:open-palette', openPalette);
+    };
   }, []);
 
   const handlePaletteSetMode = useCallback((mode: HenryOperatingMode) => {
@@ -285,6 +291,7 @@ export default function Layout() {
           {currentView === 'vault' && <PanelBoundary><ProjectVaultPanel /></PanelBoundary>}
           {currentView === 'crews' && <PanelBoundary><CrewsPanel /></PanelBoundary>}
           {currentView === 'money' && <PanelBoundary><MoneyEnginePanel /></PanelBoundary>}
+          {currentView === 'book' && <PanelBoundary><BookEnginePanel /></PanelBoundary>}
           {currentView === 'imagegen' && <PanelBoundary><ImageGenPanel /></PanelBoundary>}
       {currentView === 'videogen' && <PanelBoundary><VideoGenPanel /></PanelBoundary>}
           {currentView === 'integrations' && <PanelBoundary><IntegrationsPanel /></PanelBoundary>}

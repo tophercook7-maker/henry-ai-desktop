@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useStore } from '../../store';
 import { HENRY_OPERATING_MODES, type HenryOperatingMode, isHenryOperatingMode } from '../../henry/charter';
+import { ALL_NAV } from '../layout/Sidebar';
 
 interface PaletteItem {
   id: string;
@@ -138,23 +139,16 @@ export default function CommandPalette({ open, onClose, onSetMode, onNewChat, on
       });
     }
 
-    // Nav
-    const navItems: Array<{ id: string; icon: string; label: string; view: string }> = [
-      { id: 'nav-today', icon: '🏠', label: 'Go to Today', view: 'today' },
-      { id: 'nav-settings', icon: '⚙️', label: 'Open Settings', view: 'settings' },
-      { id: 'nav-tasks', icon: '📋', label: 'Open Tasks', view: 'tasks' },
-      { id: 'nav-contacts', icon: '👥', label: 'Open Contacts', view: 'contacts' },
-      { id: 'nav-files', icon: '📁', label: 'Open Files', view: 'files' },
-      { id: 'nav-secretary', icon: '🗓️', label: 'Open Secretary', view: 'secretary' },
-    ];
-    for (const nav of navItems) {
+    // Nav — every surface, from the shared sidebar config (one keystroke to anything).
+    for (const nav of ALL_NAV) {
       items.push({
-        id: nav.id,
-        icon: nav.icon,
-        label: nav.label,
+        id: `nav-${nav.id}`,
+        icon: nav.icon ?? '•',
+        label: `Open ${nav.label}`,
+        sublabel: nav.desc,
         category: 'nav',
-        keywords: [nav.label.toLowerCase(), nav.view],
-        action: () => { setCurrentView(nav.view as any); onClose(); },
+        keywords: [nav.label.toLowerCase(), nav.id, ...(nav.desc ? [nav.desc.toLowerCase()] : [])],
+        action: () => { setCurrentView(nav.id); onClose(); },
       });
     }
 

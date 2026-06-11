@@ -1,10 +1,10 @@
 import { useState, useEffect, type ComponentType } from 'react';
-import { Shield, FolderKanban, Users, TrendingUp } from 'lucide-react';
+import { Shield, FolderKanban, Users, TrendingUp, BookOpen, Search } from 'lucide-react';
 import { useStore } from '../../store';
 
 // R2-Fix 9: keep this in sync with src/types/index.ts ViewType.
 type ViewType = 'today' | 'chat' | 'companion' | 'secretary' | 'contacts' | 'tasks' | 'files' | 'workspace' | 'terminal' | 'computer' | 'printer' | 'costs' | 'settings' | 'journal' | 'focus' | 'recorder' | 'memos' | 'queue' | 'modes' | 'reminders' | 'crm' | 'finance' | 'lists' | 'printstudio' | 'machines' | 'materials' | 'production' | 'waste' | 'maintenance' | 'imagegen' | 'videogen' | 'integrations' | 'github' | 'linear' | 'notion' | 'slack' | 'captures' | 'weekly' | 'health' | 'goals' | 'hq' | 'setup' | 'memory' | 'prayer' | 'quoting'
-  | 'scripture' | 'routines' | 'audit' | 'vault' | 'crews' | 'money';
+  | 'scripture' | 'routines' | 'audit' | 'vault' | 'crews' | 'money' | 'book';
 
 // A nav item renders either a glyph (`icon`) or a lucide component (`lucideIcon`).
 type NavItem = { id: ViewType; icon?: string; lucideIcon?: ComponentType<{ size?: number }>; label: string; desc?: string };
@@ -17,6 +17,7 @@ const CORE_NAV: NavItem[] = [
   { id: 'chat',       icon: '◉',  label: 'Chat',        desc: 'Talk to Henry' },
   { id: 'computer',   icon: '⌘',  label: 'Computer',    desc: 'Let Henry run apps and commands on your Mac' },
   { id: 'journal',    icon: '✦',  label: 'Journal',     desc: 'Private journal entries' },
+  { id: 'book',       lucideIcon: BookOpen, label: 'Book', desc: 'Capture your life story — the Book Crew turns it into chapters' },
   { id: 'scripture',  icon: '✝',  label: 'Scripture',   desc: 'Bible study and scripture tools' },
   { id: 'reminders',  icon: '◎',  label: 'Reminders',   desc: 'Time-based reminders' },
   { id: 'captures',   icon: '⊕',  label: 'Captures',    desc: 'Quick voice/text notes Henry files for you' },
@@ -68,6 +69,9 @@ const BOTTOM_NAV: NavItem[] = [
   { id: 'companion',  icon: '⊚',  label: 'Companion', desc: 'Pair your phone to control Henry remotely' },
   { id: 'settings',   icon: '⊙',  label: 'Settings',  desc: 'Profile, AI providers, engines, and pairing' },
 ];
+
+/** Every navigable surface — one source of truth for the sidebar and the ⌘K launcher. */
+export const ALL_NAV: NavItem[] = [...CORE_NAV, ...BUSINESS_NAV, ...MORE_NAV, ...BOTTOM_NAV];
 
 function NavIcon({
   item,
@@ -138,6 +142,16 @@ export default function Sidebar() {
 
   return (
     <div className="henry-sidebar shrink-0 flex flex-col h-full bg-henry-surface/30 border-r border-henry-border/20 py-3 px-1.5 w-[56px]">
+
+      {/* Do-anything launcher — opens the ⌘K command palette */}
+      <button
+        onClick={() => window.dispatchEvent(new CustomEvent('henry:open-palette'))}
+        title="Search — jump to anything or run a command (⌘K)"
+        aria-label="Search and run anything"
+        className="mb-2 w-9 h-9 mx-auto flex items-center justify-center rounded-xl bg-henry-accent/15 text-henry-accent hover:bg-henry-accent/25 transition-colors"
+      >
+        <Search size={18} />
+      </button>
 
       {/* Core navigation */}
       <div className="flex flex-col items-center gap-1">
