@@ -47,7 +47,7 @@ function resolveConfig(db: Database.Database) {
 
 /** Parse Cura's G-code header comments for the time + filament estimate. */
 export function parseEstimate(gcode: string): SliceEstimate {
-  const head = gcode.slice(0, 8000);
+  const head = (typeof gcode === 'string' ? gcode : String(gcode ?? '')).slice(0, 8000);
   const est: SliceEstimate = {};
   const time = head.match(/;TIME:\s*([\d.]+)/i);
   if (time) est.timeSeconds = Math.round(Number(time[1]));
