@@ -4,7 +4,7 @@ import { useStore } from '../../store';
 
 // R2-Fix 9: keep this in sync with src/types/index.ts ViewType.
 type ViewType = 'today' | 'chat' | 'companion' | 'secretary' | 'contacts' | 'tasks' | 'files' | 'workspace' | 'terminal' | 'computer' | 'printer' | 'costs' | 'settings' | 'journal' | 'focus' | 'recorder' | 'memos' | 'queue' | 'modes' | 'reminders' | 'crm' | 'finance' | 'lists' | 'printstudio' | 'machines' | 'materials' | 'production' | 'waste' | 'maintenance' | 'imagegen' | 'videogen' | 'integrations' | 'github' | 'linear' | 'notion' | 'slack' | 'captures' | 'weekly' | 'health' | 'goals' | 'hq' | 'setup' | 'memory' | 'prayer' | 'quoting'
-  | 'scripture' | 'routines' | 'audit' | 'vault' | 'crews' | 'money' | 'book';
+  | 'scripture' | 'routines' | 'audit' | 'vault' | 'crews' | 'money' | 'book' | 'slicer';
 
 // A nav item renders either a glyph (`icon`) or a lucide component (`lucideIcon`).
 type NavItem = { id: ViewType; icon?: string; lucideIcon?: ComponentType<{ size?: number }>; label: string; desc?: string };
@@ -57,6 +57,7 @@ const MORE_NAV: NavItem[] = [
   { id: 'waste',      icon: '◌',  label: 'Waste',       desc: 'Material waste tracking' },
   { id: 'maintenance',icon: '⚒',  label: 'Service',     desc: 'Machine service and maintenance' },
   { id: 'printstudio',icon: '▣',  label: 'Print Studio',desc: '3D print job studio' },
+  { id: 'slicer',     icon: '◈',  label: 'Slice',       desc: 'Slice a 3D model into printer-ready G-code' },
   { id: 'imagegen',   icon: '◐',  label: 'Image Gen',   desc: 'Generate images with AI' },
   { id: 'videogen',   icon: '▶',  label: 'Video Gen',   desc: 'Generate videos with AI' },
   { id: 'files',      icon: '◳',  label: 'Files',       desc: 'Browse your files' },

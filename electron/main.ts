@@ -24,6 +24,7 @@ import { registerLeadHandlers } from './ipc/leads';
 import { registerBookHandlers } from './ipc/book';
 import { registerPrinterDiscoveryHandlers } from './ipc/printerDiscovery';
 import { registerPrinterNetworkHandlers } from './ipc/printerNetwork';
+import { registerSlicerHandlers } from './ipc/slicer';
 import { registerCrewHandlers } from './ipc/crews';
 import { registerAgentHandlers } from './ipc/agent';
 import { registerSchedulerHandlers } from './ipc/scheduler';
@@ -429,6 +430,7 @@ app.whenReady().then(() => {
   registerBookHandlers(db);
   registerPrinterDiscoveryHandlers();
   registerPrinterNetworkHandlers();
+  registerSlicerHandlers(db);
   registerCrewHandlers(db, getMainWindow);
   registerPrayerHandlers(db);
   registerQuotingHandlers(db);

@@ -141,6 +141,11 @@ contextBridge.exposeInMainWorld('henryAPI', {
   printerNetCommand: (conn: Record<string, unknown>, action: string, gcode?: string) =>
     ipcRenderer.invoke('printerNet:command', { conn, action, gcode }),
 
+  // ── Slicer ────────────────────────────────────────────────
+  slicerStatus: () => ipcRenderer.invoke('slicer:status'),
+  slicerSlice: (params: { modelPath: string; settings?: Record<string, string | number>; outPath?: string }) =>
+    ipcRenderer.invoke('slicer:slice', params),
+
   // ── Book Engine (life material) ───────────────────────────
   listBookEntries: (filter?: { kind?: string; limit?: number }) => ipcRenderer.invoke('book:list', filter),
   createBookEntry: (entry: Record<string, unknown>) => ipcRenderer.invoke('book:create', entry),

@@ -548,6 +548,10 @@ declare global {
     printerNetStatus?: (conn: HenryPrinterConn) => Promise<{ ok: boolean; result?: HenryPrinterStatus; error?: string }>;
     printerNetCommand?: (conn: HenryPrinterConn, action: string, gcode?: string) => Promise<{ ok: boolean; error?: string }>;
 
+    // ── Slicer ────────────────────────────────────────────────
+    slicerStatus?: () => Promise<{ ok: boolean; result?: { available: boolean; missing: string[]; version?: string; enginePath?: string; definitionsDir?: string; printerDef?: string }; error?: string }>;
+    slicerSlice?: (params: { modelPath: string; settings?: Record<string, string | number>; outPath?: string }) => Promise<{ ok: boolean; result?: { gcodePath: string; estimate: { timeSeconds?: number; filamentMm?: number; filamentGrams?: number }; bytes: number }; error?: string }>;
+
     // ── Book Engine (life material) ───────────────────────────
     listBookEntries?: (filter?: { kind?: string; limit?: number }) => Promise<{ ok: boolean; result?: HenryBookEntry[]; error?: string }>;
     createBookEntry?: (entry: Partial<HenryBookEntry>) => Promise<{ ok: boolean; result?: HenryBookEntry; error?: string }>;

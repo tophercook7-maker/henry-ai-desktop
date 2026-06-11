@@ -48,6 +48,7 @@ import ProjectVaultPanel from '../vault/ProjectVaultPanel';
 import CrewsPanel from '../crews/CrewsPanel';
 import MoneyEnginePanel from '../money/MoneyEnginePanel';
 import BookEnginePanel from '../book/BookEnginePanel';
+import SlicerPanel from '../slicer/SlicerPanel';
 import ImageGenPanel from '../imagegen/ImageGenPanel';
 import VideoGenPanel from '../videogen/VideoGenPanel';
 import IntegrationsPanel from '../integrations/IntegrationsPanel';
@@ -292,6 +293,7 @@ export default function Layout() {
           {currentView === 'crews' && <PanelBoundary><CrewsPanel /></PanelBoundary>}
           {currentView === 'money' && <PanelBoundary><MoneyEnginePanel /></PanelBoundary>}
           {currentView === 'book' && <PanelBoundary><BookEnginePanel /></PanelBoundary>}
+          {currentView === 'slicer' && <PanelBoundary><SlicerPanel /></PanelBoundary>}
           {currentView === 'imagegen' && <PanelBoundary><ImageGenPanel /></PanelBoundary>}
       {currentView === 'videogen' && <PanelBoundary><VideoGenPanel /></PanelBoundary>}
           {currentView === 'integrations' && <PanelBoundary><IntegrationsPanel /></PanelBoundary>}
