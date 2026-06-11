@@ -243,6 +243,43 @@ declare global {
     enabled?: boolean;
   }
 
+  /** A 3D printer found on the local network. */
+  interface HenryDiscoveredPrinter {
+    ip: string;
+    port?: number;
+    kind: string;
+    name?: string;
+    url?: string;
+    via: 'http' | 'ssdp';
+  }
+
+  /** Connection details for talking to a network printer's API. */
+  interface HenryPrinterConn {
+    ip: string;
+    port?: number;
+    kind: string;
+    apiKey?: string;
+  }
+
+  /** Normalized live status from a network printer. */
+  interface HenryPrinterStatus {
+    state?: string;
+    nozzle?: { actual: number; target: number };
+    bed?: { actual: number; target: number };
+    progress?: number;
+    job?: string;
+  }
+
+  /** A captured piece of book material (book_entries table). */
+  interface HenryBookEntry {
+    id: string;
+    kind: 'story' | 'lesson' | 'letter' | 'faith' | 'health' | 'fatherhood' | 'business' | 'money' | 'other';
+    title?: string | null;
+    content: string;
+    created_at?: string;
+    updated_at?: string;
+  }
+
   /** A row from the Money Engine lead pipeline (leads table). */
   interface HenryLead {
     id: string;
@@ -505,6 +542,17 @@ declare global {
     confirmTool?: (id: string, approved: boolean, editedArgs?: Record<string, unknown>) => Promise<{ ok: boolean }>;
     onAgentConfirmRequired?: (cb: (req: HenryConfirmRequest) => void) => () => void;
     onAgentToolNotify?: (cb: (data: { tool: string; message: string; ok: boolean }) => void) => () => void;
+
+    // ── 3D printer network discovery + monitor ────────────────
+    discoverPrinters?: () => Promise<{ ok: boolean; result?: HenryDiscoveredPrinter[]; error?: string }>;
+    printerNetStatus?: (conn: HenryPrinterConn) => Promise<{ ok: boolean; result?: HenryPrinterStatus; error?: string }>;
+    printerNetCommand?: (conn: HenryPrinterConn, action: string, gcode?: string) => Promise<{ ok: boolean; error?: string }>;
+
+    // ── Book Engine (life material) ───────────────────────────
+    listBookEntries?: (filter?: { kind?: string; limit?: number }) => Promise<{ ok: boolean; result?: HenryBookEntry[]; error?: string }>;
+    createBookEntry?: (entry: Partial<HenryBookEntry>) => Promise<{ ok: boolean; result?: HenryBookEntry; error?: string }>;
+    updateBookEntry?: (id: string, patch: Partial<HenryBookEntry>) => Promise<{ ok: boolean; result?: HenryBookEntry; error?: string }>;
+    deleteBookEntry?: (id: string) => Promise<{ ok: boolean; result?: { deleted: boolean }; error?: string }>;
 
     // ── Money Engine (lead pipeline) ──────────────────────────
     listLeads?: (filter?: { status?: string; limit?: number }) => Promise<{ ok: boolean; result?: HenryLead[]; error?: string }>;

@@ -135,6 +135,18 @@ contextBridge.exposeInMainWorld('henryAPI', {
     return () => ipcRenderer.removeListener('agent:tool-notify', handler);
   },
 
+  // ── 3D printer network discovery + monitor ────────────────
+  discoverPrinters: () => ipcRenderer.invoke('printers:discover'),
+  printerNetStatus: (conn: Record<string, unknown>) => ipcRenderer.invoke('printerNet:status', conn),
+  printerNetCommand: (conn: Record<string, unknown>, action: string, gcode?: string) =>
+    ipcRenderer.invoke('printerNet:command', { conn, action, gcode }),
+
+  // ── Book Engine (life material) ───────────────────────────
+  listBookEntries: (filter?: { kind?: string; limit?: number }) => ipcRenderer.invoke('book:list', filter),
+  createBookEntry: (entry: Record<string, unknown>) => ipcRenderer.invoke('book:create', entry),
+  updateBookEntry: (id: string, patch: Record<string, unknown>) => ipcRenderer.invoke('book:update', { id, patch }),
+  deleteBookEntry: (id: string) => ipcRenderer.invoke('book:delete', { id }),
+
   // ── Money Engine (lead pipeline) ──────────────────────────
   listLeads: (filter?: { status?: string; limit?: number }) => ipcRenderer.invoke('leads:list', filter),
   createLead: (lead: Record<string, unknown>) => ipcRenderer.invoke('leads:create', lead),
