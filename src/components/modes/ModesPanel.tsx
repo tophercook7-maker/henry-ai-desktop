@@ -9,7 +9,7 @@ import { PANEL_QUICK_ASK } from '../../henry/henryQuickAsk';
 const BUILT_IN_MODES = [
   { id: 'companion', name: 'Chat', icon: '💬', description: 'Day-to-day conversation and thinking out loud', color: 'violet' },
   { id: 'writer', name: 'Writing', icon: '✍️', description: 'Draft, edit, and shape anything worth keeping', color: 'emerald' },
-  { id: 'developer', name: 'Code', icon: '⚡', description: 'Debug, build, review — working code only', color: 'amber' },
+  { id: 'developer', name: 'Code', icon: '⚡', description: 'Plan → build → review, with diffs & checkpoints', color: 'amber' },
   { id: 'builder', name: 'App Builder', icon: '🌐', description: 'Describe an app — Henry builds it live', color: 'sky' },
   { id: 'biblical', name: 'Bible Study', icon: '📖', description: 'Scripture-first, Ethiopian Orthodox aware', color: 'rose' },
   { id: 'design3d', name: '3D / Design', icon: '🖨️', description: 'Spatial layouts, 3D printing, photo-to-3D', color: 'cyan' },
