@@ -59,14 +59,20 @@ export async function runCrew(crew: Crew, input: string, deps: RunCrewDeps): Pro
       { role: 'user', content: input },
     ];
 
-    const complete = (msgs: RunnerMessage[], modelTools: ModelTool[]): Promise<ModelCompletion> =>
-      callAIWithTools({
+    // Each model round gets a hard timeout so a stalled provider can never
+    // hang a crew forever.
+    const complete = (msgs: RunnerMessage[], modelTools: ModelTool[]): Promise<ModelCompletion> => {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 120_000);
+      return callAIWithTools({
         provider: deps.engine.provider,
         model: deps.engine.model,
         apiKey: deps.engine.apiKey,
         messages: msgs,
         modelTools,
-      });
+        signal: ctrl.signal,
+      }).finally(() => clearTimeout(timer));
+    };
 
     let step: CrewRunStep;
     try {

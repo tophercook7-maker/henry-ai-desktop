@@ -138,6 +138,8 @@ async function moonrakerCommand(conn: NetPrinterConn, action: Action, gcode?: st
 
 async function uploadGcode(conn: NetPrinterConn, gcodePath: string, print: boolean): Promise<{ started: boolean }> {
   if (!fs.existsSync(gcodePath)) throw new Error(`G-code not found: ${gcodePath}`);
+  const MAX_UPLOAD = 200 * 1024 * 1024; // 200 MB — guard against an accidental huge file
+  if (fs.statSync(gcodePath).size > MAX_UPLOAD) throw new Error('G-code is over 200 MB — too large to upload.');
   const buf = fs.readFileSync(gcodePath);
   const filename = path.basename(gcodePath);
   const form = new FormData();
