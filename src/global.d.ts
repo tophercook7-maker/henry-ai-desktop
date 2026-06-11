@@ -243,6 +243,66 @@ declare global {
     enabled?: boolean;
   }
 
+  /** A row from the Money Engine lead pipeline (leads table). */
+  interface HenryLead {
+    id: string;
+    business: string;
+    contact_name?: string | null;
+    phone?: string | null;
+    email?: string | null;
+    website?: string | null;
+    source?: string | null;
+    status: 'new' | 'audited' | 'contacted' | 'follow_up' | 'proposal' | 'won' | 'lost';
+    audit_notes?: string | null;
+    notes?: string | null;
+    proposal_amount?: number | null;
+    next_follow_up?: string | null;
+    created_at?: string;
+    updated_at?: string;
+    last_touch_at?: string | null;
+  }
+
+  /** Lightweight crew summary (Agent Crews, Phase 2). */
+  interface HenryCrewSummary {
+    id: string;
+    name: string;
+    description: string;
+    goal: string;
+    agents: Array<{ id: string; name: string; role: string; goal: string }>;
+  }
+
+  interface HenryCrewRunStep {
+    agent: string;
+    output: string;
+    rounds: number;
+    usage: { input: number; output: number };
+  }
+
+  interface HenryCrewRunResult {
+    crew: string;
+    steps: HenryCrewRunStep[];
+    final: string;
+    usage: { input: number; output: number };
+  }
+
+  /** A row from the Project Vault (projects table). */
+  interface HenryProject {
+    id: string;
+    name: string;
+    type?: string | null;
+    status: 'active' | 'paused' | 'completed' | 'archived';
+    description?: string | null;
+    summary?: string | null;
+    next_action?: string | null;
+    money_angle?: string | null;
+    domain?: string | null;
+    repo_url?: string | null;
+    notes?: string | null;
+    last_worked_at?: string | null;
+    last_active_at?: string | null;
+    updated_at?: string | null;
+  }
+
   interface HenryAPI {
     getSettings: () => Promise<Record<string, string>>;
     saveSetting: (key: string, value: string) => Promise<boolean>;
@@ -445,6 +505,22 @@ declare global {
     confirmTool?: (id: string, approved: boolean, editedArgs?: Record<string, unknown>) => Promise<{ ok: boolean }>;
     onAgentConfirmRequired?: (cb: (req: HenryConfirmRequest) => void) => () => void;
     onAgentToolNotify?: (cb: (data: { tool: string; message: string; ok: boolean }) => void) => () => void;
+
+    // ── Money Engine (lead pipeline) ──────────────────────────
+    listLeads?: (filter?: { status?: string; limit?: number }) => Promise<{ ok: boolean; result?: HenryLead[]; error?: string }>;
+    createLead?: (lead: Partial<HenryLead>) => Promise<{ ok: boolean; result?: HenryLead; error?: string }>;
+    updateLead?: (id: string, patch: Partial<HenryLead>) => Promise<{ ok: boolean; result?: HenryLead; error?: string }>;
+    deleteLead?: (id: string) => Promise<{ ok: boolean; result?: { deleted: boolean }; error?: string }>;
+
+    // ── Agent Crews ───────────────────────────────────────────
+    listCrews?: () => Promise<{ ok: boolean; result?: HenryCrewSummary[]; error?: string }>;
+    runCrew?: (crewId: string, input: string) => Promise<{ ok: boolean; result?: HenryCrewRunResult; error?: string }>;
+    onCrewStep?: (cb: (data: { crewId: string; step: HenryCrewRunStep }) => void) => () => void;
+
+    // ── Project Vault ─────────────────────────────────────────
+    vaultListProjects?: (filter?: { status?: string; limit?: number }) => Promise<{ ok: boolean; result?: HenryProject[]; error?: string }>;
+    vaultGetProject?: (id: string) => Promise<{ ok: boolean; result?: HenryProject | null; error?: string }>;
+    vaultUpdateProject?: (id: string, patch: Partial<HenryProject>) => Promise<{ ok: boolean; result?: HenryProject; error?: string }>;
 
     // ── Scheduler (Henry's Routines) ──────────────────────────
     listRoutines?: () => Promise<{ ok: boolean; result?: HenryRoutine[]; error?: string }>;

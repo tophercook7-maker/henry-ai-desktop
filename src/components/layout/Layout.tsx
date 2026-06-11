@@ -46,6 +46,7 @@ import RoutinesPanel from '../routines/RoutinesPanel';
 import AuditLogPanel from '../agent/AuditLogPanel';
 import ProjectVaultPanel from '../vault/ProjectVaultPanel';
 import CrewsPanel from '../crews/CrewsPanel';
+import MoneyEnginePanel from '../money/MoneyEnginePanel';
 import ImageGenPanel from '../imagegen/ImageGenPanel';
 import VideoGenPanel from '../videogen/VideoGenPanel';
 import IntegrationsPanel from '../integrations/IntegrationsPanel';
@@ -283,6 +284,7 @@ export default function Layout() {
           {currentView === 'audit' && <PanelBoundary><AuditLogPanel /></PanelBoundary>}
           {currentView === 'vault' && <PanelBoundary><ProjectVaultPanel /></PanelBoundary>}
           {currentView === 'crews' && <PanelBoundary><CrewsPanel /></PanelBoundary>}
+          {currentView === 'money' && <PanelBoundary><MoneyEnginePanel /></PanelBoundary>}
           {currentView === 'imagegen' && <PanelBoundary><ImageGenPanel /></PanelBoundary>}
       {currentView === 'videogen' && <PanelBoundary><VideoGenPanel /></PanelBoundary>}
           {currentView === 'integrations' && <PanelBoundary><IntegrationsPanel /></PanelBoundary>}

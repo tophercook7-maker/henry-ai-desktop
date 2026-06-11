@@ -200,6 +200,38 @@ function migrateDatabaseSchema(db: Database.Database) {
   // Project Vault — rich project fields + seed Topher's real projects.
   migrateProjectVaultSchema(db);
   seedProjectVault(db);
+
+  // Money Engine — the MixedMakerShop lead pipeline.
+  migrateLeadsSchema(db);
+}
+
+/**
+ * Money Engine (build plan, Phase 3). The lead pipeline for MixedMakerShop's
+ * website work: found → audited → contacted → follow-up → proposal → won/lost.
+ * No seed — real leads only, added by Topher or the Money Crew. Idempotent.
+ */
+function migrateLeadsSchema(db: Database.Database) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS leads (
+      id            TEXT PRIMARY KEY,
+      business      TEXT NOT NULL,
+      contact_name  TEXT,
+      phone         TEXT,
+      email         TEXT,
+      website       TEXT,
+      source        TEXT,
+      status        TEXT NOT NULL DEFAULT 'new'
+        CHECK(status IN ('new','audited','contacted','follow_up','proposal','won','lost')),
+      audit_notes   TEXT,
+      notes         TEXT,
+      proposal_amount REAL,
+      next_follow_up  TEXT,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      last_touch_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_leads_status ON leads (status);
+  `);
 }
 
 /**

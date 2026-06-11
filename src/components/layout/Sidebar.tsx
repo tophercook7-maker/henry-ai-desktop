@@ -1,70 +1,72 @@
 import { useState, useEffect, type ComponentType } from 'react';
-import { Shield, FolderKanban, Users } from 'lucide-react';
+import { Shield, FolderKanban, Users, TrendingUp } from 'lucide-react';
 import { useStore } from '../../store';
 
 // R2-Fix 9: keep this in sync with src/types/index.ts ViewType.
 type ViewType = 'today' | 'chat' | 'companion' | 'secretary' | 'contacts' | 'tasks' | 'files' | 'workspace' | 'terminal' | 'computer' | 'printer' | 'costs' | 'settings' | 'journal' | 'focus' | 'recorder' | 'memos' | 'queue' | 'modes' | 'reminders' | 'crm' | 'finance' | 'lists' | 'printstudio' | 'machines' | 'materials' | 'production' | 'waste' | 'maintenance' | 'imagegen' | 'videogen' | 'integrations' | 'github' | 'linear' | 'notion' | 'slack' | 'captures' | 'weekly' | 'health' | 'goals' | 'hq' | 'setup' | 'memory' | 'prayer' | 'quoting'
-  | 'scripture' | 'routines' | 'audit' | 'vault' | 'crews';
+  | 'scripture' | 'routines' | 'audit' | 'vault' | 'crews' | 'money';
 
 // A nav item renders either a glyph (`icon`) or a lucide component (`lucideIcon`).
-type NavItem = { id: ViewType; icon?: string; lucideIcon?: ComponentType<{ size?: number }>; label: string };
+type NavItem = { id: ViewType; icon?: string; lucideIcon?: ComponentType<{ size?: number }>; label: string; desc?: string };
 
 // Core nav — the things you actually use daily
 // Everything else is accessible but not cluttering the rail
 const CORE_NAV: NavItem[] = [
-  { id: 'hq',         icon: '◈',  label: 'HQ' },
-  { id: 'today',      icon: '⌂',  label: 'Today' },
-  { id: 'chat',       icon: '◉',  label: 'Chat' },
-  { id: 'computer',   icon: '⌘',  label: 'Computer' },
-  { id: 'journal',    icon: '✦',  label: 'Journal' },
-  { id: 'scripture',  icon: '✝',  label: 'Scripture' },
-  { id: 'reminders',  icon: '◎',  label: 'Reminders' },
-  { id: 'captures',   icon: '⊕',  label: 'Captures' },
-  { id: 'memory',     icon: '🧠', label: 'Memory' },
-  { id: 'recorder',   icon: '🎙', label: 'Recorder' },
+  { id: 'hq',         icon: '◈',  label: 'HQ',          desc: 'Command hub — control your Mac and automate workflows' },
+  { id: 'today',      icon: '⌂',  label: 'Today',       desc: "Today's plan and what needs you" },
+  { id: 'chat',       icon: '◉',  label: 'Chat',        desc: 'Talk to Henry' },
+  { id: 'computer',   icon: '⌘',  label: 'Computer',    desc: 'Let Henry run apps and commands on your Mac' },
+  { id: 'journal',    icon: '✦',  label: 'Journal',     desc: 'Private journal entries' },
+  { id: 'scripture',  icon: '✝',  label: 'Scripture',   desc: 'Bible study and scripture tools' },
+  { id: 'reminders',  icon: '◎',  label: 'Reminders',   desc: 'Time-based reminders' },
+  { id: 'captures',   icon: '⊕',  label: 'Captures',    desc: 'Quick voice/text notes Henry files for you' },
+  { id: 'memory',     icon: '🧠', label: 'Memory',      desc: 'What Henry remembers about you and your work' },
+  { id: 'recorder',   icon: '🎙', label: 'Recorder',    desc: 'Record and transcribe meetings' },
   // R2-Fix 9: SQLite-backed voice memos (was unreachable — see Layout.tsx).
-  { id: 'memos',      icon: '🗂', label: 'Voice Memos' },
-  { id: 'focus',      icon: '◈',  label: 'Focus' },
+  { id: 'memos',      icon: '🗂', label: 'Voice Memos', desc: 'Saved voice memos' },
+  { id: 'focus',      icon: '◈',  label: 'Focus',       desc: 'Focus sessions' },
 ];
 
 const BUSINESS_NAV: NavItem[] = [
   // Build plan Phase 1: the Project Vault — your projects at a glance.
-  { id: 'vault',      lucideIcon: FolderKanban, label: 'Projects' },
+  { id: 'vault',      lucideIcon: FolderKanban, label: 'Projects', desc: 'Your projects — status, next action, money angle' },
   // Build plan Phase 2: Agent Crews — role-based teams.
-  { id: 'crews',      lucideIcon: Users, label: 'Crews' },
-  { id: 'secretary',  icon: '◻',  label: 'Secretary' },
-  { id: 'crm',        icon: '◇',  label: 'Clients' },
-  { id: 'finance',    icon: '◆',  label: 'Finance' },
-  { id: 'tasks',      icon: '☐',  label: 'Tasks' },
+  { id: 'crews',      lucideIcon: Users, label: 'Crews', desc: 'Role-based agent teams that work a problem step by step' },
+  // Build plan Phase 3: Money Engine — the lead pipeline.
+  { id: 'money',      lucideIcon: TrendingUp, label: 'Money', desc: 'Lead pipeline — find, audit, and close website work' },
+  { id: 'secretary',  icon: '◻',  label: 'Secretary', desc: 'Henry as your organized personal assistant' },
+  { id: 'crm',        icon: '◇',  label: 'Clients',   desc: 'Clients and contacts' },
+  { id: 'finance',    icon: '◆',  label: 'Finance',   desc: 'Income, expenses, and money overview' },
+  { id: 'tasks',      icon: '☐',  label: 'Tasks',     desc: 'Your task list' },
   // R2-Fix 9: TaskQueueView was imported in Layout.tsx but unreachable.
-  { id: 'queue',      icon: '⊟',  label: 'Queue' },
+  { id: 'queue',      icon: '⊟',  label: 'Queue',     desc: 'Background jobs Henry is running' },
   // Sprint 3: Henry's Routines — scheduled autonomous runs.
-  { id: 'routines',   icon: '🕐', label: 'Routines' },
+  { id: 'routines',   icon: '🕐', label: 'Routines',  desc: 'Scheduled autonomous runs, like a morning briefing' },
   // Sprint 4: Audit Log — "What Henry Did" feed of every tool call.
-  { id: 'audit',      lucideIcon: Shield, label: 'Audit Log' },
+  { id: 'audit',      lucideIcon: Shield, label: 'Audit Log', desc: 'Every action Henry took — and your approvals' },
 ];
 
 const MORE_NAV: NavItem[] = [
-  { id: 'goals',      icon: '◎',  label: 'Goals' },
-  { id: 'weekly',     icon: '▦',  label: 'Weekly' },
-  { id: 'lists',      icon: '≡',  label: 'Lists' },
-  { id: 'machines',   icon: '⚙',  label: 'Machines' },
-  { id: 'materials',  icon: '⬢',  label: 'Materials' },
-  { id: 'production', icon: '▶',  label: 'Runs' },
-  { id: 'waste',      icon: '◌',  label: 'Waste' },
-  { id: 'maintenance',icon: '⚒',  label: 'Service' },
-  { id: 'printstudio',icon: '▣',  label: 'Print Studio' },
-  { id: 'imagegen',   icon: '◐',  label: 'Image Gen' },
-  { id: 'videogen',   icon: '▶',  label: 'Video Gen' },
-  { id: 'files',      icon: '◳',  label: 'Files' },
-  { id: 'workspace',  icon: '◰',  label: 'Workspace' },
-  { id: 'costs',      icon: '◌',  label: 'Costs' },
+  { id: 'goals',      icon: '◎',  label: 'Goals',       desc: 'Longer-term goals and progress' },
+  { id: 'weekly',     icon: '▦',  label: 'Weekly',      desc: 'Weekly review' },
+  { id: 'lists',      icon: '≡',  label: 'Lists',       desc: 'Custom lists' },
+  { id: 'machines',   icon: '⚙',  label: 'Machines',    desc: '3D printers and machines' },
+  { id: 'materials',  icon: '⬢',  label: 'Materials',   desc: 'Filament and material stock' },
+  { id: 'production', icon: '▶',  label: 'Runs',        desc: 'Print and production runs' },
+  { id: 'waste',      icon: '◌',  label: 'Waste',       desc: 'Material waste tracking' },
+  { id: 'maintenance',icon: '⚒',  label: 'Service',     desc: 'Machine service and maintenance' },
+  { id: 'printstudio',icon: '▣',  label: 'Print Studio',desc: '3D print job studio' },
+  { id: 'imagegen',   icon: '◐',  label: 'Image Gen',   desc: 'Generate images with AI' },
+  { id: 'videogen',   icon: '▶',  label: 'Video Gen',   desc: 'Generate videos with AI' },
+  { id: 'files',      icon: '◳',  label: 'Files',       desc: 'Browse your files' },
+  { id: 'workspace',  icon: '◰',  label: 'Workspace',   desc: 'Henry workspace files' },
+  { id: 'costs',      icon: '◌',  label: 'Costs',       desc: 'AI usage and cost dashboard' },
 ];
 
 const BOTTOM_NAV: NavItem[] = [
-  { id: 'setup',      icon: '⚙',  label: 'Setup' },
-  { id: 'companion',  icon: '⊚',  label: 'Companion' },
-  { id: 'settings',   icon: '⊙',  label: 'Settings' },
+  { id: 'setup',      icon: '⚙',  label: 'Setup',     desc: 'First-time setup and provider auto-detect' },
+  { id: 'companion',  icon: '⊚',  label: 'Companion', desc: 'Pair your phone to control Henry remotely' },
+  { id: 'settings',   icon: '⊙',  label: 'Settings',  desc: 'Profile, AI providers, engines, and pairing' },
 ];
 
 function NavIcon({
@@ -80,7 +82,7 @@ function NavIcon({
   return (
     <button
       onClick={onClick}
-      title={item.label}
+      title={item.desc ? `${item.label} — ${item.desc}` : item.label}
       className={`
         group relative w-10 h-10 flex items-center justify-center rounded-xl
         text-[18px] transition-all duration-150 select-none

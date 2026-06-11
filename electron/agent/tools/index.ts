@@ -20,11 +20,13 @@ import { emailTools } from "./email";
 import { permissionsTools } from "./permissions";
 import { webTools } from "./web";
 import { quickbooksTools } from "./quickbooks";
+import { leadTools } from "./leads";
 
 export function registerAllTools(registry: ToolRegistry): void {
   registry.registerAll([
     ...memoryTools(),
     ...financeTools(),
+    ...leadTools(),
     ...calendarTools(),
     ...messagesTools(),
     ...emailTools(),

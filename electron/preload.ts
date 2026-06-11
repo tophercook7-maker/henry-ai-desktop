@@ -135,6 +135,28 @@ contextBridge.exposeInMainWorld('henryAPI', {
     return () => ipcRenderer.removeListener('agent:tool-notify', handler);
   },
 
+  // ── Money Engine (lead pipeline) ──────────────────────────
+  listLeads: (filter?: { status?: string; limit?: number }) => ipcRenderer.invoke('leads:list', filter),
+  createLead: (lead: Record<string, unknown>) => ipcRenderer.invoke('leads:create', lead),
+  updateLead: (id: string, patch: Record<string, unknown>) => ipcRenderer.invoke('leads:update', { id, patch }),
+  deleteLead: (id: string) => ipcRenderer.invoke('leads:delete', { id }),
+
+  // ── Agent Crews ───────────────────────────────────────────
+  listCrews: () => ipcRenderer.invoke('crews:list'),
+  runCrew: (crewId: string, input: string) => ipcRenderer.invoke('crews:run', { crewId, input }),
+  onCrewStep: (cb: (data: unknown) => void) => {
+    const handler = (_e: IpcRendererEvent, data: unknown) => cb(data);
+    ipcRenderer.on('crews:step', handler);
+    return () => ipcRenderer.removeListener('crews:step', handler);
+  },
+
+  // ── Project Vault ─────────────────────────────────────────
+  vaultListProjects: (filter?: { status?: string; limit?: number }) =>
+    ipcRenderer.invoke('projects:list', filter),
+  vaultGetProject: (id: string) => ipcRenderer.invoke('projects:get', { id }),
+  vaultUpdateProject: (id: string, patch: Record<string, unknown>) =>
+    ipcRenderer.invoke('projects:update', { id, patch }),
+
   // ── Scheduler (Henry's Routines) ──────────────────────────
   listRoutines: () => ipcRenderer.invoke('scheduler:list'),
   addRoutine: (task: Record<string, unknown>) => ipcRenderer.invoke('scheduler:add', task),
