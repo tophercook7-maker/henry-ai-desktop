@@ -203,6 +203,74 @@ function migrateDatabaseSchema(db: Database.Database) {
 
   // Money Engine — the MixedMakerShop lead pipeline.
   migrateLeadsSchema(db);
+
+  // Book Engine — captured life material for Topher's book.
+  migrateBookSchema(db);
+
+  // Slicer — saved slicing profiles (printer + material + settings).
+  migrateSlicerProfilesSchema(db);
+  seedSlicerProfiles(db);
+}
+
+/**
+ * Slicer profiles (slicer plan, P2). A profile is a named bundle of CuraEngine
+ * settings (key→value) plus an optional printer-definition override and a
+ * material label. Idempotent.
+ */
+function migrateSlicerProfilesSchema(db: Database.Database) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS slicer_profiles (
+      id            TEXT PRIMARY KEY,
+      name          TEXT NOT NULL,
+      material      TEXT,
+      printer_def   TEXT,
+      settings_json TEXT NOT NULL DEFAULT '{}',
+      notes         TEXT,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+}
+
+/** Seed three sensible quality presets once (only if the table is empty). */
+function seedSlicerProfiles(db: Database.Database) {
+  const row = db.prepare('SELECT COUNT(*) AS n FROM slicer_profiles').get() as { n: number };
+  if (row.n > 0) return;
+  const presets = [
+    { name: 'Draft — fast (0.28mm, 15%)', settings: { layer_height: '0.28', infill_sparse_density: '15' } },
+    { name: 'Standard (0.2mm, 20%)', settings: { layer_height: '0.2', infill_sparse_density: '20' } },
+    { name: 'Strong (0.2mm, 40%)', settings: { layer_height: '0.2', infill_sparse_density: '40', wall_line_count: '4' } },
+  ];
+  const insert = db.prepare(
+    `INSERT INTO slicer_profiles (id, name, settings_json) VALUES (?, ?, ?)`,
+  );
+  const seed = db.transaction(() => {
+    for (const p of presets) {
+      insert.run(`slp_${Math.random().toString(36).slice(2, 10)}`, p.name, JSON.stringify(p.settings));
+    }
+  });
+  try { seed(); } catch { /* ignore */ }
+}
+
+/**
+ * Book Engine (build plan, Phase 3). Captured material for Topher's life story —
+ * stories, lessons, letters, faith reflections, the MS journey, fatherhood,
+ * rebuilding, money lessons. The Book Crew mines these into chapters. No seed —
+ * this is Topher's own words. Idempotent.
+ */
+function migrateBookSchema(db: Database.Database) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS book_entries (
+      id         TEXT PRIMARY KEY,
+      kind       TEXT NOT NULL DEFAULT 'story'
+        CHECK(kind IN ('story','lesson','letter','faith','health','fatherhood','business','money','other')),
+      title      TEXT,
+      content    TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_book_entries_kind ON book_entries (kind);
+  `);
 }
 
 /**

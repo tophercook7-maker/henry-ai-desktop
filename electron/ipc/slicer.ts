@@ -63,6 +63,22 @@ function parseEstimate(gcode: string): SliceEstimate {
 }
 
 export function registerSlicerHandlers(db: Database.Database): void {
+  // Read a sliced G-code file back (for the layer preview). Capped so a huge
+  // file can't blow up the renderer.
+  ipcMain.handle('slicer:readGcode', async (_e, payload: { gcodePath: string }) => {
+    try {
+      const p = String(payload?.gcodePath ?? '').trim();
+      if (!p || !fs.existsSync(p)) throw new Error('G-code not found.');
+      if (path.extname(p).toLowerCase() !== '.gcode') throw new Error('Not a .gcode file.');
+      const MAX = 24 * 1024 * 1024; // 24 MB
+      const stat = fs.statSync(p);
+      if (stat.size > MAX) throw new Error('G-code too large to preview (over 24 MB).');
+      return { ok: true, result: { text: fs.readFileSync(p, 'utf8') } };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  });
+
   // Is the engine configured and present?
   ipcMain.handle('slicer:status', async () => {
     try {
@@ -92,13 +108,15 @@ export function registerSlicerHandlers(db: Database.Database): void {
   // Slice a model → G-code + estimate.
   ipcMain.handle(
     'slicer:slice',
-    async (_e, payload: { modelPath: string; settings?: Record<string, string | number>; outPath?: string }) => {
+    async (_e, payload: { modelPath: string; settings?: Record<string, string | number>; outPath?: string; printerDef?: string }) => {
       try {
         const cfg = resolveConfig(db);
         if (!cfg.enginePath || !fs.existsSync(cfg.enginePath)) {
           throw new Error('Slicer engine not set up. Set the CuraEngine path in the Slice panel.');
         }
-        if (!cfg.printerDef) throw new Error('No printer definition configured.');
+        // A profile may override the printer definition; otherwise use the global one.
+        const printerDef = (payload?.printerDef && String(payload.printerDef).trim()) || cfg.printerDef;
+        if (!printerDef) throw new Error('No printer definition configured.');
 
         const modelPath = String(payload?.modelPath ?? '').trim();
         if (!modelPath || !fs.existsSync(modelPath)) throw new Error(`Model not found: ${modelPath || '(none)'}`);
@@ -111,7 +129,7 @@ export function registerSlicerHandlers(db: Database.Database): void {
           path.join(os.tmpdir(), `henry-slice-${Date.now()}.gcode`);
 
         // CuraEngine: slice -j <printer.def.json> -l <model> -o <out> -s key=value …
-        const args = ['slice', '-v', '-j', cfg.printerDef, '-l', modelPath, '-o', outPath];
+        const args = ['slice', '-v', '-j', printerDef, '-l', modelPath, '-o', outPath];
         for (const [k, v] of Object.entries(payload?.settings ?? {})) {
           args.push('-s', `${k}=${v}`);
         }

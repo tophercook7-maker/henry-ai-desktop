@@ -147,6 +147,7 @@ contextBridge.exposeInMainWorld('henryAPI', {
   slicerStatus: () => ipcRenderer.invoke('slicer:status'),
   slicerSlice: (params: { modelPath: string; settings?: Record<string, string | number>; outPath?: string; printerDef?: string }) =>
     ipcRenderer.invoke('slicer:slice', params),
+  slicerReadGcode: (gcodePath: string) => ipcRenderer.invoke('slicer:readGcode', { gcodePath }),
   slicerProfilesList: () => ipcRenderer.invoke('slicerProfiles:list'),
   slicerProfileCreate: (p: Record<string, unknown>) => ipcRenderer.invoke('slicerProfiles:create', p),
   slicerProfileUpdate: (id: string, patch: Record<string, unknown>) => ipcRenderer.invoke('slicerProfiles:update', { id, patch }),

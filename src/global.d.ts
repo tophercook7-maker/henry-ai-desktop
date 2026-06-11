@@ -564,6 +564,7 @@ declare global {
     // ── Slicer ────────────────────────────────────────────────
     slicerStatus?: () => Promise<{ ok: boolean; result?: { available: boolean; missing: string[]; version?: string; enginePath?: string; definitionsDir?: string; printerDef?: string }; error?: string }>;
     slicerSlice?: (params: { modelPath: string; settings?: Record<string, string | number>; outPath?: string; printerDef?: string }) => Promise<{ ok: boolean; result?: { gcodePath: string; estimate: { timeSeconds?: number; filamentMm?: number; filamentGrams?: number }; bytes: number }; error?: string }>;
+    slicerReadGcode?: (gcodePath: string) => Promise<{ ok: boolean; result?: { text: string }; error?: string }>;
     slicerProfilesList?: () => Promise<{ ok: boolean; result?: HenrySlicerProfile[]; error?: string }>;
     slicerProfileCreate?: (p: Partial<HenrySlicerProfile> & { settings?: Record<string, string> }) => Promise<{ ok: boolean; result?: HenrySlicerProfile; error?: string }>;
     slicerProfileUpdate?: (id: string, patch: Record<string, unknown>) => Promise<{ ok: boolean; result?: HenrySlicerProfile; error?: string }>;

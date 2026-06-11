@@ -9,6 +9,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import SendToPrinter from './SendToPrinter';
+import GcodePreview from './GcodePreview';
 
 interface Status {
   available: boolean;
@@ -325,6 +326,7 @@ export default function SlicerPanel() {
                   <Stat label="Filament" value={result.estimate.filamentMm ? `${(result.estimate.filamentMm / 1000).toFixed(2)} m${result.estimate.filamentGrams ? ` · ${result.estimate.filamentGrams} g` : ''}` : '—'} />
                 </div>
                 <p className="text-[10px] text-henry-text-muted mt-3 font-mono break-all">{result.gcodePath}</p>
+                <GcodePreview gcodePath={result.gcodePath} />
                 <SendToPrinter gcodePath={result.gcodePath} />
               </div>
             )}

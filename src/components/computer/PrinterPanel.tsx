@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import PrinterDiscovery from './PrinterDiscovery';
 
 interface PrinterPort {
   device: string;
@@ -306,6 +307,9 @@ export default function PrinterPanel() {
           {!connected && (
             <div className="flex-1 overflow-y-auto">
               <div className="p-6 max-w-lg mx-auto space-y-5">
+
+                {/* Network discovery — find printers on WiFi (build plan, 3D area). */}
+                <PrinterDiscovery />
 
                 {ports.length === 0 ? (
                   <div className="text-center py-8 space-y-4">

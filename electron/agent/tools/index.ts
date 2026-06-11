@@ -21,12 +21,14 @@ import { permissionsTools } from "./permissions";
 import { webTools } from "./web";
 import { quickbooksTools } from "./quickbooks";
 import { leadTools } from "./leads";
+import { bookTools } from "./book";
 
 export function registerAllTools(registry: ToolRegistry): void {
   registry.registerAll([
     ...memoryTools(),
     ...financeTools(),
     ...leadTools(),
+    ...bookTools(),
     ...calendarTools(),
     ...messagesTools(),
     ...emailTools(),
