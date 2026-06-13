@@ -44,9 +44,9 @@ jobs:
         env:
           NODE_ENV: production
 
-      - name: Build Mac DMG (unsigned)
+      - name: Build Mac DMG (unsigned — artifact only, never published; signed Mac DMGs are built+notarized locally)
         timeout-minutes: 8
-        run: npx electron-builder --mac --config.mac.identity=null --config.compression=normal --publish always
+        run: npx electron-builder --mac --config.mac.identity=null --config.compression=normal --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DEBUG: electron-builder
