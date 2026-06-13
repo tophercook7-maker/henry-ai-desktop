@@ -9,8 +9,8 @@ TOKEN="${GITHUB_PERSONAL_ACCESS_TOKEN}"
 
 [ -z "$TOKEN" ] && echo "Set GITHUB_PERSONAL_ACCESS_TOKEN" && exit 1
 
-ARM_DMG="release/Henry AI-${VERSION}-arm64.dmg"
-X64_DMG="release/Henry AI-${VERSION}.dmg"
+ARM_DMG="release2/Henry AI-${VERSION}-arm64.dmg"
+X64_DMG="release2/Henry AI-${VERSION}.dmg"
 
 echo "Releasing Henry AI $TAG..."
 echo "arm64: $(ls -lh "$ARM_DMG" 2>/dev/null | awk '{print $5}' || echo MISSING)"
