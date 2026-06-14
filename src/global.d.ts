@@ -591,6 +591,8 @@ declare global {
     vaultListProjects?: (filter?: { status?: string; limit?: number }) => Promise<{ ok: boolean; result?: HenryProject[]; error?: string }>;
     vaultGetProject?: (id: string) => Promise<{ ok: boolean; result?: HenryProject | null; error?: string }>;
     vaultUpdateProject?: (id: string, patch: Partial<HenryProject>) => Promise<{ ok: boolean; result?: HenryProject; error?: string }>;
+    vaultCreateProject?: (input: { name: string; type?: string; description?: string; money_angle?: string; next_action?: string; domain?: string; repo_url?: string; notes?: string }) => Promise<{ ok: boolean; result?: HenryProject; error?: string }>;
+    vaultDeleteProject?: (id: string) => Promise<{ ok: boolean; result?: { id: string; deleted: boolean }; error?: string }>;
 
     // ── Scheduler (Henry's Routines) ──────────────────────────
     listRoutines?: () => Promise<{ ok: boolean; result?: HenryRoutine[]; error?: string }>;

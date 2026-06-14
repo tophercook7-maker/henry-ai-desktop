@@ -102,4 +102,64 @@ export function registerProjectHandlers(db: Database.Database): void {
           .get(id) as Row;
       }),
   );
+
+  ipcMain.handle(
+    "projects:create",
+    (
+      _e,
+      payload: {
+        name?: string;
+        type?: string;
+        description?: string;
+        money_angle?: string;
+        next_action?: string;
+        domain?: string;
+        repo_url?: string;
+        notes?: string;
+      },
+    ) =>
+      safe(() => {
+        const name = String(payload?.name ?? "").trim();
+        if (!name) throw new Error("name is required");
+        const dupe = db
+          .prepare(`SELECT 1 FROM projects WHERE name = ? LIMIT 1`)
+          .get(name);
+        if (dupe) throw new Error(`A project named "${name}" already exists`);
+
+        const id = `proj_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`;
+        const str = (v: unknown) => (v === null || v === undefined || v === "" ? null : String(v));
+        const desc = str(payload?.description);
+        db.prepare(
+          `INSERT INTO projects
+             (id, name, type, status, description, summary, money_angle, next_action, domain, repo_url, notes, last_worked_at)
+           VALUES (?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+        ).run(
+          id,
+          name,
+          str(payload?.type) ?? "general",
+          desc,
+          desc, // seed summary from the human description, matching the seeder
+          str(payload?.money_angle),
+          str(payload?.next_action),
+          str(payload?.domain),
+          str(payload?.repo_url),
+          str(payload?.notes),
+        );
+
+        return db
+          .prepare(`SELECT ${SELECT_FIELDS} FROM projects WHERE id = ?`)
+          .get(id) as Row;
+      }),
+  );
+
+  ipcMain.handle("projects:delete", (_e, payload: { id: string }) =>
+    safe(() => {
+      const id = String(payload?.id ?? "").trim();
+      if (!id) throw new Error("id is required");
+      // project_memory rows cascade automatically (FK ON DELETE CASCADE).
+      const info = db.prepare(`DELETE FROM projects WHERE id = ?`).run(id);
+      if (info.changes === 0) throw new Error(`No project found for id ${id}`);
+      return { id, deleted: true };
+    }),
+  );
 }

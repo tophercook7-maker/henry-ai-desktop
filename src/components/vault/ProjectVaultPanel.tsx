@@ -32,6 +32,9 @@ export default function ProjectVaultPanel() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -70,21 +73,94 @@ export default function ProjectVaultPanel() {
     }
   }, [load]);
 
+  const create = useCallback(async () => {
+    const name = newName.trim();
+    if (!name) { setCreating(false); setNewName(''); return; }
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await api()?.vaultCreateProject?.({ name });
+      if (res?.ok && res.result) {
+        setProjects((prev) => [res.result as Project, ...prev]);
+        setNewName('');
+        setCreating(false);
+      } else {
+        setError(res?.error || 'Could not create project.');
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not create project.');
+    } finally {
+      setBusy(false);
+    }
+  }, [newName]);
+
+  const remove = useCallback(async (id: string) => {
+    const snapshot = projects;
+    setProjects((prev) => prev.filter((p) => p.id !== id)); // optimistic
+    try {
+      const res = await api()?.vaultDeleteProject?.(id);
+      if (res && !res.ok) {
+        setError(res.error || 'Could not delete project.');
+        setProjects(snapshot); // restore truth
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not delete project.');
+      setProjects(snapshot);
+    }
+  }, [projects]);
+
   return (
     <div className="h-full overflow-y-auto bg-henry-bg">
       <div className="max-w-3xl mx-auto px-5 py-6">
         <div className="flex items-end justify-between mb-1">
           <h1 className="text-xl font-semibold text-henry-text">Projects</h1>
-          <button
-            onClick={() => void load()}
-            className="text-xs text-henry-text-muted hover:text-henry-text transition-colors"
-          >
-            Refresh
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => { setCreating((c) => !c); setError(null); }}
+              className="text-xs text-henry-accent hover:underline transition-colors"
+            >
+              + New project
+            </button>
+            <button
+              onClick={() => void load()}
+              className="text-xs text-henry-text-muted hover:text-henry-text transition-colors"
+            >
+              Refresh
+            </button>
+          </div>
         </div>
-        <p className="text-xs text-henry-text-muted mb-5">
+        <p className="text-xs text-henry-text-muted mb-3">
           Your Project Vault. Henry reads and updates these in chat too — ask him "where's StrainSpotter at?"
         </p>
+
+        {creating && (
+          <div className="flex items-center gap-2 mb-5">
+            <input
+              autoFocus
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void create();
+                if (e.key === 'Escape') { setCreating(false); setNewName(''); }
+              }}
+              placeholder="New project name…"
+              className="flex-1 bg-henry-surface border border-henry-accent/40 rounded-lg px-3 py-2 text-sm text-henry-text outline-none"
+            />
+            <button
+              onClick={() => void create()}
+              disabled={busy || !newName.trim()}
+              className="text-xs px-3 py-2 rounded-lg bg-henry-accent/15 text-henry-accent hover:bg-henry-accent/25 disabled:opacity-40 transition-colors"
+            >
+              {busy ? 'Adding…' : 'Add'}
+            </button>
+            <button
+              onClick={() => { setCreating(false); setNewName(''); }}
+              className="text-xs text-henry-text-muted hover:text-henry-text transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
 
         {loading && <div className="text-sm text-henry-text-muted py-12 text-center">Loading projects…</div>}
 
@@ -104,7 +180,7 @@ export default function ProjectVaultPanel() {
         {!loading && !error && projects.length > 0 && (
           <div className="space-y-3">
             {projects.map((p) => (
-              <ProjectCard key={p.id} project={p} saving={savingId === p.id} onPatch={patch} />
+              <ProjectCard key={p.id} project={p} saving={savingId === p.id} onPatch={patch} onDelete={remove} />
             ))}
           </div>
         )}
@@ -119,11 +195,15 @@ function ProjectCard({
   project,
   saving,
   onPatch,
+  onDelete,
 }: {
   project: Project;
   saving: boolean;
   onPatch: (id: string, fields: Partial<Project>) => void;
+  onDelete: (id: string) => void;
 }) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
   return (
     <div className="bg-henry-surface/40 border border-henry-border/30 rounded-2xl p-4">
       <div className="flex items-start justify-between gap-3">
@@ -142,6 +222,32 @@ function ProjectCard({
           >
             {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
+          {confirmDelete ? (
+            <span className="flex items-center gap-1.5 text-[10px]">
+              <span className="text-henry-text-muted">Delete?</span>
+              <button
+                onClick={() => { setConfirmDelete(false); onDelete(project.id); }}
+                className="text-red-400 hover:text-red-300 font-medium"
+              >
+                Yes
+              </button>
+              <button
+                onClick={() => setConfirmDelete(false)}
+                className="text-henry-text-muted hover:text-henry-text"
+              >
+                No
+              </button>
+            </span>
+          ) : (
+            <button
+              onClick={() => setConfirmDelete(true)}
+              title="Delete project"
+              aria-label={`Delete ${project.name}`}
+              className="text-[11px] text-henry-text-muted hover:text-red-400 transition-colors px-1"
+            >
+              ✕
+            </button>
+          )}
         </div>
       </div>
 

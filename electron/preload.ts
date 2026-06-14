@@ -180,6 +180,17 @@ contextBridge.exposeInMainWorld('henryAPI', {
   vaultGetProject: (id: string) => ipcRenderer.invoke('projects:get', { id }),
   vaultUpdateProject: (id: string, patch: Record<string, unknown>) =>
     ipcRenderer.invoke('projects:update', { id, patch }),
+  vaultCreateProject: (input: {
+    name: string;
+    type?: string;
+    description?: string;
+    money_angle?: string;
+    next_action?: string;
+    domain?: string;
+    repo_url?: string;
+    notes?: string;
+  }) => ipcRenderer.invoke('projects:create', input),
+  vaultDeleteProject: (id: string) => ipcRenderer.invoke('projects:delete', { id }),
 
   // ── Scheduler (Henry's Routines) ──────────────────────────
   listRoutines: () => ipcRenderer.invoke('scheduler:list'),
