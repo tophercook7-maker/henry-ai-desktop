@@ -5,6 +5,7 @@ import Sidebar from './Sidebar';
 import MobileNav from './MobileNav';
 import ChatView from '../chat/ChatView';
 import TaskQueueView from '../queue/TaskQueueView';
+import ApprovalQueuePanel from '../queue/ApprovalQueuePanel';
 import HealthPanel from '../health/HealthPanel';
 import TasksPanel from '../tasks/TasksPanel';
 import SettingsView from '../settings/SettingsView';
@@ -308,6 +309,7 @@ export default function Layout() {
           {currentView === 'memos' && <PanelBoundary><RecorderPanel /></PanelBoundary>}
           {/* Fix H: TaskQueueView was imported but had no render branch — exposed under 'queue'. */}
           {currentView === 'queue' && <PanelBoundary><TaskQueueView /></PanelBoundary>}
+          {currentView === 'approvals' && <PanelBoundary><ApprovalQueuePanel /></PanelBoundary>}
           {currentView === 'weekly' && <PanelBoundary><WeeklyReviewPanel /></PanelBoundary>}
           {currentView === 'stripe' && <PanelBoundary><StripePanel /></PanelBoundary>}
           {currentView === 'gcal' && <PanelBoundary><GCalPanel /></PanelBoundary>}

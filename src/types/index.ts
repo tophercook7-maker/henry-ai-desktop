@@ -172,7 +172,7 @@ export interface DirectoryResult {
 // R2-Fix 9: added 'memos' (SQLite voice memos via RecorderPanel) and 'queue'
 // (TaskQueueView) — Layout.tsx renders these but TS didn't know they were
 // valid ViewType values, forcing `as any` casts at nav call sites.
-export type ViewType = 'today' | 'chat' | 'companion' | 'secretary' | 'contacts' | 'tasks' | 'files' | 'workspace' | 'terminal' | 'computer' | 'printer' | 'costs' | 'settings' | 'journal' | 'focus' | 'recorder' | 'memos' | 'queue' | 'modes' | 'reminders' | 'crm' | 'finance' | 'lists' | 'printstudio' | 'machines' | 'materials' | 'production' | 'waste' | 'maintenance' | 'imagegen' | 'videogen' | 'integrations' | 'github' | 'linear' | 'notion' | 'slack' | 'stripe' | 'gcal' | 'gmail' | 'gdrive' | 'captures' | 'weekly' | 'health' | 'goals' | 'hq' | 'setup' | 'memory' | 'scripture' | 'prayer' | 'quoting' | 'routines' | 'audit' | 'vault' | 'crews' | 'money' | 'book' | 'slicer';
+export type ViewType = 'today' | 'chat' | 'companion' | 'secretary' | 'contacts' | 'tasks' | 'files' | 'workspace' | 'terminal' | 'computer' | 'printer' | 'costs' | 'settings' | 'journal' | 'focus' | 'recorder' | 'memos' | 'queue' | 'modes' | 'reminders' | 'crm' | 'finance' | 'lists' | 'printstudio' | 'machines' | 'materials' | 'production' | 'waste' | 'maintenance' | 'imagegen' | 'videogen' | 'integrations' | 'github' | 'linear' | 'notion' | 'slack' | 'stripe' | 'gcal' | 'gmail' | 'gdrive' | 'captures' | 'weekly' | 'health' | 'goals' | 'hq' | 'setup' | 'memory' | 'scripture' | 'prayer' | 'quoting' | 'routines' | 'audit' | 'vault' | 'crews' | 'money' | 'book' | 'slicer' | 'approvals';
 
 export interface AppSettings {
   [key: string]: string;
