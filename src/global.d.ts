@@ -352,6 +352,18 @@ declare global {
     updated_at?: string | null;
   }
 
+  interface HenryApproval {
+    id: string;
+    tool_name: string;
+    description?: string | null;
+    args_json?: string | null;
+    status: 'pending' | 'approved' | 'rejected' | 'needs_review' | 'expired' | 'completed';
+    decided_args_json?: string | null;
+    session_id?: string | null;
+    requested_at?: string | null;
+    decided_at?: string | null;
+  }
+
   interface HenryAPI {
     getSettings: () => Promise<Record<string, string>>;
     saveSetting: (key: string, value: string) => Promise<boolean>;
@@ -593,6 +605,11 @@ declare global {
     vaultUpdateProject?: (id: string, patch: Partial<HenryProject>) => Promise<{ ok: boolean; result?: HenryProject; error?: string }>;
     vaultCreateProject?: (input: { name: string; type?: string; description?: string; money_angle?: string; next_action?: string; domain?: string; repo_url?: string; notes?: string }) => Promise<{ ok: boolean; result?: HenryProject; error?: string }>;
     vaultDeleteProject?: (id: string) => Promise<{ ok: boolean; result?: { id: string; deleted: boolean }; error?: string }>;
+
+    // ── Approval Queue ────────────────────────────────────────
+    approvalsList?: (filter?: { status?: string; limit?: number }) => Promise<{ ok: boolean; result?: HenryApproval[]; error?: string }>;
+    approvalsGet?: (id: string) => Promise<{ ok: boolean; result?: HenryApproval | null; error?: string }>;
+    approvalsStats?: () => Promise<{ ok: boolean; result?: Record<string, number>; error?: string }>;
 
     // ── Scheduler (Henry's Routines) ──────────────────────────
     listRoutines?: () => Promise<{ ok: boolean; result?: HenryRoutine[]; error?: string }>;

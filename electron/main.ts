@@ -20,6 +20,7 @@ import { registerComputerHandlers } from './ipc/computer';
 import { registerPrinterHandlers } from './ipc/printer';
 import { registerSessionStoreHandlers } from './ipc/sessionStore';
 import { registerProjectHandlers } from './ipc/projects';
+import { registerApprovalHandlers } from './ipc/approvals';
 import { registerLeadHandlers } from './ipc/leads';
 import { registerBookHandlers } from './ipc/book';
 import { registerPrinterDiscoveryHandlers } from './ipc/printerDiscovery';
@@ -427,6 +428,7 @@ app.whenReady().then(() => {
   registerTaskBrokerHandlers(db, getMainWindow, henryDir);
   registerMemoryHandlers(db);
   registerProjectHandlers(db);
+  registerApprovalHandlers(db);
   registerLeadHandlers(db);
   registerBookHandlers(db);
   registerPrinterDiscoveryHandlers();

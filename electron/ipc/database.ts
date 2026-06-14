@@ -207,6 +207,9 @@ function migrateDatabaseSchema(db: Database.Database) {
   // Book Engine — captured life material for Topher's book.
   migrateBookSchema(db);
 
+  // Approval Queue — durable log of every confirm-tier action + its outcome.
+  migrateApprovalsSchema(db);
+
   // Slicer — saved slicing profiles (printer + material + settings).
   migrateSlicerProfilesSchema(db);
   seedSlicerProfiles(db);
@@ -358,6 +361,31 @@ function seedProjectVault(db: Database.Database) {
     }
   });
   try { seed(); } catch { /* ignore seed errors on unusual DB states */ }
+}
+
+/**
+ * Approval Queue (build plan, Phase 2). Durable record of every confirm-tier
+ * action Henry requests and how it was decided. Written by the tool runner via
+ * electron/ipc/approvals.ts. Idempotent — safe to run on every launch.
+ */
+function migrateApprovalsSchema(db: Database.Database) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS approvals (
+      id TEXT PRIMARY KEY,
+      tool_name TEXT NOT NULL,
+      description TEXT,
+      args_json TEXT,
+      status TEXT NOT NULL DEFAULT 'pending'
+        CHECK(status IN ('pending','approved','rejected','needs_review','expired','completed')),
+      decided_args_json TEXT,
+      session_id TEXT,
+      requested_at TEXT NOT NULL DEFAULT (datetime('now')),
+      decided_at TEXT
+    );
+  `);
+  try {
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status, requested_at)`);
+  } catch { /* ignore on unusual DB states */ }
 }
 
 /**

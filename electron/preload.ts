@@ -192,6 +192,12 @@ contextBridge.exposeInMainWorld('henryAPI', {
   }) => ipcRenderer.invoke('projects:create', input),
   vaultDeleteProject: (id: string) => ipcRenderer.invoke('projects:delete', { id }),
 
+  // ── Approval Queue ────────────────────────────────────────
+  approvalsList: (filter?: { status?: string; limit?: number }) =>
+    ipcRenderer.invoke('approvals:list', filter),
+  approvalsGet: (id: string) => ipcRenderer.invoke('approvals:get', { id }),
+  approvalsStats: () => ipcRenderer.invoke('approvals:stats'),
+
   // ── Scheduler (Henry's Routines) ──────────────────────────
   listRoutines: () => ipcRenderer.invoke('scheduler:list'),
   addRoutine: (task: Record<string, unknown>) => ipcRenderer.invoke('scheduler:add', task),

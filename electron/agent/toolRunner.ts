@@ -74,6 +74,10 @@ export function resolveConfirmation(
   clearTimeout(pending.timer);
   pendingConfirms.delete(id);
   pending.resolve({ approved, editedArgs });
+  // Persist the outcome so the Approval Queue has a durable record.
+  void import('../ipc/approvals')
+    .then((m) => m.recordApprovalDecision(id, approved ? 'approved' : 'rejected', editedArgs))
+    .catch(() => {});
   return true;
 }
 
@@ -84,9 +88,26 @@ function requestConfirmation(
   return new Promise((resolve) => {
     const timer = setTimeout(() => {
       pendingConfirms.delete(payload.id);
+      // Record the timeout as an expired decision in the queue.
+      void import('../ipc/approvals')
+        .then((m) => m.recordApprovalDecision(payload.id, 'expired'))
+        .catch(() => {});
       resolve({ approved: false }); // timeout → treat as rejection
     }, CONFIRM_TIMEOUT_MS);
     pendingConfirms.set(payload.id, { resolve, timer });
+
+    // Persist the pending request so the Approval Queue is reviewable (best-effort).
+    void import('../ipc/approvals')
+      .then((m) =>
+        m.recordApprovalRequest({
+          id: payload.id,
+          toolName: payload.toolName,
+          description: payload.description,
+          args: payload.args,
+          sessionId: context.sessionId,
+        }),
+      )
+      .catch(() => {});
 
     const win = context.getWindow();
     if (win && !win.isDestroyed()) {
