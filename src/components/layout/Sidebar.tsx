@@ -4,7 +4,7 @@ import { useStore } from '../../store';
 
 // R2-Fix 9: keep this in sync with src/types/index.ts ViewType.
 type ViewType = 'today' | 'chat' | 'companion' | 'secretary' | 'contacts' | 'tasks' | 'files' | 'workspace' | 'terminal' | 'computer' | 'printer' | 'costs' | 'settings' | 'journal' | 'focus' | 'recorder' | 'memos' | 'queue' | 'modes' | 'reminders' | 'crm' | 'finance' | 'lists' | 'printstudio' | 'machines' | 'materials' | 'production' | 'waste' | 'maintenance' | 'imagegen' | 'videogen' | 'integrations' | 'github' | 'linear' | 'notion' | 'slack' | 'captures' | 'weekly' | 'health' | 'goals' | 'hq' | 'setup' | 'memory' | 'prayer' | 'quoting'
-  | 'scripture' | 'routines' | 'audit' | 'vault' | 'crews' | 'money' | 'book' | 'slicer';
+  | 'scripture' | 'routines' | 'audit' | 'vault' | 'crews' | 'money' | 'book' | 'slicer' | 'approvals';
 
 // A nav item renders either a glyph (`icon`) or a lucide component (`lucideIcon`).
 type NavItem = { id: ViewType; icon?: string; lucideIcon?: ComponentType<{ size?: number }>; label: string; desc?: string };
@@ -41,6 +41,7 @@ const BUSINESS_NAV: NavItem[] = [
   { id: 'tasks',      icon: '☐',  label: 'Tasks',     desc: 'Your task list' },
   // R2-Fix 9: TaskQueueView was imported in Layout.tsx but unreachable.
   { id: 'queue',      icon: '⊟',  label: 'Queue',     desc: 'Background jobs Henry is running' },
+  { id: 'approvals',  lucideIcon: Shield, label: 'Approvals', desc: "What Henry asked to do before acting — pending, approved, rejected" },
   // Sprint 3: Henry's Routines — scheduled autonomous runs.
   { id: 'routines',   icon: '🕐', label: 'Routines',  desc: 'Scheduled autonomous runs, like a morning briefing' },
   // Sprint 4: Audit Log — "What Henry Did" feed of every tool call.
@@ -142,20 +143,23 @@ export default function Sidebar() {
   const go = (id: ViewType) => setCurrentView(id as any);
 
   return (
-    <div className="henry-sidebar shrink-0 flex flex-col h-full bg-henry-surface/30 border-r border-henry-border/20 py-3 px-1.5 w-[56px]">
+    <div className="henry-sidebar shrink-0 flex flex-col h-full bg-henry-surface/30 border-r border-henry-border/20 py-3 px-1 w-[92px]">
+
+      {/* Scrollable nav area — multi-column so every icon fits without stretching the window */}
+      <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-1">
 
       {/* Do-anything launcher — opens the ⌘K command palette */}
       <button
         onClick={() => window.dispatchEvent(new CustomEvent('henry:open-palette'))}
         title="Search — jump to anything or run a command (⌘K)"
         aria-label="Search and run anything"
-        className="mb-2 w-9 h-9 mx-auto flex items-center justify-center rounded-xl bg-henry-accent/15 text-henry-accent hover:bg-henry-accent/25 transition-colors"
+        className="mb-1 w-full h-9 flex items-center justify-center gap-1.5 rounded-xl bg-henry-accent/15 text-henry-accent hover:bg-henry-accent/25 transition-colors text-[11px] font-medium"
       >
-        <Search size={18} />
+        <Search size={15} /> Search
       </button>
 
       {/* Core navigation */}
-      <div className="flex flex-col items-center gap-1">
+      <div className="grid grid-cols-2 gap-1 place-items-center">
         {CORE_NAV.map(item => (
           <div key={item.id} className="relative">
             <NavIcon
@@ -180,7 +184,7 @@ export default function Sidebar() {
       <Divider />
 
       {/* Business */}
-      <div className="flex flex-col items-center gap-1">
+      <div className="grid grid-cols-2 gap-1 place-items-center">
         {BUSINESS_NAV.map(item => (
           <NavIcon
             key={item.id}
@@ -204,7 +208,7 @@ export default function Sidebar() {
 
       {/* More items */}
       {showMore && (
-        <div className="flex flex-col items-center gap-1 mt-1">
+        <div className="grid grid-cols-2 gap-1 place-items-center mt-1">
           {MORE_NAV.map(item => (
             <NavIcon
               key={item.id}
@@ -216,11 +220,10 @@ export default function Sidebar() {
         </div>
       )}
 
-      {/* Spacer */}
-      <div className="flex-1" />
+      </div>
 
-      {/* Bottom — Settings only */}
-      <div className="flex flex-col items-center gap-1">
+      {/* Bottom — pinned (Setup / Companion / Settings) */}
+      <div className="grid grid-cols-2 gap-1 place-items-center pt-2 mt-1 border-t border-henry-border/20">
         {BOTTOM_NAV.map(item => (
           <NavIcon
             key={item.id}
