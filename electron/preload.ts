@@ -168,6 +168,9 @@ contextBridge.exposeInMainWorld('henryAPI', {
   // ── Agent Crews ───────────────────────────────────────────
   listCrews: () => ipcRenderer.invoke('crews:list'),
   runCrew: (crewId: string, input: string) => ipcRenderer.invoke('crews:run', { crewId, input }),
+  listCrewRuns: (filter?: { crewId?: string; limit?: number }) =>
+    ipcRenderer.invoke('crews:runs', filter),
+  getCrewRun: (id: string) => ipcRenderer.invoke('crews:run-get', { id }),
   onCrewStep: (cb: (data: unknown) => void) => {
     const handler = (_e: IpcRendererEvent, data: unknown) => cb(data);
     ipcRenderer.on('crews:step', handler);

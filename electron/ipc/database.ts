@@ -210,6 +210,9 @@ function migrateDatabaseSchema(db: Database.Database) {
   // Approval Queue — durable log of every confirm-tier action + its outcome.
   migrateApprovalsSchema(db);
 
+  // Crew runs — durable transcript of every Agent Crew run (Phase 3).
+  migrateCrewRunsSchema(db);
+
   // Slicer — saved slicing profiles (printer + material + settings).
   migrateSlicerProfilesSchema(db);
   seedSlicerProfiles(db);
@@ -385,6 +388,30 @@ function migrateApprovalsSchema(db: Database.Database) {
   `);
   try {
     db.exec(`CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status, requested_at)`);
+  } catch { /* ignore on unusual DB states */ }
+}
+
+/**
+ * Crew runs (build plan, Phase 3). A durable transcript of every Agent Crew
+ * run — the input, each agent's output, the final deliverable, and token usage
+ * — so a crew's work (prospect lists, outreach drafts, plans) is saved and
+ * reviewable instead of vanishing when the panel closes. Idempotent.
+ */
+function migrateCrewRunsSchema(db: Database.Database) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS crew_runs (
+      id TEXT PRIMARY KEY,
+      crew_id TEXT NOT NULL,
+      crew_name TEXT NOT NULL,
+      input TEXT NOT NULL,
+      final_output TEXT,
+      steps_json TEXT,
+      usage_json TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+  try {
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_crew_runs_created ON crew_runs(created_at DESC)`);
   } catch { /* ignore on unusual DB states */ }
 }
 

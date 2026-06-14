@@ -18,6 +18,17 @@ function api() {
   return typeof window !== 'undefined' ? window.henryAPI : undefined;
 }
 
+function relativeTime(iso?: string | null): string {
+  if (!iso) return '';
+  const t = new Date(iso.includes('T') ? iso : iso.replace(' ', 'T') + 'Z').getTime();
+  if (Number.isNaN(t)) return '';
+  const s = Math.floor((Date.now() - t) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
+}
+
 export default function CrewsPanel() {
   const [crews, setCrews] = useState<Crew[]>([]);
   const [loading, setLoading] = useState(true);
@@ -29,6 +40,7 @@ export default function CrewsPanel() {
   const [steps, setSteps] = useState<Step[]>([]);
   const [runError, setRunError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const [runs, setRuns] = useState<HenryCrewRun[]>([]);
 
   const runningCrewId = useRef<string | null>(null);
 
@@ -60,6 +72,30 @@ export default function CrewsPanel() {
     return () => { off?.(); };
   }, []);
 
+  // Load saved run history (newest first).
+  const loadRuns = useCallback(async () => {
+    try {
+      const res = await api()?.listCrewRuns?.({ limit: 20 });
+      if (res?.ok) setRuns(res.result ?? []);
+    } catch { /* ignore — history is best-effort */ }
+  }, []);
+  useEffect(() => { void loadRuns(); }, [loadRuns]);
+
+  // Reopen a saved run's full transcript in the run view.
+  const openRun = useCallback(async (runId: string, crewId: string) => {
+    try {
+      const res = await api()?.getCrewRun?.(runId);
+      if (res?.ok && res.result) {
+        const crew = crews.find((c) => c.id === crewId);
+        if (crew) setSelected(crew);
+        setSteps(res.result.steps ?? []);
+        setInput(res.result.input ?? '');
+        setRunError(null);
+        setDone(true);
+      }
+    } catch { /* ignore */ }
+  }, [crews]);
+
   const run = useCallback(async () => {
     if (!selected || !input.trim() || running) return;
     setRunning(true);
@@ -75,6 +111,7 @@ export default function CrewsPanel() {
         // Authoritative final transcript (in case any step events were missed).
         setSteps(res.result.steps);
         setDone(true);
+        void loadRuns(); // the run is now saved — refresh history
       }
     } catch (e) {
       setRunError(e instanceof Error ? e.message : 'The crew run failed.');
@@ -122,6 +159,27 @@ export default function CrewsPanel() {
                   </div>
                 </button>
               ))}
+            </div>
+          )}
+
+          {runs.length > 0 && (
+            <div className="mt-8">
+              <h2 className="text-xs font-semibold text-henry-text-muted uppercase tracking-wide mb-2">Recent runs</h2>
+              <div className="space-y-2">
+                {runs.map((r) => (
+                  <button
+                    key={r.id}
+                    onClick={() => void openRun(r.id, r.crew_id)}
+                    className="w-full text-left bg-henry-surface/30 border border-henry-border/20 rounded-xl px-3.5 py-2.5 hover:border-henry-accent/40 transition-colors"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-xs font-medium text-henry-text truncate">{r.crew_name}</span>
+                      <span className="text-[10px] text-henry-text-muted flex-shrink-0">{relativeTime(r.created_at)}</span>
+                    </div>
+                    <p className="text-[11px] text-henry-text-muted mt-0.5 truncate">{r.input}</p>
+                  </button>
+                ))}
+              </div>
             </div>
           )}
         </div>

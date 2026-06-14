@@ -11,6 +11,7 @@
  */
 
 import { ipcMain, type BrowserWindow } from 'electron';
+import { randomUUID } from 'crypto';
 import type Database from 'better-sqlite3';
 import { DEFAULT_CREWS, getCrew } from '../agent/crews/defaults';
 import { runCrew } from '../agent/crews/runner';
@@ -80,7 +81,61 @@ export function registerCrewHandlers(db: Database.Database, getWindow: WindowGet
           if (win && !win.isDestroyed()) win.webContents.send('crews:step', { crewId: crew.id, step });
         },
       });
-      return { ok: true, result };
+
+      // Persist the run so the crew's work isn't lost when the panel closes.
+      const runId = randomUUID();
+      try {
+        db.prepare(
+          `INSERT INTO crew_runs (id, crew_id, crew_name, input, final_output, steps_json, usage_json)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        ).run(
+          runId,
+          crew.id,
+          result.crew,
+          input,
+          result.final ?? null,
+          JSON.stringify(result.steps ?? []),
+          JSON.stringify(result.usage ?? {}),
+        );
+      } catch (e) {
+        console.error('[crews] persist run failed:', e instanceof Error ? e.message : e);
+      }
+
+      return { ok: true, result: { ...result, id: runId } };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  });
+
+  // Recent crew runs (newest first) — lightweight: no full transcript.
+  ipcMain.handle('crews:runs', (_e, payload?: { crewId?: string; limit?: number }) => {
+    try {
+      const limit = Math.min(Number(payload?.limit) || 50, 200);
+      const crewId = payload?.crewId;
+      const cols = `id, crew_id, crew_name, input, final_output, created_at`;
+      const rows = crewId
+        ? db.prepare(`SELECT ${cols} FROM crew_runs WHERE crew_id = ? ORDER BY created_at DESC LIMIT ?`).all(crewId, limit)
+        : db.prepare(`SELECT ${cols} FROM crew_runs ORDER BY created_at DESC LIMIT ?`).all(limit);
+      return { ok: true, result: rows };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  });
+
+  // One full run with its transcript (steps parsed from JSON).
+  ipcMain.handle('crews:run-get', (_e, payload: { id: string }) => {
+    try {
+      const row = db
+        .prepare(`SELECT * FROM crew_runs WHERE id = ?`)
+        .get(payload?.id) as Record<string, unknown> | undefined;
+      if (!row) return { ok: true, result: null };
+      const parse = (s: unknown) => {
+        try { return s ? JSON.parse(String(s)) : null; } catch { return null; }
+      };
+      return {
+        ok: true,
+        result: { ...row, steps: parse(row.steps_json), usage: parse(row.usage_json) },
+      };
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) };
     }

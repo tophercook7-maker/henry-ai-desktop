@@ -332,6 +332,21 @@ declare global {
     steps: HenryCrewRunStep[];
     final: string;
     usage: { input: number; output: number };
+    id?: string;
+  }
+
+  /** A persisted crew run (crew_runs table, Phase 3). */
+  interface HenryCrewRun {
+    id: string;
+    crew_id: string;
+    crew_name: string;
+    input: string;
+    final_output?: string | null;
+    steps_json?: string | null;
+    usage_json?: string | null;
+    steps?: HenryCrewRunStep[] | null;
+    usage?: { input: number; output: number } | null;
+    created_at?: string | null;
   }
 
   /** A row from the Project Vault (projects table). */
@@ -597,6 +612,8 @@ declare global {
     // ── Agent Crews ───────────────────────────────────────────
     listCrews?: () => Promise<{ ok: boolean; result?: HenryCrewSummary[]; error?: string }>;
     runCrew?: (crewId: string, input: string) => Promise<{ ok: boolean; result?: HenryCrewRunResult; error?: string }>;
+    listCrewRuns?: (filter?: { crewId?: string; limit?: number }) => Promise<{ ok: boolean; result?: HenryCrewRun[]; error?: string }>;
+    getCrewRun?: (id: string) => Promise<{ ok: boolean; result?: HenryCrewRun | null; error?: string }>;
     onCrewStep?: (cb: (data: { crewId: string; step: HenryCrewRunStep }) => void) => () => void;
 
     // ── Project Vault ─────────────────────────────────────────
