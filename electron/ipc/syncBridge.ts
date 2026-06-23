@@ -821,7 +821,7 @@ async function handleRequest(
         const { execFile } = await import('child_process');
         const result = await new Promise<string>((resolve, reject) => {
           execFile('osascript', ['-e', body.script], { timeout: 10000 }, (err, stdout) => {
-            err ? reject(err) : resolve(String(stdout).trim());
+            if (err) { reject(err); } else { resolve(String(stdout).trim()); }
           });
         });
         jsonResponse(res, 200, {ok: true, output: result});

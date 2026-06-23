@@ -373,7 +373,6 @@ export async function callAI(params: {
     }
   }
 
-  let result;
   const call = () => {
     switch (params.provider) {
       case 'openai':    return callOpenAI(params);
@@ -385,7 +384,7 @@ export async function callAI(params: {
     }
   };
   // Ollama is local — no retries needed (ping already guards it)
-  result = params.provider === 'ollama'
+  const result = params.provider === 'ollama'
     ? await call()
     : await withRetry(call);
 

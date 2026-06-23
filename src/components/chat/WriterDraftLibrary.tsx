@@ -83,7 +83,7 @@ export default function WriterDraftLibrary({
     void load();
   }, [load]);
 
-  function useAsContext(entry: WriterDraftListEntry) {
+  function applyAsContext(entry: WriterDraftListEntry) {
     setWriterActiveDraftPath(entry.relativePath);
     onInjectChat(buildUseDraftComposerPrompt(entry, currentLabel));
   }
@@ -209,7 +209,7 @@ export default function WriterDraftLibrary({
                   <button
                     type="button"
                     disabled={disabled}
-                    onClick={() => useAsContext(d)}
+                    onClick={() => applyAsContext(d)}
                     className="px-1.5 py-0.5 rounded border border-henry-border/45 text-[9px] hover:bg-henry-surface/50 disabled:opacity-40"
                   >
                     Use as context

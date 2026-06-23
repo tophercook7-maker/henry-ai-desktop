@@ -34,7 +34,6 @@ export default function ClipboardAIToast() {
   }, []);
 
   useEffect(() => {
-    let pollInterval: ReturnType<typeof setInterval>;
 
     async function checkClipboard() {
       try {
@@ -52,7 +51,7 @@ export default function ClipboardAIToast() {
       }
     }
 
-    pollInterval = setInterval(checkClipboard, 1500);
+    const pollInterval = setInterval(checkClipboard, 1500);
     return () => clearInterval(pollInterval);
   }, [scheduleHide]);
 

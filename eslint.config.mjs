@@ -28,5 +28,13 @@ export default tseslint.config(
       '@typescript-eslint/no-non-null-assertion': 'off',
       '@typescript-eslint/no-empty-object-type': 'off',
     },
+  },
+  {
+    // Electron main process runs in CommonJS; require() (incl. lazy requires
+    // inside IPC handlers) is intentional and idiomatic there.
+    files: ['electron/**/*.{ts,tsx}', 'scripts/**/*.{ts,js}'],
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off',
+    },
   }
 );

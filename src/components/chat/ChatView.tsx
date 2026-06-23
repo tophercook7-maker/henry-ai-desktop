@@ -2515,6 +2515,7 @@ What do you want to tackle first?`);
   }
 
   // Keep wake word ref always pointing to latest handleSend (safe to assign during render)
+  // eslint-disable-next-line react-hooks/refs -- intentional: keep ref to latest handler
   wakeHandleSendRef.current = handleSend;
 
   const activeConvTitle = conversations.find(c => c.id === activeConversationId)?.title ?? undefined;
