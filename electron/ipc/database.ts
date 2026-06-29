@@ -216,6 +216,33 @@ function migrateDatabaseSchema(db: Database.Database) {
   // Slicer — saved slicing profiles (printer + material + settings).
   migrateSlicerProfilesSchema(db);
   seedSlicerProfiles(db);
+
+  // Synatra — config keys + disabled provider row for the video-gen bridge.
+  seedSynatraConfig(db);
+}
+
+/**
+ * Synatra integration (integration plan, Phase 2). Seeds the settings keys the
+ * `synatraBridge` reads and a disabled `synatra` provider row to hold the
+ * webhook Bearer secret. Disabled + empty by default so nothing runs until
+ * Topher fills these in (Settings → Synatra). Idempotent.
+ */
+function seedSynatraConfig(db: Database.Database) {
+  try {
+    db.prepare(
+      `INSERT OR IGNORE INTO settings (key, value) VALUES
+         ('synatra_endpoint', 'http://localhost:8787'),
+         ('synatra_org', ''),
+         ('synatra_env', 'dev'),
+         ('synatra_trigger', 'render-video')`,
+    ).run();
+    db.prepare(
+      `INSERT OR IGNORE INTO providers (id, name, api_key, enabled, models)
+       VALUES ('synatra', 'Synatra', '', 0, '[]')`,
+    ).run();
+  } catch {
+    /* ignore on unusual DB states */
+  }
 }
 
 /**

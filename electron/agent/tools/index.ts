@@ -19,6 +19,7 @@ import { messagesTools } from "./messages";
 import { emailTools } from "./email";
 import { permissionsTools } from "./permissions";
 import { webTools } from "./web";
+import { synatraTools } from "./synatra";
 import { quickbooksTools } from "./quickbooks";
 import { leadTools } from "./leads";
 import { bookTools } from "./book";
@@ -35,6 +36,7 @@ export function registerAllTools(registry: ToolRegistry): void {
     ...emailTools(),
     ...permissionsTools(),
     ...webTools(),
+    ...synatraTools(),
     ...quickbooksTools(),
     ...repoTools(),
   ]);
