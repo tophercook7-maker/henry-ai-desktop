@@ -31,6 +31,13 @@ export interface SynatraConfig {
   env: string;
   trigger: string;
   secret: string;
+  /**
+   * Optional better-auth session token. The webhook (submit) authenticates with
+   * the `secret`, but reading a thread's status (`GET /api/threads/:id`) is
+   * session-authed, not secret-authed — so polling needs this signed session
+   * cookie value. Stored in settings as `synatra_session_token`.
+   */
+  sessionToken?: string;
 }
 
 export interface SynatraJobPayload {
@@ -103,7 +110,9 @@ export function resolveSynatraConfig(
     };
   }
 
-  return { ok: true, config: { endpoint, org, env, trigger, secret } };
+  const sessionToken = setting(db, "synatra_session_token") || undefined;
+
+  return { ok: true, config: { endpoint, org, env, trigger, secret, sessionToken } };
 }
 
 /** True when Synatra is configured enough to call — for a clean pre-flight error. */
@@ -187,12 +196,14 @@ export async function pollSynatraJob(
   timeoutMs = DEFAULT_TIMEOUT_MS,
 ): Promise<SynatraStatusResult> {
   const url = `${config.endpoint}/api/threads/${encodeURIComponent(threadId)}`;
+  // Thread reads are session-authed: send the better-auth session cookie when we
+  // have one. Without it, fall back to the secret (which Synatra will 401) so the
+  // error message is actionable rather than a silent misconfig.
+  const headers: Record<string, string> = config.sessionToken
+    ? { Cookie: `better-auth.session_token=${config.sessionToken}` }
+    : { Authorization: `Bearer ${config.secret}` };
   try {
-    const { status, body } = await fetchJson(
-      url,
-      { method: "GET", headers: { Authorization: `Bearer ${config.secret}` } },
-      timeoutMs,
-    );
+    const { status, body } = await fetchJson(url, { method: "GET", headers }, timeoutMs);
     if (status < 200 || status >= 300) {
       const detail = typeof body === "string" ? body : JSON.stringify(body);
       return { ok: false, error: `Synatra thread fetch returned HTTP ${status}: ${detail.slice(0, 300)}` };

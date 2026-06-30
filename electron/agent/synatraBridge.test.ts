@@ -149,6 +149,14 @@ describe("pollSynatraJob", () => {
     const res = await pollSynatraJob(cfg, "thr_1");
     expect(res).toMatchObject({ ok: true, failed: true, error: "boom" });
   });
+
+  it("polls with the session COOKIE (not the webhook secret) when a session token is present", async () => {
+    const fn = stubFetch(200, { status: "running" });
+    await pollSynatraJob({ ...cfg, sessionToken: "sess-abc" }, "thr_1");
+    const init = (fn.mock.calls[0] as unknown as [string, any])[1];
+    expect(init.headers.Cookie).toBe("better-auth.session_token=sess-abc");
+    expect(init.headers.Authorization).toBeUndefined();
+  });
 });
 
 describe("synatra tools — surface + guards", () => {
