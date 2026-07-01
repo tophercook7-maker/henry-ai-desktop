@@ -219,6 +219,13 @@ function migrateDatabaseSchema(db: Database.Database) {
 
   // Synatra — config keys + disabled provider row for the video-gen bridge.
   seedSynatraConfig(db);
+
+  // Render daemon endpoint for Henry's direct (Synatra-free) video generation.
+  try {
+    db.prepare(
+      `INSERT OR IGNORE INTO settings (key, value) VALUES ('render_endpoint', 'http://localhost:8799')`,
+    ).run();
+  } catch { /* ignore on unusual DB states */ }
 }
 
 /**
