@@ -38,7 +38,11 @@ const MAX_ITEMS = 40;
 function load(): WorkingMemoryItem[] {
   try {
     const raw = localStorage.getItem(WM_KEY);
-    return raw ? (JSON.parse(raw) as WorkingMemoryItem[]) : [];
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    // Guard against a legacy/corrupt value that isn't an array — otherwise
+    // callers' .filter/.map throw and break the whole chat send path.
+    return Array.isArray(parsed) ? (parsed as WorkingMemoryItem[]) : [];
   } catch {
     // Backup corrupted data before discarding so it can be recovered manually
     try {

@@ -923,11 +923,11 @@ const henryAPI: Window['henryAPI'] = {
 
   // ── Memory Layer 3: Working Memory ────────────────────────────────────────
   getWorkingMemory: async (_userId?) => {
-    return getStore<Record<string, unknown> | null>('henry:working_memory:v1', null);
+    return getStore<Record<string, unknown> | null>('henry:working_memory_api:v1', null);
   },
   updateWorkingMemory: async (updates) => {
-    const current = getStore<Record<string, unknown>>('henry:working_memory:v1', {});
-    setStore('henry:working_memory:v1', { ...current, ...updates, updated_at: new Date().toISOString() });
+    const current = getStore<Record<string, unknown>>('henry:working_memory_api:v1', {});
+    setStore('henry:working_memory_api:v1', { ...current, ...updates, updated_at: new Date().toISOString() });
     return { updated: true };
   },
 

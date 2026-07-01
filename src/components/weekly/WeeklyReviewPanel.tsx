@@ -46,7 +46,7 @@ import { PANEL_QUICK_ASK } from '../../henry/henryQuickAsk';
 function safeJSON<T>(key: string, fallback: T): T {
   try {
     const raw = localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : fallback;
+    if (!raw) return fallback; const _p = JSON.parse(raw); return (Array.isArray(fallback) && !Array.isArray(_p)) ? fallback : (_p as T);
   } catch { return fallback; }
 }
 

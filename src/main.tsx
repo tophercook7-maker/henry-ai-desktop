@@ -12,6 +12,17 @@ try {
   }
 } catch { /* ignore */ }
 
+// ── One-time repair: 'henry:working_memory:v1' must be an ARRAY ───────────────
+// A legacy webMock path wrote this key as an object ({...updates, updated_at}),
+// which collided with the array-based working-memory buffer and made every
+// array reader (workingMemory / lifeAreas / threadEngine) throw in the chat-send
+// path — Henry would spin forever on "thinking". If the stored value isn't an
+// array, drop it so readers fall back to [] and the buffer self-heals.
+try {
+  const raw = localStorage.getItem('henry:working_memory:v1');
+  if (raw && !Array.isArray(JSON.parse(raw))) localStorage.removeItem('henry:working_memory:v1');
+} catch { try { localStorage.removeItem('henry:working_memory:v1'); } catch { /* ignore */ } }
+
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import { HenrySelfRepairBoundary } from './components/HenrySelfRepairBoundary';
