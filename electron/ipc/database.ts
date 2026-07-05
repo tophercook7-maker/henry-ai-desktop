@@ -201,57 +201,22 @@ function migrateDatabaseSchema(db: Database.Database) {
   migrateProjectVaultSchema(db);
   seedProjectVault(db);
 
-  // Money Engine — the MixedMakerShop lead pipeline.
-  migrateLeadsSchema(db);
-
   // Book Engine — captured life material for Topher's book.
   migrateBookSchema(db);
 
   // Approval Queue — durable log of every confirm-tier action + its outcome.
   migrateApprovalsSchema(db);
 
-  // Crew runs — durable transcript of every Agent Crew run (Phase 3).
-  migrateCrewRunsSchema(db);
-
   // Slicer — saved slicing profiles (printer + material + settings).
   migrateSlicerProfilesSchema(db);
   seedSlicerProfiles(db);
 
-  // Synatra — config keys + disabled provider row for the video-gen bridge.
-  seedSynatraConfig(db);
-
-  // Render daemon endpoint for Henry's direct (Synatra-free) video generation.
+  // Render daemon endpoint for Henry's direct video generation.
   try {
     db.prepare(
       `INSERT OR IGNORE INTO settings (key, value) VALUES ('render_endpoint', 'http://localhost:8799')`,
     ).run();
   } catch { /* ignore on unusual DB states */ }
-}
-
-/**
- * Synatra integration (integration plan, Phase 2). Seeds the settings keys the
- * `synatraBridge` reads and a disabled `synatra` provider row to hold the
- * webhook Bearer secret. Disabled + empty by default so nothing runs until
- * Topher fills these in (Settings → Synatra). Idempotent.
- */
-function seedSynatraConfig(db: Database.Database) {
-  try {
-    db.prepare(
-      `INSERT OR IGNORE INTO settings (key, value) VALUES
-         ('synatra_endpoint', 'http://localhost:8788'),
-         ('synatra_org', ''),
-         ('synatra_env', 'dev'),
-         ('synatra_trigger', 'render-video'),
-         ('synatra_breakout_trigger', 'breakout-clip'),
-         ('synatra_breakout_secret', '')`,
-    ).run();
-    db.prepare(
-      `INSERT OR IGNORE INTO providers (id, name, api_key, enabled, models)
-       VALUES ('synatra', 'Synatra', '', 0, '[]')`,
-    ).run();
-  } catch {
-    /* ignore on unusual DB states */
-  }
 }
 
 /**
@@ -312,35 +277,6 @@ function migrateBookSchema(db: Database.Database) {
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS idx_book_entries_kind ON book_entries (kind);
-  `);
-}
-
-/**
- * Money Engine (build plan, Phase 3). The lead pipeline for MixedMakerShop's
- * website work: found → audited → contacted → follow-up → proposal → won/lost.
- * No seed — real leads only, added by Topher or the Money Crew. Idempotent.
- */
-function migrateLeadsSchema(db: Database.Database) {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS leads (
-      id            TEXT PRIMARY KEY,
-      business      TEXT NOT NULL,
-      contact_name  TEXT,
-      phone         TEXT,
-      email         TEXT,
-      website       TEXT,
-      source        TEXT,
-      status        TEXT NOT NULL DEFAULT 'new'
-        CHECK(status IN ('new','audited','contacted','follow_up','proposal','won','lost')),
-      audit_notes   TEXT,
-      notes         TEXT,
-      proposal_amount REAL,
-      next_follow_up  TEXT,
-      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
-      last_touch_at TEXT
-    );
-    CREATE INDEX IF NOT EXISTS idx_leads_status ON leads (status);
   `);
 }
 
@@ -424,30 +360,6 @@ function migrateApprovalsSchema(db: Database.Database) {
   `);
   try {
     db.exec(`CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status, requested_at)`);
-  } catch { /* ignore on unusual DB states */ }
-}
-
-/**
- * Crew runs (build plan, Phase 3). A durable transcript of every Agent Crew
- * run — the input, each agent's output, the final deliverable, and token usage
- * — so a crew's work (prospect lists, outreach drafts, plans) is saved and
- * reviewable instead of vanishing when the panel closes. Idempotent.
- */
-function migrateCrewRunsSchema(db: Database.Database) {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS crew_runs (
-      id TEXT PRIMARY KEY,
-      crew_id TEXT NOT NULL,
-      crew_name TEXT NOT NULL,
-      input TEXT NOT NULL,
-      final_output TEXT,
-      steps_json TEXT,
-      usage_json TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-  `);
-  try {
-    db.exec(`CREATE INDEX IF NOT EXISTS idx_crew_runs_created ON crew_runs(created_at DESC)`);
   } catch { /* ignore on unusual DB states */ }
 }
 

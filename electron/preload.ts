@@ -159,42 +159,6 @@ contextBridge.exposeInMainWorld('henryAPI', {
   updateBookEntry: (id: string, patch: Record<string, unknown>) => ipcRenderer.invoke('book:update', { id, patch }),
   deleteBookEntry: (id: string) => ipcRenderer.invoke('book:delete', { id }),
 
-  // ── Money Engine (lead pipeline) ──────────────────────────
-  listLeads: (filter?: { status?: string; limit?: number }) => ipcRenderer.invoke('leads:list', filter),
-  createLead: (lead: Record<string, unknown>) => ipcRenderer.invoke('leads:create', lead),
-  updateLead: (id: string, patch: Record<string, unknown>) => ipcRenderer.invoke('leads:update', { id, patch }),
-  deleteLead: (id: string) => ipcRenderer.invoke('leads:delete', { id }),
-
-  // ── Agent Crews ───────────────────────────────────────────
-  listCrews: () => ipcRenderer.invoke('crews:list'),
-  runCrew: (crewId: string, input: string) => ipcRenderer.invoke('crews:run', { crewId, input }),
-  listCrewRuns: (filter?: { crewId?: string; limit?: number }) =>
-    ipcRenderer.invoke('crews:runs', filter),
-  getCrewRun: (id: string) => ipcRenderer.invoke('crews:run-get', { id }),
-  onCrewStep: (cb: (data: unknown) => void) => {
-    const handler = (_e: IpcRendererEvent, data: unknown) => cb(data);
-    ipcRenderer.on('crews:step', handler);
-    return () => ipcRenderer.removeListener('crews:step', handler);
-  },
-
-  // ── Project Vault ─────────────────────────────────────────
-  vaultListProjects: (filter?: { status?: string; limit?: number }) =>
-    ipcRenderer.invoke('projects:list', filter),
-  vaultGetProject: (id: string) => ipcRenderer.invoke('projects:get', { id }),
-  vaultUpdateProject: (id: string, patch: Record<string, unknown>) =>
-    ipcRenderer.invoke('projects:update', { id, patch }),
-  vaultCreateProject: (input: {
-    name: string;
-    type?: string;
-    description?: string;
-    money_angle?: string;
-    next_action?: string;
-    domain?: string;
-    repo_url?: string;
-    notes?: string;
-  }) => ipcRenderer.invoke('projects:create', input),
-  vaultDeleteProject: (id: string) => ipcRenderer.invoke('projects:delete', { id }),
-
   // ── Approval Queue ────────────────────────────────────────
   approvalsList: (filter?: { status?: string; limit?: number }) =>
     ipcRenderer.invoke('approvals:list', filter),
@@ -345,8 +309,6 @@ contextBridge.exposeInMainWorld('henryAPI', {
   listsDeleteItem: (itemId: string) => ipcRenderer.invoke('lists:delete-item', itemId),
   listsClearDone: (listId: string) => ipcRenderer.invoke('lists:clear-done', listId),
   // Contacts / CRM
-  contactsSetStage: (id: string, stage: string) => ipcRenderer.invoke('contacts:set-stage', id, stage),
-  contactsByStage: (stage: string) => ipcRenderer.invoke('contacts:by-stage', stage),
   contactsList: (query?: string) => ipcRenderer.invoke('contacts:list', query),
   contactsGet: (id: string) => ipcRenderer.invoke('contacts:get', id),
   contactsCreate: (c: Record<string,unknown>) => ipcRenderer.invoke('contacts:create', c),

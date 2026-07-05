@@ -2,31 +2,21 @@ import { useState } from 'react';
 import { useStore } from '../../store';
 import type { Conversation } from '../../types';
 
-type ViewType = 'today' | 'chat' | 'secretary' | 'contacts' | 'tasks' | 'files' | 'workspace' | 'terminal' | 'computer' | 'printer' | 'costs' | 'settings' | 'journal' | 'focus' | 'recorder' | 'modes' | 'reminders' | 'crm' | 'finance' | 'lists' | 'printstudio' | 'imagegen' | 'integrations' | 'github' | 'linear' | 'notion' | 'slack';
+type ViewType = 'today' | 'chat' | 'tasks' | 'files' | 'workspace' | 'terminal' | 'computer' | 'printer' | 'costs' | 'settings' | 'journal' | 'recorder' | 'modes' | 'reminders' | 'finance' | 'printstudio' | 'imagegen';
 
 const BOTTOM_TABS: { id: ViewType; label: string; icon: string }[] = [
   { id: 'today', label: 'Today', icon: '🏠' },
   { id: 'chat', label: 'Chat', icon: '💬' },
   { id: 'reminders', label: 'Reminders', icon: '🔔' },
-  { id: 'lists', label: 'Lists', icon: '📝' },
+  { id: 'tasks', label: 'Tasks', icon: '📋' },
 ];
 
 const MORE_NAV: { id: ViewType; label: string; icon: string }[] = [
   { id: 'journal', label: 'Journal', icon: '📔' },
-  { id: 'focus', label: 'Focus', icon: '🎯' },
   { id: 'recorder', label: 'Recorder', icon: '🎙' },
-  { id: 'secretary', label: 'Secretary', icon: '🗓️' },
-  { id: 'crm', label: 'Clients', icon: '🤝' },
   { id: 'finance', label: 'Finance', icon: '💵' },
-  { id: 'contacts', label: 'People', icon: '👥' },
-  { id: 'tasks', label: 'Tasks', icon: '📋' },
   { id: 'printstudio', label: 'Print Studio', icon: '🖨️' },
   { id: 'imagegen', label: 'Image Gen', icon: '🎨' },
-  { id: 'integrations', label: 'Integrations', icon: '🔌' },
-  { id: 'github', label: 'GitHub', icon: '🐙' },
-  { id: 'linear', label: 'Linear', icon: '🔷' },
-  { id: 'notion', label: 'Notion', icon: '📄' },
-  { id: 'slack', label: 'Slack', icon: '💬' },
   { id: 'files', label: 'Files', icon: '📁' },
   { id: 'workspace', label: 'Workspace', icon: '🗂️' },
   { id: 'modes', label: 'My Modes', icon: '✨' },

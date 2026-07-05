@@ -20,7 +20,6 @@ import {
   buildLightSystemPrompt,
   buildMediumSystemPrompt,
   buildAwarenessSummary,
-  buildIntegrationStatusBlock,
   HENRY_OPERATING_MODES,
   type HenryOperatingMode,
   isHenryOperatingMode,
@@ -41,7 +40,6 @@ import {
 import { routeRequest } from '@/core/router/brainRouter';
 import { routeLocally } from '@/henry/localRouter';
 import { useDebugStore } from '@/henry/debugStore';
-import FocusCard from '@/components/focus/FocusCard';
 import { getWeather, type WeatherSnapshot } from '@/henry/weatherContext';
 import {
   buildFallbackNotice,
@@ -1461,21 +1459,10 @@ What do you want to tackle first?`);
         : '';
 
     // ── Brain Router decision ─────────────────────────────────────────────
-    // Build connected services list early (used by router + service map below)
-    const _connectedServicesEarly: string[] = (() => {
-      try {
-        const raw = localStorage.getItem('henry:connections');
-        if (!raw) return [];
-        const obj = JSON.parse(raw) as Record<string, { status?: string }>;
-        return Object.entries(obj).filter(([, v]) => v?.status === 'connected').map(([k]) => k);
-      } catch { return []; }
-    })();
-
     const threadMessagesLive = useStore.getState().messages.filter((m) => m.conversation_id === convId);
 
     const brainDecision = routeRequest({
       message: content,
-      connectedServices: _connectedServicesEarly,
       mode: effectiveMode,
       historyLength: threadMessagesLive.length,
       hasWorkspaceContext: !!activeWorkspaceContext,
@@ -1605,20 +1592,6 @@ What do you want to tackle first?`);
     const customModeRaw = (() => { try { return localStorage.getItem('henry_custom_mode_override'); } catch { return null; } })();
     const customModeOverride = customModeRaw ? (() => { try { return JSON.parse(customModeRaw) as { systemPrompt?: string; name?: string }; } catch { return null; } })() : null;
 
-    // Connected services list — already computed above for brain router
-    const _connectedServices = _connectedServicesEarly;
-
-    // Map intent → integration service label + id
-    const INTEGRATION_SERVICE_MAP: Partial<Record<MessageIntent, { label: string; serviceId: string }>> = {
-      integration_gmail:  { label: 'Gmail',           serviceId: 'gmail'  },
-      integration_gcal:   { label: 'Google Calendar', serviceId: 'gcal'   },
-      integration_slack:  { label: 'Slack',            serviceId: 'slack'  },
-      integration_github: { label: 'GitHub',           serviceId: 'github' },
-      integration_notion: { label: 'Notion',           serviceId: 'notion' },
-      integration_stripe: { label: 'Stripe',           serviceId: 'stripe' },
-      integration_linear: { label: 'Linear',           serviceId: 'linear' },
-    };
-
     // ── Build system prompt for this tier ────────────────────────────────────
 
     let systemPrompt: string;
@@ -1642,25 +1615,12 @@ What do you want to tackle first?`);
       // MEDIUM tier: light base + compact memory + connected services summary
       systemPrompt = buildMediumSystemPrompt(effectiveMode, memoryContext, {
         weather: currentWeather,
-        connectedServicesSummary: _connectedServices.length > 0
-          ? `Connected services: ${_connectedServices.join(', ')}.`
-          : undefined,
       });
-      const svcDef = INTEGRATION_SERVICE_MAP[intent];
-      if (svcDef) {
-        const isConn = _connectedServices.includes(svcDef.serviceId);
-        systemPrompt += '\n\n' + buildIntegrationStatusBlock(svcDef.label, isConn);
-      }
     } else {
       // LIGHT tier (default): core identity + mode only
       systemPrompt = buildLightSystemPrompt(effectiveMode, { weather: currentWeather });
       if (intent === 'awareness') {
-        systemPrompt += '\n\n' + buildAwarenessSummary(_connectedServices);
-      }
-      const svcDef = INTEGRATION_SERVICE_MAP[intent];
-      if (svcDef) {
-        const isConn = _connectedServices.includes(svcDef.serviceId);
-        systemPrompt += '\n\n' + buildIntegrationStatusBlock(svcDef.label, isConn);
+        systemPrompt += '\n\n' + buildAwarenessSummary();
       }
     }
 
@@ -2540,9 +2500,6 @@ What do you want to tackle first?`);
         )}
         {messages.length === 0 && !isStreaming ? (
           <>
-            <FocusCard
-              onFocus={(text) => setChatInject({ id: Date.now(), text })}
-            />
             <EmptyChat
               onModeAndInject={(mode, text) => {
                 setOperatingMode(mode);

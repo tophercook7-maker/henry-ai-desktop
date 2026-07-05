@@ -292,81 +292,6 @@ declare global {
     updated_at?: string;
   }
 
-  /** A row from the Money Engine lead pipeline (leads table). */
-  interface HenryLead {
-    id: string;
-    business: string;
-    contact_name?: string | null;
-    phone?: string | null;
-    email?: string | null;
-    website?: string | null;
-    source?: string | null;
-    status: 'new' | 'audited' | 'contacted' | 'follow_up' | 'proposal' | 'won' | 'lost';
-    audit_notes?: string | null;
-    notes?: string | null;
-    proposal_amount?: number | null;
-    next_follow_up?: string | null;
-    created_at?: string;
-    updated_at?: string;
-    last_touch_at?: string | null;
-  }
-
-  /** Lightweight crew summary (Agent Crews, Phase 2). */
-  interface HenryCrewSummary {
-    id: string;
-    name: string;
-    description: string;
-    goal: string;
-    agents: Array<{ id: string; name: string; role: string; goal: string }>;
-  }
-
-  interface HenryCrewRunStep {
-    agent: string;
-    output: string;
-    rounds: number;
-    usage: { input: number; output: number };
-  }
-
-  interface HenryCrewRunResult {
-    crew: string;
-    steps: HenryCrewRunStep[];
-    final: string;
-    usage: { input: number; output: number };
-    id?: string;
-  }
-
-  /** A persisted crew run (crew_runs table, Phase 3). */
-  interface HenryCrewRun {
-    id: string;
-    crew_id: string;
-    crew_name: string;
-    input: string;
-    final_output?: string | null;
-    steps_json?: string | null;
-    usage_json?: string | null;
-    steps?: HenryCrewRunStep[] | null;
-    usage?: { input: number; output: number } | null;
-    created_at?: string | null;
-  }
-
-  /** A row from the Project Vault (projects table). */
-  interface HenryProject {
-    id: string;
-    name: string;
-    type?: string | null;
-    status: 'active' | 'paused' | 'completed' | 'archived';
-    description?: string | null;
-    summary?: string | null;
-    next_action?: string | null;
-    money_angle?: string | null;
-    domain?: string | null;
-    repo_url?: string | null;
-    notes?: string | null;
-    last_worked_at?: string | null;
-    last_active_at?: string | null;
-    updated_at?: string | null;
-  }
-
   interface HenryApproval {
     id: string;
     tool_name: string;
@@ -602,26 +527,6 @@ declare global {
     createBookEntry?: (entry: Partial<HenryBookEntry>) => Promise<{ ok: boolean; result?: HenryBookEntry; error?: string }>;
     updateBookEntry?: (id: string, patch: Partial<HenryBookEntry>) => Promise<{ ok: boolean; result?: HenryBookEntry; error?: string }>;
     deleteBookEntry?: (id: string) => Promise<{ ok: boolean; result?: { deleted: boolean }; error?: string }>;
-
-    // ── Money Engine (lead pipeline) ──────────────────────────
-    listLeads?: (filter?: { status?: string; limit?: number }) => Promise<{ ok: boolean; result?: HenryLead[]; error?: string }>;
-    createLead?: (lead: Partial<HenryLead>) => Promise<{ ok: boolean; result?: HenryLead; error?: string }>;
-    updateLead?: (id: string, patch: Partial<HenryLead>) => Promise<{ ok: boolean; result?: HenryLead; error?: string }>;
-    deleteLead?: (id: string) => Promise<{ ok: boolean; result?: { deleted: boolean }; error?: string }>;
-
-    // ── Agent Crews ───────────────────────────────────────────
-    listCrews?: () => Promise<{ ok: boolean; result?: HenryCrewSummary[]; error?: string }>;
-    runCrew?: (crewId: string, input: string) => Promise<{ ok: boolean; result?: HenryCrewRunResult; error?: string }>;
-    listCrewRuns?: (filter?: { crewId?: string; limit?: number }) => Promise<{ ok: boolean; result?: HenryCrewRun[]; error?: string }>;
-    getCrewRun?: (id: string) => Promise<{ ok: boolean; result?: HenryCrewRun | null; error?: string }>;
-    onCrewStep?: (cb: (data: { crewId: string; step: HenryCrewRunStep }) => void) => () => void;
-
-    // ── Project Vault ─────────────────────────────────────────
-    vaultListProjects?: (filter?: { status?: string; limit?: number }) => Promise<{ ok: boolean; result?: HenryProject[]; error?: string }>;
-    vaultGetProject?: (id: string) => Promise<{ ok: boolean; result?: HenryProject | null; error?: string }>;
-    vaultUpdateProject?: (id: string, patch: Partial<HenryProject>) => Promise<{ ok: boolean; result?: HenryProject; error?: string }>;
-    vaultCreateProject?: (input: { name: string; type?: string; description?: string; money_angle?: string; next_action?: string; domain?: string; repo_url?: string; notes?: string }) => Promise<{ ok: boolean; result?: HenryProject; error?: string }>;
-    vaultDeleteProject?: (id: string) => Promise<{ ok: boolean; result?: { id: string; deleted: boolean }; error?: string }>;
 
     // ── Approval Queue ────────────────────────────────────────
     approvalsList?: (filter?: { status?: string; limit?: number }) => Promise<{ ok: boolean; result?: HenryApproval[]; error?: string }>;

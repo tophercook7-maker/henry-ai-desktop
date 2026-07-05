@@ -8,7 +8,7 @@
  *   A. Brain Router       — request class, brains, execution mode, rationale
  *   B. Token / Context    — tier, estimate, trim, reason
  *   C. Live Mind          — top focus, tasks, reminders, projects, captures
- *   D. Capability Truth   — integrations, AI, computer/printer
+ *   D. Capability Truth   — AI, computer/printer
  *   E. Action Decision    — gate decision and reason
  *   F. Provider / Model   — configured vs actual, fallback
  *   G. Instinct & Momentum — live signals, mode, decision, phase
@@ -18,9 +18,7 @@
 import { useState } from 'react';
 import { useDebugStore } from '../../henry/debugStore';
 import { useStore } from '../../store';
-import { useConnectionStore } from '../../henry/connectionStore';
 import { getFocusNow } from '../../henry/getFocusNow';
-import { getIntegrationCapabilities } from '../../henry/capabilityRegistry';
 import { useExecutionModeStore, inferExecutionMode, EXECUTION_MODE_CONFIGS, type ExecutionMode } from '../../henry/executionModeStore';
 import { computeInstinctFromState } from '../../henry/instinctEngine';
 import { computeMomentum } from '../../henry/momentumEngine';
@@ -121,14 +119,12 @@ function PresenceSection() {
 export default function HenryDebugPanel({ onClose }: { onClose: () => void }) {
   const { lastDecision, lastModels, lastTokens, updatedAt } = useDebugStore();
   const { settings, providers } = useStore();
-  const { getStatus } = useConnectionStore();
   const execMode = useExecutionModeStore((s) => s.mode);
   const execSource = useExecutionModeStore((s) => s.source);
   const setExecMode = useExecutionModeStore((s) => s.setMode);
   const initiativeMode = useInitiativeStore((s) => s.mode);
 
   const focus = getFocusNow();
-  const integrationCaps = getIntegrationCapabilities();
   const momentum = computeMomentum();
   const instinct = computeInstinctFromState(execMode, initiativeMode);
   const inferred = inferExecutionMode();
@@ -156,8 +152,6 @@ export default function HenryDebugPanel({ onClose }: { onClose: () => void }) {
 
   const companionKey = providers.find((p) => p.id === companionProvider)?.apiKey?.trim();
   const workerKey = providers.find((p) => p.id === workerProvider)?.apiKey?.trim();
-
-  const SERVICES = ['gmail', 'gcal', 'gdrive', 'slack', 'github', 'notion', 'linear', 'stripe'] as const;
 
   return (
     <div
@@ -240,33 +234,7 @@ export default function HenryDebugPanel({ onClose }: { onClose: () => void }) {
           {/* D. Capability Truth */}
           <Section letter="D" title="Capability Truth">
             <div className="space-y-1.5">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-henry-text-muted">Integrations</p>
-              <div className="flex flex-wrap gap-1.5">
-                {SERVICES.map((svc) => {
-                  const status = getStatus(svc);
-                  const cap = integrationCaps[svc];
-                  const ok = status === 'connected' && cap?.connected;
-                  const expired = status === 'expired';
-                  return (
-                    <span
-                      key={svc}
-                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-medium ${
-                        ok
-                          ? 'bg-henry-success/10 border-henry-success/30 text-henry-success'
-                          : expired
-                          ? 'bg-henry-warning/10 border-henry-warning/30 text-henry-warning'
-                          : 'bg-henry-surface border-henry-border/40 text-henry-text-muted'
-                      }`}
-                    >
-                      <span>{ok ? '●' : '○'}</span>
-                      {svc}
-                      {expired ? ' (expired)' : ''}
-                    </span>
-                  );
-                })}
-              </div>
-
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-henry-text-muted mt-2">AI Brains</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-henry-text-muted">AI Brains</p>
               <div className="flex flex-wrap gap-1.5">
                 <Pill
                   ok={companionProvider === 'ollama' ? null : !!companionKey}

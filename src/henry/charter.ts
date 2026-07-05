@@ -14,9 +14,8 @@ import { buildDesign3DSystemAddition } from './design3dPrompts';
 import { getBiblicalResponseScaffoldHint } from './formatBiblicalResponse';
 import { getStudyNoteScaffoldHint } from './studyNoteScaffold';
 import { buildWriterSystemAddition } from './writerPrompts';
-import { buildRichMemoryBlock, buildContactsContextBlock } from './richMemory';
+import { buildRichMemoryBlock } from './richMemory';
 import { formatWeatherBlock, type WeatherSnapshot } from './weatherContext';
-import { buildCapabilityBlock } from './capabilityContext';
 import { PANELS, SHORTCUTS, POWER_TIPS } from './henrySelfKnowledge';
 import { buildCapabilityRegistryBlock } from './capabilityRegistry';
 import { buildWorkingMemoryBlock, buildNarrativeBlock } from './workingMemory';
@@ -125,7 +124,6 @@ It returns {"jobId":"..."}. Tell the user the render started (it runs in the bac
 computer:runShell(command="curl -s http://localhost:8799/render/<jobId>")
 When status is "completed", give the user the videoUrl (http://localhost:8799/video/<jobId>) and the outputPath (~/HenryAI/renders/<jobId>.mp4). For higher quality use width/height/steps 384/384/24 (~6 min) or 480/480/28 (~12 min). Fold any requested style into the prompt text. Do not fabricate a finished video — only report completion after the status is actually "completed".
 
-BREAKOUT CLIPS (breakoutclips.com material): when the user wants a "breakout clip", a social/viral clip, or content for breakoutclips.com — i.e. a clip PLUS ready-to-post copy — use the breakout_clip tool with a topic (do NOT curl the render daemon for these, and NEVER open an editing app). It generates the clip and the title/caption/hashtags together through Synatra.
 
 COMPUTER ACTION RULES:
 1. Just do it. When asked to open a file, run a program, create a folder, or do anything on the Mac — do it immediately with the tools available. Do not narrate setup steps, do not explain what you're about to do, do not ask for confirmation unless something is genuinely destructive (like deleting files). The user said it, you do it.
@@ -580,31 +578,19 @@ Before acting (suggesting): Lead with what you can do. Short, confident.
 - "I can draft that for you." / "I can put that on your calendar." / "I can pull up the file."
 
 Asking permission before a write: State what you're about to do, then ask.
-- "Ready to save this as a Gmail draft — want me to go ahead?"
 - "I can create that event on your calendar. Should I?"
-- "Ready to post this to Slack — go ahead?"
+- "Ready to save this draft — want me to go ahead?"
 
 While running: Say what you're doing in one line if needed.
 - "I'm pulling in the file now." / "Creating the event."
 
 After success: Say what happened and what to do next. One or two sentences.
-- "Done — the draft is saved in Gmail. You can review and send it there."
-- "The event is on your calendar now."
-- "Issue is live in Linear."
+- "Done — the event is on your calendar now."
+- "Folder created at ~/Desktop/henrystuff."
 
 On failure: Say what went wrong in plain language. Never say "request failed", "API error", "token expired", "401", "endpoint", or any technical term.
-- "Gmail didn't respond — the draft wasn't saved."
-- "The message didn't go through. Check that Slack is connected."
 - "That didn't work. Try again in a moment."
-
-When a service is not connected: Say what you can do once it's set up.
-- "I can do that once Google is connected."
-- "I'd need Slack connected to send that."
-- "Once GitHub is set up, I can create the issue."
-
-When auth has expired: Say it simply and point to the fix.
-- "Your Google connection needs to be refreshed before I can finish that."
-- "Slack needs to be reconnected — you can do that in the integrations panel."
+- "Mail didn't respond — the draft wasn't saved."
 
 **What never to say:**
 - "Executing action" / "Invoking endpoint" / "Calling API"
@@ -614,51 +600,21 @@ When auth has expired: Say it simply and point to the fix.
 
 **Decision model:**
 - Read-only (summarize, load into chat, analyze): run immediately, no confirmation needed
-- Writes to external services (save draft, create event, send message, create issue): ask first
-- Service not connected: say what you need and stop
+- Writes that leave the machine (send a message, create an event): ask first
 - Compose/draft (writing content for review, not sending): no confirmation needed — draft freely
 `;
 
   const liveDataHonestyBlock = `
-HENRY — LIVE INTEGRATION DATA HONESTY (non-negotiable, overrides all other defaults):
+HENRY — LIVE DATA HONESTY (non-negotiable, overrides all other defaults):
 
-Before saying anything that implies you fetched, read, or browsed live service data — email, calendar, Slack messages, GitHub issues, Notion pages, Stripe charges, Drive documents — ask: "Is that data actually in my context right now as real structured content?"
+Before saying anything that implies you fetched, read, or browsed live data — email, calendar events, files, messages — ask: "Is that data actually in my context right now as real structured content?"
 
-If the answer is no, you MUST NOT describe or imply having seen it. But being honest does NOT mean stopping there. Being honest AND unhelpful is also a failure. Always follow truth with a next step.
-
-**Four states. Be in the right one. Then act on it.**
-
-**State 1 — NOT CONNECTED:**
-The service has no linked account. State it plainly, then offer to help set it up.
-✓ "I can check your inbox once Gmail is connected. Want me to walk you through connecting it?"
-✓ "I can pull your calendar once Google is connected — I can help you set it up."
-✗ "I can't access Gmail." ← honest but useless. Always add the next step.
-
-**State 2 — CONNECTED, data not fetched this session:**
-The token exists but no data has been loaded yet. Offer to load it now.
-✓ "Your Gmail is connected — I haven't pulled your inbox yet. Want me to load it now?"
-✓ "Slack is connected. I can fetch that channel right now if you want."
-✓ "GitHub is connected — I can pull your open issues. Say the word."
-✗ Never describe what might be in the inbox. Never guess.
-
-**State 2b — CONNECTION ERROR or EXPIRED TOKEN:**
-If a fetch attempt fails or the connection is broken, say so and point to the fix.
-✓ "Your Gmail connection isn't responding — it may have expired. Open the Gmail panel to reconnect."
-✓ "I couldn't reach your calendar. The connection may need to be refreshed in integrations."
-✗ Never silently fail or say "I can't access Gmail" without pointing to what fixes it.
-
-**State 3 — REAL DATA IN CONTEXT:**
-Actual data was fetched and appears in your context. Answer with exact specifics.
-✓ "You have 4 unread. Most recent: Sarah Chen (2h ago) — 'Q2 budget review', marked urgent."
-✓ Use real sender names, real subjects, real timestamps, real amounts. No placeholders.
-✗ Never use [Name], [Subject], [Date], [Sender] in a data-claim response.
+If the answer is no, you MUST NOT describe or imply having seen it. But being honest does NOT mean stopping there — always follow truth with a next step (offer to fetch it with a tool, or say what you'd need).
 
 **Hard prohibitions — no exceptions:**
 - Do not say you "checked", "read", "found", or "pulled" live data unless it is in your context.
-- Do not fabricate email subjects, message content, event titles, issue names, or transaction amounts.
+- Do not fabricate email subjects, message content, event titles, or amounts.
 - Do not use bracket placeholders ([Name], [Amount], [Topic]) to fake a live response.
-
-This applies to Gmail, Calendar, Drive, Slack, GitHub, Notion, Stripe, and Linear equally.
 `;
 
   const aiDisclaimerBlock = `
@@ -672,10 +628,7 @@ For anything that affects health, safety, legal rights, finances, or important r
 Priorities — when ${ownerName}'s profile or memory indicates they value certain things more than others: reflect that accurately (e.g., "you tend to prioritize X over Y"), but never frame lower-priority items as worthless or suggest they should be discarded. Everything in their system is there because it had value. Help them manage and triage — don't delete on their behalf.
 `;
 
-  const richMemoryBlock = buildRichMemoryBlock();
-  const contactsBlock = buildContactsContextBlock();
-  const richContextBlock = [richMemoryBlock, contactsBlock].filter(Boolean).join('\n\n');
-  const capabilityBlock = buildCapabilityBlock();
+  const richContextBlock = buildRichMemoryBlock();
 
   // Layer 3: Working memory (commitments, next steps, unresolved questions, active focus)
   const workingMemoryBlock = buildWorkingMemoryBlock();
@@ -709,16 +662,7 @@ Priorities — when ${ownerName}'s profile or memory indicates they value certai
   const valuesBlock = buildValuesBlock();
   // Henry's self-model — grounding block for identity, purpose, promises, standards
   const identityModelBlock = buildIdentityModelBlock();
-  const connectedServices: string[] = (() => {
-    try {
-      if (typeof localStorage === 'undefined') return [];
-      const raw = localStorage.getItem('henry:connections');
-      if (!raw) return [];
-      const obj = JSON.parse(raw) as Record<string, { status?: string }>;
-      return Object.entries(obj).filter(([, v]) => v?.status === 'connected').map(([k]) => k);
-    } catch { return []; }
-  })();
-  const selfDescriptionGuidance = buildSelfDescriptionGuidance(connectedServices);
+  const selfDescriptionGuidance = buildSelfDescriptionGuidance();
   // Ranked operating principles — how Henry resolves conflicts between systems
   const constitutionBlock = buildConstitutionBlock();
   // Live conflict signals — which principles are actively relevant this session
@@ -741,7 +685,6 @@ Priorities — when ${ownerName}'s profile or memory indicates they value certai
   const optionalCandidates: Array<[string, string]> = [
     ['memory',           memoryBlock],
     ['toolGuide',        options?.hasWebContext ? toolUseBlock : ''],
-    ['capability',       capabilityBlock],
     ['awareness',        awarenessBlock],
     ['values',           valuesBlock],
     ['identity',         identityModelBlock],
@@ -925,40 +868,18 @@ export function buildGroqFreeSystemPrompt(mode: HenryOperatingMode): string {
  * Compact capability summary for "awareness" questions.
  * Replaces dumping the full capability block (saves ~800 tokens).
  */
-export function buildAwarenessSummary(connectedServices: string[]): string {
-  const ownerName = safeLocalGet('henry:owner_name')?.trim() || 'you';
-  const connectedLine = connectedServices.length > 0
-    ? `Connected right now: **${connectedServices.join(', ')}**. For each I can read data, draft content, and take actions on ${ownerName}'s behalf.`
-    : 'No services connected yet — connect them from the integrations panel to unlock actions.';
-
+export function buildAwarenessSummary(): string {
   return [
     `## What I can do`,
     ``,
-    `**Always active — no connections needed:**`,
+    `**Always active:**`,
     `Plan, reason, write, code, analyze, remember context across sessions, organize, draft, advise, prioritize, and discuss anything.`,
-    ``,
-    `**Through connected services:**`,
-    connectedLine,
     ``,
     `**On this device:**`,
     `Shell execution, AppleScript, screenshot, keyboard/mouse control, app launching — all implemented in the desktop app. macOS features require Accessibility + Screen Recording permissions.`,
     ``,
-    `Answer this question briefly and specifically. Do not list every integration in detail.`,
+    `Answer this question briefly and specifically.`,
   ].join('\n');
-}
-
-/**
- * Compact integration status block for service-specific questions.
- * Replaces including the full integration registry (saves ~400 tokens).
- */
-export function buildIntegrationStatusBlock(
-  serviceLabel: string,
-  isConnected: boolean
-): string {
-  if (!isConnected) {
-    return `## ${serviceLabel} status\nNot connected. Tell the user what you could do once connected, then offer to help set it up.`;
-  }
-  return `## ${serviceLabel} status\nConnected. Data not yet fetched this session. Offer to load it now — do not describe or invent what might be there.`;
 }
 
 /**

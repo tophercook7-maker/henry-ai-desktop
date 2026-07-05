@@ -19,21 +19,16 @@ import MemoryPanel from '../memory/MemoryPanel';
 import RecorderPanel from '../recorder/RecorderPanel';
 import { HenrySelfRepairBoundary as PanelBoundary } from '../HenrySelfRepairBoundary';
 import PrinterPanel from '../computer/PrinterPanel';
-import SecretaryPanel from '../secretary/SecretaryPanel';
 import GoalsPanel from '../goals/GoalsPanel';
 import HQPanel from '../hq/HQPanel';
 import AutoSetupPanel from '../setup/AutoSetupPanel';
 import TodayPanel from '../today/TodayPanel';
-import ContactsPanel from '../contacts/ContactsPanel';
 import CommandPalette from '../chat/CommandPalette';
 import JournalPanel from '../journal/JournalPanel';
-import FocusPanel from '../focus/FocusPanel';
 import MeetingRecorderPanel from '../recorder/MeetingRecorderPanel';
 import ModesPanel from '../modes/ModesPanel';
 import RemindersPanel from '../reminders/RemindersPanel';
-import CRMPanel from '../crm/CRMPanel';
 import FinancePanel from '../finance/FinancePanel';
-import ListsPanel from '../lists/ListsPanel';
 import PrintStudioPanel from '../printstudio/PrintStudioPanel';
 import MachinesPanel from '../maker/MachinesPanel';
 import MaterialsPanel from '../maker/MaterialsPanel';
@@ -45,24 +40,12 @@ import PrayerPanel from '../prayer/PrayerPanel';
 import QuotingPanel from '../quoting/QuotingPanel';
 import RoutinesPanel from '../routines/RoutinesPanel';
 import AuditLogPanel from '../agent/AuditLogPanel';
-import ProjectVaultPanel from '../vault/ProjectVaultPanel';
-import CrewsPanel from '../crews/CrewsPanel';
-import MoneyEnginePanel from '../money/MoneyEnginePanel';
 import BookEnginePanel from '../book/BookEnginePanel';
 import SlicerPanel from '../slicer/SlicerPanel';
 import ImageGenPanel from '../imagegen/ImageGenPanel';
 import VideoGenPanel from '../videogen/VideoGenPanel';
-import IntegrationsPanel from '../integrations/IntegrationsPanel';
-import GitHubPanel from '../integrations/GitHubPanel';
-import LinearPanel from '../integrations/LinearPanel';
-import NotionPanel from '../integrations/NotionPanel';
-import SlackPanel from '../integrations/SlackPanel';
 import CapturesPanel from '../ambient/CapturesPanel';
 import WeeklyReviewPanel from '../weekly/WeeklyReviewPanel';
-import StripePanel from '../integrations/StripePanel';
-import GCalPanel from '../integrations/GCalPanel';
-import GmailPanel from '../integrations/GmailPanel';
-import GDrivePanel from '../integrations/GDrivePanel';
 import { useStore } from '../../store';
 import { isHenryOperatingMode, type HenryOperatingMode } from '../../henry/charter';
 import { useEffect } from 'react';
@@ -202,11 +185,8 @@ export default function Layout() {
           {currentView === 'today' && <PanelBoundary><TodayPanel /></PanelBoundary>}
           {currentView === 'chat' && <ChatView />}
           {currentView === 'journal' && <PanelBoundary><JournalPanel /></PanelBoundary>}
-          {currentView === 'focus' && <PanelBoundary><FocusPanel /></PanelBoundary>}
           {currentView === 'recorder' && <PanelBoundary><MeetingRecorderPanel /></PanelBoundary>}
           {currentView === 'modes' && <PanelBoundary><ModesPanel /></PanelBoundary>}
-          {currentView === 'secretary' && <PanelBoundary><SecretaryPanel /></PanelBoundary>}
-          {currentView === 'contacts' && <PanelBoundary><ContactsPanel /></PanelBoundary>}
           {currentView === 'tasks' && <PanelBoundary><TasksPanel /></PanelBoundary>}
           {currentView === 'files' && <PanelBoundary><FileBrowser /></PanelBoundary>}
           {currentView === 'workspace' && <PanelBoundary><WorkspaceView /></PanelBoundary>}
@@ -273,9 +253,7 @@ export default function Layout() {
             </div>
           )}
           {currentView === 'reminders' && <PanelBoundary><RemindersPanel /></PanelBoundary>}
-          {currentView === 'crm' && <PanelBoundary><CRMPanel /></PanelBoundary>}
           {currentView === 'finance' && <PanelBoundary><FinancePanel /></PanelBoundary>}
-          {currentView === 'lists' && <PanelBoundary><ListsPanel /></PanelBoundary>}
           {currentView === 'goals' && <PanelBoundary><GoalsPanel /></PanelBoundary>}
           {currentView === 'hq' && <PanelBoundary><HQPanel /></PanelBoundary>}
           {currentView === 'setup' && <PanelBoundary><AutoSetupPanel /></PanelBoundary>}
@@ -290,18 +268,10 @@ export default function Layout() {
           {currentView === 'quoting' && <PanelBoundary><QuotingPanel /></PanelBoundary>}
           {currentView === 'routines' && <PanelBoundary><RoutinesPanel /></PanelBoundary>}
           {currentView === 'audit' && <PanelBoundary><AuditLogPanel /></PanelBoundary>}
-          {currentView === 'vault' && <PanelBoundary><ProjectVaultPanel /></PanelBoundary>}
-          {currentView === 'crews' && <PanelBoundary><CrewsPanel /></PanelBoundary>}
-          {currentView === 'money' && <PanelBoundary><MoneyEnginePanel /></PanelBoundary>}
           {currentView === 'book' && <PanelBoundary><BookEnginePanel /></PanelBoundary>}
           {currentView === 'slicer' && <PanelBoundary><SlicerPanel /></PanelBoundary>}
           {currentView === 'imagegen' && <PanelBoundary><ImageGenPanel /></PanelBoundary>}
       {currentView === 'videogen' && <PanelBoundary><VideoGenPanel /></PanelBoundary>}
-          {currentView === 'integrations' && <PanelBoundary><IntegrationsPanel /></PanelBoundary>}
-          {currentView === 'github' && <PanelBoundary><GitHubPanel /></PanelBoundary>}
-          {currentView === 'linear' && <PanelBoundary><LinearPanel /></PanelBoundary>}
-          {currentView === 'notion' && <PanelBoundary><NotionPanel /></PanelBoundary>}
-          {currentView === 'slack' && <PanelBoundary><SlackPanel /></PanelBoundary>}
           {currentView === 'captures' && <PanelBoundary><CapturesPanel /></PanelBoundary>}
           {currentView === 'memory' && <PanelBoundary><MemoryPanel /></PanelBoundary>}
           {/* Fix H: 'recorder' is already taken by MeetingRecorderPanel above.
@@ -311,10 +281,6 @@ export default function Layout() {
           {currentView === 'queue' && <PanelBoundary><TaskQueueView /></PanelBoundary>}
           {currentView === 'approvals' && <PanelBoundary><ApprovalQueuePanel /></PanelBoundary>}
           {currentView === 'weekly' && <PanelBoundary><WeeklyReviewPanel /></PanelBoundary>}
-          {currentView === 'stripe' && <PanelBoundary><StripePanel /></PanelBoundary>}
-          {currentView === 'gcal' && <PanelBoundary><GCalPanel /></PanelBoundary>}
-          {currentView === 'gmail' && <PanelBoundary><GmailPanel /></PanelBoundary>}
-          {currentView === 'gdrive' && <PanelBoundary><GDrivePanel /></PanelBoundary>}
         </main>
       </div>
 

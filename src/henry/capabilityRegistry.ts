@@ -13,8 +13,6 @@
  * Do NOT mark anything `true` here unless the code fully implements it.
  */
 
-import { isConnected } from './integrations';
-
 // ── Computer / Device Capabilities ───────────────────────────────────────────
 
 /**
@@ -67,67 +65,6 @@ export const COMPUTER_CAPABILITIES = {
   checkPermissions: true,
 } as const;
 
-// ── Integration Capabilities ──────────────────────────────────────────────────
-
-export interface IntegrationCapability {
-  connected: boolean;
-  canRead: boolean;
-  canWrite: boolean;
-}
-
-/**
- * Returns live connection truth for every service.
- * `connected` is only true when an auth token actually exists in storage.
- * `canRead` / `canWrite` reflect whether those actions are implemented —
- * even a connected service may not have write support yet.
- */
-export function getIntegrationCapabilities(): Record<string, IntegrationCapability> {
-  const google = isConnected('gmail');   // gmail / gcal / gdrive share one token
-
-  return {
-    gmail: {
-      connected: google,
-      canRead:   google,   // thread listing, summarization — implemented
-      canWrite:  google,   // save to Drafts — implemented
-    },
-    gcal: {
-      connected: google,
-      canRead:   google,   // event listing — implemented
-      canWrite:  google,   // create events — implemented
-    },
-    gdrive: {
-      connected: google,
-      canRead:   google,   // export Docs/Sheets/Slides as text — implemented
-      canWrite:  false,    // write back to Drive — NOT implemented
-    },
-    slack: {
-      connected: isConnected('slack'),
-      canRead:   isConnected('slack'),   // channel history — implemented
-      canWrite:  isConnected('slack'),   // send messages — implemented
-    },
-    github: {
-      connected: isConnected('github'),
-      canRead:   isConnected('github'),  // PRs, issues — implemented
-      canWrite:  isConnected('github'),  // create issues — implemented
-    },
-    notion: {
-      connected: isConnected('notion'),
-      canRead:   isConnected('notion'),  // page summaries — implemented
-      canWrite:  isConnected('notion'),  // create pages — implemented
-    },
-    stripe: {
-      connected: isConnected('stripe'),
-      canRead:   isConnected('stripe'),  // charges, revenue — implemented
-      canWrite:  false,                   // no write operations — NOT implemented
-    },
-    linear: {
-      connected: isConnected('linear'),
-      canRead:   isConnected('linear'),  // issues — implemented
-      canWrite:  isConnected('linear'),  // create issues — implemented
-    },
-  };
-}
-
 // ── System Prompt Block ───────────────────────────────────────────────────────
 
 /**
@@ -135,8 +72,6 @@ export function getIntegrationCapabilities(): Record<string, IntegrationCapabili
  * Henry reads this to know what is real right now — not what could theoretically exist.
  */
 export function buildCapabilityRegistryBlock(): string {
-  const integrations = getIntegrationCapabilities();
-
   // Computer layer — reflects what electron/ipc/computer.ts actually implements
   const computerLines: string[] = [
     `  Workspace file access (read/write text files in workspace): YES`,
@@ -153,38 +88,10 @@ export function buildCapabilityRegistryBlock(): string {
     `  NOTE: These only work in the desktop Electron app — not in a browser context`,
   ];
 
-  // Integration layer
-  const connectedNames: string[] = [];
-  const notConnectedNames: string[] = [];
-
-  for (const [id, cap] of Object.entries(integrations)) {
-    const label = id.charAt(0).toUpperCase() + id.slice(1);
-    if (cap.connected) {
-      const ops = [cap.canRead && 'read', cap.canWrite && 'write'].filter(Boolean).join(' + ');
-      connectedNames.push(`${label} (${ops})`);
-    } else {
-      notConnectedNames.push(label);
-    }
-  }
-
-  const integrationSection = [
-    connectedNames.length > 0
-      ? `  Connected and usable: ${connectedNames.join(', ')}`
-      : `  Connected and usable: none`,
-    notConnectedNames.length > 0
-      ? `  Not connected: ${notConnectedNames.join(', ')}`
-      : null,
-  ].filter(Boolean).join('\n');
-
   return `## Runtime Capability State (what is actually true right now)
 
 Computer / device layer:
 ${computerLines.join('\n')}
 
-Integration layer:
-${integrationSection}
-
-This is the ground truth. Henry must ONLY claim capabilities listed as active above.
-Do not claim shell access, AppleScript, automation, or screenshot capability — they are not implemented.
-Do not claim a service is connected unless it appears in the "Connected and usable" list above.`.trim();
+This is the ground truth. Henry must ONLY claim capabilities listed as active above.`.trim();
 }

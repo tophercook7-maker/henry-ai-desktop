@@ -35,9 +35,8 @@ export function buildShortcuts(): HenryShortcut[] {
     { key: '2', meta: true, description: 'Go to Chat', action: navigate('chat') },
     { key: '3', meta: true, description: 'Go to Tasks', action: navigate('tasks') },
     { key: '4', meta: true, description: 'Go to Journal', action: navigate('journal') },
-    { key: '5', meta: true, description: 'Go to CRM', action: navigate('crm') },
-    { key: '6', meta: true, description: 'Go to Finance', action: navigate('finance') },
-    { key: '7', meta: true, description: 'Go to Calendar', action: navigate('calendar') },
+    { key: '5', meta: true, description: 'Go to Finance', action: navigate('finance') },
+    { key: '6', meta: true, description: 'Go to Calendar', action: navigate('calendar') },
 
     // Quick actions
     {
@@ -76,7 +75,6 @@ export function buildShortcuts(): HenryShortcut[] {
     },
     // Mode shortcuts
     { key: 'w', meta: true, shift: true, description: 'Go to Workspace', action: navigate('workspace') },
-    { key: 'f', meta: true, shift: true, description: 'Go to Focus timer', action: navigate('focus') },
     {
       key: 'b', meta: true, shift: true, description: 'Biblical mode quick start',
       action: () => {

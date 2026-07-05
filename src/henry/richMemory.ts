@@ -185,31 +185,3 @@ export function buildRichMemoryBlock(): string {
   return lines.join('\n').trim();
 }
 
-export function buildContactsContextBlock(): string {
-  try {
-    const raw = localStorage.getItem('henry_contacts');
-    if (!raw) return '';
-    const contacts = JSON.parse(raw) as Array<{
-      name: string;
-      role?: string;
-      company?: string;
-      notes?: string;
-      lastInteraction?: string;
-    }>;
-    if (!contacts.length) return '';
-    const contactOwner = localStorage.getItem('henry:owner_name')?.trim() || 'the user';
-    const lines = [`**People in ${contactOwner}'s network (use for context when mentioned):**`];
-    for (const c of contacts.slice(0, 12)) {
-      const parts = [c.name];
-      if (c.role) parts.push(c.role);
-      if (c.company) parts.push(`at ${c.company}`);
-      const base = parts.join(' — ');
-      const notes = c.notes ? ` | ${c.notes.slice(0, 120)}` : '';
-      const last = c.lastInteraction ? ` | Last: ${c.lastInteraction}` : '';
-      lines.push(`- ${base}${notes}${last}`);
-    }
-    return lines.join('\n');
-  } catch {
-    return '';
-  }
-}

@@ -20,7 +20,6 @@ import {
   classifyRequest,
   isActionIntent,
   isDestructiveAction,
-  extractTargetService,
 } from './requestClassifier';
 import { selectContextTier } from '../../henry/contextTier';
 import { detectTaskType } from '../../henry/modelRouter';
@@ -103,15 +102,13 @@ function resolveExecutionMode(message: string, cls: RequestClass): ExecutionMode
  */
 function gateAction(
   message: string,
-  cls: RequestClass,
-  connectedServices: string[]
+  cls: RequestClass
 ): ActionGate {
   // Only gate integration / computer / action classes
   if (!isActionIntent(cls)) {
     return { decision: 'allow' };
   }
 
-  const targetService = extractTargetService(message);
   const isDestructive = isDestructiveAction(message);
 
   // Computer actions: always allow (permissions are enforced by the OS at runtime)
@@ -122,50 +119,16 @@ function gateAction(
     };
   }
 
-  // Integration actions: check if the service is connected
-  if (targetService) {
-    const connected = connectedServices.includes(targetService);
-    if (!connected) {
-      return {
-        decision: 'block',
-        reason: `${serviceLabel(targetService)} isn't connected. Connect it in the integrations panel to unlock this.`,
-        requiredService: targetService,
-        isConnected: false,
-      };
-    }
-    // Connected — write actions need confirmation
-    if (isDestructive) {
-      return {
-        decision: 'confirm',
-        reason: `This will make a change in ${serviceLabel(targetService)}. Confirm to proceed.`,
-        requiredService: targetService,
-        isConnected: true,
-        isDestructive: true,
-      };
-    }
-    // Connected, read-only → allow
+  // Generic action — allow, let the model (and its tools) figure it out.
+  // Destructive phrasing still gets a confirm gate.
+  if (isDestructive) {
     return {
-      decision: 'allow',
-      requiredService: targetService,
-      isConnected: true,
+      decision: 'confirm',
+      reason: 'This will make a change. Confirm to proceed.',
+      isDestructive: true,
     };
   }
-
-  // Generic action without a clear service — allow, let the model figure it out
   return { decision: 'allow' };
-}
-
-function serviceLabel(serviceId: string): string {
-  const labels: Record<string, string> = {
-    gmail: 'Gmail',
-    gcal: 'Google Calendar',
-    slack: 'Slack',
-    github: 'GitHub',
-    notion: 'Notion',
-    stripe: 'Stripe',
-    linear: 'Linear',
-  };
-  return labels[serviceId] ?? serviceId;
 }
 
 // ── Surfacing decision ─────────────────────────────────────────────────────
@@ -236,7 +199,7 @@ function buildRationale(
  * @returns `RouterDecision` — the full routing output
  */
 export function routeRequest(input: RouterInput): RouterDecision {
-  const { message, connectedServices, mode, historyLength, hasWorkspaceContext, isBiblicalMode } = input;
+  const { message, mode, historyLength, hasWorkspaceContext, isBiblicalMode } = input;
 
   // 1. Classify the request
   const requestClass = classifyRequest(message);
@@ -259,7 +222,7 @@ export function routeRequest(input: RouterInput): RouterDecision {
   const executionMode = resolveExecutionMode(message, requestClass);
 
   // 5. Gate actions
-  const actionGate = gateAction(message, requestClass, connectedServices);
+  const actionGate = gateAction(message, requestClass);
 
   // 6. Surfacing decision
   const surfacing = resolveSurfacing(requestClass);

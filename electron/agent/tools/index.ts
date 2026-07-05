@@ -19,12 +19,9 @@ import { messagesTools } from "./messages";
 import { emailTools } from "./email";
 import { permissionsTools } from "./permissions";
 import { webTools } from "./web";
-import { browserTools } from "./browser";
 import { shellTools } from "./shell";
-import { synatraTools } from "./synatra";
 import { renderTools } from "./render";
 import { quickbooksTools } from "./quickbooks";
-import { leadTools } from "./leads";
 import { bookTools } from "./book";
 import { repoTools } from "./repo";
 
@@ -32,16 +29,13 @@ export function registerAllTools(registry: ToolRegistry): void {
   registry.registerAll([
     ...memoryTools(),
     ...financeTools(),
-    ...leadTools(),
     ...bookTools(),
     ...calendarTools(),
     ...messagesTools(),
     ...emailTools(),
     ...permissionsTools(),
     ...webTools(),
-    ...browserTools(),
     ...shellTools(),
-    ...synatraTools(),
     ...renderTools(),
     ...quickbooksTools(),
     ...repoTools(),

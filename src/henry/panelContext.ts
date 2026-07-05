@@ -16,27 +16,6 @@ export function buildPanelContextBlock(currentView: string): string {
   const blocks: string[] = [];
 
   switch (currentView) {
-    case 'crm': {
-      const clients = safeGet<any[]>('henry:clients', []);
-      const projects = safeGet<any[]>('henry:projects', []);
-      if (clients.length || projects.length) {
-        blocks.push('## CRM Context (what the user is viewing)');
-        if (clients.length) {
-          blocks.push(`Clients (${clients.length}):`);
-          clients.slice(0, 10).forEach(c => {
-            blocks.push(`- ${c.name}${c.company ? ` @ ${c.company}` : ''}${c.status ? ` [${c.status}]` : ''}${c.notes ? `: ${c.notes.slice(0, 80)}` : ''}`);
-          });
-        }
-        if (projects.length) {
-          blocks.push(`\nProjects (${projects.length}):`);
-          projects.slice(0, 10).forEach(p => {
-            blocks.push(`- ${p.name}${p.client ? ` (${p.client})` : ''}${p.status ? ` [${p.status}]` : ''}${p.value ? ` $${p.value}` : ''}`);
-          });
-        }
-      }
-      break;
-    }
-
     case 'finance': {
       const entries = safeGet<any[]>('henry:finance', []);
       if (entries.length) {
@@ -48,22 +27,6 @@ export function buildPanelContextBlock(currentView: string): string {
         blocks.push('Recent entries:');
         recent.forEach(e => {
           blocks.push(`- ${e.date || 'N/A'} ${e.type === 'income' ? '+' : '-'}$${e.amount || 0} ${e.category || ''} ${e.description || ''}`);
-        });
-      }
-      break;
-    }
-
-    case 'lists': {
-      const lists = safeGet<any[]>('henry:lists', []);
-      if (lists.length) {
-        blocks.push('## Lists Context (what the user is viewing)');
-        lists.slice(0, 5).forEach(list => {
-          const items = (list.items || []) as any[];
-          const done = items.filter(i => i.done || i.completed).length;
-          blocks.push(`- "${list.name || list.title}": ${items.length} items, ${done} done`);
-          items.filter(i => !i.done && !i.completed).slice(0, 3).forEach(item => {
-            blocks.push(`  • ${item.text || item.title || item.content || ''}`);
-          });
         });
       }
       break;

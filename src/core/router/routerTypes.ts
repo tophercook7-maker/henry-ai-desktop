@@ -114,7 +114,6 @@ export interface RouterDecision {
 
 export interface RouterInput {
   message: string;
-  connectedServices: string[];
   mode: string;
   historyLength: number;
   hasWorkspaceContext: boolean;

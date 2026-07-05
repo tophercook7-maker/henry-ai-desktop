@@ -253,23 +253,6 @@ export const PANELS: PanelInfo[] = [
     keywords: ['weekly', 'review', 'week', 'reflection', 'retrospective', 'recap'],
   },
   {
-    name: 'Focus',
-    icon: '🎯',
-    shortDesc: 'Pomodoro timer with weekly bar chart of your focus sessions.',
-    whatItDoes: 'Start a focus session (default 25 minutes) and Henry keeps you on track. Weekly chart shows how many sessions you completed each day.',
-    howToUse: [
-      'Hit Start Focus to begin a 25-minute session',
-      'Henry will show progress — don\'t switch away',
-      'Check the weekly chart to see your focus trends',
-    ],
-    tips: [
-      'Ask "how many focus sessions did I do this week?" for a quick count',
-      'Customize session length in Focus settings',
-    ],
-    phoneAvailable: false,
-    keywords: ['focus', 'pomodoro', 'timer', 'deep work', 'session', 'concentrate'],
-  },
-  {
     name: 'Recorder',
     icon: '🎙',
     shortDesc: 'Voice memos with automatic transcription.',
@@ -285,23 +268,6 @@ export const PANELS: PanelInfo[] = [
     ],
     phoneAvailable: false,
     keywords: ['record', 'voice', 'audio', 'transcribe', 'memo', 'dictate'],
-  },
-  {
-    name: 'CRM',
-    icon: '👥',
-    shortDesc: 'Keep track of people — contacts, notes, follow-ups.',
-    whatItDoes: 'A simple relationship manager. Add people, notes about them, and reminders to follow up. Henry can pull contact info into conversations.',
-    howToUse: [
-      'Add a contact with name and any relevant details',
-      'Add notes after a call or meeting',
-      'Set a follow-up reminder',
-    ],
-    tips: [
-      'Ask "what do I know about [name]?" and Henry checks CRM',
-      'Link contacts to tasks for context',
-    ],
-    phoneAvailable: false,
-    keywords: ['crm', 'contact', 'person', 'relationship', 'follow up', 'client', 'network'],
   },
   {
     name: 'Maker Studio',

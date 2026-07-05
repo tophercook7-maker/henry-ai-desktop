@@ -1,5 +1,5 @@
 /**
- * Tests for the direct (Synatra-free) render bridge + tools. Hermetic: `fetch`
+ * Tests for the direct render bridge + tools. Hermetic: `fetch`
  * is stubbed, no daemon required. Verifies the HTTP contract, quality presets,
  * status mapping, and the tool safety surface.
  */

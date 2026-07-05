@@ -1,9 +1,9 @@
 /**
  * Render bridge (Henry → Henry Render Daemon).
  *
- * The direct, Synatra-free path for making video: Henry's `generate_video` tool
+ * The direct path for making video: Henry's `generate_video` tool
  * talks straight to the local Henry Render Daemon (free on-device text→video via
- * FastVideo/Wan2.1). No Temporal, no Synatra stack — just Henry and the daemon.
+ * FastVideo/Wan2.1). Just Henry and the daemon.
  *
  * The daemon is async (a render takes minutes): `submitRender` returns a jobId
  * immediately, `pollRender` checks progress. Endpoint is configurable via the

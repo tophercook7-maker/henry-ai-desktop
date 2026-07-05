@@ -1,10 +1,10 @@
 import { useState, useEffect, type ComponentType } from 'react';
-import { Shield, FolderKanban, Users, TrendingUp, BookOpen, Search } from 'lucide-react';
+import { Shield, BookOpen, Search } from 'lucide-react';
 import { useStore } from '../../store';
 
 // R2-Fix 9: keep this in sync with src/types/index.ts ViewType.
-type ViewType = 'today' | 'chat' | 'companion' | 'secretary' | 'contacts' | 'tasks' | 'files' | 'workspace' | 'terminal' | 'computer' | 'printer' | 'costs' | 'settings' | 'journal' | 'focus' | 'recorder' | 'memos' | 'queue' | 'modes' | 'reminders' | 'crm' | 'finance' | 'lists' | 'printstudio' | 'machines' | 'materials' | 'production' | 'waste' | 'maintenance' | 'imagegen' | 'videogen' | 'integrations' | 'github' | 'linear' | 'notion' | 'slack' | 'captures' | 'weekly' | 'health' | 'goals' | 'hq' | 'setup' | 'memory' | 'prayer' | 'quoting'
-  | 'scripture' | 'routines' | 'audit' | 'vault' | 'crews' | 'money' | 'book' | 'slicer' | 'approvals';
+type ViewType = 'today' | 'chat' | 'companion' | 'tasks' | 'files' | 'workspace' | 'terminal' | 'computer' | 'printer' | 'costs' | 'settings' | 'journal' | 'recorder' | 'memos' | 'queue' | 'modes' | 'reminders' | 'finance' | 'printstudio' | 'machines' | 'materials' | 'production' | 'waste' | 'maintenance' | 'imagegen' | 'videogen' | 'captures' | 'weekly' | 'health' | 'goals' | 'hq' | 'setup' | 'memory' | 'prayer' | 'quoting'
+  | 'scripture' | 'routines' | 'audit' | 'book' | 'slicer' | 'approvals';
 
 // A nav item renders either a glyph (`icon`) or a lucide component (`lucideIcon`).
 type NavItem = { id: ViewType; icon?: string; lucideIcon?: ComponentType<{ size?: number }>; label: string; desc?: string };
@@ -25,18 +25,9 @@ const CORE_NAV: NavItem[] = [
   { id: 'recorder',   icon: '🎙', label: 'Recorder',    desc: 'Record and transcribe meetings' },
   // R2-Fix 9: SQLite-backed voice memos (was unreachable — see Layout.tsx).
   { id: 'memos',      icon: '🗂', label: 'Voice Memos', desc: 'Saved voice memos' },
-  { id: 'focus',      icon: '◈',  label: 'Focus',       desc: 'Focus sessions' },
 ];
 
 const BUSINESS_NAV: NavItem[] = [
-  // Build plan Phase 1: the Project Vault — your projects at a glance.
-  { id: 'vault',      lucideIcon: FolderKanban, label: 'Projects', desc: 'Your projects — status, next action, money angle' },
-  // Build plan Phase 2: Agent Crews — role-based teams.
-  { id: 'crews',      lucideIcon: Users, label: 'Crews', desc: 'Role-based agent teams that work a problem step by step' },
-  // Build plan Phase 3: Money Engine — the lead pipeline.
-  { id: 'money',      lucideIcon: TrendingUp, label: 'Money', desc: 'Lead pipeline — find, audit, and close website work' },
-  { id: 'secretary',  icon: '◻',  label: 'Secretary', desc: 'Henry as your organized personal assistant' },
-  { id: 'crm',        icon: '◇',  label: 'Clients',   desc: 'Clients and contacts' },
   { id: 'finance',    icon: '◆',  label: 'Finance',   desc: 'Income, expenses, and money overview' },
   { id: 'tasks',      icon: '☐',  label: 'Tasks',     desc: 'Your task list' },
   // R2-Fix 9: TaskQueueView was imported in Layout.tsx but unreachable.
@@ -51,7 +42,6 @@ const BUSINESS_NAV: NavItem[] = [
 const MORE_NAV: NavItem[] = [
   { id: 'goals',      icon: '◎',  label: 'Goals',       desc: 'Longer-term goals and progress' },
   { id: 'weekly',     icon: '▦',  label: 'Weekly',      desc: 'Weekly review' },
-  { id: 'lists',      icon: '≡',  label: 'Lists',       desc: 'Custom lists' },
   { id: 'machines',   icon: '⚙',  label: 'Machines',    desc: '3D printers and machines' },
   { id: 'materials',  icon: '⬢',  label: 'Materials',   desc: 'Filament and material stock' },
   { id: 'production', icon: '▶',  label: 'Runs',        desc: 'Print and production runs' },

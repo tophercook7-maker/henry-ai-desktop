@@ -1,7 +1,7 @@
 /**
  * Video generation tools — Henry makes real video on-device, free (FastVideo /
  * Wan2.1 text→video), by driving the local Henry Render Daemon directly. No
- * Synatra, no cloud, no API key.
+ * cloud, no API key.
  *
  *   - `generate_video` — start a render. confirm tier (it kicks off minutes of
  *                        real GPU/MPS work). Returns a jobId.
