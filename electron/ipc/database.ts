@@ -238,10 +238,12 @@ function seedSynatraConfig(db: Database.Database) {
   try {
     db.prepare(
       `INSERT OR IGNORE INTO settings (key, value) VALUES
-         ('synatra_endpoint', 'http://localhost:8787'),
+         ('synatra_endpoint', 'http://localhost:8788'),
          ('synatra_org', ''),
          ('synatra_env', 'dev'),
-         ('synatra_trigger', 'render-video')`,
+         ('synatra_trigger', 'render-video'),
+         ('synatra_breakout_trigger', 'breakout-clip'),
+         ('synatra_breakout_secret', '')`,
     ).run();
     db.prepare(
       `INSERT OR IGNORE INTO providers (id, name, api_key, enabled, models)

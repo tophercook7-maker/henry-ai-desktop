@@ -15,6 +15,7 @@
  */
 
 import { safeStorage } from 'electron';
+import type Database from 'better-sqlite3';
 
 const ENC_PREFIX = 'enc:v1:';
 
@@ -75,4 +76,33 @@ export function decryptKey(stored: string | null | undefined): string {
 /** True if the given stored value is already in encrypted form. */
 export function isEncrypted(stored: string | null | undefined): boolean {
   return !!stored && stored.startsWith(ENC_PREFIX);
+}
+
+/**
+ * One-time startup migration: encrypt any plaintext keys already sitting in
+ * the providers table. Safe to call on every launch — already-encrypted rows
+ * are detected by their prefix and skipped.
+ */
+export function migrateProviderKeys(db: Database.Database): void {
+  if (!canEncrypt()) return;
+  try {
+    const rows = db
+      .prepare('SELECT id, api_key FROM providers')
+      .all() as Array<{ id: string; api_key: string }>;
+    let count = 0;
+    for (const row of rows) {
+      if (row.api_key && !row.api_key.startsWith(ENC_PREFIX)) {
+        const encrypted = encryptKey(row.api_key);
+        if (encrypted !== row.api_key) {
+          db.prepare('UPDATE providers SET api_key = ? WHERE id = ?').run(encrypted, row.id);
+          count++;
+        }
+      }
+    }
+    if (count > 0) {
+      console.log(`[Henry] Migrated ${count} API key(s) to encrypted at-rest storage.`);
+    }
+  } catch (e) {
+    console.error('[Henry] migrateProviderKeys failed:', e);
+  }
 }

@@ -67,7 +67,7 @@ function createWindow() {
     trafficLightPosition: { x: 16, y: 16 },
     backgroundColor: '#0a0a0f',
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,

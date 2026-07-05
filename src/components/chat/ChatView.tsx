@@ -391,7 +391,10 @@ export default function ChatView() {
   // agent ToolRunner so Henry can use his tools. Confirm-tier actions (send a
   // message, create an event) still pause for approval.
   const [agentMode, setAgentMode] = useState(() => {
-    try { return localStorage.getItem('henry_agent_mode') === 'true'; } catch { return false; }
+    // Default ON so Henry uses his tool crew (generate_video, calendar, web, …)
+    // out of the box. Only honor an explicit 'false' the user set via the toggle.
+    try { const v = localStorage.getItem('henry_agent_mode'); return v === null ? true : v === 'true'; }
+    catch { return true; }
   });
   const toggleAgentMode = () => {
     setAgentMode((prev) => {

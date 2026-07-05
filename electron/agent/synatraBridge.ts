@@ -121,6 +121,25 @@ export function synatraAvailable(db: Database.Database): { ok: boolean; reason?:
   return r.ok ? { ok: true } : { ok: false, reason: r.reason };
 }
 
+/**
+ * Resolve the breakout-clip trigger config. Reuses endpoint/org/env but has its
+ * OWN trigger slug + webhook secret (settings `synatra_breakout_trigger` /
+ * `synatra_breakout_secret`) — every Synatra webhook trigger has a distinct secret.
+ */
+export function resolveBreakoutConfig(
+  db: Database.Database,
+): { ok: true; config: SynatraConfig } | { ok: false; reason: string } {
+  const base = resolveSynatraConfig(db);
+  const endpoint = setting(db, "synatra_endpoint").replace(/\/+$/, "");
+  const org = setting(db, "synatra_org");
+  const env = setting(db, "synatra_env");
+  const trigger = setting(db, "synatra_breakout_trigger") || "breakout-clip";
+  const secret = setting(db, "synatra_breakout_secret");
+  if (!base.ok) return base; // Synatra not enabled/configured at all
+  if (!secret) return { ok: false, reason: "Breakout clips aren't wired yet — missing synatra_breakout_secret in Settings." };
+  return { ok: true, config: { endpoint, org, env, trigger, secret } };
+}
+
 /** fetch with an AbortController timeout. Never depends on the SSRF-guarded path. */
 async function fetchJson(
   url: string,
@@ -183,6 +202,39 @@ export async function submitSynatraJob(
     const msg = e instanceof Error ? e.message : String(e);
     const timedOut = /abort/i.test(msg);
     return { ok: false, error: timedOut ? `Synatra submit timed out after ${Math.round(timeoutMs / 1000)}s.` : msg };
+  }
+}
+
+/** Fire the breakout-clip trigger with a topic. Returns the created threadId. */
+export async function submitBreakout(
+  config: SynatraConfig,
+  topic: string,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+): Promise<SynatraSubmitResult> {
+  const url = `${config.endpoint}/api/webhook/${encodeURIComponent(config.org)}/${encodeURIComponent(
+    config.env,
+  )}/${encodeURIComponent(config.trigger)}`;
+  try {
+    const { status, body } = await fetchJson(
+      url,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.secret}` },
+        body: JSON.stringify({ topic }),
+      },
+      timeoutMs,
+    );
+    if (status < 200 || status >= 300) {
+      const detail = typeof body === "string" ? body : JSON.stringify(body);
+      return { ok: false, error: `Synatra breakout webhook returned HTTP ${status}: ${detail.slice(0, 300)}` };
+    }
+    const obj = (body ?? {}) as Record<string, unknown>;
+    const threadId = String(obj.threadId ?? obj.thread_id ?? obj.id ?? "");
+    if (!threadId) return { ok: false, error: "Synatra accepted the breakout job but returned no threadId." };
+    return { ok: true, threadId, status: String(obj.status ?? "active") };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, error: /abort/i.test(msg) ? "Synatra breakout submit timed out." : msg };
   }
 }
 

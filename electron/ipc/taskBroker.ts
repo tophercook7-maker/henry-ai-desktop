@@ -12,6 +12,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { callAI } from './ai';
 import { safeResolve } from './_pathSafety';
+import { decryptKey } from './_keyStorage';
 import {
   buildWorkerAITaskSystemPrompt,
   buildWorkerCodeGenSystemPrompt,
@@ -115,7 +116,8 @@ function getWorkerEngineConfig(): { workerProviderId: string; workerModel: strin
     throw new Error('Worker provider is missing an API key.');
   }
 
-  return { workerProviderId, workerModel, provider };
+  // Decrypt the key at the last moment — it's stored encrypted at rest in SQLite.
+  return { workerProviderId, workerModel, provider: { ...provider, api_key: decryptKey(provider.api_key) } };
 }
 
 export function registerTaskBrokerHandlers(

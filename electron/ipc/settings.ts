@@ -10,8 +10,13 @@
 
 import { ipcMain } from 'electron';
 import type Database from 'better-sqlite3';
+import { encryptKey, decryptKey, migrateProviderKeys } from './_keyStorage';
 
 export function registerSettingsHandlers(db: Database.Database, getMainWindow?: () => import('electron').BrowserWindow | null) {
+  // Encrypt any plaintext keys left over from before this feature shipped.
+  // Safe to call every launch — already-encrypted rows are detected by prefix.
+  migrateProviderKeys(db);
+
   // ── Settings ────────────────────────────────────────────────
 
   // Returns a Record<string, string>
@@ -37,7 +42,9 @@ export function registerSettingsHandlers(db: Database.Database, getMainWindow?: 
   // ── Providers ───────────────────────────────────────────────
 
   ipcMain.handle('providers:getAll', () => {
-    return db.prepare('SELECT * FROM providers ORDER BY name').all();
+    const rows = db.prepare('SELECT * FROM providers ORDER BY name').all() as any[];
+    // Decrypt keys before sending to the renderer — encryption is at-rest only.
+    return rows.map((p) => ({ ...p, api_key: decryptKey(p.api_key || ''), apiKey: decryptKey(p.api_key || '') }));
   });
 
   ipcMain.handle(
@@ -54,7 +61,8 @@ export function registerSettingsHandlers(db: Database.Database, getMainWindow?: 
       }
     ) => {
       try {
-        const apiKey = provider.apiKey || provider.api_key || '';
+        const rawKey = provider.apiKey || provider.api_key || '';
+        const encryptedKey = encryptKey(rawKey);
         const enabled = provider.enabled ? 1 : 0;
         db.prepare(
           `INSERT INTO providers (id, name, api_key, enabled, models, updated_at)
@@ -65,16 +73,22 @@ export function registerSettingsHandlers(db: Database.Database, getMainWindow?: 
            enabled = excluded.enabled,
            models = excluded.models,
            updated_at = datetime('now')`
-        ).run(provider.id, provider.name, apiKey, enabled, provider.models || '[]');
-        console.log('[providers:save] saved', provider.id, 'key length:', apiKey.length);
-        // Immediately inject into renderer localStorage so chat picks it up without restart
+        ).run(provider.id, provider.name, encryptedKey, enabled, provider.models || '[]');
+        console.log('[providers:save] saved', provider.id, 'key length:', rawKey.length);
+        // Immediately inject into renderer localStorage so chat picks it up without restart.
+        // NOTE: localStorage itself is not encrypted — this is plaintext in Chromium's data store.
+        // A future hardening pass should remove keys from localStorage entirely and have the
+        // renderer call providers:getAll via IPC on each request instead.
         try {
           const allProviders = db.prepare('SELECT id, name, api_key, enabled, models FROM providers').all() as any[];
-          const lsData = allProviders.map((p: any) => ({
-            id: p.id, name: p.name,
-            api_key: p.api_key || '', apiKey: p.api_key || '',
-            enabled: Boolean(p.enabled), models: p.models || '[]',
-          }));
+          const lsData = allProviders.map((p: any) => {
+            const plain = decryptKey(p.api_key || '');
+            return {
+              id: p.id, name: p.name,
+              api_key: plain, apiKey: plain,
+              enabled: Boolean(p.enabled), models: p.models || '[]',
+            };
+          });
           const script = `try { localStorage.setItem('henry:providers', '${JSON.stringify(lsData).replace(/'/g, "\'")}'); console.log('[Henry] providers synced to localStorage'); } catch(e) { console.warn('[Henry] localStorage sync failed', e); }`;
           getMainWindow?.()?.webContents.executeJavaScript(script).catch(() => {});
         } catch { /* non-critical */ }

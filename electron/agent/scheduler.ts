@@ -29,6 +29,7 @@ import { runToolConversation, type RunnerMessage, type ModelCompletion } from ".
 import type { ModelTool } from "./types";
 import { callAIWithTools } from "../ipc/ai";
 import { createSessionRecord, recordSessionMessage } from "../ipc/sessionStore";
+import { decryptKey } from "../ipc/_keyStorage";
 
 type WindowGetter = () => BrowserWindow | null;
 
@@ -425,7 +426,7 @@ export class HenryScheduler {
       throw new Error(`Worker provider "${provider.name}" is missing an API key.`);
     }
 
-    return { provider: providerId, model, apiKey: provider.api_key ?? "" };
+    return { provider: providerId, model, apiKey: decryptKey(provider.api_key ?? "") };
   }
 
   // ── Renderer signalling ─────────────────────────────────────────────────

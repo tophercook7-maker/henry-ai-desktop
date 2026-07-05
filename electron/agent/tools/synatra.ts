@@ -17,7 +17,9 @@ import type { ToolDefinition, ToolResult } from "../types";
 import {
   synatraAvailable,
   resolveSynatraConfig,
+  resolveBreakoutConfig,
   submitSynatraJob,
+  submitBreakout,
   pollSynatraJob,
   type SynatraJobPayload,
 } from "../synatraBridge";
@@ -145,6 +147,50 @@ export function synatraTools(): ToolDefinition[] {
           failed: res.failed,
           result: res.result ?? null,
           error: res.error ?? null,
+        });
+      },
+    },
+
+    // ── breakout_clip ────────────────────────────────────────────────────────
+    {
+      name: "breakout_clip",
+      description:
+        "Make breakoutclips.com material: give a topic and Synatra generates a " +
+        "short vertical clip AND the viral post copy (title, caption, hashtags) " +
+        "for it — hands-off and free. Use when the user wants a breakout clip / " +
+        "social clip / content for breakoutclips.com. The clip renders in the " +
+        "background (~2 min); the post copy comes back in the Synatra thread.",
+      category: "external",
+      safetyLevel: "confirm",
+      confirmPrompt: (p) => `Make a breakout clip + post copy for: "${String(p.topic ?? "").slice(0, 150)}"`,
+      inputSchema: {
+        type: "object",
+        properties: {
+          topic: {
+            type: "string",
+            description: "The subject of the clip, e.g. 'molten cheese pull on a smash burger'.",
+          },
+        },
+        required: ["topic"],
+        additionalProperties: false,
+      },
+      async execute(params, context): Promise<ToolResult> {
+        const topic = String(params.topic ?? "").trim();
+        if (!topic) return fail("topic is required");
+
+        const resolved = resolveBreakoutConfig(context.db);
+        if (!resolved.ok) return fail(resolved.reason);
+
+        const res = await submitBreakout(resolved.config, topic);
+        if (!res.ok) return fail(res.error ?? "Breakout job failed to start.");
+
+        return ok({
+          threadId: res.threadId,
+          status: res.status ?? "active",
+          message:
+            `Breakout clip + post copy started for "${topic}". Synatra is generating it ` +
+            `(clip renders in ~2 min); the title/caption/hashtags come back in the Synatra thread. ` +
+            `threadId: ${res.threadId}.`,
         });
       },
     },

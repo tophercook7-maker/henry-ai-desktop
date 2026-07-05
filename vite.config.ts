@@ -37,6 +37,12 @@ export default defineConfig({
             rollupOptions: {
               external: ['better-sqlite3'],
               output: {
+                // A sandboxed preload (sandbox: true) MUST be CommonJS — Electron
+                // cannot load an ESM preload in a sandboxed renderer. package.json
+                // has type:module, so an ESM `.js` preload fails to load and the
+                // renderer falls back to the webMock. Emit `.cjs` to force CJS.
+                format: 'cjs',
+                entryFileNames: 'preload.cjs',
                 inlineDynamicImports: true,
               },
             },
