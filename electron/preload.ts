@@ -115,6 +115,40 @@ contextBridge.exposeInMainWorld('henryAPI', {
     };
   },
 
+  // ── Coder Engine (Claude Code CLI default, local Ollama fallback) ──
+  coderStatus: (opts?: { refresh?: boolean }) => ipcRenderer.invoke('coder:status', opts),
+  coderCancel: (channelId: string) => ipcRenderer.invoke('coder:cancel', channelId),
+  coderRun: (params: { prompt: string; cwd?: string; sessionId?: string }) => {
+    const channelId = `coder-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    let onEventCb: ((event: Record<string, unknown>) => void) | null = null;
+
+    const handler = (_: IpcRendererEvent, data: { channelId: string; event: Record<string, unknown> }) => {
+      if (data.channelId !== channelId) return;
+      onEventCb?.(data.event);
+      const kind = data.event?.kind;
+      if (kind === 'result' || kind === 'error') cleanup();
+    };
+
+    // Register the listener before starting IPC so fast runs never miss events.
+    ipcRenderer.on('coder:event', handler);
+    void ipcRenderer.invoke('coder:run', { ...params, channelId });
+
+    function cleanup() {
+      ipcRenderer.removeListener('coder:event', handler);
+    }
+
+    return {
+      channelId,
+      onEvent: (cb: (event: Record<string, unknown>) => void) => {
+        onEventCb = cb;
+      },
+      cancel: () => {
+        void ipcRenderer.invoke('coder:cancel', channelId);
+        cleanup();
+      },
+    };
+  },
+
   // ── Agent (tool layer) ────────────────────────────────────
   // Catalogue of registered tools (name, description, safety tier, category).
   listTools: () => ipcRenderer.invoke('agent:list-tools'),

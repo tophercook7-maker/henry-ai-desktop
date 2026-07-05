@@ -174,6 +174,19 @@ import { useSharedBrainState } from '../../brain/sharedState';
 import { hasAnythingToSurface, evaluateInitiative } from '../../core/initiative/initiativeEngine';
 import { parseDelegation, executeDelegation } from '@/henry/delegationInterceptor';
 import { logFeatureGap, learnPref } from '@/henry/selfAssessment';
+import {
+  CODER_ENGINE_SETTING_KEY,
+  coderAvailable,
+  describeActiveEngine,
+  formatToolActivity,
+  getCoderStatus,
+  isCoderEngineChoice,
+  joinTextChunk,
+  readCoderSession,
+  clearCoderSession,
+  runCoderTask,
+  saveCoderSession,
+} from '@/henry/coderEngine';
 
 const HENRY_OPERATING_MODE_KEY = 'henry_operating_mode';
 const HENRY_BIBLICAL_PROFILE_KEY = 'henry_biblical_source_profile';
@@ -379,6 +392,8 @@ export default function ChatView() {
   });
   const [isSearching, setIsSearching] = useState(false);
   const [lastWebSources, setLastWebSources] = useState<WebSource[]>([]);
+  // Coder engine (developer mode): Claude Code CLI default, local qwen fallback
+  const [coderStatus, setCoderStatus] = useState<HenryCoderStatus | null>(null);
   const [bibleStatus, setBibleStatus] = useState<BibleCorpusStatus>({ loaded: false, bookCount: 0, verseCount: 0, sizeBytes: 0 });
   const [bibleLoadProgress, setBibleLoadProgress] = useState<LoadProgress | null>(null);
   const [currentWeather, setCurrentWeather] = useState<WeatherSnapshot | null>(null);
@@ -1082,6 +1097,162 @@ What do you want to tackle first?`);
     return () => window.removeEventListener('henry_companion_chat_update', handler);
   }, [addMessage]);
 
+  // ── Coder engine (developer mode) ─────────────────────────────────────
+  // Refresh availability whenever developer mode becomes active or the
+  // engine setting changes, so the chip + status line stay truthful.
+  useEffect(() => {
+    if (operatingMode !== 'developer' || !coderAvailable()) return;
+    let alive = true;
+    void getCoderStatus().then((s) => {
+      if (alive) setCoderStatus(s);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [operatingMode, settings.coder_engine]);
+
+  const coderEngineChoice = isCoderEngineChoice(settings.coder_engine)
+    ? settings.coder_engine
+    : 'auto';
+
+  async function pickCoderEngine(value: string) {
+    if (!isCoderEngineChoice(value)) return;
+    try {
+      await window.henryAPI.saveSetting?.(CODER_ENGINE_SETTING_KEY, value);
+    } catch {
+      /* setting persists next launch at worst */
+    }
+    useStore.getState().updateSetting(CODER_ENGINE_SETTING_KEY, value);
+    setCoderStatus(await getCoderStatus());
+  }
+
+  /**
+   * Developer-mode turn through the coder engine. Streams normalized coder
+   * events into the regular chat streaming UI (text chunks + tool-activity
+   * blockquotes), then finalizes a normal assistant message. Falls back to
+   * the regular chat model only when engine='auto' and neither engine is
+   * available; a strict engine choice that's unavailable reports exactly
+   * what to do instead.
+   */
+  async function handleCoderRun(content: string, convId: string) {
+    setIsStreaming(true);
+    setStreamingContent('');
+    setCompanionStatus({ status: 'thinking', taskDescription: 'Coder engine…' });
+
+    const status = await getCoderStatus();
+    setCoderStatus(status);
+
+    if (!status || status.active === 'none') {
+      const strictChoice = status && status.engine !== 'auto';
+      if (!strictChoice) {
+        // Auto + nothing available → answer with the regular chat model.
+        await handleCompanionStream(content, convId, 'developer');
+        return;
+      }
+      const lines = [
+        `**Coder engine unavailable** (set to _${status.engine === 'claude-code' ? 'Claude Code' : 'Local'}_).`,
+        '',
+        status.engine === 'claude-code'
+          ? 'Claude Code CLI not found — install it with: `npm install -g @anthropic-ai/claude-code`'
+          : status.local.ollamaRunning
+            ? `Local coder model not installed — ${status.local.hint ?? 'run: ollama pull qwen2.5-coder:7b'}`
+            : `Ollama isn't running — ${status.local.hint ?? 'start it with: ollama serve'}`,
+        '',
+        'Or switch the Coder selector to **Auto**.',
+      ];
+      addMessage({
+        id: crypto.randomUUID(),
+        conversation_id: convId,
+        role: 'assistant',
+        content: lines.join('\n'),
+        engine: 'companion',
+        model: 'coder-status',
+        provider: 'coder',
+        created_at: new Date().toISOString(),
+      });
+      setStreamingContent('');
+      setIsStreaming(false);
+      setCompanionStatus({ status: 'idle' });
+      return;
+    }
+
+    const engine = status.active;
+    const s = useStore.getState().settings;
+    const cwd = (s.coder_project_dir || '').trim() || undefined;
+    const sessionId = engine === 'claude-code' ? readCoderSession(convId) : undefined;
+
+    let acc = '';
+    const finalize = async (finalText: string) => {
+      const assistantMsg = {
+        id: crypto.randomUUID(),
+        conversation_id: convId,
+        role: 'assistant' as const,
+        content: finalText,
+        engine: 'companion' as const,
+        model: engine === 'claude-code' ? 'claude-code' : status.local.model ?? 'local-coder',
+        provider: 'coder',
+        created_at: new Date().toISOString(),
+      };
+      addMessage(assistantMsg);
+      try {
+        await window.henryAPI.saveMessage(assistantMsg);
+      } catch {
+        /* non-fatal */
+      }
+      setStreamingContent('');
+      setIsStreaming(false);
+      setCompanionStatus({ status: 'done' });
+      setTimeout(() => setCompanionStatus({ status: 'idle' }), 1500);
+      streamRef.current = null;
+    };
+
+    const run = runCoderTask(
+      { prompt: content, cwd, sessionId },
+      {
+        onInit: (sid, model) => {
+          if (engine === 'claude-code' && sid) saveCoderSession(convId, sid);
+          setCompanionStatus({
+            status: 'streaming',
+            taskDescription:
+              engine === 'claude-code'
+                ? 'Claude Code working…'
+                : `Local coder${model ? ` (${model})` : ''}…`,
+          });
+        },
+        onText: (text) => {
+          const chunk = joinTextChunk(acc, text);
+          acc += chunk;
+          appendStreamingContent(chunk);
+        },
+        onTool: (name, summary) => {
+          const chunk = formatToolActivity(name, summary);
+          acc += chunk;
+          appendStreamingContent(chunk);
+        },
+        onResult: (res) => {
+          if (engine === 'claude-code' && res.sessionId) saveCoderSession(convId, res.sessionId);
+          let finalText = acc.trim() ? acc : res.text ?? '';
+          if (!finalText.trim()) {
+            finalText = res.ok
+              ? '_(Coder run finished with no output.)_'
+              : res.text || 'The coder run failed with no output.';
+          }
+          void finalize(finalText);
+        },
+        onError: (message) => {
+          // A stale --resume session is the most common failure — drop it so
+          // the next message starts a fresh CLI session.
+          if (engine === 'claude-code') clearCoderSession(convId);
+          const errText = acc.trim()
+            ? `${acc}\n\n**Coder error:** ${message}`
+            : `**Coder error:** ${message}`;
+          void finalize(errText);
+        },
+      }
+    );
+    streamRef.current = run; // Stop button → cancelStream() → run.cancel()
+  }
+
   async function handleSend(content: string) {
     if (!content.trim() || isStreaming) return;
     cancelTTS();
@@ -1158,6 +1329,10 @@ What do you want to tackle first?`);
     if (engine === 'worker') {
       // Worker tasks go through the task queue
       await handleWorkerRequest(content, convId);
+    } else if (detectedMode === 'developer' && coderAvailable()) {
+      // Developer mode routes through the coder engine (Claude Code CLI by
+      // default, free local qwen coder as fallback / per the Coder selector).
+      await handleCoderRun(content, convId);
     } else {
       // Companion uses streaming directly — pass detectedMode so the prompt uses the right mode
       // even before React re-renders with the new operatingMode state
@@ -1201,7 +1376,11 @@ What do you want to tackle first?`);
     };
     addMessage(userMsg);
     try { await window.henryAPI.saveMessage(userMsg); } catch { /* optional */ }
-    await handleCompanionStream(enrichedContent, convId, detectedMode);
+    if (detectedMode === 'developer' && coderAvailable()) {
+      await handleCoderRun(enrichedContent, convId);
+    } else {
+      await handleCompanionStream(enrichedContent, convId, detectedMode);
+    }
   }
 
   async function autoNameConversation(
@@ -2789,6 +2968,27 @@ What do you want to tackle first?`);
           <div className="flex items-end gap-2 md:gap-3 overflow-x-auto scrollbar-none pb-0.5">
 
 
+            {operatingMode === 'developer' && coderAvailable() && (
+              <label className="flex flex-col gap-1 shrink-0 text-[10px] text-henry-text-muted uppercase tracking-wide">
+                Coder
+                <select
+                  className="text-xs font-medium normal-case tracking-normal rounded-lg border border-henry-border/40 bg-henry-surface/40 text-henry-text px-2 py-1.5 max-w-[12rem] focus:outline-none focus:ring-1 focus:ring-henry-accent/50"
+                  value={coderEngineChoice}
+                  onChange={(e) => void pickCoderEngine(e.target.value)}
+                  aria-label="Coder engine for Code mode"
+                >
+                  <option value="auto">
+                    Auto{coderStatus ? ` — ${coderStatus.claude.available ? 'Claude Code' : coderStatus.local.model ? 'Local' : 'none ready'}` : ''}
+                  </option>
+                  <option value="claude-code" disabled={coderStatus ? !coderStatus.claude.available : false}>
+                    Claude Code{coderStatus && !coderStatus.claude.available ? ' (not installed)' : ''}
+                  </option>
+                  <option value="local" disabled={coderStatus ? !coderStatus.local.model : false}>
+                    Local (free){coderStatus && !coderStatus.local.model ? ' (not ready)' : ''}
+                  </option>
+                </select>
+              </label>
+            )}
             {operatingMode === 'biblical' && (
               <label className="flex flex-col gap-1 shrink-0 text-[10px] text-henry-text-muted uppercase tracking-wide">
                 Bible version
@@ -2874,6 +3074,29 @@ What do you want to tackle first?`);
               labeled distinctly. Try{' '}
               <span className="text-henry-text-dim">John 3:16</span> or{' '}
               <span className="text-henry-text-dim">Explain Psalm 23</span>.
+            </p>
+          )}
+
+          {operatingMode === 'developer' && coderAvailable() && (
+            <p className="text-[10px] text-henry-text-muted mt-2 leading-relaxed">
+              Coder engine: <span className="text-henry-text-dim">{describeActiveEngine(coderStatus)}</span>
+              {coderStatus?.active === 'none' && (
+                <>
+                  {' — '}
+                  {!coderStatus.claude.available && (
+                    <span>Claude Code CLI missing (<span className="text-henry-text-dim">npm install -g @anthropic-ai/claude-code</span>). </span>
+                  )}
+                  {!coderStatus.local.model && coderStatus.local.hint && (
+                    <span>Local coder: {coderStatus.local.hint}.</span>
+                  )}
+                </>
+              )}
+              {coderStatus?.active === 'claude-code' && (
+                <> · Edits apply automatically only inside <span className="text-henry-text-dim">~/HenryAI/coder-projects</span>; elsewhere Claude Code asks first.</>
+              )}
+              {coderStatus?.active === 'local' && (
+                <> · The free local coder writes code in chat — it doesn't edit files on disk.</>
+              )}
             </p>
           )}
 

@@ -62,6 +62,44 @@ declare global {
     queueLength?: number;
   }
 
+  // ── Coder Engine ────────────────────────────────────────────
+  /** Normalized event shared by both coder engines (Claude Code CLI + local Ollama). */
+  interface HenryCoderEvent {
+    kind: 'init' | 'text' | 'tool' | 'result' | 'error';
+    /** init/result: the CLI session id (use to resume follow-ups). */
+    sessionId?: string;
+    /** init: model in use. */
+    model?: string;
+    /** text: assistant text chunk. result: final text. */
+    text?: string;
+    /** tool: tool name + one-line activity summary. */
+    name?: string;
+    summary?: string;
+    /** result: success flag + run stats. */
+    ok?: boolean;
+    costUsd?: number;
+    durationMs?: number;
+    numTurns?: number;
+    /** error: what went wrong (actionable). */
+    message?: string;
+  }
+
+  interface HenryCoderStatus {
+    /** The configured setting (coder_engine): auto | claude-code | local. */
+    engine: 'auto' | 'claude-code' | 'local';
+    /** Which engine would actually run right now. */
+    active: 'claude-code' | 'local' | 'none';
+    claude: { available: boolean; path?: string; version?: string };
+    local: { ollamaRunning: boolean; model: string | null; hint?: string };
+    workspaceDir: string;
+  }
+
+  interface HenryCoderRunHandle {
+    channelId: string;
+    onEvent: (cb: (event: HenryCoderEvent) => void) => void;
+    cancel: () => void;
+  }
+
   interface HenryAIMessage {
     role: 'system' | 'user' | 'assistant';
     content: string;
@@ -500,6 +538,11 @@ declare global {
 
     whisperTranscribe?: (audioBlob: Blob, apiKey: string) => Promise<string>;
     createTask?: (params: { description: string; type: string; priority?: number; payload?: unknown }) => Promise<{ id: string }>;
+
+    // ── Coder Engine (Electron-only — Claude Code CLI default, local fallback) ──
+    coderStatus?: (opts?: { refresh?: boolean }) => Promise<HenryCoderStatus>;
+    coderRun?: (params: { prompt: string; cwd?: string; sessionId?: string }) => HenryCoderRunHandle;
+    coderCancel?: (channelId: string) => Promise<{ cancelled: boolean }>;
 
     // ── Agent (tool layer) ────────────────────────────────────
     listTools?: () => Promise<Array<{ name: string; description: string; safetyLevel: string; category: string }>>;

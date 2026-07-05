@@ -162,6 +162,70 @@ export const HEALTH_CHECKS: HealthCheck[] = [
     fix: async () => brewInstall('python3'),
   },
 
+  // ── Coder engine ──────────────────────────────────────────────────────────
+  {
+    id: 'claude_cli',
+    name: 'Claude Code CLI',
+    category: 'recommended',
+    description: "Henry's default coder engine — codes on your Claude subscription (big context, no per-token cost)",
+    check: async () => {
+      const candidates = [
+        'claude',
+        `${HOME}/.claude/local/claude`,
+        '/opt/homebrew/bin/claude',
+        '/usr/local/bin/claude',
+        `${HOME}/.local/bin/claude`,
+      ];
+      for (const c of candidates) {
+        const v = toolVersion(`"${c}"`);
+        if (v) return { ok: true, version: v, detail: c === 'claude' ? undefined : c };
+      }
+      return {
+        ok: false,
+        detail:
+          'Claude Code CLI not found — install with: npm install -g @anthropic-ai/claude-code (docs: docs.anthropic.com/en/docs/claude-code). Henry falls back to the free local coder.',
+      };
+    },
+    // No auto-fix: a global npm install shouldn't run silently on every launch.
+  },
+
+  {
+    id: 'qwen_coder',
+    name: 'Local coder model (qwen2.5-coder)',
+    category: 'optional',
+    description: 'Free offline coder fallback via Ollama — used when the Claude Code CLI is unavailable',
+    check: async () => {
+      if (!toolExists('ollama')) {
+        return { ok: true, detail: 'Ollama not installed — local coder fallback skipped (optional)' };
+      }
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 2500);
+        const res = await fetch('http://localhost:11434/api/tags', { signal: controller.signal });
+        clearTimeout(timer);
+        const data = (await res.json()) as { models?: Array<{ name?: string }> };
+        const names = (data.models ?? []).map((m) => m.name ?? '');
+        const hit =
+          names.find((n) => n.startsWith('qwen2.5-coder')) ??
+          names.find((n) => /^qwen[\w.]*-coder/i.test(n));
+        return hit
+          ? { ok: true, detail: hit }
+          : { ok: false, detail: 'Coder model not pulled — run: ollama pull qwen2.5-coder:7b' };
+      } catch {
+        // Ollama installed but not running — can't verify; don't nag or auto-pull.
+        return { ok: true, detail: "Ollama isn't running — start it to verify the local coder model" };
+      }
+    },
+    fix: async () => {
+      return new Promise((resolve) => {
+        exec('ollama pull qwen2.5-coder:7b', { env: ENV, timeout: 600_000 }, (err) => {
+          if (err) resolve({ success: false, message: 'Auto-pull failed — run: ollama pull qwen2.5-coder:7b' });
+          else resolve({ success: true, message: 'Pulled qwen2.5-coder:7b for the free local coder' });
+        });
+      });
+    },
+  },
+
   // ── Database ──────────────────────────────────────────────────────────────
   {
     id: 'sqlite3',

@@ -18,7 +18,7 @@
  * rest of the app sees changes immediately.
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useStore } from '../../store';
 import type { AIProvider } from '../../types';
 import { PROVIDERS, AVAILABLE_MODELS, formatPrice } from '../../providers/models';
@@ -26,6 +26,14 @@ import { toast } from '../ui/Toast';
 import RemoteControlPanel from './RemoteControlPanel';
 import DeviceLinkPanel from './DeviceLinkPanel';
 import HealthPanel from './HealthPanel';
+import {
+  CODER_ENGINE_LABELS,
+  CODER_ENGINE_SETTING_KEY,
+  coderAvailable,
+  getCoderStatus,
+  isCoderEngineChoice,
+  type CoderEngineChoice,
+} from '../../henry/coderEngine';
 
 // Providers that take an API key and can drive chat. (Ollama is local/keyless.)
 const CLOUD_PROVIDER_IDS = ['openai', 'anthropic', 'google', 'groq'] as const;
@@ -266,6 +274,101 @@ function EnginesSection() {
   );
 }
 
+// ── Coder Engine ─────────────────────────────────────────────────────────────
+
+function CoderEngineSection() {
+  const settings = useStore((s) => s.settings);
+  const updateSetting = useStore((s) => s.updateSetting);
+  const [status, setStatus] = useState<HenryCoderStatus | null>(null);
+  const [checking, setChecking] = useState(false);
+
+  const choice: CoderEngineChoice = isCoderEngineChoice(settings[CODER_ENGINE_SETTING_KEY])
+    ? (settings[CODER_ENGINE_SETTING_KEY] as CoderEngineChoice)
+    : 'auto';
+
+  const refresh = async (force = false) => {
+    setChecking(true);
+    try {
+      setStatus(await getCoderStatus(force));
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  useEffect(() => {
+    if (coderAvailable()) void refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  if (!coderAvailable()) return null;
+
+  const pick = async (value: string) => {
+    if (!isCoderEngineChoice(value)) return;
+    try {
+      await window.henryAPI.saveSetting?.(CODER_ENGINE_SETTING_KEY, value);
+      updateSetting(CODER_ENGINE_SETTING_KEY, value);
+      toast.success(`Coder engine → ${CODER_ENGINE_LABELS[value]}`);
+      void refresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not set coder engine');
+    }
+  };
+
+  return (
+    <div className={cardCls}>
+      <SectionHeader
+        title="Coder Engine"
+        sub="Code mode in chat writes code with the Claude Code CLI (your Claude subscription — big context, edits files) or a free local model via Ollama."
+      />
+      <div className="space-y-3">
+        <select className={inputCls} value={choice} onChange={(e) => void pick(e.target.value)}>
+          <option value="auto">Auto — Claude Code when installed, else local (recommended)</option>
+          <option value="claude-code">Claude Code CLI only</option>
+          <option value="local">Local only — free qwen coder via Ollama</option>
+        </select>
+
+        <div className="text-[11px] text-henry-text-muted space-y-1">
+          <div>
+            Claude Code CLI:{' '}
+            {status?.claude.available ? (
+              <span className="text-emerald-400">detected — {status.claude.version ?? 'installed'}</span>
+            ) : (
+              <span>
+                not found — install with{' '}
+                <span className="text-henry-text-dim">npm install -g @anthropic-ai/claude-code</span>
+              </span>
+            )}
+          </div>
+          <div>
+            Local coder:{' '}
+            {status?.local.model ? (
+              <span className="text-emerald-400">{status.local.model} installed</span>
+            ) : status?.local.ollamaRunning ? (
+              <span>model missing — {status.local.hint ?? 'run: ollama pull qwen2.5-coder:7b'}</span>
+            ) : (
+              <span>{status?.local.hint ?? 'Ollama not running'}</span>
+            )}
+          </div>
+          {status && (
+            <div>
+              Active now:{' '}
+              <span className="text-henry-text-dim">
+                {status.active === 'none' ? 'no engine available' : status.active === 'claude-code' ? 'Claude Code' : `Local (${status.local.model})`}
+              </span>
+              {' · '}Auto-applied edits are limited to{' '}
+              <span className="text-henry-text-dim">~/HenryAI/coder-projects</span>
+            </div>
+          )}
+        </div>
+
+        <button className={btnCls} onClick={() => void refresh(true)} disabled={checking}>
+          {checking ? 'Checking…' : 'Re-check'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Root ─────────────────────────────────────────────────────────────────────
 
 export default function SettingsView() {
@@ -282,6 +385,7 @@ export default function SettingsView() {
         <ProfileSection />
         <ProvidersSection />
         <EnginesSection />
+        <CoderEngineSection />
 
         <div className={cardCls}>
           <SectionHeader title="Companion device" sub="Pair and control Henry from your phone." />

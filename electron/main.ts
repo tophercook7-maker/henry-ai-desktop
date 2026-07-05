@@ -26,6 +26,7 @@ import { registerPrinterNetworkHandlers } from './ipc/printerNetwork';
 import { registerSlicerHandlers } from './ipc/slicer';
 import { registerSlicerProfileHandlers } from './ipc/slicerProfiles';
 import { registerAgentHandlers } from './ipc/agent';
+import { registerCoderHandlers } from './coder';
 import { registerSchedulerHandlers } from './ipc/scheduler';
 import { HenryScheduler } from './agent/scheduler';
 import { registerSyncBridgeIpc, setSyncDb, startSyncServer } from './ipc/syncBridge';
@@ -441,6 +442,7 @@ app.whenReady().then(() => {
   registerPrinterHandlers(getMainWindow);
   registerSessionStoreHandlers(henryDir);
   registerAgentHandlers(db, getMainWindow);
+  registerCoderHandlers(db, getMainWindow);
 
   // ── Agent Scheduler (Henry's Routines) ───────────────────────────────────
   // Registered after the agent tool kit so the registry is populated before any
