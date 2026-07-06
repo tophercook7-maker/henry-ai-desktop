@@ -1,7 +1,7 @@
 <div align="center">
   <h1>◉ Henry AI</h1>
-  <p><strong>The cheapest, most capable personal AI on the market.</strong></p>
-  <p>Local-first · Self-healing · Works on your Mac and phone · Costs almost nothing</p>
+  <p><strong>A personal AI that talks, codes, builds, and teaches — for almost nothing.</strong></p>
+  <p>Local-first · Self-healing · Voice built in · Works on your Mac and phone</p>
   <br>
   <a href="https://github.com/tophercook7-maker/henry-ai-desktop/releases/latest">
     <img src="https://img.shields.io/github/v/release/tophercook7-maker/henry-ai-desktop?label=Download&color=6366f1" />
@@ -15,38 +15,110 @@
 
 ## What Henry Is
 
-Henry is a personal AI that runs on your Mac. Not a chatbot — a full operating system layer.
+Henry is a personal AI that runs on your Mac. Not a chatbot — a companion built around seven jobs:
 
-- **Controls your Mac** — open apps, create folders, run commands, take screenshots
-- **Works on your phone** — chat, voice commands, live Mac screen view from anywhere
-- **Remembers you** — learns facts from conversations, uses them forever
-- **Costs almost nothing** — 90% of tasks run free on Groq's API
-- **Fixes itself** — diagnoses and repairs its own problems on every launch
-- **No subscription** — your key, your data, your AI
+1. **Talks, types, and listens** — free local voice, hands-free mode, spoken replies
+2. **Writes code** — powered by the Claude Code CLI on your subscription, or a free local coder
+3. **Writes books and designs the covers** — real KDP-ready specs, AI art, typography
+4. **Connects to your machines** — 3D printers (Bambu, Klipper, OctoPrint, Marlin) and GRBL CNC
+5. **Teaches you anything** — structured courses with lessons and quizzes, Bible study first-class
+6. **Keeps you organized** — tasks, reminders, journal, goals, finance, memory that persists
+7. **Runs your maker shop** — filament stock, production runs, waste, machine maintenance
+
+All of it local-first: your key, your data, no subscription to Henry itself.
+
+## Voice
+
+Henry listens with **whisper.cpp** running on your Mac — free, offline, private. First tap of the mic runs a one-time setup (~150MB model, installed automatically). Replies speak through the built-in Mac voice, or through ElevenLabs automatically if you add a key.
+
+- Tap the mic, talk, edit the transcript, send
+- **Hands-free mode**: speak → Henry answers out loud
+- Works in every mode — dictate a chapter, ask what your printer's doing
+
+## Code
+
+In Code mode, Henry hands work to the **Claude Code CLI** — your Claude subscription, huge context window, real file edits in a sandboxed workspace with approval gating. No CLI or offline? Henry falls back to a **free local coder** via Ollama (qwen2.5-coder). A chip in the chat picks: Auto / Claude Code / Local.
+
+## Books & Covers
+
+The Book panel captures your story into chapters — and now finishes the job with **Cover Studio**:
+
+- Enter title, author, genre, page count → Henry computes your exact KDP specs (trim, bleed, spine width to the thousandth of an inch)
+- **Do it for me**: AI cover art + genre-aware title typography, exported as ebook (1600×2560) and print-resolution PNGs, plus a print-specs sheet for the full wrap
+- **Teach me**: a step-by-step guide tailored to your exact book, using free tools
+
+## Machines
+
+Add your printers and CNC in the Machines panel — Henry speaks their language:
+
+| Machine | Protocol | Status |
+|---|---|---|
+| Bambu Lab (X1/P1/A1) | LAN MQTT | Live status, pause/resume/stop |
+| Klipper (Voron, Prusa, modded Enders) | Moonraker | Full: upload, print, control |
+| OctoPrint | REST API | Full: upload, print, control |
+| Marlin (stock Enders) | USB serial | One-time setup: `npm i serialport && npm run rebuild` |
+| GRBL CNC (Shapeoko etc.) | USB serial | Same one-time setup; jog, home, stream G-code |
+
+Ask in chat: *"What's my printer doing?"* — Henry answers with live temps and progress. Pause/stop go through his approval gate.
+
+Plus the full maker suite: filament/materials stock, production runs, waste log, maintenance history, Print Studio, slicer integration, and the 3D Model Generator (describe an object or drop a photo → real STL/3MF at correct millimeter scale).
+
+## Lessons
+
+Tell Henry what you want to learn — *"the book of James"*, *"biblical Greek basics"*, *"how MQTT works"* — pick a depth and length, and he builds a real course: lessons unlock in order, each with teaching, key scriptures (public-domain quoting), real-world application, and a quiz that unlocks the next lesson at 60%. Bible study is first-class; "Teach me anything" covers the rest.
+
+## Organization
+
+| Panel | What it does |
+|---|---|
+| Today | Daily briefing, cost tracker |
+| Tasks | todo / doing / done, priorities |
+| Journal | Daily entries, mood, full-text search |
+| Reminders | Native Mac notifications, repeating |
+| Goals + Weekly | Long-term goals, weekly review |
+| Finance | Income/expense by category, monthly P&L |
+| Captures | Voice/text notes with AI extraction |
+| Memory | Henry learns facts from conversation, forever |
+| Recorder | Meeting recording & transcription |
+
+## Computer Control
+
+From chat or the computer panel:
+
+```
+"Create a folder called Work on my Desktop"
+"Open Chrome and go to gmail.com"
+"Take a screenshot"  ·  "What apps are running?"  ·  "Set volume to 50"
+```
+
+## Mobile Companion
+
+Open `http://[your-mac-ip]:4242` on any phone or tablet: full chat with voice input, remote Mac commands, live screen view. Works anywhere via the auto-started Cloudflare tunnel; devices pair once and reconnect automatically.
 
 ## The Iron Gateway
 
-Henry routes every request to the cheapest capable AI:
+Every chat request routes to the cheapest capable AI:
 
 | What you say | How it's handled | Cost |
 |---|---|---|
 | "Hi", "thanks", time, math | Local — no API | **$0.00** |
-| Simple questions, quick tasks | Groq 8b-instant | **$0.05/1M tokens** |
+| Simple questions | Groq 8b-instant | **$0.05/1M tokens** |
 | Writing, analysis, Bible study | Groq 70b-versatile | **$0.59/1M tokens** |
-| Image generation | DALL-E 3 (optional) | **$0.04/image** |
-| Video generation | Runway Gen-4 (optional) | Pay per second |
+| Coding | Claude Code (your subscription) or local | **$0 marginal** |
+| Voice in/out | whisper.cpp + Mac voice | **$0.00** |
+| Image generation | DALL-E 3 (optional key) | $0.04/image |
 
-Compare: GPT-4o costs $2.50/1M tokens. Henry is up to **50× cheaper**.
+## Self-Repair
+
+Henry checks and fixes himself on every launch: cloudflared, ffmpeg, yt-dlp, whisper-cpp auto-install via brew; missing permissions open the right System Settings panel; missing keys tell you exactly where to add them.
 
 ## Installation
 
-### Mac (Recommended)
-
 1. [Download the latest DMG](https://github.com/tophercook7-maker/henry-ai-desktop/releases/latest)
-   - **Apple Silicon (M1/M2/M3/M4):** `Henry AI-x.x.x-arm64.dmg`
-   - **Intel Mac:** `Henry AI-x.x.x.dmg`
-2. Open the DMG → drag Henry AI to Applications
-3. Open Henry AI → the onboarding wizard runs
+   - **Apple Silicon (M1–M4):** `Henry-AI-x.x.x-arm64.dmg`
+   - **Intel Mac:** `Henry-AI-x.x.x.dmg`
+2. Drag Henry AI to Applications, open it, follow the 60-second onboarding
+3. Get a free Groq API key at [console.groq.com/keys](https://console.groq.com/keys) — no credit card
 
 ### From Source
 
@@ -54,137 +126,47 @@ Compare: GPT-4o costs $2.50/1M tokens. Henry is up to **50× cheaper**.
 git clone https://github.com/tophercook7-maker/henry-ai-desktop.git
 cd henry-ai-desktop
 npm install
-npm run dev
+npm run dev:electron
 ```
 
-**Requirements:** Node.js 18+ · macOS 12+
-
-## Setup (60 seconds)
-
-1. **Get a free Groq API key** at [console.groq.com/keys](https://console.groq.com/keys) — free, no credit card
-2. Open Henry AI → paste key in onboarding → done
-3. Henry handles the rest (cloudflared installs itself, tunnel starts automatically)
-
-## Features
-
-### AI Chat
-- Groq llama-3.3-70b-versatile — GPT-4 quality, free tier
-- Streams responses in real time
-- Multiple modes: biblical study, writing, business, focus
-- Remembers facts across sessions
-
-### Computer Control
-From chat or computer panel:
-```
-"Create a folder called Work on my Desktop"
-"Open Chrome and go to gmail.com"
-"Take a screenshot"
-"What apps are running?"
-"Set volume to 50"
-```
-
-### Mobile Companion
-Open `http://[your-mac-ip]:4242` on any phone or tablet:
-- Full Henry chat with voice input
-- Execute Mac commands remotely
-- Live screen view (2.5s auto-refresh)
-- Works anywhere via auto-started Cloudflare tunnel
-- Auto-reconnects — persistent device identity
-
-### 3D Model Generator
-Print Studio → 🔧 3D Generator:
-- Describe any object in plain English
-- Drop a photo — Claude vision analyzes shape and dimensions
-- Enter measurements in mm
-- Download real STL or 3MF files — correct millimeter scale
-- WebGL 3D preview before downloading
-- Opens in PrusaSlicer, Bambu Studio, Cura, OrcaSlicer
-
-### Everything Else
-| Panel | What it does |
-|---|---|
-| Journal | Daily entries, mood, full-text search, auto-save |
-| Tasks | Personal task manager (todo/doing/done), priority |
-| Finance | Income/expense tracking by category, monthly summary |
-| CRM | Contacts with notes, last-contact tracking |
-| Lists | Emoji lists, checkboxes, progress bar |
-| Secretary | AI email drafts, meeting briefs, summaries |
-| Focus | Pomodoro timer with AI check-ins |
-| Reminders | Native Mac notifications, repeating |
-| Image Gen | DALL-E 3 (OpenAI key required) |
-| Video Gen | Runway Gen-4 (Runway key required) |
-| Health | Self-diagnosis, auto-repair, software audit |
-
-### Self-Repair
-Henry checks and fixes 12 things on every launch:
-- cloudflared, ffmpeg, yt-dlp → auto-installs via brew
-- Auto-tunnel disabled → enables automatically
-- Screen Recording denied → opens System Settings to the right panel
-- API key missing → tells you exactly where to add it
-
-## Required
-
-- **Groq API key** — [console.groq.com/keys](https://console.groq.com/keys) (free)
-- macOS 12 Monterey or later
-- Node.js 18+ (for building from source)
+**Requirements:** macOS 12+ · Node.js 20+ (source builds)
 
 ## Optional
 
-- **Anthropic API key** — for Claude vision in 3D Generator photo analysis
-- **OpenAI API key** — for DALL-E 3 image generation
-- **Runway API key** — for Gen-4 video generation
-- **Homebrew** — Henry auto-installs tools via brew if available
-
-## Mobile Setup
-
-1. Henry shows your local URL in the Companion panel (⊚)
-2. Open that URL on your phone — connects automatically
-3. For off-network access: enable "Auto-start tunnel" in Companion → Remote Access
-4. The tunnel URL appears on your mobile when active — tap to copy
+- **Claude Code CLI** — best-in-class coding on your Claude subscription (`npm i -g @anthropic-ai/claude-code`)
+- **Ollama** — free local chat + coding fallback
+- **Anthropic / OpenAI keys** — Claude vision for the 3D generator, DALL-E 3 for images and covers
+- **ElevenLabs key** — premium speaking voice (local voice works without it)
+- **serialport** (one-time `npm i serialport && npm run rebuild`) — USB Marlin printers and GRBL CNC
 
 ## Architecture
 
 ```
 Electron (main process)
-├── syncBridge.ts    — HTTP server :4242, mobile companion, SSE stream
-├── selfRepair.ts    — Health checks, auto-fix
-├── memory.ts        — SQLite IPC: tasks, finance, journal, contacts, lists, etc.
-└── main.ts          — App lifecycle, auto-update, permissions
+├── coder/        — Claude Code CLI runner + local Ollama fallback
+├── machines/     — Bambu MQTT · Moonraker · OctoPrint · Marlin/GRBL serial
+├── voice/        — whisper.cpp STT · say/ElevenLabs TTS
+├── syncBridge.ts — mobile companion server :4242 + tunnel
+├── selfRepair.ts — health checks, auto-fix
+└── ipc/          — SQLite: tasks, journal, finance, memory, lessons, ...
 
 React (renderer)
-├── henry/gateway.ts — Iron Gateway cost router
-├── henry/memoryPipeline.ts — Fact extraction via Groq
-└── components/      — All panels
+├── henry/gateway.ts    — Iron Gateway cost router
+├── henry/coverSpecs.ts — KDP trim/spine/bleed math
+└── components/         — all panels
 
-SQLite DB: ~/Library/Application Support/henry-ai-desktop/henry-workspace/henry.db
+SQLite: ~/Library/Application Support/henry-ai-desktop/henry-workspace/henry.db
 ```
-
-## Cost Philosophy
-
-Henry is designed to be the cheapest capable AI available:
-
-1. **Local first** — greetings, math, time → $0 always
-2. **Groq free tier** — 30 req/min, handles most users completely free
-3. **8b model** — for simple chat, 50× cheaper than GPT-4
-4. **70b model** — for quality tasks, still 4× cheaper than GPT-4
-5. **Paid APIs** — only for things that literally require them (image/video gen)
-
-The Today panel shows your daily cost and how much you saved vs GPT-4.
 
 ## Building for Distribution
 
 ```bash
-# Apple Silicon + Intel
-npm run build:mac:unsigned
-
-# Output:
-# release/Henry AI-x.x.x-arm64.dmg  (Apple Silicon)
-# release/Henry AI-x.x.x.dmg        (Intel)
+npm run build:mac        # signed arm64 + x64 DMGs → release2/
 ```
 
 ## Auto-Update
 
-Henry checks GitHub Releases every 4 hours. When a new version is available, it downloads and installs on next app quit. No action required.
+Henry checks GitHub Releases every 4 hours and installs updates on next quit. No action required.
 
 ---
 
