@@ -623,6 +623,7 @@ contextBridge.exposeInMainWorld('henryAPI', {
     return () => ipcRenderer.removeListener('voice:stt:setup-progress', handler);
   },
   voiceTranscribe: (audio: ArrayBuffer) => ipcRenderer.invoke('voice:transcribe', new Uint8Array(audio)),
+  voiceMicAccess: () => ipcRenderer.invoke('voice:micAccess'),
   voiceSpeak: (params: { text: string; engine?: string }) => ipcRenderer.invoke('voice:speak', params),
   voiceStopSpeaking: () => ipcRenderer.invoke('voice:stopSpeaking'),
   voiceTtsStatus: () => ipcRenderer.invoke('voice:ttsStatus'),

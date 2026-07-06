@@ -777,6 +777,7 @@ declare global {
     voiceSttSetup?: () => Promise<HenryVoiceResult<HenryVoiceSttStatus>>;
     onVoiceSttSetupProgress?: (cb: (p: HenryVoiceSetupProgress) => void) => () => void;
     voiceTranscribe?: (audio: ArrayBuffer) => Promise<HenryVoiceResult<{ text: string; ms: number }>>;
+    voiceMicAccess?: () => Promise<{ status: string; granted: boolean }>;
     voiceSpeak?: (params: { text: string; engine?: 'auto' | 'local' | 'elevenlabs' }) => Promise<HenryVoiceResult<HenryVoiceSpeakResult>>;
     voiceStopSpeaking?: () => Promise<HenryVoiceResult<{ stopped: boolean }>>;
     voiceTtsStatus?: () => Promise<HenryVoiceResult<HenryVoiceTtsStatus>>;

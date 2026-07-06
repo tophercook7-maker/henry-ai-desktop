@@ -299,6 +299,28 @@ app.whenReady().then(() => {
       return { granted: trusted };
     } catch { return { granted: false }; }
   });
+  // Mic access for voice input — packaged apps need an explicit TCC request.
+  // Renderer calls this before getUserMedia so the macOS prompt fires from the
+  // main process (with NSMicrophoneUsageDescription from Info.plist).
+  ipcMain.handle('voice:micAccess', async () => {
+    try {
+      if (process.platform !== 'darwin') return { status: 'granted', granted: true };
+      const status = systemPreferences.getMediaAccessStatus('microphone');
+      if (status === 'granted') return { status, granted: true };
+      if (status === 'not-determined') {
+        const granted = await systemPreferences.askForMediaAccess('microphone');
+        return { status: granted ? 'granted' : 'denied', granted };
+      }
+      // 'denied' or 'restricted' — the prompt can't fire again; open the right panel.
+      await shell.openExternal(
+        'x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone',
+      );
+      return { status, granted: false };
+    } catch {
+      return { status: 'unknown', granted: false };
+    }
+  });
+
   ipcMain.handle('henry:checkAccessibility', () => {
     try {
       // First try Electron's API
