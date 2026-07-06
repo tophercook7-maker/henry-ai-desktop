@@ -211,12 +211,37 @@ function migrateDatabaseSchema(db: Database.Database) {
   migrateSlicerProfilesSchema(db);
   seedSlicerProfiles(db);
 
+  // Machine connectivity — saved printer/CNC connections (electron/machines/).
+  migrateMachineConnectionsSchema(db);
+
   // Render daemon endpoint for Henry's direct video generation.
   try {
     db.prepare(
       `INSERT OR IGNORE INTO settings (key, value) VALUES ('render_endpoint', 'http://localhost:8799')`,
     ).run();
   } catch { /* ignore on unusual DB states */ }
+}
+
+/**
+ * Machine connectivity (electron/machines/). One row per saved machine
+ * connection — a 3D printer or CNC plus the protocol + config Henry needs to
+ * reach it (Bambu LAN / Moonraker / OctoPrint / Marlin serial / GRBL serial).
+ * Config lives as JSON (host, port, serial number, access code, API key,
+ * device path, baud). Idempotent.
+ */
+function migrateMachineConnectionsSchema(db: Database.Database) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS machine_connections (
+      id          TEXT PRIMARY KEY,
+      name        TEXT NOT NULL,
+      kind        TEXT NOT NULL DEFAULT 'printer' CHECK(kind IN ('printer','cnc')),
+      protocol    TEXT NOT NULL
+        CHECK(protocol IN ('bambu','moonraker','octoprint','marlin-serial','grbl-serial')),
+      config_json TEXT NOT NULL DEFAULT '{}',
+      created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
 }
 
 /**

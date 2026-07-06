@@ -177,6 +177,25 @@ contextBridge.exposeInMainWorld('henryAPI', {
   printerNetUpload: (conn: Record<string, unknown>, gcodePath: string, print?: boolean) =>
     ipcRenderer.invoke('printerNet:upload', { conn, gcodePath, print }),
 
+  // ── Machine connections (unified printer/CNC layer) ───────
+  machinesList: () => ipcRenderer.invoke('machines:list'),
+  machinesAdd: (m: Record<string, unknown>) => ipcRenderer.invoke('machines:add', m),
+  machinesUpdate: (id: string, patch: Record<string, unknown>) =>
+    ipcRenderer.invoke('machines:update', { id, patch }),
+  machinesRemove: (id: string) => ipcRenderer.invoke('machines:remove', { id }),
+  machinesConnect: (id: string) => ipcRenderer.invoke('machines:connect', { id }),
+  machinesDisconnect: (id: string) => ipcRenderer.invoke('machines:disconnect', { id }),
+  machinesStatus: (id: string) => ipcRenderer.invoke('machines:status', { id }),
+  machinesStatusAll: () => ipcRenderer.invoke('machines:statusAll'),
+  machinesJob: (id: string, action: string, filePath?: string) =>
+    ipcRenderer.invoke('machines:job', { id, action, filePath }),
+  machinesDiscover: () => ipcRenderer.invoke('machines:discover'),
+  onMachinesEvent: (cb: (event: unknown) => void) => {
+    const handler = (_: IpcRendererEvent, data: unknown) => cb(data);
+    ipcRenderer.on('machines:event', handler);
+    return () => ipcRenderer.removeListener('machines:event', handler);
+  },
+
   // ── Slicer ────────────────────────────────────────────────
   slicerStatus: () => ipcRenderer.invoke('slicer:status'),
   slicerSlice: (params: { modelPath: string; settings?: Record<string, string | number>; outPath?: string; printerDef?: string }) =>

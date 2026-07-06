@@ -308,6 +308,76 @@ declare global {
     job?: string;
   }
 
+  // ── Machine connectivity (unified printer/CNC layer) ───────
+  type HenryMachineKind = 'printer' | 'cnc';
+  type HenryMachineProtocol = 'bambu' | 'moonraker' | 'octoprint' | 'marlin-serial' | 'grbl-serial';
+  type HenryMachineState = 'idle' | 'printing' | 'running' | 'paused' | 'error' | 'offline';
+
+  /** Per-protocol connection settings — only the relevant fields are used. */
+  interface HenryMachineConfig {
+    host?: string;
+    port?: number;
+    serialNumber?: string; // Bambu
+    accessCode?: string;   // Bambu LAN access code
+    apiKey?: string;       // OctoPrint
+    devicePath?: string;   // serial
+    baudRate?: number;     // serial
+  }
+
+  /** Normalized live status from any machine driver. */
+  interface HenryMachineStatus {
+    state: HenryMachineState;
+    progressPct?: number;
+    tempNozzle?: number;
+    tempNozzleTarget?: number;
+    tempBed?: number;
+    tempBedTarget?: number;
+    jobName?: string;
+    timeRemainingSec?: number;
+    positionXYZ?: { x: number; y: number; z: number };
+    raw?: unknown;
+  }
+
+  /** A saved machine connection (machine_connections table) + live flags. */
+  interface HenryMachineConnection {
+    id: string;
+    name: string;
+    kind: HenryMachineKind;
+    protocol: HenryMachineProtocol;
+    config: HenryMachineConfig;
+    connected?: boolean;
+    status?: HenryMachineStatus;
+    created_at?: string;
+    updated_at?: string;
+  }
+
+  interface HenryMachineCapabilities {
+    sendJob: boolean;
+    pauseResume: boolean;
+    stop: boolean;
+  }
+
+  /** A candidate found by machines:discover. */
+  interface HenryDiscoveredMachine {
+    host?: string;
+    port?: number;
+    devicePath?: string;
+    protocolGuess: HenryMachineProtocol | 'unknown';
+    label: string;
+    via: 'port-scan' | 'serial';
+  }
+
+  /** Live event pushed over machines:event. */
+  interface HenryMachineEvent {
+    type: 'status' | 'connected' | 'disconnected' | 'job-progress' | 'error';
+    machineId: string;
+    status?: HenryMachineStatus;
+    message?: string;
+  }
+
+  /** Uniform envelope for every machines:* IPC call. */
+  type HenryMachinesResult<T> = { ok: true; result: T } | { ok: false; error: string };
+
   /** A saved slicing profile (slicer_profiles table). */
   interface HenrySlicerProfile {
     id: string;
@@ -555,6 +625,19 @@ declare global {
     printerNetStatus?: (conn: HenryPrinterConn) => Promise<{ ok: boolean; result?: HenryPrinterStatus; error?: string }>;
     printerNetCommand?: (conn: HenryPrinterConn, action: string, gcode?: string) => Promise<{ ok: boolean; error?: string }>;
     printerNetUpload?: (conn: HenryPrinterConn, gcodePath: string, print?: boolean) => Promise<{ ok: boolean; result?: { started: boolean }; error?: string }>;
+
+    // ── Machine connections (unified printer/CNC layer) ───────
+    machinesList?: () => Promise<HenryMachinesResult<HenryMachineConnection[]>>;
+    machinesAdd?: (m: { name: string; kind: HenryMachineKind; protocol: HenryMachineProtocol; config: HenryMachineConfig }) => Promise<HenryMachinesResult<HenryMachineConnection>>;
+    machinesUpdate?: (id: string, patch: { name?: string; kind?: HenryMachineKind; protocol?: HenryMachineProtocol; config?: HenryMachineConfig }) => Promise<HenryMachinesResult<HenryMachineConnection>>;
+    machinesRemove?: (id: string) => Promise<HenryMachinesResult<{ removed: boolean }>>;
+    machinesConnect?: (id: string) => Promise<HenryMachinesResult<{ status: HenryMachineStatus; capabilities: HenryMachineCapabilities | null }>>;
+    machinesDisconnect?: (id: string) => Promise<HenryMachinesResult<{ disconnected: boolean }>>;
+    machinesStatus?: (id: string) => Promise<HenryMachinesResult<HenryMachineStatus>>;
+    machinesStatusAll?: () => Promise<HenryMachinesResult<Array<{ id: string; name: string; kind: HenryMachineKind; protocol: HenryMachineProtocol; connected: boolean; status: HenryMachineStatus }>>>;
+    machinesJob?: (id: string, action: 'send' | 'pause' | 'resume' | 'stop', filePath?: string) => Promise<HenryMachinesResult<{ ok: boolean; message?: string }>>;
+    machinesDiscover?: () => Promise<HenryMachinesResult<HenryDiscoveredMachine[]>>;
+    onMachinesEvent?: (cb: (event: HenryMachineEvent) => void) => () => void;
 
     // ── Slicer ────────────────────────────────────────────────
     slicerStatus?: () => Promise<{ ok: boolean; result?: { available: boolean; missing: string[]; version?: string; enginePath?: string; definitionsDir?: string; printerDef?: string }; error?: string }>;

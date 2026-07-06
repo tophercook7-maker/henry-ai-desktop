@@ -7,6 +7,7 @@
  */
 import { useEffect, useState, useCallback } from 'react';
 import { useStore } from '../../store';
+import ConnectionsSection from './ConnectionsSection';
 
 type MachineType = '3d-printer' | 'laser' | 'cnc' | 'embroidery' | 'vinyl'
   | 'sublimation' | 'sewing' | 'kiln' | 'electronics' | 'woodshop' | 'other';
@@ -170,6 +171,7 @@ export default function MachinesPanel() {
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-5">
+        <ConnectionsSection />
         {loading ? (
           <p className="text-sm text-henry-text-muted">Loading…</p>
         ) : filtered.length === 0 ? (

@@ -23,6 +23,8 @@ import { registerApprovalHandlers } from './ipc/approvals';
 import { registerBookHandlers } from './ipc/book';
 import { registerPrinterDiscoveryHandlers } from './ipc/printerDiscovery';
 import { registerPrinterNetworkHandlers } from './ipc/printerNetwork';
+import { registerMachineHandlers } from './machines/ipc';
+import { getMachineManager } from './machines/manager';
 import { registerSlicerHandlers } from './ipc/slicer';
 import { registerSlicerProfileHandlers } from './ipc/slicerProfiles';
 import { registerAgentHandlers } from './ipc/agent';
@@ -429,6 +431,7 @@ app.whenReady().then(() => {
   registerBookHandlers(db);
   registerPrinterDiscoveryHandlers();
   registerPrinterNetworkHandlers();
+  registerMachineHandlers(db, getMainWindow);
   registerSlicerHandlers(db);
   registerSlicerProfileHandlers(db);
   registerPrayerHandlers(db);
@@ -754,6 +757,7 @@ app.whenReady().then(() => {
   app.on('will-quit', () => {
     globalShortcut.unregisterAll();
     henryScheduler?.shutdown();
+    void getMachineManager()?.shutdown();
   });
 
   // Auto-start sync server so companion devices can connect immediately
