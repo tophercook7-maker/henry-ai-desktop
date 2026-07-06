@@ -13,6 +13,7 @@ import { registerPrayerHandlers } from './ipc/prayer';
 import { registerQuotingHandlers } from './ipc/quoting';
 import { registerMakerStudioHandlers } from './ipc/makerStudio';
 import { registerScriptureHandlers } from './ipc/scripture';
+import { registerLessonsHandlers } from './ipc/lessons';
 import { registerOllamaHandlers } from './ipc/ollama';
 import { registerOllamaCleanup } from './ipc/ollamaManager';
 import { registerTerminalHandlers } from './ipc/terminal';
@@ -440,6 +441,7 @@ app.whenReady().then(() => {
   registerQuotingHandlers(db);
   registerMakerStudioHandlers(db);
   registerScriptureHandlers(db, getMainWindow);
+  registerLessonsHandlers(db);
   registerOllamaHandlers(getMainWindow);
   registerOllamaCleanup();
   registerTerminalHandlers(getMainWindow, henryDir);

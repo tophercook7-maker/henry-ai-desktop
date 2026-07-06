@@ -472,6 +472,17 @@ contextBridge.exposeInMainWorld('henryAPI', {
   scriptureSearch: (q: string) => ipcRenderer.invoke('scripture:search', q),
   pickScriptureImportJson: () => ipcRenderer.invoke('scripture:pickImportJson'),
 
+  // ── Lessons / Curriculum (Henry as teacher) ────────────────
+  lessonsCoursesList: () => ipcRenderer.invoke('lessons:courses:list'),
+  lessonsCourseCreate: (payload: Record<string, unknown>) => ipcRenderer.invoke('lessons:courses:create', payload),
+  lessonsCourseGet: (id: string) => ipcRenderer.invoke('lessons:courses:get', id),
+  lessonsCourseDelete: (id: string) => ipcRenderer.invoke('lessons:courses:delete', id),
+  lessonsLessonGet: (id: string) => ipcRenderer.invoke('lessons:lessons:get', id),
+  lessonsLessonUpdateStatus: (payload: Record<string, unknown>) => ipcRenderer.invoke('lessons:lessons:updateStatus', payload),
+  lessonsLessonSaveContent: (payload: Record<string, unknown>) => ipcRenderer.invoke('lessons:lessons:saveContent', payload),
+  lessonsReviewSave: (payload: Record<string, unknown>) => ipcRenderer.invoke('lessons:reviews:save', payload),
+  lessonsReviewsForCourse: (courseId: string) => ipcRenderer.invoke('lessons:reviews:listForCourse', courseId),
+
   // ── File System ───────────────────────────────────────────
   readDirectory: (dirPath?: string) => ipcRenderer.invoke('fs:readDirectory', dirPath),
   readFile: (filePath: string) => ipcRenderer.invoke('fs:readFile', filePath),

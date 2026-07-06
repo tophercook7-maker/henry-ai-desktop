@@ -400,6 +400,47 @@ declare global {
     updated_at?: string;
   }
 
+  // ── Lessons / Curriculum (courses + lessons + lesson_reviews tables) ──
+  /** An AI-generated course (syllabus lives in outline_json). */
+  interface HenryLessonCourse {
+    id: string;
+    title: string;
+    topic: string;
+    kind: 'bible' | 'general';
+    outline_json: string;
+    created_at?: string;
+    updated_at?: string;
+    /** Aggregates from lessons:courses:list. */
+    lesson_count?: number;
+    completed_count?: number | null;
+  }
+
+  /** One lesson within a course; content_md is AI-generated then cached. */
+  interface HenryLesson {
+    id: string;
+    course_id: string;
+    idx: number;
+    title: string;
+    content_md: string | null;
+    status: 'locked' | 'available' | 'in_progress' | 'completed';
+    score: number | null;
+    completed_at: string | null;
+  }
+
+  /** A saved quiz attempt (lesson_reviews table). */
+  interface HenryLessonReview {
+    id: string;
+    lesson_id: string;
+    quiz_json: string;
+    answers_json: string;
+    score: number;
+    created_at: string;
+    lesson_title?: string;
+    lesson_idx?: number;
+  }
+
+  type HenryLessonsResult<T> = { ok: true; result: T } | { ok: false; error: string };
+
   // ── Voice (local whisper.cpp STT + say/ElevenLabs TTS) ─────
   /** Uniform envelope for every voice:* IPC call. */
   type HenryVoiceResult<T> = { ok: true; result: T } | { ok: false; error: string };
@@ -697,6 +738,25 @@ declare global {
     createBookEntry?: (entry: Partial<HenryBookEntry>) => Promise<{ ok: boolean; result?: HenryBookEntry; error?: string }>;
     updateBookEntry?: (id: string, patch: Partial<HenryBookEntry>) => Promise<{ ok: boolean; result?: HenryBookEntry; error?: string }>;
     deleteBookEntry?: (id: string) => Promise<{ ok: boolean; result?: { deleted: boolean }; error?: string }>;
+
+    // ── Lessons / Curriculum (Henry as teacher) ───────────────
+    lessonsCoursesList?: () => Promise<HenryLessonsResult<HenryLessonCourse[]>>;
+    lessonsCourseCreate?: (payload: {
+      title: string;
+      topic: string;
+      kind: 'bible' | 'general';
+      outline_json: string;
+      lessons: Array<{ title: string }>;
+    }) => Promise<HenryLessonsResult<{ course: HenryLessonCourse; lessons: HenryLesson[] }>>;
+    lessonsCourseGet?: (id: string) => Promise<HenryLessonsResult<{ course: HenryLessonCourse; lessons: HenryLesson[] } | null>>;
+    lessonsCourseDelete?: (id: string) => Promise<HenryLessonsResult<{ deleted: boolean }>>;
+    lessonsLessonGet?: (id: string) => Promise<HenryLessonsResult<HenryLesson | null>>;
+    lessonsLessonUpdateStatus?: (payload: { id: string; status: HenryLesson['status']; score?: number }) =>
+      Promise<HenryLessonsResult<{ lesson: HenryLesson; unlocked: HenryLesson | null }>>;
+    lessonsLessonSaveContent?: (payload: { id: string; content_md: string }) => Promise<HenryLessonsResult<HenryLesson>>;
+    lessonsReviewSave?: (payload: { lesson_id: string; quiz_json: string; answers_json: string; score: number }) =>
+      Promise<HenryLessonsResult<{ review: HenryLessonReview; lesson: HenryLesson; passed: boolean; unlocked: HenryLesson | null }>>;
+    lessonsReviewsForCourse?: (courseId: string) => Promise<HenryLessonsResult<HenryLessonReview[]>>;
 
     // ── Approval Queue ────────────────────────────────────────
     approvalsList?: (filter?: { status?: string; limit?: number }) => Promise<{ ok: boolean; result?: HenryApproval[]; error?: string }>;

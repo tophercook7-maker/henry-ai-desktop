@@ -8,8 +8,10 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import CoverStudio from './CoverStudio';
 
 type Entry = HenryBookEntry;
+type Section = 'material' | 'cover';
 type Kind = Entry['kind'];
 
 const KINDS: { id: Kind; label: string }[] = [
@@ -30,6 +32,7 @@ function api() {
 }
 
 export default function BookEnginePanel() {
+  const [section, setSection] = useState<Section>('material');
   const [entries, setEntries] = useState<Entry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -90,12 +93,24 @@ export default function BookEnginePanel() {
 
   return (
     <div className="h-full overflow-y-auto bg-henry-bg">
-      <div className="max-w-3xl mx-auto px-5 py-6">
+      <div className={`${section === 'cover' ? 'max-w-5xl' : 'max-w-3xl'} mx-auto px-5 py-6`}>
         <h1 className="text-xl font-semibold text-henry-text">Book</h1>
-        <p className="text-xs text-henry-text-muted mb-5">
-          Your life story, captured piece by piece. Save a moment, a lesson, a letter — the Book Crew turns it into chapters when you're ready.
+        <p className="text-xs text-henry-text-muted mb-4">
+          {section === 'material'
+            ? "Your life story, captured piece by piece. Save a moment, a lesson, a letter — the Book Crew turns it into chapters when you're ready."
+            : 'Design your book cover — Henry can teach you step by step, or generate and compose it for you.'}
         </p>
 
+        {/* Section tabs */}
+        <div className="flex items-center gap-1.5 mb-5">
+          <SectionTab active={section === 'material'} onClick={() => setSection('material')} label="📖 Material" />
+          <SectionTab active={section === 'cover'} onClick={() => setSection('cover')} label="🎨 Cover Studio" />
+        </div>
+
+        {section === 'cover' && <CoverStudio />}
+
+        {section === 'material' && (
+        <>
         {/* Capture */}
         <div className="bg-henry-surface/40 border border-henry-border/30 rounded-2xl p-4 mb-5">
           <div className="flex gap-2 mb-2">
@@ -160,8 +175,25 @@ export default function BookEnginePanel() {
             {shown.map((e) => <EntryCard key={e.id} entry={e} onRemove={remove} />)}
           </div>
         )}
+        </>
+        )}
       </div>
     </div>
+  );
+}
+
+function SectionTab({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-colors border ${
+        active
+          ? 'bg-henry-accent/15 border-henry-accent/40 text-henry-accent'
+          : 'border-henry-border/30 text-henry-text-muted hover:text-henry-text hover:bg-henry-surface/60'
+      }`}
+    >
+      {label}
+    </button>
   );
 }
 

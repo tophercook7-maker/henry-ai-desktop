@@ -8,10 +8,11 @@ import { sendToHenry } from '../../actions/store/chatBridgeStore';
 import { useStore } from '../../store';
 import { getCrossRefs } from '../../henry/crossReferences';
 import { callHenryAI, NoBackendAvailableError } from '../../henry/henryAI';
+import LessonsTab from './LessonsTab';
 
 const getApi = () => (window as any).henryAPI as any;
 
-type Tab = 'read' | 'lookup' | 'saved' | 'study' | 'import';
+type Tab = 'read' | 'lookup' | 'saved' | 'study' | 'lessons' | 'import';
 
 interface VerseResult {
   found: boolean;
@@ -630,11 +631,11 @@ export default function ScripturePanel() {
         </div>
         {/* Tabs */}
         <div className="flex gap-1 mt-3">
-          {(['read','lookup','saved','study','import'] as Tab[]).map(t => (
+          {(['read','lookup','saved','study','lessons','import'] as Tab[]).map(t => (
             <button key={t} onClick={() => setTabPersisted(t)}
               className={'text-[12px] px-3 py-1.5 rounded-lg font-medium transition-all capitalize ' +
                 (tab===t ? 'bg-henry-accent text-white' : 'bg-henry-surface border border-henry-border/30 text-henry-text-muted hover:text-henry-text')}>
-              {t==='read'?'📖 Read':t==='lookup'?'Lookup':t==='saved'?`Saved${savedCount>0?' ('+savedCount+')':''}`:t==='study'?(tab==='study' ? <span className='flex items-center gap-1'>Study <button onClick={e=>{e.stopPropagation();setShowReadingPlan(s=>!s)}} className='text-[9px] bg-henry-accent/15 text-henry-accent px-1.5 rounded'>📅</button></span> : 'Study'):'📥 Import'}
+              {t==='read'?'📖 Read':t==='lookup'?'Lookup':t==='saved'?`Saved${savedCount>0?' ('+savedCount+')':''}`:t==='study'?(tab==='study' ? <span className='flex items-center gap-1'>Study <button onClick={e=>{e.stopPropagation();setShowReadingPlan(s=>!s)}} className='text-[9px] bg-henry-accent/15 text-henry-accent px-1.5 rounded'>📅</button></span> : 'Study'):t==='lessons'?'🎓 Lessons':'📥 Import'}
             </button>
           ))}
         </div>
@@ -971,6 +972,9 @@ export default function ScripturePanel() {
           )}
         </div>
       )}
+      {/* ── LESSONS TAB ── Henry as teacher: Bible courses + "teach me anything" */}
+      {tab === 'lessons' && <LessonsTab />}
+
       {/* ── IMPORT TAB ── */}
       {/* 31-Day NT Reading Plan */}
       {tab === 'study' && showReadingPlan && (

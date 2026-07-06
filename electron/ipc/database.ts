@@ -214,12 +214,63 @@ function migrateDatabaseSchema(db: Database.Database) {
   // Machine connectivity — saved printer/CNC connections (electron/machines/).
   migrateMachineConnectionsSchema(db);
 
+  // Lessons / Curriculum — AI-generated courses ("teach me anything" + Bible).
+  migrateLessonsSchema(db);
+
   // Render daemon endpoint for Henry's direct video generation.
   try {
     db.prepare(
       `INSERT OR IGNORE INTO settings (key, value) VALUES ('render_endpoint', 'http://localhost:8799')`,
     ).run();
   } catch { /* ignore on unusual DB states */ }
+}
+
+/**
+ * Lessons / Curriculum (Scripture panel → Lessons tab). Henry as teacher:
+ * a `courses` row holds the AI-generated syllabus (outline_json), `lessons`
+ * hold per-lesson cached content + progression state (locked → available →
+ * in_progress → completed), and `lesson_reviews` log every quiz attempt.
+ * CRUD lives in electron/ipc/lessons.ts; AI generation happens renderer-side.
+ * Idempotent — safe to run on every launch.
+ */
+function migrateLessonsSchema(db: Database.Database) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS courses (
+      id           TEXT PRIMARY KEY,
+      title        TEXT NOT NULL,
+      topic        TEXT NOT NULL,
+      kind         TEXT NOT NULL DEFAULT 'general' CHECK(kind IN ('bible','general')),
+      outline_json TEXT NOT NULL DEFAULT '{}',
+      created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS lessons (
+      id           TEXT PRIMARY KEY,
+      course_id    TEXT NOT NULL,
+      idx          INTEGER NOT NULL,
+      title        TEXT NOT NULL,
+      content_md   TEXT,
+      status       TEXT NOT NULL DEFAULT 'locked'
+        CHECK(status IN ('locked','available','in_progress','completed')),
+      score        REAL,
+      completed_at TEXT,
+      FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_lessons_course ON lessons(course_id, idx);
+
+    CREATE TABLE IF NOT EXISTS lesson_reviews (
+      id           TEXT PRIMARY KEY,
+      lesson_id    TEXT NOT NULL,
+      quiz_json    TEXT NOT NULL,
+      answers_json TEXT NOT NULL,
+      score        REAL NOT NULL DEFAULT 0,
+      created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (lesson_id) REFERENCES lessons(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_lesson_reviews_lesson
+      ON lesson_reviews(lesson_id, created_at DESC);
+  `);
 }
 
 /**
