@@ -137,6 +137,87 @@ export const HEALTH_CHECKS: HealthCheck[] = [
     fix: async () => brewInstall('ffmpeg'),
   },
 
+  // ── Voice (free local speech) ─────────────────────────────────────────────
+  {
+    id: 'whisper_cpp',
+    name: 'Whisper (local speech-to-text)',
+    category: 'recommended',
+    description: 'whisper.cpp — free, offline voice input for Henry',
+    check: async () => {
+      try {
+        const { detectWhisperBinary } = require('../voice/stt') as typeof import('../voice/stt');
+        const bin = detectWhisperBinary(true);
+        return bin
+          ? { ok: true, detail: bin }
+          : { ok: false, detail: 'whisper-cli not installed — voice input runs one-time setup on first use' };
+      } catch (e) {
+        return { ok: false, detail: String(e) };
+      }
+    },
+    fix: async () => {
+      if (!toolVersion(BREW)) {
+        return { success: false, message: 'Homebrew not found — cannot auto-install whisper-cpp' };
+      }
+      return brewInstall('whisper-cpp');
+    },
+  },
+
+  {
+    id: 'whisper_model',
+    name: 'Whisper model (base.en)',
+    category: 'optional',
+    description: 'The ~148MB speech model whisper.cpp uses to transcribe your voice',
+    check: async () => {
+      try {
+        const { detectWhisperBinary, sttModelPresent, sttModelPath } =
+          require('../voice/stt') as typeof import('../voice/stt');
+        if (sttModelPresent()) return { ok: true, detail: sttModelPath() };
+        if (!detectWhisperBinary()) {
+          // No binary yet — the model alone is useless; report once via whisper_cpp.
+          return { ok: true, detail: 'Waiting on whisper-cli install — model downloads during voice setup' };
+        }
+        return { ok: false, detail: 'Speech model not downloaded (~148MB, one-time)' };
+      } catch (e) {
+        return { ok: false, detail: String(e) };
+      }
+    },
+    fix: async () => {
+      try {
+        const { downloadSttModel } = require('../voice/stt') as typeof import('../voice/stt');
+        await downloadSttModel();
+        return { success: true, message: 'Downloaded ggml-base.en speech model' };
+      } catch (e) {
+        return { success: false, message: `Model download failed: ${e instanceof Error ? e.message : String(e)}` };
+      }
+    },
+  },
+
+  {
+    id: 'microphone',
+    name: 'Microphone Permission',
+    category: 'recommended',
+    description: 'Required so Henry can hear you — voice input in chat',
+    check: async () => {
+      try {
+        const { systemPreferences } = require('electron');
+        const status = systemPreferences.getMediaAccessStatus('microphone');
+        // 'not-determined' is fine — macOS prompts automatically on first use.
+        if (status === 'granted' || status === 'not-determined') return { ok: true, detail: status };
+        return {
+          ok: false,
+          detail: 'Microphone not granted — System Settings → Privacy → Microphone → Henry AI',
+        };
+      } catch {
+        return { ok: true };
+      }
+    },
+    fix: async () => {
+      // Report-only (like Screen Recording): open the right pane, user flips the toggle.
+      exec('open "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"');
+      return { success: false, message: 'Opening Microphone settings — enable Henry AI, then try the mic again' };
+    },
+  },
+
   {
     id: 'yt_dlp',
     name: 'yt-dlp',

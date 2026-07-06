@@ -50,7 +50,13 @@ import {
   isBinaryContent,
 } from '@/henry/errorMessages';
 import { resolveChat, requiresQualityModel, modelShortName } from '@/henry/modelRouter';
-import { speak as ttsSpeakFn, cancelTTS } from '@/henry/ttsService';
+import { cancelTTS } from '@/henry/ttsService';
+import {
+  useVoiceStore,
+  speakAssistantReply,
+  stopSpeaking as voiceStopSpeaking,
+  VOICE_REPLIES_SETTING_KEY,
+} from '@/henry/voice';
 import { recordUsage } from '@/henry/savingsEngine';
 import { runAutoMemory } from '@/henry/autoMemory';
 import { extractFactsFromConversation, addFacts, persistFactsToDb, buildMemoryContext } from '@/henry/memoryPipeline';
@@ -397,9 +403,9 @@ export default function ChatView() {
   const [bibleStatus, setBibleStatus] = useState<BibleCorpusStatus>({ loaded: false, bookCount: 0, verseCount: 0, sizeBytes: 0 });
   const [bibleLoadProgress, setBibleLoadProgress] = useState<LoadProgress | null>(null);
   const [currentWeather, setCurrentWeather] = useState<WeatherSnapshot | null>(null);
-  const [ttsEnabled, setTtsEnabled] = useState(() => {
-    try { return localStorage.getItem('henry_tts_enabled') === 'true'; } catch { return false; }
-  });
+  // Voice replies — persisted as the `voice_replies` setting (legacy key kept in sync).
+  const [ttsEnabled, setTtsEnabled] = useState(() => useVoiceStore.getState().voiceReplies);
+  const handsFreeVoice = useVoiceStore((s) => s.handsFree);
   // Agent mode (off by default): when on, chat turns are routed through the
   // agent ToolRunner so Henry can use his tools. Confirm-tier actions (send a
   // message, create an event) still pause for approval.
@@ -601,26 +607,34 @@ export default function ChatView() {
     })();
   }, []);
 
-  // TTS: speak Henry's response when streaming ends
+  // Voice replies: speak Henry's completed response when streaming ends
+  // (never token-by-token). Hands-free mode always speaks; the persisted
+  // "voice replies" toggle covers normal chats. Skipped when the user has
+  // started typing their next message.
   useEffect(() => {
-    if (!ttsEnabled || isStreaming) return;
+    if ((!ttsEnabled && !handsFreeVoice) || isStreaming) return;
     const lastMsg = messages[messages.length - 1];
     if (!lastMsg || lastMsg.role !== 'assistant') return;
     if (lastSpokenMsgIdRef.current === lastMsg.id) return;
     lastSpokenMsgIdRef.current = lastMsg.id;
+    if (useVoiceStore.getState().userTypedSinceReply) return; // user moved on — stay quiet
     const s = useStore.getState().settings;
     window.henryAPI?.getProviders?.().then((providers: any[]) => {
-      void ttsSpeakFn(lastMsg.content, s, providers);
+      void speakAssistantReply(lastMsg.content, s, providers);
     }).catch(() => {
-      void ttsSpeakFn(lastMsg.content, s, []);
+      void speakAssistantReply(lastMsg.content, s, []);
     });
-  }, [isStreaming, ttsEnabled, messages]);
+  }, [isStreaming, ttsEnabled, handsFreeVoice, messages]);
 
   function toggleTts() {
     const next = !ttsEnabled;
-    if (!next) cancelTTS();
+    if (!next) {
+      cancelTTS();
+      void voiceStopSpeaking();
+    }
     setTtsEnabled(next);
-    try { localStorage.setItem('henry_tts_enabled', String(next)); } catch { /* ignore */ }
+    useVoiceStore.getState().setVoiceReplies(next); // persists voice_replies + legacy key
+    useStore.getState().updateSetting(VOICE_REPLIES_SETTING_KEY, String(next));
   }
 
   /** Restore active thread id before persistence effects run (avoids wiping saved conversation). */
@@ -1256,6 +1270,7 @@ What do you want to tackle first?`);
   async function handleSend(content: string) {
     if (!content.trim() || isStreaming) return;
     cancelTTS();
+    void voiceStopSpeaking(); // cut Henry off — the user is talking now
 
     const parsedCmd = parseUserCommandLine(content);
     if (parsedCmd) {

@@ -33,6 +33,8 @@ import { registerSchedulerHandlers } from './ipc/scheduler';
 import { HenryScheduler } from './agent/scheduler';
 import { registerSyncBridgeIpc, setSyncDb, startSyncServer } from './ipc/syncBridge';
 import { runDiagnostic, saveReport } from './ipc/selfRepair';
+import { registerVoiceSttHandlers } from './voice/stt';
+import { registerVoiceTtsHandlers } from './voice/tts';
 
 
 // Global IPC error handler — prevents any single handler crash from killing the process
@@ -446,6 +448,8 @@ app.whenReady().then(() => {
   registerSessionStoreHandlers(henryDir);
   registerAgentHandlers(db, getMainWindow);
   registerCoderHandlers(db, getMainWindow);
+  registerVoiceSttHandlers(getMainWindow);
+  registerVoiceTtsHandlers(db);
 
   // ── Agent Scheduler (Henry's Routines) ───────────────────────────────────
   // Registered after the agent tool kit so the registry is populated before any

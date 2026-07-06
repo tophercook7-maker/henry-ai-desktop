@@ -2,6 +2,14 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useStore } from '../../store';
 import { transcribeWithGroq } from '../../henry/ttsService';
 import { useAmbientStore } from '../../henry/ambientStateStore';
+import {
+  useVoiceStore,
+  voiceIpcAvailable,
+  getVoiceSttStatus,
+  runVoiceSetup,
+  transcribeLocal,
+  stopSpeaking,
+} from '../../henry/voice';
 import { toast } from '../ui/Toast';
 
 interface ChatInputProps {
@@ -49,6 +57,57 @@ export default function ChatInput({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const speechRecRef = useRef<any>(null);
   const settings = useStore((s) => s.settings);
+  const providers = useStore((s) => s.providers);
+
+  // ── Voice stack (FREE local whisper.cpp preferred; Groq fallback) ─────────
+  const sttReady = useVoiceStore((s) => s.sttReady);
+  const handsFree = useVoiceStore((s) => s.handsFree);
+  const setHandsFree = useVoiceStore((s) => s.setHandsFree);
+  const voiceState = useVoiceStore((s) => s.state);
+  const [showVoiceSetup, setShowVoiceSetup] = useState(false);
+  const [voiceSetupBusy, setVoiceSetupBusy] = useState(false);
+  const [voiceSetupProgress, setVoiceSetupProgress] = useState<HenryVoiceSetupProgress | null>(null);
+  const [voiceSetupError, setVoiceSetupError] = useState<string | null>(null);
+  const [recordSeconds, setRecordSeconds] = useState(0);
+  const handsFreeRef = useRef(handsFree);
+  handsFreeRef.current = handsFree;
+
+  const groqKeyPresent = providers.some((p) => p.id === 'groq' && p.apiKey);
+
+  // Probe local whisper readiness once (Electron only).
+  useEffect(() => {
+    if (voiceIpcAvailable()) void getVoiceSttStatus();
+  }, []);
+
+  // Live recording timer.
+  useEffect(() => {
+    if (!listening) {
+      setRecordSeconds(0);
+      return;
+    }
+    const started = Date.now();
+    const t = setInterval(() => setRecordSeconds(Math.floor((Date.now() - started) / 1000)), 500);
+    return () => clearInterval(t);
+  }, [listening]);
+
+  async function startVoiceSetup() {
+    setVoiceSetupBusy(true);
+    setVoiceSetupError(null);
+    try {
+      const status = await runVoiceSetup((p) => setVoiceSetupProgress(p));
+      if (status.ready) {
+        setShowVoiceSetup(false);
+        toast.success('Free voice is ready — tap the mic and talk.');
+      } else {
+        setVoiceSetupError('Setup finished but voice is still not ready — check Settings → Voice.');
+      }
+    } catch (e) {
+      setVoiceSetupError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setVoiceSetupBusy(false);
+      setVoiceSetupProgress(null);
+    }
+  }
 
   // Handle global henry_focus_input event (from keyboard shortcut Cmd+K)
   useEffect(() => {
@@ -183,27 +242,44 @@ export default function ChatInput({
         return;
       }
 
-      const providers = await window.henryAPI.getProviders();
+      const allProviders = await window.henryAPI.getProviders();
       const s = useStore.getState().settings;
 
       let transcript: string | undefined;
 
-      if (window.henryAPI.whisperTranscribe) {
-        // Electron desktop path — uses native IPC
-        const groqProvider = providers.find((p: any) => p.id === 'groq');
+      // 1. FREE local whisper.cpp — the default when set up (works offline).
+      if (voiceIpcAvailable() && useVoiceStore.getState().sttReady) {
+        try {
+          transcript = await transcribeLocal(blob);
+        } catch (err) {
+          console.warn('Local whisper failed, trying cloud fallback:', err);
+        }
+      }
+
+      // 2. Groq Whisper fallback (needs a key + internet).
+      if (!transcript && window.henryAPI.whisperTranscribe) {
+        const groqProvider = allProviders.find((p: any) => p.id === 'groq');
         const apiKey = groqProvider?.api_key || groqProvider?.apiKey || '';
         if (apiKey) {
           transcript = await window.henryAPI.whisperTranscribe(blob, apiKey);
         }
       }
 
+      // 3. Web path — Groq Whisper via fetch.
       if (!transcript) {
-        // Web path — call Groq Whisper directly via proxy
-        transcript = await transcribeWithGroq(blob, s, providers);
+        transcript = await transcribeWithGroq(blob, s, allProviders);
       }
 
-      if (transcript?.trim()) {
-        setInput((prev) => prev ? `${prev} ${transcript!.trim()}` : transcript!.trim());
+      const text = transcript?.trim();
+      if (text) {
+        if (handsFreeRef.current) {
+          // Hands-free: send it straight to Henry — the reply is spoken back.
+          setTranscribing(false);
+          useVoiceStore.getState().setUserTyped(false);
+          onSend(text);
+          return;
+        }
+        setInput((prev) => prev ? `${prev} ${text}` : text);
         requestAnimationFrame(() => {
           const el = textareaRef.current;
           if (el) {
@@ -215,6 +291,7 @@ export default function ChatInput({
       }
     } catch (err) {
       console.warn('Whisper transcription failed:', err);
+      toast.error(err instanceof Error ? err.message : 'Transcription failed');
     } finally {
       setTranscribing(false);
       useAmbientStore.getState().setState('ready');
@@ -224,15 +301,21 @@ export default function ChatInput({
   function toggleVoice() {
     if (listening) {
       stopGroqWhisper();
-    } else {
-      startGroqWhisper();
+      return;
     }
+    // No local whisper yet and no cloud key → offer the one-time free setup.
+    if (voiceIpcAvailable() && sttReady === false && !groqKeyPresent) {
+      setShowVoiceSetup(true);
+      return;
+    }
+    startGroqWhisper();
   }
 
   function handleSubmit() {
     const trimmed = input.trim();
     if (!trimmed || isStreaming) return;
     if (listening) stopGroqWhisper();
+    useVoiceStore.getState().setUserTyped(false);
     onSend(trimmed);
     setInput('');
     requestAnimationFrame(() => {
@@ -289,11 +372,66 @@ export default function ChatInput({
         </div>
       )}
 
+      {/* One-time free voice setup card — shown when whisper isn't ready yet */}
+      {showVoiceSetup && (
+        <div className="mb-2 rounded-xl border border-henry-accent/30 bg-henry-accent/5 px-4 py-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-henry-text">Set up free voice</p>
+              <p className="text-[11px] text-henry-text-muted mt-0.5 leading-relaxed">
+                One-time download (~150MB). Henry listens with Whisper running on your Mac —
+                free, private, works offline.
+              </p>
+              {voiceSetupBusy && (
+                <div className="mt-2">
+                  <div className="h-1.5 rounded-full bg-henry-border/40 overflow-hidden">
+                    <div
+                      className="h-full bg-henry-accent transition-all"
+                      style={{ width: `${voiceSetupProgress?.pct ?? 5}%` }}
+                    />
+                  </div>
+                  <p className="text-[10px] text-henry-text-muted mt-1">
+                    {voiceSetupProgress?.message ?? 'Preparing…'}
+                    {voiceSetupProgress?.total
+                      ? ` ${(Math.round((voiceSetupProgress.downloaded ?? 0) / 1048576))} / ${Math.round(voiceSetupProgress.total / 1048576)} MB`
+                      : ''}
+                  </p>
+                </div>
+              )}
+              {voiceSetupError && (
+                <p className="text-[11px] text-henry-error mt-1.5">{voiceSetupError}</p>
+              )}
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              {!voiceSetupBusy && (
+                <button
+                  onClick={() => void startVoiceSetup()}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium bg-henry-accent text-white hover:bg-henry-accent-hover transition-colors"
+                >
+                  Set up
+                </button>
+              )}
+              <button
+                onClick={() => setShowVoiceSetup(false)}
+                className="text-henry-text-muted hover:text-henry-text px-1"
+                title="Not now"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-end gap-2 bg-henry-bg/80 border border-henry-border rounded-xl px-4 py-3 focus-within:border-henry-accent/50 transition-colors">
         <textarea
           ref={textareaRef}
           value={input}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={(e) => {
+            setInput(e.target.value);
+            // Manual typing means: don't auto-speak the reply the user is now editing past.
+            if (e.target.value.trim()) useVoiceStore.getState().setUserTyped(true);
+          }}
           onKeyDown={handleKeyDown}
           placeholder={listening ? 'Listening… tap mic to stop' : transcribing ? 'Transcribing…' : placeholder}
           rows={1}
@@ -302,12 +440,22 @@ export default function ChatInput({
         />
 
         <div className="flex items-center gap-1.5 shrink-0">
-          {/* Mic button — Groq Whisper — first and prominent */}
+          {/* Mic button — local whisper.cpp, Groq fallback — first and prominent */}
           {micAvailable && (
             <button
               onClick={toggleVoice}
               disabled={transcribing || isStreaming}
-              title={listening ? 'Stop recording' : transcribing ? 'Transcribing…' : 'Voice input (Groq Whisper)'}
+              title={
+                listening
+                  ? 'Stop recording'
+                  : transcribing
+                  ? 'Transcribing…'
+                  : sttReady
+                  ? 'Voice input (free local Whisper)'
+                  : groqKeyPresent
+                  ? 'Voice input (Groq Whisper)'
+                  : 'Voice input — one-time free setup'
+              }
               className={`p-2.5 rounded-xl transition-all ${
                 listening
                   ? 'bg-henry-error/20 text-henry-error animate-pulse hover:bg-henry-error/30 ring-1 ring-henry-error/40'
@@ -331,6 +479,45 @@ export default function ChatInput({
                   <line x1="8" y1="23" x2="16" y2="23" />
                 </svg>
               )}
+            </button>
+          )}
+
+          {/* Hands-free toggle — voice in, voice out: transcript auto-sends, reply is spoken */}
+          {micAvailable && voiceIpcAvailable() && (
+            <button
+              onClick={() => setHandsFree(!handsFree)}
+              title={
+                handsFree
+                  ? 'Hands-free ON — your words send automatically and Henry speaks his reply'
+                  : 'Hands-free mode — talk, Henry answers out loud'
+              }
+              aria-pressed={handsFree}
+              className={`p-2 rounded-lg transition-all ${
+                handsFree
+                  ? 'bg-henry-accent/20 text-henry-accent hover:bg-henry-accent/30 ring-1 ring-henry-accent/40'
+                  : 'text-henry-text-muted hover:text-henry-text hover:bg-henry-hover/50'
+              }`}
+            >
+              {/* headset icon */}
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 18v-6a9 9 0 0 1 18 0v6" />
+                <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z" />
+              </svg>
+            </button>
+          )}
+
+          {/* Stop speaking — visible while Henry is talking */}
+          {voiceState === 'speaking' && (
+            <button
+              onClick={() => void stopSpeaking()}
+              title="Stop speaking"
+              className="p-2 rounded-lg bg-henry-error/15 text-henry-error hover:bg-henry-error/25 transition-all animate-pulse"
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                <line x1="16" y1="9" x2="22" y2="15" />
+                <line x1="22" y1="9" x2="16" y2="15" />
+              </svg>
             </button>
           )}
 
@@ -469,14 +656,22 @@ export default function ChatInput({
           {listening ? (
             <span className="flex items-center gap-1.5 text-henry-error font-medium">
               <span className="inline-block w-1.5 h-1.5 rounded-full bg-henry-error animate-pulse" />
+              <span className="tabular-nums">
+                {Math.floor(recordSeconds / 60)}:{String(recordSeconds % 60).padStart(2, '0')}
+              </span>
               {interimTranscript
                 ? <span className="text-henry-text font-normal truncate max-w-[280px]">{interimTranscript}</span>
-                : 'Listening… tap mic to stop'}
+                : handsFree ? 'Listening (hands-free)… tap mic to send' : 'Listening… tap mic to stop'}
             </span>
           ) : transcribing ? (
             <span className="flex items-center gap-1.5 text-henry-accent">
               <span className="inline-block w-1.5 h-1.5 rounded-full bg-henry-accent animate-pulse" />
-              Transcribing with Whisper…
+              {sttReady ? 'Transcribing locally with Whisper…' : 'Transcribing with Whisper…'}
+            </span>
+          ) : voiceState === 'speaking' ? (
+            <span className="flex items-center gap-1.5 text-henry-accent">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-henry-accent animate-pulse" />
+              Henry is speaking…
             </span>
           ) : (
             <>

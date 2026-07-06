@@ -400,6 +400,50 @@ declare global {
     updated_at?: string;
   }
 
+  // ── Voice (local whisper.cpp STT + say/ElevenLabs TTS) ─────
+  /** Uniform envelope for every voice:* IPC call. */
+  type HenryVoiceResult<T> = { ok: true; result: T } | { ok: false; error: string };
+
+  interface HenryVoiceSttStatus {
+    binaryPresent: boolean;
+    binaryPath: string | null;
+    modelPresent: boolean;
+    modelPath: string;
+    ready: boolean;
+  }
+
+  interface HenryVoiceSetupProgress {
+    phase: 'binary' | 'model';
+    message: string;
+    downloaded?: number;
+    total?: number;
+    pct?: number;
+  }
+
+  interface HenrySayVoice {
+    name: string;
+    lang: string;
+    sample: string;
+  }
+
+  interface HenryVoiceTtsStatus {
+    engine: 'auto' | 'local' | 'elevenlabs';
+    active: 'local' | 'elevenlabs';
+    elevenLabsKeyPresent: boolean;
+    elevenVoiceId: string;
+    sayVoice: string;
+    sayRate: number;
+    sayVoices: HenrySayVoice[];
+  }
+
+  interface HenryVoiceSpeakResult {
+    engine: 'local' | 'elevenlabs' | 'none';
+    spoke?: boolean;
+    /** ElevenLabs mp3 bytes — play in the renderer via an Audio element. */
+    audio?: Uint8Array;
+    fellBack?: boolean;
+  }
+
   interface HenryApproval {
     id: string;
     tool_name: string;
@@ -667,6 +711,15 @@ declare global {
     deleteRoutine?: (id: string) => Promise<{ ok: boolean; result?: boolean; error?: string }>;
     onSchedulerTaskStarted?: (cb: (data: { id: string; name: string }) => void) => () => void;
     onSchedulerTaskCompleted?: (cb: (data: { id: string; name: string; ok: boolean; sessionId?: string; content?: string; error?: string }) => void) => () => void;
+
+    // ── Voice (Electron-only — local whisper STT + say/ElevenLabs TTS) ────
+    voiceSttStatus?: (opts?: { refresh?: boolean }) => Promise<HenryVoiceResult<HenryVoiceSttStatus>>;
+    voiceSttSetup?: () => Promise<HenryVoiceResult<HenryVoiceSttStatus>>;
+    onVoiceSttSetupProgress?: (cb: (p: HenryVoiceSetupProgress) => void) => () => void;
+    voiceTranscribe?: (audio: ArrayBuffer) => Promise<HenryVoiceResult<{ text: string; ms: number }>>;
+    voiceSpeak?: (params: { text: string; engine?: 'auto' | 'local' | 'elevenlabs' }) => Promise<HenryVoiceResult<HenryVoiceSpeakResult>>;
+    voiceStopSpeaking?: () => Promise<HenryVoiceResult<{ stopped: boolean }>>;
+    voiceTtsStatus?: () => Promise<HenryVoiceResult<HenryVoiceTtsStatus>>;
 
     // ── Companion Sync Bridge ─────────────────────────────────────────────
     getLocalGatewayStatus?: () => Promise<{ active: boolean; url?: string } | null>;

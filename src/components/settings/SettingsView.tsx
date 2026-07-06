@@ -34,6 +34,17 @@ import {
   isCoderEngineChoice,
   type CoderEngineChoice,
 } from '../../henry/coderEngine';
+import {
+  voiceIpcAvailable,
+  getVoiceSttStatus,
+  getVoiceTtsStatus,
+  runVoiceSetup,
+  speak as voiceSpeak,
+  stopSpeaking as voiceStopSpeaking,
+  startVoiceRecording,
+  stopVoiceRecording,
+  transcribeLocal,
+} from '../../henry/voice';
 
 // Providers that take an API key and can drive chat. (Ollama is local/keyless.)
 const CLOUD_PROVIDER_IDS = ['openai', 'anthropic', 'google', 'groq'] as const;
@@ -369,6 +380,267 @@ function CoderEngineSection() {
   );
 }
 
+// ── Voice ────────────────────────────────────────────────────────────────────
+
+function VoiceSection() {
+  const settings = useStore((s) => s.settings);
+  const updateSetting = useStore((s) => s.updateSetting);
+  const setProviders = useStore((s) => s.setProviders);
+
+  const [stt, setStt] = useState<HenryVoiceSttStatus | null>(null);
+  const [tts, setTts] = useState<HenryVoiceTtsStatus | null>(null);
+  const [setupBusy, setSetupBusy] = useState(false);
+  const [setupProgress, setSetupProgress] = useState<HenryVoiceSetupProgress | null>(null);
+  const [elevenKey, setElevenKey] = useState('');
+  const [elevenBusy, setElevenBusy] = useState(false);
+  const [speakBusy, setSpeakBusy] = useState(false);
+  const [listenTest, setListenTest] = useState<'idle' | 'recording' | 'transcribing'>('idle');
+  const [listenResult, setListenResult] = useState<string | null>(null);
+
+  const refresh = async (refreshBinary = false) => {
+    const [s, t] = await Promise.all([getVoiceSttStatus(refreshBinary), getVoiceTtsStatus()]);
+    setStt(s);
+    setTts(t);
+  };
+
+  useEffect(() => {
+    if (voiceIpcAvailable()) void refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  if (!voiceIpcAvailable()) return null;
+
+  const saveVoiceSetting = async (key: string, value: string) => {
+    try {
+      await window.henryAPI.saveSetting?.(key, value);
+      updateSetting(key, value);
+      void refresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not save');
+    }
+  };
+
+  const runSetup = async () => {
+    setSetupBusy(true);
+    try {
+      await runVoiceSetup((p) => setSetupProgress(p));
+      toast.success('Free voice is ready');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Voice setup failed');
+    } finally {
+      setSetupBusy(false);
+      setSetupProgress(null);
+      void refresh(true);
+    }
+  };
+
+  const saveElevenKey = async () => {
+    const key = elevenKey.trim();
+    if (!key) return;
+    setElevenBusy(true);
+    try {
+      // Stored exactly like every other provider key (encrypted at rest).
+      await window.henryAPI.saveProvider?.({
+        id: 'elevenlabs',
+        name: 'ElevenLabs',
+        apiKey: key,
+        enabled: true,
+        models: '[]',
+      });
+      await refreshProviders(setProviders);
+      setElevenKey('');
+      toast.success('ElevenLabs key saved — Henry will use it for his speaking voice');
+      void refresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not save key');
+    } finally {
+      setElevenBusy(false);
+    }
+  };
+
+  const testSpeaking = async () => {
+    setSpeakBusy(true);
+    try {
+      await voiceSpeak("Hi, it's Henry. This is how I sound.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Speaking test failed');
+    } finally {
+      setSpeakBusy(false);
+    }
+  };
+
+  const testListening = async () => {
+    if (listenTest === 'recording') {
+      setListenTest('transcribing');
+      try {
+        const blob = await stopVoiceRecording();
+        if (!blob) {
+          setListenResult('No audio captured — try speaking a bit longer.');
+        } else {
+          const text = await transcribeLocal(blob);
+          setListenResult(text ? `Heard: “${text}”` : 'Heard silence — try again closer to the mic.');
+        }
+      } catch (e) {
+        setListenResult(e instanceof Error ? e.message : String(e));
+      } finally {
+        setListenTest('idle');
+      }
+      return;
+    }
+    setListenResult(null);
+    try {
+      await startVoiceRecording();
+      setListenTest('recording');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Microphone unavailable');
+    }
+  };
+
+  const englishVoices = (tts?.sayVoices ?? []).filter((v) => v.lang.toLowerCase().startsWith('en'));
+  const engine = settings.voice_tts_engine === 'local' || settings.voice_tts_engine === 'elevenlabs'
+    ? settings.voice_tts_engine
+    : 'auto';
+
+  return (
+    <div className={cardCls}>
+      <SectionHeader
+        title="Voice"
+        sub="Henry talks and listens. Listening runs FREE on your Mac (whisper.cpp). Speaking uses the free macOS voice — or ElevenLabs automatically when a key is saved."
+      />
+      <div className="space-y-4">
+        {/* ── Listening (STT) ── */}
+        <div>
+          <label className={labelCls}>Listening (speech-to-text)</label>
+          <div className="text-[11px] text-henry-text-muted space-y-1">
+            <div>
+              Whisper engine:{' '}
+              {stt?.binaryPresent ? (
+                <span className="text-emerald-400">installed ({stt.binaryPath})</span>
+              ) : (
+                <span>not installed</span>
+              )}
+            </div>
+            <div>
+              Speech model (base.en, ~148MB):{' '}
+              {stt?.modelPresent ? (
+                <span className="text-emerald-400">downloaded</span>
+              ) : (
+                <span>not downloaded</span>
+              )}
+            </div>
+          </div>
+          {setupBusy && (
+            <div className="mt-2">
+              <div className="h-1.5 rounded-full bg-henry-border/40 overflow-hidden">
+                <div className="h-full bg-henry-accent transition-all" style={{ width: `${setupProgress?.pct ?? 5}%` }} />
+              </div>
+              <p className="text-[10px] text-henry-text-muted mt-1">{setupProgress?.message ?? 'Preparing…'}</p>
+            </div>
+          )}
+          <div className="flex gap-2 mt-2">
+            {!stt?.ready && (
+              <button className={btnCls} onClick={() => void runSetup()} disabled={setupBusy}>
+                {setupBusy ? 'Setting up…' : 'Set up free voice (~150MB, one-time)'}
+              </button>
+            )}
+            <button className={btnCls} onClick={() => void refresh(true)}>Re-check</button>
+            <button className={btnCls} onClick={() => void testListening()} disabled={!stt?.ready || listenTest === 'transcribing'}>
+              {listenTest === 'recording' ? 'Stop + transcribe' : listenTest === 'transcribing' ? 'Transcribing…' : 'Test listening'}
+            </button>
+          </div>
+          {listenResult && <p className="text-[11px] text-henry-text-dim mt-1.5">{listenResult}</p>}
+        </div>
+
+        {/* ── Speaking (TTS) ── */}
+        <div className="border-t border-henry-border/20 pt-3">
+          <label className={labelCls}>Speaking voice</label>
+          <select
+            className={inputCls}
+            value={engine}
+            onChange={(e) => void saveVoiceSetting('voice_tts_engine', e.target.value)}
+          >
+            <option value="auto">Auto — ElevenLabs when a key is saved, else free macOS voice</option>
+            <option value="local">Local only — free macOS voice (offline)</option>
+            <option value="elevenlabs">ElevenLabs only</option>
+          </select>
+          <p className="text-[10px] text-henry-text-muted mt-1">
+            Active now: <span className="text-henry-text-dim">{tts?.active === 'elevenlabs' ? 'ElevenLabs' : 'Free macOS voice'}</span>
+            {tts && !tts.elevenLabsKeyPresent && ' · no ElevenLabs key saved'}
+          </p>
+
+          <div className="grid grid-cols-2 gap-2 mt-2">
+            <div>
+              <label className={labelCls}>Local voice</label>
+              <select
+                className={inputCls}
+                value={settings.voice_say_voice || tts?.sayVoice || 'Samantha'}
+                onChange={(e) => void saveVoiceSetting('voice_say_voice', e.target.value)}
+              >
+                {englishVoices.length === 0 && <option value="Samantha">Samantha</option>}
+                {englishVoices.map((v) => (
+                  <option key={v.name} value={v.name}>{v.name} ({v.lang})</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className={labelCls}>Rate (words/min)</label>
+              <input
+                type="number"
+                min={90}
+                max={400}
+                className={inputCls}
+                value={settings.voice_say_rate || String(tts?.sayRate ?? 175)}
+                onChange={(e) => void saveVoiceSetting('voice_say_rate', e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="flex gap-2 mt-2">
+            <button className={btnCls} onClick={() => void testSpeaking()} disabled={speakBusy}>
+              {speakBusy ? 'Speaking…' : 'Test speaking'}
+            </button>
+            <button className={btnCls} onClick={() => void voiceStopSpeaking()}>Stop</button>
+          </div>
+        </div>
+
+        {/* ── ElevenLabs ── */}
+        <div className="border-t border-henry-border/20 pt-3">
+          <div className="flex items-center gap-2">
+            <label className={labelCls + ' mb-0'}>ElevenLabs (optional — premium voice)</label>
+            {tts?.elevenLabsKeyPresent ? (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400">key set</span>
+            ) : (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-henry-border/30 text-henry-text-muted">no key</span>
+            )}
+          </div>
+          <div className="flex gap-2 mt-1.5">
+            <input
+              type="password"
+              className={inputCls + ' flex-1'}
+              value={elevenKey}
+              onChange={(e) => setElevenKey(e.target.value)}
+              placeholder={tts?.elevenLabsKeyPresent ? 'Enter a new key to replace…' : 'xi-…'}
+              onKeyDown={(e) => { if (e.key === 'Enter') void saveElevenKey(); }}
+            />
+            <button className={btnCls} onClick={() => void saveElevenKey()} disabled={elevenBusy || !elevenKey.trim()}>
+              {elevenBusy ? 'Saving…' : tts?.elevenLabsKeyPresent ? 'Replace' : 'Save'}
+            </button>
+          </div>
+          <div className="mt-2">
+            <label className={labelCls}>ElevenLabs voice ID</label>
+            <input
+              className={inputCls}
+              value={settings.voice_tts_voice || tts?.elevenVoiceId || '21m00Tcm4TlvDq8ikWAM'}
+              onChange={(e) => void saveVoiceSetting('voice_tts_voice', e.target.value)}
+              placeholder="21m00Tcm4TlvDq8ikWAM (Rachel)"
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Root ─────────────────────────────────────────────────────────────────────
 
 export default function SettingsView() {
@@ -386,6 +658,7 @@ export default function SettingsView() {
         <ProvidersSection />
         <EnginesSection />
         <CoderEngineSection />
+        <VoiceSection />
 
         <div className={cardCls}>
           <SectionHeader title="Companion device" sub="Pair and control Henry from your phone." />

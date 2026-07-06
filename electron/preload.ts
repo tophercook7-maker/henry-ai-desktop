@@ -603,6 +603,19 @@ contextBridge.exposeInMainWorld('henryAPI', {
     return res.text();
   },
 
+  // ── Voice (local whisper.cpp STT + say/ElevenLabs TTS) ────
+  voiceSttStatus: (opts?: { refresh?: boolean }) => ipcRenderer.invoke('voice:sttStatus', opts),
+  voiceSttSetup: () => ipcRenderer.invoke('voice:sttSetup'),
+  onVoiceSttSetupProgress: (cb: (p: unknown) => void) => {
+    const handler = (_: IpcRendererEvent, data: unknown) => cb(data);
+    ipcRenderer.on('voice:stt:setup-progress', handler);
+    return () => ipcRenderer.removeListener('voice:stt:setup-progress', handler);
+  },
+  voiceTranscribe: (audio: ArrayBuffer) => ipcRenderer.invoke('voice:transcribe', new Uint8Array(audio)),
+  voiceSpeak: (params: { text: string; engine?: string }) => ipcRenderer.invoke('voice:speak', params),
+  voiceStopSpeaking: () => ipcRenderer.invoke('voice:stopSpeaking'),
+  voiceTtsStatus: () => ipcRenderer.invoke('voice:ttsStatus'),
+
   // ── Companion Sync Bridge ─────────────────────────────────
   syncStart: (port?: number) => ipcRenderer.invoke('henry:sync:start', port),
   syncStartTunnel: () => ipcRenderer.invoke('henry:sync:start-tunnel'),
