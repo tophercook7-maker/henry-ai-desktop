@@ -8,12 +8,18 @@
  * `device/{serial}/request`. Reports are often *partial* (diffs), so the
  * driver merges every report into a running status.
  *
- * Control (pause/resume/stop) also goes over MQTT. Job upload is FTPS on
- * port 990 (implicit TLS) which raw Node does not do cleanly — sendJob is
- * intentionally a clearly-surfaced "not yet supported" rather than a
- * half-working upload.
+ * Control (pause/resume/stop) also goes over MQTT. Job upload is implicit
+ * FTPS on port 990, which raw Node does not speak — so sendJob shells out to
+ * the system `curl` binary (macOS ships curl with ftps support), then starts
+ * the print over the existing MQTT connection with a `project_file` (.3mf)
+ * or `gcode_file` (.gcode) command, following the community-documented
+ * OpenBambuAPI shapes. Experimental: exercised against the protocol docs,
+ * not real hardware — curl errors are surfaced verbatim.
  */
 
+import { execFile } from 'child_process';
+import fs from 'fs';
+import path from 'path';
 import mqtt, { type MqttClient } from 'mqtt';
 import type {
   MachineActionResult,
@@ -86,7 +92,20 @@ export function mapBambuReport(report: BambuPrintReport, prev?: MachineStatus): 
 
 // ── Driver ──────────────────────────────────────────────────────────────────
 
-const CAPABILITIES: MachineCapabilities = { sendJob: false, pauseResume: true, stop: true };
+const CAPABILITIES: MachineCapabilities = { sendJob: true, pauseResume: true, stop: true };
+
+/** Upload a file to the printer's SD card over implicit FTPS using system curl. */
+export function buildBambuCurlArgs(host: string, accessCode: string, filePath: string, remoteName: string): string[] {
+  return [
+    '--silent',
+    '--show-error',
+    '--insecure', // Bambu uses a self-signed cert
+    '--connect-timeout', '15',
+    '--user', `bblp:${accessCode}`,
+    '-T', filePath,
+    `ftps://${host}:990/${encodeURIComponent(remoteName)}`,
+  ];
+}
 
 export class BambuDriver implements MachineDriver {
   readonly protocol = 'bambu' as const;
@@ -202,13 +221,80 @@ export class BambuDriver implements MachineDriver {
     return this.status;
   }
 
-  async sendJob(_filePath: string): Promise<MachineActionResult> {
+  /**
+   * Upload the file to the printer SD card via implicit FTPS (system curl),
+   * then start it over MQTT. Experimental — verified against the community
+   * OpenBambuAPI protocol docs, not real hardware.
+   */
+  async sendJob(filePath: string): Promise<MachineActionResult> {
+    if (!this.client || !this.connected) return { ok: false, error: 'Not connected to the printer.' };
+    if (!fs.existsSync(filePath)) return { ok: false, error: `File not found: ${filePath}` };
+
+    const ext = path.extname(filePath).toLowerCase();
+    if (ext !== '.3mf' && ext !== '.gcode') {
+      return { ok: false, error: `Bambu printers accept .3mf or .gcode files (got ${ext || 'no extension'}).` };
+    }
+    const remoteName = path.basename(filePath);
+    const host = String(this.config.host ?? '').trim();
+    const accessCode = String(this.config.accessCode ?? '').trim();
+
+    // 1) Upload over implicit FTPS (port 990) using the system curl binary.
+    const upload = await new Promise<{ ok: boolean; error?: string }>((resolve) => {
+      execFile(
+        'curl',
+        buildBambuCurlArgs(host, accessCode, filePath, remoteName),
+        { timeout: 10 * 60_000 },
+        (err, _stdout, stderr) => {
+          if (err) {
+            const detail = (stderr || err.message || '').trim();
+            resolve({ ok: false, error: detail || 'curl upload failed' });
+          } else {
+            resolve({ ok: true });
+          }
+        },
+      );
+    });
+    if (!upload.ok) {
+      return { ok: false, error: `FTPS upload to the printer failed: ${upload.error}` };
+    }
+
+    // 2) Start the print over MQTT (OpenBambuAPI shapes).
+    try {
+      if (ext === '.3mf') {
+        await this.publishRequest({
+          print: {
+            sequence_id: String(this.seq++),
+            command: 'project_file',
+            param: 'Metadata/plate_1.gcode',
+            url: `file:///sdcard/${remoteName}`,
+            subtask_name: remoteName,
+            use_ams: false,
+            timelapse: false,
+            bed_leveling: true,
+            flow_cali: false,
+            vibration_cali: false,
+            layer_inspect: false,
+          },
+        });
+      } else {
+        await this.publishRequest({
+          print: {
+            sequence_id: String(this.seq++),
+            command: 'gcode_file',
+            param: `/sdcard/${remoteName}`,
+          },
+        });
+      }
+    } catch (e) {
+      return {
+        ok: false,
+        error: `Uploaded ${remoteName} to the printer SD card, but starting the print failed: ${e instanceof Error ? e.message : String(e)}. You can start it from the printer screen.`,
+      };
+    }
+
     return {
-      ok: false,
-      error:
-        'Sending files to Bambu printers is not yet supported (upload uses FTPS on port 990). ' +
-        'Start the print from Bambu Studio / your slicer or the printer SD card — Henry will ' +
-        'monitor and control it from there.',
+      ok: true,
+      message: `Uploaded ${remoteName} and asked the printer to start it (experimental — watch the printer screen for the first print).`,
     };
   }
 

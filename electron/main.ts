@@ -36,6 +36,7 @@ import { registerSyncBridgeIpc, setSyncDb, startSyncServer } from './ipc/syncBri
 import { runDiagnostic, saveReport } from './ipc/selfRepair';
 import { registerVoiceSttHandlers } from './voice/stt';
 import { registerVoiceTtsHandlers } from './voice/tts';
+import { log } from './lib/log';
 
 
 // Global IPC error handler — prevents any single handler crash from killing the process
@@ -107,7 +108,6 @@ function createWindow() {
             const existing = JSON.parse(localStorage.getItem('henry:settings') || '{}');
             localStorage.setItem('henry:settings', JSON.stringify({...existing, ...s}));
             localStorage.setItem('henry:providers', JSON.stringify(${JSON.stringify(providersArr)}));
-            console.log('[Henry] SQLite→localStorage sync complete. provider:', s.companion_provider, 'model:', s.companion_model);
           } catch(e) { console.error('[Henry] localStorage sync failed:', e); }
         `;
         mainWindow!.webContents.executeJavaScript(script);
@@ -121,7 +121,6 @@ function createWindow() {
           try {
             localStorage.setItem('henry:mac_username', ${JSON.stringify(macUser)});
             localStorage.setItem('henry:mac_home', ${JSON.stringify(homeDir)});
-            console.log('[Henry] System paths set — user: ${macUser}');
           } catch(e) {}
         `;
         mainWindow!.webContents.executeJavaScript(pathScript);
@@ -144,8 +143,6 @@ function createWindow() {
             window.henryAPI.computerOpenApp    = n => post('/computer/openapp',   {name: typeof n==='string'?n:n.name||n});
             window.henryAPI.computerScreenshot = () => post('/computer/screenshot', {});
             window.henryAPI.computerOsascript  = s => post('/computer/osascript', {script: typeof s==='string'?s:s.script||s});
-
-            console.log('[Henry] Real computer IPC installed via sync server');
 
             // Override sync/companion methods via sync server HTTP API
             // The preload exposes these but webMock overwrites them with no-ops
@@ -264,12 +261,12 @@ app.whenReady().then(() => {
       if (!hasAccessibility) {
         // Auto-request without prompting — Henry silently gets the dialog ready
         // The actual dialog fires the first time capture is attempted
-        console.log('[Henry] Accessibility not granted — will request on first use');
+        log.debug('[Henry] Accessibility not granted — will request on first use');
         getMainWindow()?.webContents.send('henry:permissions:status', {
           accessibility: false, screenRecording: false,
         });
       } else {
-        console.log('[Henry] Accessibility: granted');
+        log.debug('[Henry] Accessibility: granted');
         getMainWindow()?.webContents.send('henry:permissions:status', {
           accessibility: true, screenRecording: true,
         });
@@ -513,7 +510,7 @@ app.whenReady().then(() => {
       ].forEach(([id, name, icon, color, target]) => {
         try { insertHabit.run(id, name, icon, color, target); } catch { /* already exists */ }
       });
-      console.log('[Henry] Seeded 5 default habits');
+      log.debug('[Henry] Seeded 5 default habits');
     }
   } catch (e) { console.warn('[Henry] Could not seed habits:', e); }
 
@@ -522,12 +519,12 @@ app.whenReady().then(() => {
   // Self-diagnostic — runs on every launch, auto-fixes problems
   setTimeout(async () => {
     try {
-      console.log('[Henry] Running self-diagnostic...');
+      log.debug('[Henry] Running self-diagnostic...');
       const report = await runDiagnostic(true); // autoFix=true
       saveReport(db, report);
       const { fixed, failed } = report.summary;
-      if (fixed > 0) console.log(`[Henry] Self-repair: fixed ${fixed} issue(s)`);
-      if (failed > 0) console.log(`[Henry] Self-repair: ${failed} issue(s) need attention`);
+      if (fixed > 0) log.debug(`[Henry] Self-repair: fixed ${fixed} issue(s)`);
+      if (failed > 0) log.warn(`[Henry] Self-repair: ${failed} issue(s) need attention`);
       // Notify renderer so Health panel can update
       getMainWindow()?.webContents.send('henry:diagnostic:complete', report);
     } catch (e) {
@@ -656,7 +653,7 @@ app.whenReady().then(() => {
       const hasAccess = systemPreferences.isTrustedAccessibilityClient(false);
       if (!hasAccess) {
         // Auto-trigger the macOS permission dialog — user just clicks OK once
-        console.log('[Henry] Requesting Accessibility for capture…');
+        log.debug('[Henry] Requesting Accessibility for capture…');
         systemPreferences.isTrustedAccessibilityClient(true);
         // Show HUD telling user to click OK
         showHUD('Grant access in the dialog — then try ⌥Space again', 0);
@@ -762,7 +759,7 @@ app.whenReady().then(() => {
   if (!spaceOk) {
     // ⌥Space is taken (Spotlight?) — fall back to ⌥C
     globalShortcut.register('Alt+C', () => { void henrySmartCapture(); });
-    console.log('[Henry] ⌥Space unavailable — using ⌥C for capture');
+    log.info('[Henry] ⌥Space unavailable — using ⌥C for capture');
   }
 
   // ⌥H — Open / focus Henry (simple, one key + one modifier)
@@ -815,7 +812,7 @@ app.whenReady().then(() => {
           : execSync('which cloudflared', { encoding: 'utf8' }).trim();
       } catch {
         // Not found — try to install
-        console.log('[Henry] cloudflared not found — installing...');
+        log.info('[Henry] cloudflared not found — installing...');
         try {
           if (_isWin32) {
             execSync('winget install Cloudflare.cloudflared --silent', { timeout: 120000, stdio: 'ignore' });
@@ -830,9 +827,9 @@ app.whenReady().then(() => {
               cloudflaredPath = execSync('which cloudflared', { encoding: 'utf8' }).trim();
             }
           }
-          if (cloudflaredPath) console.log('[Henry] cloudflared installed at:', cloudflaredPath);
+          if (cloudflaredPath) log.info('[Henry] cloudflared installed at:', cloudflaredPath);
         } catch {
-          console.log('[Henry] Could not auto-install cloudflared');
+          log.warn('[Henry] Could not auto-install cloudflared — remote companion tunnel disabled');
           return;
         }
       }
@@ -842,18 +839,21 @@ app.whenReady().then(() => {
       const { startSyncTunnel } = await import('./ipc/syncBridge');
       const url = await startSyncTunnel(4242);
       if (url) {
-        console.log('[Henry] Tunnel active:', url);
+        // startSyncTunnel already logs the tunnel URL — keep this one debug-only.
+        log.debug('[Henry] Tunnel active:', url);
         currentDb.prepare("INSERT OR REPLACE INTO settings(key,value) VALUES('last_tunnel_url',?)").run(url);
         // Notify renderer so companion panel updates
         getMainWindow()?.webContents.send('henry:tunnel:active', { url });
       }
     } catch (e) {
-      console.log('[Henry] Tunnel setup error:', e instanceof Error ? e.message : String(e));
+      log.warn('[Henry] Tunnel setup error:', e instanceof Error ? e.message : String(e));
     }
   }, 3000);
 
-  // Check for updates 30 seconds after launch (silently)
+  // Check for updates 30 seconds after launch (silently). Packaged builds
+  // only — dev builds make electron-updater print a skip warning.
   const updaterFirstTimer = setTimeout(() => {
+    if (!app.isPackaged) return;
     try { autoUpdater.checkForUpdates().catch(() => {}); } catch { /* ignore */ }
   }, 30_000);
 
@@ -861,6 +861,7 @@ app.whenReady().then(() => {
   // tears everything down at process exit anyway, but unreferenced
   // long-running intervals make the app harder to test and clean-shutdown.
   const updaterInterval = setInterval(() => {
+    if (!app.isPackaged) return;
     try { autoUpdater.checkForUpdates().catch(() => {}); } catch { /* ignore */ }
   }, 4 * 60 * 60 * 1000);
   app.on('will-quit', () => {
@@ -898,6 +899,7 @@ app.whenReady().then(() => {
 
   // Check silently after 10 s so first launch isn't slowed down
   setTimeout(() => {
+    if (!app.isPackaged) return;
     autoUpdater.checkForUpdates().catch(() => null);
   }, 10_000);
 

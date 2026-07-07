@@ -115,12 +115,9 @@ function doc_ProductRoadmap(): string {
 ## Phase 4 — Panels (Complete)
 - [x] Today panel (auto-briefing)
 - [x] Journal panel
-- [x] Focus panel
 - [x] Task queue
 - [x] Terminal panel
 - [x] Reminders panel
-- [x] Lists panel
-- [x] CRM / Clients panel
 - [x] Finance panel
 - [x] Print Studio panel
 - [x] Image Generation panel
@@ -303,7 +300,7 @@ function doc_StatusUpdate(): string {
 - Full chat system with streaming (Groq 8B + 70B)
 - 10 operating modes fully implemented
 - 7-layer memory system complete
-- All UI panels built (Today, Journal, Focus, Reminders, Lists, CRM, Finance, Print Studio, Image Gen)
+- All UI panels built (Today, Journal, Reminders, Finance, Print Studio, Image Gen)
 - Bible corpus with search
 - Web tools (DuckDuckGo, Brave, Google CSE, Jina URL reader)
 - Emotion detection wired into system prompt

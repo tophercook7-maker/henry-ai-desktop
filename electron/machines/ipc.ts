@@ -6,7 +6,7 @@
  *   machines:list | add | update | remove
  *   machines:connect | disconnect
  *   machines:status (one) | statusAll
- *   machines:job  ({ id, action: send|pause|resume|stop, filePath? })
+ *   machines:job  ({ id, action: send|pause|resume|stop|home, filePath? })
  *   machines:discover  (opt-in, time-boxed LAN port scan + serial listing)
  *
  * Live updates: main pushes `machines:event` (status/connected/disconnected)
@@ -78,7 +78,7 @@ export function registerMachineHandlers(
 
   ipcMain.handle(
     'machines:job',
-    (_e, payload: { id: string; action: 'send' | 'pause' | 'resume' | 'stop'; filePath?: string }) =>
+    (_e, payload: { id: string; action: 'send' | 'pause' | 'resume' | 'stop' | 'home'; filePath?: string }) =>
       envelope(async () => {
         const r = await manager.job(String(payload?.id ?? ''), payload?.action, payload?.filePath);
         if (!r.ok) throw new Error(r.error ?? 'Job action failed.');

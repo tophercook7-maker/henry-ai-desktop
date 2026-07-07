@@ -456,7 +456,7 @@ export class GrblSerialDriver extends SerialDriverBase {
     };
   }
 
-  /** '$H' — run GRBL's homing cycle. Not part of the driver contract but handy. */
+  /** '$H' — run GRBL's homing cycle. Exposed via machines:job action 'home'. */
   async home(): Promise<MachineActionResult> {
     try {
       await this.write('$H\n');

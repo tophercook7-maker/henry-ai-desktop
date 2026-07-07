@@ -2150,15 +2150,10 @@ What do you want to tackle first?`);
       streamRef.current = stream;
 
       stream.onChunk((chunk: string) => {
-        if (import.meta.env.DEV && chunk) {
-          console.debug('[Henry] stream chunk', { len: chunk.length });
-        }
         appendStreamingContent(chunk);
       });
 
       stream.onDone(async (fullText: string, usage?: any) => {
-        if (import.meta.env.DEV) {
-          console.debug('[Henry] stream done', { fullLen: fullText?.length ?? 0, usage });
         // Track cost for the iron gateway cost dashboard
         if (usage && (usage.total_tokens || usage.input_tokens)) {
           const totalTok = usage.total_tokens || (usage.input_tokens + (usage.output_tokens || 0));
@@ -2180,7 +2175,6 @@ What do you want to tackle first?`);
             }
           } catch { /* non-critical — never block chat */ }
         })();
-        }
 
         // Action interceptor — detect and execute real computer actions from Henry's text
         // This runs BEFORE saving the message so results can be appended

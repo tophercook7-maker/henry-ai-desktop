@@ -17,6 +17,8 @@
  *   history automatically until the payload fits.
  */
 
+import { log as henryLog } from './log';
+
 // ── Token estimation ──────────────────────────────────────────────────────────
 
 /** 1 token ≈ 4 chars (matches OpenAI's rough tokenizer average). */
@@ -200,7 +202,7 @@ export function logContextDecision(log: ContextLog): void {
   const blocksNote = log.includedBlocks && log.includedBlocks.length > 0
     ? ` | blocks: ${log.includedBlocks.join(', ')}`
     : '';
-  console.log(
+  henryLog.debug(
     `[Henry:ctx] tier=${log.tier} intent=${log.intent} ` +
     `sys=${log.systemTokens}t hist=${log.historyTokensAfter}t ` +
     `total=${log.totalTokens}t${over}${trimNote}${blocksNote}`

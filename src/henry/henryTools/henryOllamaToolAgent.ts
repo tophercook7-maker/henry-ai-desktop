@@ -7,6 +7,7 @@ import {
   tryParseToolCallFromText,
   type OllamaChatMessage,
 } from './ollamaToolChat';
+import { log } from '../log';
 
 /** Max model calls per user message (request → tool passes → final text). */
 const MAX_MODEL_ROUNDS = 3;
@@ -46,9 +47,7 @@ function toOllamaMessages(
 }
 
 function devLog(payload: Record<string, unknown>) {
-  if (import.meta.env.DEV) {
-    console.debug('[Henry tools]', payload);
-  }
+  log.debug('[Henry tools]', payload);
 }
 
 function serializeToolResult(r: HenryToolExecutionResult): string {

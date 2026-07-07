@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { mapBambuGcodeState, mapBambuReport } from './bambu';
+import { buildBambuCurlArgs, mapBambuGcodeState, mapBambuReport } from './bambu';
 import { mapMoonrakerState, mapMoonrakerStatus } from './moonraker';
 import { mapOctoPrintState, mapOctoPrintStatus } from './octoprint';
 import { parseGrblStatus, parseMarlinTemps, prepareGcodeLines } from './serial';
@@ -207,5 +207,21 @@ describe('mapOctoPrintStatus', () => {
     expect(s.progressPct).toBeUndefined();
     expect(s.jobName).toBeUndefined();
     expect(s.timeRemainingSec).toBeUndefined();
+  });
+});
+
+describe('buildBambuCurlArgs', () => {
+  it('builds an implicit-FTPS upload command for the printer SD card', () => {
+    const args = buildBambuCurlArgs('192.168.1.50', '12345678', '/tmp/part.3mf', 'part.3mf');
+    expect(args).toContain('--insecure');
+    expect(args).toContain('-T');
+    expect(args[args.indexOf('-T') + 1]).toBe('/tmp/part.3mf');
+    expect(args[args.indexOf('--user') + 1]).toBe('bblp:12345678');
+    expect(args[args.length - 1]).toBe('ftps://192.168.1.50:990/part.3mf');
+  });
+
+  it('URL-encodes remote names with spaces', () => {
+    const args = buildBambuCurlArgs('10.0.0.2', 'code', '/tmp/my part.gcode', 'my part.gcode');
+    expect(args[args.length - 1]).toBe('ftps://10.0.0.2:990/my%20part.gcode');
   });
 });

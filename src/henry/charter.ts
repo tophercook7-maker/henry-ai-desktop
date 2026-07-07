@@ -41,6 +41,7 @@ import { buildSelfRepairBlock } from './selfRepairStore';
 import { buildPanelContextBlock } from './panelContext';
 import { buildIntentionBlock } from './dailyIntention';
 import { getSessionSummary } from './contextSummary';
+import { log } from './log';
 
 /**
  * localStorage is only available in browser/renderer contexts.
@@ -722,7 +723,7 @@ Priorities — when ${ownerName}'s profile or memory indicates they value certai
 
   // Log which optional blocks were included (visible in browser console as [Henry:ctx:blocks])
   if (includedBlockNames.length > 0) {
-    console.log(`[Henry:ctx:blocks] optional(${includedBlockNames.length}): ${includedBlockNames.join(', ')} — ${optionalChars}/${OPTIONAL_BUDGET} chars`);
+    log.debug(`[Henry:ctx:blocks] optional(${includedBlockNames.length}): ${includedBlockNames.join(', ')} — ${optionalChars}/${OPTIONAL_BUDGET} chars`);
   }
 
   return `${buildCoreIdentity()}

@@ -12,6 +12,8 @@
  * makerRunsList, etc.) — it covers lasers, CNC, embroidery, vinyl, and more.
  */
 
+import { log } from './log';
+
 export type FilamentMaterial = 'PLA' | 'PETG' | 'ABS' | 'ASA' | 'TPU' | 'Nylon' | 'Resin' | 'Other';
 export type BOMStatus = 'needed' | 'ordered' | 'in-hand' | 'used';
 
@@ -165,7 +167,7 @@ export async function migratePrintStudioToSQLite(): Promise<{ migrated: boolean;
     const result = await a.makerMigrateFromLocalStorage(data) as { ok?: boolean; migrated?: unknown };
     if (result?.ok) {
       localStorage.setItem(MIGRATED_FLAG, '1');
-      console.log('[Henry] Print Studio migrated to SQLite:', result.migrated);
+      log.debug('[Henry] Print Studio migrated to SQLite:', result.migrated);
       return { migrated: true, counts: result.migrated };
     }
   } catch (e) { console.warn('[Henry] Print Studio migration failed:', e); }

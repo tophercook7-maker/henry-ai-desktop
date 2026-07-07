@@ -720,7 +720,7 @@ declare global {
     machinesDisconnect?: (id: string) => Promise<HenryMachinesResult<{ disconnected: boolean }>>;
     machinesStatus?: (id: string) => Promise<HenryMachinesResult<HenryMachineStatus>>;
     machinesStatusAll?: () => Promise<HenryMachinesResult<Array<{ id: string; name: string; kind: HenryMachineKind; protocol: HenryMachineProtocol; connected: boolean; status: HenryMachineStatus }>>>;
-    machinesJob?: (id: string, action: 'send' | 'pause' | 'resume' | 'stop', filePath?: string) => Promise<HenryMachinesResult<{ ok: boolean; message?: string }>>;
+    machinesJob?: (id: string, action: 'send' | 'pause' | 'resume' | 'stop' | 'home', filePath?: string) => Promise<HenryMachinesResult<{ ok: boolean; message?: string }>>;
     machinesDiscover?: () => Promise<HenryMachinesResult<HenryDiscoveredMachine[]>>;
     onMachinesEvent?: (cb: (event: HenryMachineEvent) => void) => () => void;
 

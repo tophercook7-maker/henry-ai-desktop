@@ -24,6 +24,7 @@ import {
 import { selectContextTier } from '../../henry/contextTier';
 import { detectTaskType } from '../../henry/modelRouter';
 import { getSharedBrainState } from '../../brain/sharedState';
+import { log } from '../../henry/log';
 import type {
   RouterInput,
   RouterDecision,
@@ -267,7 +268,7 @@ function requestClassToIntent(cls: RequestClass): import('../../henry/contextTie
 
 export function logRouterDecision(decision: RouterDecision, message: string): void {
   const truncated = message.length > 60 ? message.slice(0, 57) + '...' : message;
-  console.log(
+  log.debug(
     `[Henry:router] ${decision.rationale} | surface=${decision.surfacing}` +
     `${decision.reflectionNeeded ? ' | reflection=yes' : ''}` +
     `${decision.actionGate.decision !== 'allow' ? ` | ⚠️ action=${decision.actionGate.decision}: ${decision.actionGate.reason ?? ''}` : ''}` +

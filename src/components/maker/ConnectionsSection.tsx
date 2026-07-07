@@ -122,9 +122,10 @@ export default function ConnectionsSection() {
     void reload();
   }
 
-  async function jobAction(m: HenryMachineConnection, action: 'pause' | 'resume' | 'stop') {
+  async function jobAction(m: HenryMachineConnection, action: 'pause' | 'resume' | 'stop' | 'home') {
     if (!api?.machinesJob) return;
     if (action === 'stop' && !confirm(`Stop the current job on "${m.name}"? This cancels it — it can't be resumed.`)) return;
+    if (action === 'home' && !confirm(`Run the homing cycle on "${m.name}"? Make sure the work area is clear — the machine will move to its limit switches.`)) return;
     setError(null);
     const r = await api.machinesJob(m.id, action);
     if (!r.ok) setError(r.error);
@@ -299,6 +300,13 @@ export default function ConnectionsSection() {
                 )}
 
                 <div className="flex gap-1.5 pt-2 border-t border-henry-border/15">
+                  {m.connected && m.kind === 'cnc' && (
+                    <button onClick={() => void jobAction(m, 'home')} disabled={active}
+                      title={active ? 'Stop or finish the current job before homing' : 'Run the homing cycle ($H)'}
+                      className="text-[11px] px-3 py-1.5 rounded-lg bg-indigo-400/10 text-indigo-400 hover:bg-indigo-400/20 transition-all disabled:opacity-40">
+                      ⌂ Home
+                    </button>
+                  )}
                   {m.connected ? (
                     <button onClick={() => void disconnect(m.id)} disabled={isBusy}
                       className="flex-1 text-[11px] py-1.5 rounded-lg bg-henry-surface text-henry-text hover:bg-henry-surface/80 transition-all disabled:opacity-50">

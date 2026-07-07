@@ -8,6 +8,7 @@
 import http from 'http';
 import type Database from 'better-sqlite3';
 import { ipcMain } from 'electron';
+import { log } from '../lib/log';
 
 const DEFAULT_GATEWAY_PORT = 11534;
 const UPSTREAM = process.env.OLLAMA_HOST || 'http://127.0.0.1:11434';
@@ -49,7 +50,7 @@ function stripHopByHop(headers: http.IncomingHttpHeaders): Record<string, string
  */
 export function startHenryLocalBrainGateway(db: Database.Database): void {
   if (process.env.HENRY_DISABLE_OLLAMA_GATEWAY === '1') {
-    console.log('[Henry] Ollama gateway disabled (HENRY_DISABLE_OLLAMA_GATEWAY=1)');
+    log.debug('[Henry] Ollama gateway disabled (HENRY_DISABLE_OLLAMA_GATEWAY=1)');
     return;
   }
   if (server) return;
@@ -107,7 +108,7 @@ export function startHenryLocalBrainGateway(db: Database.Database): void {
   s.listen(port, '127.0.0.1', () => {
     listenPort = port;
     server = s;
-    console.log(`[Henry] Local brain gateway http://127.0.0.1:${port} → ${upstream}`);
+    log.info(`[Henry] Local brain gateway http://127.0.0.1:${port} → ${upstream}`);
   });
 }
 

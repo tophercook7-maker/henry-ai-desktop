@@ -1,5 +1,6 @@
 import { buildCompanionHtml } from './companionHtml';
 import { startProxy, stopProxy, getProxyPort, isProxyRunning } from './proxyServer';
+import { log } from '../lib/log';
 
 // ── Per-session conversation memory (last 6 turns per device) ────────────────
 const __henryCtx__: Map<string, {role:string;content:string}[]> = new Map();
@@ -99,7 +100,7 @@ export async function startSyncTunnel(port: number): Promise<string | null> {
     const cfPath = '/opt/homebrew/bin/cloudflared';
     try { execSync(`which cloudflared || test -f ${cfPath}`, { stdio: 'ignore' }); }
     catch {
-      console.log('[SyncBridge] cloudflared not found');
+      log.debug('[SyncBridge] cloudflared not found');
       return null;
     }
 
@@ -110,7 +111,7 @@ export async function startSyncTunnel(port: number): Promise<string | null> {
         const configPath = require('os').homedir() + '/.cloudflared/henry.yml';
         const fs = require('fs');
         if (fs.existsSync(configPath)) {
-          console.log('[SyncBridge] Using named tunnel config:', configPath);
+          log.debug('[SyncBridge] Using named tunnel config:', configPath);
           return ['tunnel', '--config', configPath, 'run', '--no-autoupdate'];
         }
       } catch { /* fall through */ }
@@ -223,7 +224,7 @@ function loadCompanionTokens(): void {
         if (lastSeenMs && lastSeenMs < ninetyDaysAgo) { pruned++; continue; }
         linkedDevices.set(k, v);
       }
-      if (pruned > 0) console.log(`[SyncBridge] Pruned ${pruned} stale companion device(s) (>90d since last seen)`);
+      if (pruned > 0) log.debug(`[SyncBridge] Pruned ${pruned} stale companion device(s) (>90d since last seen)`);
     }
   } catch (e) {
     console.warn('[SyncBridge] loadCompanionTokens failed:', e instanceof Error ? e.message : e);
@@ -3105,7 +3106,7 @@ self.addEventListener('fetch', (event) => {
           `• **📌 pin button** — Save any response to Memory\n` +
           `• **Pull down** — Refresh data in the phone companion`;
       }
-      if (/how do i use (journal|today|tasks|reminders|goals|health|finance|scripture|prayer|focus|memory|settings|recorder|crm|quoting)/.test(lowerText)) {
+      if (/how do i use (journal|today|tasks|reminders|goals|health|finance|scripture|prayer|memory|settings|recorder|quoting)/.test(lowerText)) {
         const m = lowerText.match(/how do i use (\w+)/);
         const panel = m ? m[1] : '';
         const help: Record<string,(()=>string)> = {
@@ -8863,13 +8864,13 @@ self.addEventListener('fetch', (event) => {
           // Rate-limit or error → mark provider and try next
           if (statusCode === 429 || statusCode === 503 || statusCode === 524) {
             rlStore[prov.name] = Date.now() + COOLDOWN_MS;
-            console.log(`[Iron Gateway] ${prov.name} rate-limited (HTTP ${statusCode}), trying next...`);
+            log.debug(`[Iron Gateway] ${prov.name} rate-limited (HTTP ${statusCode}), trying next...`);
             r3.resume(); // drain
             tryProvider(idx + 1);
             return;
           }
           if (statusCode >= 400 && statusCode !== 200) {
-            console.log(`[Iron Gateway] ${prov.name} error HTTP ${statusCode}, trying next...`);
+            log.debug(`[Iron Gateway] ${prov.name} error HTTP ${statusCode}, trying next...`);
             r3.resume();
             tryProvider(idx + 1);
             return;
@@ -8910,18 +8911,18 @@ self.addEventListener('fetch', (event) => {
               finishReply(fullText2);
             } else if (!fullText2 && !doneSent2) {
               // Empty response — try next provider
-              console.log(`[Iron Gateway] ${prov.name} returned empty, trying next...`);
+              log.debug(`[Iron Gateway] ${prov.name} returned empty, trying next...`);
               tryProvider(idx + 1);
             }
           });
         });
 
         req3.on('error', (e: Error) => {
-          console.log(`[Iron Gateway] ${prov.name} network error: ${e.message}, trying next...`);
+          log.debug(`[Iron Gateway] ${prov.name} network error: ${e.message}, trying next...`);
           if (!replied) tryProvider(idx + 1);
         });
         req3.on('timeout', () => {
-          console.log('[Iron Gateway] ' + prov.name + ' timed out after 6s, trying next...');
+          log.debug('[Iron Gateway] ' + prov.name + ' timed out after 6s, trying next...');
           req3.destroy();
           if (!replied) tryProvider(idx + 1);
         });
@@ -9441,8 +9442,8 @@ const OPENSCAD_BIN = getBundledBin('openscad', [
   '/usr/local/bin/openscad'
 ]);
 
-console.log('[Henry] cloudflared:', CLOUDFLARED_BIN);
-console.log('[Henry] openscad:', OPENSCAD_BIN);
+log.debug('[Henry] cloudflared:', CLOUDFLARED_BIN);
+log.debug('[Henry] openscad:', OPENSCAD_BIN);
 
 // ── VPN instruction builder ──────────────────────────────────────────────────
 function _buildVpnInstructions(port: number, tunnelUrl: string | null): string {
@@ -9551,7 +9552,7 @@ export function startSyncServer(port = 4242, host?: string): SyncServerState {
   // Attach remote-control screen-stream WebSocket on /ws/screen
   try {
     remoteAttachScreenWs(server);
-    console.log('[SyncBridge] Remote-control screen WS attached on /ws/screen');
+    log.debug('[SyncBridge] Remote-control screen WS attached on /ws/screen');
   } catch (e) {
     console.error('[SyncBridge] Failed to attach screen WS:', e);
   }
@@ -9564,7 +9565,7 @@ export function startSyncServer(port = 4242, host?: string): SyncServerState {
     startTunnel(port).catch(() => {});
     // Auto-start SOCKS5 proxy for VPN/routing
     startProxy(1080).then(pp => {
-      console.log(`[Henry] SOCKS5 proxy on port ${pp}`);
+      log.debug(`[Henry] SOCKS5 proxy on port ${pp}`); // proxyServer already logs the listening line
       pushToAll({ type: 'proxy', payload: { port: pp }, id: '', timestamp: Date.now() } as any);
     }).catch(() => {});
   });
@@ -9582,7 +9583,7 @@ export function stopSyncServer(): void {
   sseClients = [];
   stopProxy();
   stopTunnel();
-  console.log('[SyncBridge] Sync server stopped');
+  log.debug('[SyncBridge] Sync server stopped');
 }
 
 export function getSyncState(): SyncServerState {

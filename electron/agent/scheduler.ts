@@ -30,6 +30,7 @@ import type { ModelTool } from "./types";
 import { callAIWithTools } from "../ipc/ai";
 import { createSessionRecord, recordSessionMessage } from "../ipc/sessionStore";
 import { decryptKey } from "../ipc/_keyStorage";
+import { log } from '../lib/log';
 
 type WindowGetter = () => BrowserWindow | null;
 
@@ -121,7 +122,7 @@ export class HenryScheduler {
       .prepare("SELECT * FROM scheduled_tasks WHERE enabled = 1")
       .all() as ScheduledTask[];
     for (const task of tasks) this.register(task);
-    console.log(`[scheduler] initialized — ${this.jobs.size} active Routine(s)`);
+    log.debug(`[scheduler] initialized — ${this.jobs.size} active Routine(s)`);
   }
 
   /** Stop every cron job. Called on app quit. */
@@ -152,7 +153,7 @@ export class HenryScheduler {
       }
     });
     seed();
-    console.log(`[scheduler] seeded ${DEFAULT_ROUTINES.length} default Routines (disabled)`);
+    log.debug(`[scheduler] seeded ${DEFAULT_ROUTINES.length} default Routines (disabled)`);
   }
 
   // ── node-cron registration ─────────────────────────────────────────────

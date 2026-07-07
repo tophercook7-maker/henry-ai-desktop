@@ -215,7 +215,7 @@ export class MachineManager {
 
   async job(
     id: string,
-    action: 'send' | 'pause' | 'resume' | 'stop',
+    action: 'send' | 'pause' | 'resume' | 'stop' | 'home',
     filePath?: string,
   ): Promise<MachineActionResult> {
     const driver = this.drivers.get(id);
@@ -227,6 +227,9 @@ export class MachineManager {
       case 'pause': return driver.pause();
       case 'resume': return driver.resume();
       case 'stop': return driver.stop();
+      case 'home':
+        if (!driver.home) return { ok: false, error: 'This machine does not support a homing cycle.' };
+        return driver.home();
       default: return { ok: false, error: `Unknown job action: ${String(action)}` };
     }
   }

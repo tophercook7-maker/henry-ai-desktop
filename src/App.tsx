@@ -155,7 +155,7 @@ export default function App() {
     if (import.meta.env.PROD && 'serviceWorker' in navigator) {
       navigator.serviceWorker
         .register('/sw.js')
-        .then(() => console.log('[Henry] Service worker registered'))
+        .then(() => { /* registered */ })
         .catch((err) => console.warn('[Henry] SW registration failed:', err));
     }
   }, []);

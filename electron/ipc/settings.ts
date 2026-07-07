@@ -11,6 +11,7 @@
 import { ipcMain } from 'electron';
 import type Database from 'better-sqlite3';
 import { encryptKey, decryptKey, migrateProviderKeys } from './_keyStorage';
+import { log } from '../lib/log';
 
 export function registerSettingsHandlers(db: Database.Database, getMainWindow?: () => import('electron').BrowserWindow | null) {
   // Encrypt any plaintext keys left over from before this feature shipped.
@@ -74,7 +75,7 @@ export function registerSettingsHandlers(db: Database.Database, getMainWindow?: 
            models = excluded.models,
            updated_at = datetime('now')`
         ).run(provider.id, provider.name, encryptedKey, enabled, provider.models || '[]');
-        console.log('[providers:save] saved', provider.id, 'key length:', rawKey.length);
+        log.debug('[providers:save] saved', provider.id);
         // Immediately inject into renderer localStorage so chat picks it up without restart.
         // NOTE: localStorage itself is not encrypted — this is plaintext in Chromium's data store.
         // A future hardening pass should remove keys from localStorage entirely and have the
@@ -89,7 +90,7 @@ export function registerSettingsHandlers(db: Database.Database, getMainWindow?: 
               enabled: Boolean(p.enabled), models: p.models || '[]',
             };
           });
-          const script = `try { localStorage.setItem('henry:providers', '${JSON.stringify(lsData).replace(/'/g, "\'")}'); console.log('[Henry] providers synced to localStorage'); } catch(e) { console.warn('[Henry] localStorage sync failed', e); }`;
+          const script = `try { localStorage.setItem('henry:providers', '${JSON.stringify(lsData).replace(/'/g, "\'")}'); } catch(e) { console.warn('[Henry] localStorage sync failed', e); }`;
           getMainWindow?.()?.webContents.executeJavaScript(script).catch(() => {});
         } catch { /* non-critical */ }
         return { ok: true };

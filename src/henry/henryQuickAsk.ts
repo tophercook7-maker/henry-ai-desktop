@@ -50,23 +50,9 @@ export function henryQuickAsk(opts: QuickAskOptions): void {
 
 /** Pre-built quick-ask prompts for each panel */
 export const PANEL_QUICK_ASK = {
-  crm: (clientName?: string) =>
-    henryQuickAsk({
-      prompt: clientName
-        ? `Give me a briefing on ${clientName} — what I should know before our next interaction, any follow-ups I might be missing, and what I should focus on with them.`
-        : 'Review my CRM. Which clients need follow-up? Any patterns or opportunities I should act on?',
-    }),
-
   finance: () =>
     henryQuickAsk({
       prompt: 'Review my financial data. What are my income trends? Are expenses on track? What should I focus on this month?',
-    }),
-
-  lists: (listName?: string) =>
-    henryQuickAsk({
-      prompt: listName
-        ? `Help me work through my "${listName}" list. What should I prioritize? What can I batch or delegate?`
-        : 'Review my lists. What should I be working on right now? What can be batched, delegated, or removed?',
     }),
 
   journal: (entryText?: string) =>

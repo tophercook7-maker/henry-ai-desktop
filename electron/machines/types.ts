@@ -97,6 +97,8 @@ export interface MachineDriver {
   pause(): Promise<MachineActionResult>;
   resume(): Promise<MachineActionResult>;
   stop(): Promise<MachineActionResult>;
+  /** Run the machine's homing cycle (CNC/GRBL '$H'). Optional per protocol. */
+  home?(): Promise<MachineActionResult>;
 }
 
 /** A machine candidate found by lightweight discovery. */

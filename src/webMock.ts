@@ -32,6 +32,7 @@ function on<T>(event: string, cb: Listener<T>): () => void {
 const now = () => new Date().toISOString();
 
 import { tryCerebrasFallback, isGroqRateLimit } from './henry/providers/cerebras';
+import { log } from './henry/log';
 
 // ── Direct API endpoints (bypass the Vite dev-server proxy) ───────────────
 // Groq supports browser-side CORS requests natively — calling api.groq.com
@@ -1537,7 +1538,7 @@ const syncMock = {
 // No flag detection needed — presence of henryAPI = real Electron.
 if (!window.henryAPI) {
   window.henryAPI = henryAPI;
-  console.log('[webMock] Installed — no preload detected (web/dev mode)');
+  log.debug('[webMock] Installed — no preload detected (web/dev mode)');
 } else {
-  console.log('[webMock] Skipped — real Electron IPC active (preload set henryAPI)');
+  log.debug('[webMock] Skipped — real Electron IPC active (preload set henryAPI)');
 }

@@ -17,6 +17,7 @@
 import { randomUUID } from 'crypto';
 import type { AgentContext, ModelTool, ToolResult } from './types';
 import type { ToolRegistry } from './toolRegistry';
+import { log } from '../lib/log';
 
 // ── Conversation shape passed to / from the model ──────────────────────────
 
@@ -151,7 +152,7 @@ async function logToolCall(
       tool_call_id: call.id,
     });
   } catch (e) {
-    // TODO(Sprint 3): surface audit-log failures in the "What Henry Did" panel.
+    // Non-fatal: the tool ran fine — only its audit-log write failed.
     console.error('[agent:toolRunner] session log failed:', e instanceof Error ? e.message : e);
   }
 }
@@ -186,7 +187,7 @@ async function runToolWithRetry(
     const transient = !result.ok && result.retryable === true;
     if (!allowRetry || !transient || attempt === MAX_TOOL_ATTEMPTS) return result;
     const delay = RETRY_BACKOFF_MS[attempt - 1] ?? 2000;
-    console.log(`[agent:tool] ${tool.name} transient failure (attempt ${attempt}/${MAX_TOOL_ATTEMPTS}) — retrying in ${delay}ms`);
+    log.debug(`[agent:tool] ${tool.name} transient failure (attempt ${attempt}/${MAX_TOOL_ATTEMPTS}) — retrying in ${delay}ms`);
     await sleep(delay);
   }
   // Unreachable, but satisfies the type checker.
@@ -236,7 +237,7 @@ async function executeToolCall(
   }
 
   if (tool.safetyLevel === 'silent') {
-    console.log(`[agent:tool] ${tool.name} ok=${result.ok}`);
+    log.debug(`[agent:tool] ${tool.name} ok=${result.ok}`);
   }
 
   return result;
