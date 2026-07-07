@@ -248,7 +248,9 @@ export default function ChatInput({
       let transcript: string | undefined;
 
       // 1. FREE local whisper.cpp — the default when set up (works offline).
-      if (voiceIpcAvailable() && useVoiceStore.getState().sttReady) {
+      // Don't gate on the sttReady store flag (it can lag the mount-time status
+      // fetch); transcribeLocal fails fast with a clear error if not set up.
+      if (voiceIpcAvailable()) {
         try {
           transcript = await transcribeLocal(blob);
         } catch (err) {

@@ -34,6 +34,7 @@ import { registerSchedulerHandlers } from './ipc/scheduler';
 import { HenryScheduler } from './agent/scheduler';
 import { registerSyncBridgeIpc, setSyncDb, startSyncServer } from './ipc/syncBridge';
 import { runDiagnostic, saveReport } from './ipc/selfRepair';
+import { decryptKey } from './ipc/_keyStorage';
 import { registerVoiceSttHandlers } from './voice/stt';
 import { registerVoiceTtsHandlers } from './voice/tts';
 import { log } from './lib/log';
@@ -96,11 +97,16 @@ function createWindow() {
         const settingsMap: Record<string, string> = {};
         for (const { key, value } of settings) settingsMap[key] = value;
 
-        const providersArr = providers.map(p => ({
-          id: p.id, name: p.name,
-          api_key: p.api_key || '', apiKey: p.api_key || '',
-          enabled: Boolean(p.enabled), models: p.models || '[]',
-        }));
+        // Keys are encrypted at rest (enc:v1:...) — inject the PLAINTEXT, never
+        // the ciphertext: the renderer sends this value straight to the provider.
+        const providersArr = providers.map(p => {
+          const plain = decryptKey(p.api_key || '');
+          return {
+            id: p.id, name: p.name,
+            api_key: plain, apiKey: plain,
+            enabled: Boolean(p.enabled), models: p.models || '[]',
+          };
+        });
 
         const script = `
           try {
