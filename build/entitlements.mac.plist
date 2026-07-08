@@ -20,5 +20,10 @@
   <true/>
   <key>com.apple.security.device.microphone</key>
   <true/>
+  <!-- Hardened-runtime (non-sandboxed) apps need audio-input for mic access;
+       device.microphone above only applies to App Sandbox. Without this key
+       macOS hard-denies the mic with NO permission prompt. -->
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
 </dict>
 </plist>
