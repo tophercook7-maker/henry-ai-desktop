@@ -116,7 +116,7 @@ export async function startSyncTunnel(port: number): Promise<string | null> {
           // The public URL is deterministic — read it from the ingress hostname.
           const m = fs.readFileSync(configPath, 'utf8').match(/hostname:\s*(\S+)/);
           if (m) namedHostname = m[1];
-          return ['tunnel', '--config', configPath, 'run', '--no-autoupdate'];
+          return ['tunnel', '--no-autoupdate', '--config', configPath, 'run'];
         }
       } catch { /* fall through */ }
       // Quick tunnel — random URL each restart
@@ -9513,7 +9513,7 @@ async function startTunnel(port: number): Promise<void> {
       const m = readFileSync(configPath, 'utf8').match(/hostname:\s*(\S+)/);
       if (m) {
         namedHostname = m[1];
-        args = ['tunnel', '--config', configPath, 'run', '--no-autoupdate'];
+        args = ['tunnel', '--no-autoupdate', '--config', configPath, 'run'];
       }
     }
 
