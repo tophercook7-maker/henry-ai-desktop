@@ -77,6 +77,26 @@ export const AVAILABLE_MODELS: AIModel[] = [
 
   // ── Google ──────────────────────────────────────────
   {
+    id: 'gemini-2.5-flash',
+    name: 'Gemini 2.5 Flash',
+    provider: 'google',
+    contextWindow: 1000000,
+    inputPricePer1M: 0.3,
+    outputPricePer1M: 2.5,
+    capabilities: ['chat', 'code', 'reasoning', 'vision'],
+    recommended: 'worker',
+  },
+  {
+    id: 'gemini-2.5-flash-lite',
+    name: 'Gemini 2.5 Flash-Lite',
+    provider: 'google',
+    contextWindow: 1000000,
+    inputPricePer1M: 0.1,
+    outputPricePer1M: 0.4,
+    capabilities: ['chat', 'code', 'vision'],
+    recommended: 'companion',
+  },
+  {
     id: 'gemini-2.0-flash',
     name: 'Gemini 2.0 Flash',
     provider: 'google',
