@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react';
 import electron from 'vite-plugin-electron';
 import electronRenderer from 'vite-plugin-electron-renderer';
 import path from 'path';
+import { buildSync } from 'esbuild';
 
 export default defineConfig({
   plugins: [
@@ -47,6 +48,28 @@ export default defineConfig({
               },
             },
           },
+          plugins: [
+            {
+              // vite-plugin-electron under vite 8 (rolldown) IGNORES the
+              // output.format above and emits ESM (`import ... from "electron"`)
+              // into preload.cjs — the sandboxed preload then dies on line 1
+              // with a SyntaxError and the renderer silently falls back to
+              // webMock (no voice/coder/machines IPC). Re-emit through esbuild,
+              // which actually honors CJS. Runs after every preload rebuild.
+              name: 'force-cjs-preload',
+              closeBundle() {
+                buildSync({
+                  entryPoints: ['electron/preload.ts'],
+                  bundle: true,
+                  format: 'cjs',
+                  platform: 'node',
+                  external: ['electron'],
+                  outfile: 'dist-electron/preload.cjs',
+                });
+                console.log('[force-cjs-preload] preload.cjs re-emitted as CommonJS');
+              },
+            },
+          ],
         },
       },
     ]),
