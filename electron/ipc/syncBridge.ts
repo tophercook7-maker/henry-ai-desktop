@@ -106,12 +106,16 @@ export async function startSyncTunnel(port: number): Promise<string | null> {
 
     // Try named tunnel first (same URL every time)
     // Named tunnel config at ~/.cloudflared/henry.yml
+    let namedHostname: string | null = null;
     const tunnelArgs = (() => {
       try {
         const configPath = require('os').homedir() + '/.cloudflared/henry.yml';
         const fs = require('fs');
         if (fs.existsSync(configPath)) {
           log.debug('[SyncBridge] Using named tunnel config:', configPath);
+          // The public URL is deterministic — read it from the ingress hostname.
+          const m = fs.readFileSync(configPath, 'utf8').match(/hostname:\s*(\S+)/);
+          if (m) namedHostname = m[1];
           return ['tunnel', '--config', configPath, 'run', '--no-autoupdate'];
         }
       } catch { /* fall through */ }
@@ -125,7 +129,13 @@ export async function startSyncTunnel(port: number): Promise<string | null> {
       let resolved = false;
       const tryResolve = (data: Buffer) => {
         const text = data.toString();
-        const match = text.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
+        // Named tunnel: cloudflared never prints a URL — resolve the configured
+        // hostname once a connection registers. Quick tunnel: parse the URL.
+        const match = namedHostname
+          ? (/Registered tunnel connection|INF Connection [a-f0-9-]+ registered/.test(text)
+              ? [`https://${namedHostname}`]
+              : null)
+          : text.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
         if (match && !resolved) {
           resolved = true;
           tunnelUrl = match[0];
