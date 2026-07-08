@@ -9499,18 +9499,37 @@ async function startTunnel(port: number): Promise<void> {
   _tunnelStarting = true;
   try {
     const { spawn } = await import('child_process') as typeof import('child_process');
-    const { existsSync } = await import('fs') as typeof import('fs');
+    const { existsSync, readFileSync } = await import('fs') as typeof import('fs');
     // Find cloudflared
     const cf = CLOUDFLARED_BIN;
-    
-    _tunnelProc = spawn(cf, ['tunnel', '--url', `http://localhost:${port}`, '--no-autoupdate'], {
+
+    // Named tunnel (permanent URL) when ~/.cloudflared/henry.yml exists;
+    // quick tunnel (random trycloudflare URL) otherwise.
+    const os = await import('os') as typeof import('os');
+    const configPath = os.homedir() + '/.cloudflared/henry.yml';
+    let namedHostname: string | null = null;
+    let args = ['tunnel', '--url', `http://localhost:${port}`, '--no-autoupdate'];
+    if (existsSync(configPath)) {
+      const m = readFileSync(configPath, 'utf8').match(/hostname:\s*(\S+)/);
+      if (m) {
+        namedHostname = m[1];
+        args = ['tunnel', '--config', configPath, 'run', '--no-autoupdate'];
+      }
+    }
+
+    _tunnelProc = spawn(cf, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
-    // Parse the tunnel URL from cloudflared output
+    // Parse the tunnel URL from cloudflared output. Named tunnels never print
+    // a URL — resolve the configured hostname once a connection registers.
     const parseUrl = (data: Buffer) => {
       const text = data.toString();
-      const m = text.match(/https:\/\/[\w-]+\.trycloudflare\.com/);
+      const m = namedHostname
+        ? (/Registered tunnel connection|Connection [a-f0-9-]+ registered/i.test(text)
+            ? [`https://${namedHostname}`]
+            : null)
+        : text.match(/https:\/\/[\w-]+\.trycloudflare\.com/);
       if (m && !_tunnelUrl) {
         _tunnelUrl = m[0];
         console.log(`[Tunnel] Public URL: ${_tunnelUrl}`);
