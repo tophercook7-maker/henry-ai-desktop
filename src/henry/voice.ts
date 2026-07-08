@@ -120,21 +120,27 @@ function pickMimeType(): string {
   return '';
 }
 
+/**
+ * Fire the macOS mic prompt from the main process and throw a clear,
+ * user-facing message if access isn't granted. MUST run before ANY
+ * getUserMedia call — packaged apps fail silently without the OS grant.
+ */
+export async function ensureMicAccess(): Promise<void> {
+  if (!window.henryAPI?.voiceMicAccess) return; // web/mobile — browser handles it
+  const access = await window.henryAPI.voiceMicAccess();
+  if (!access.granted) {
+    throw new Error(
+      access.status === 'not-determined' || access.status === 'unknown'
+        ? 'Microphone permission was not granted — try the mic button again and click OK on the system prompt.'
+        : 'Microphone access is off for Henry. I opened System Settings → Privacy & Security → Microphone — flip Henry AI on, then try again.',
+    );
+  }
+}
+
 /** Start capturing mic audio. Throws a clear, user-facing message on denial. */
 export async function startVoiceRecording(): Promise<void> {
   if (activeRecorder) return; // already listening
-  // Packaged macOS apps need the TCC prompt fired from the main process —
-  // getUserMedia alone silently fails until the system grant exists.
-  if (window.henryAPI?.voiceMicAccess) {
-    const access = await window.henryAPI.voiceMicAccess();
-    if (!access.granted) {
-      throw new Error(
-        access.status === 'not-determined' || access.status === 'unknown'
-          ? 'Microphone permission was not granted — try the mic button again and click OK on the system prompt.'
-          : 'Microphone access is off for Henry. I opened System Settings → Privacy & Security → Microphone — flip Henry AI on, then try again.',
-      );
-    }
-  }
+  await ensureMicAccess();
   let stream: MediaStream;
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: true });

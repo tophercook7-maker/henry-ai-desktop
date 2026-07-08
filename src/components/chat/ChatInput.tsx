@@ -172,6 +172,21 @@ export default function ChatInput({
     useAmbientStore.getState().setState('listening');
     useAmbientStore.getState().startSession();
     try {
+      // macOS TCC: fire the system mic prompt from the main process BEFORE
+      // getUserMedia — packaged apps fail silently without the OS grant.
+      if (window.henryAPI?.voiceMicAccess) {
+        const access = await window.henryAPI.voiceMicAccess();
+        if (!access.granted) {
+          useAmbientStore.getState().setState('idle');
+          toast.error(
+            access.status === 'denied' || access.status === 'restricted'
+              ? 'Microphone is off for Henry — I opened System Settings → Privacy & Security → Microphone. Flip Henry AI on, then tap the mic again.'
+              : 'Microphone permission not granted — tap the mic again and click OK on the system prompt.',
+          );
+          return;
+        }
+      }
+
       // Detect supported audio MIME type
       const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
         ? 'audio/webm;codecs=opus'
@@ -217,8 +232,16 @@ export default function ChatInput({
           speechRecRef.current = rec;
         } catch { /* SpeechRecognition not available — graceful degrade */ }
       }
-    } catch {
-      toast.error('Microphone access denied. Please allow microphone permission.');
+    } catch (err) {
+      useAmbientStore.getState().setState('idle');
+      const name = (err as DOMException)?.name;
+      toast.error(
+        name === 'NotAllowedError' || name === 'PermissionDeniedError'
+          ? 'Microphone access denied. Enable it in System Settings → Privacy & Security → Microphone → Henry AI.'
+          : name === 'NotFoundError'
+          ? 'No microphone found — plug one in or check your input device.'
+          : `Could not start the microphone: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 

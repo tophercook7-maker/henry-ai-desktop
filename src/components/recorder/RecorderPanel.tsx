@@ -30,6 +30,8 @@ export default function RecorderPanel() {
 
   async function startRec() {
     try {
+      const { ensureMicAccess } = await import('../../henry/voice');
+      await ensureMicAccess();
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       chunksRef.current = [];
       const mr = new MediaRecorder(stream);
