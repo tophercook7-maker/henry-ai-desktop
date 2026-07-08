@@ -283,7 +283,14 @@ export async function transcribeAudio(audio: Uint8Array): Promise<{ text: string
       120_000,
     );
 
-    const text = fs.readFileSync(outBase + '.txt', 'utf8').replace(/\s+/g, ' ').trim();
+    // Strip whisper's non-speech markers ([BLANK_AUDIO], [MUSIC PLAYING],
+    // (silence), etc.) so quiet recordings come back empty, not as literal text.
+    const text = fs
+      .readFileSync(outBase + '.txt', 'utf8')
+      .replace(/\[[A-Z0-9 _]+\]/g, ' ')
+      .replace(/\((?:silence|music|noise|inaudible)[^)]*\)/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
     return { text, ms: Date.now() - t0 };
   } finally {
     transcribeBusy = false;
