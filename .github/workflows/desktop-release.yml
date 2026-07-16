@@ -56,7 +56,7 @@ jobs:
         with:
           name: henry-mac
           path: release2/*.dmg
-          retention-days: 30
+          retention-days: 2
 
   # ── Windows ───────────────────────────────────────────────────────────────
   build-win:
@@ -92,7 +92,7 @@ jobs:
         with:
           name: henry-win
           path: release2/*.exe
-          retention-days: 30
+          retention-days: 2
 
   # ── Linux ─────────────────────────────────────────────────────────────────
   build-linux:
@@ -132,14 +132,14 @@ jobs:
         with:
           name: henry-linux-appimage
           path: release2/*.AppImage
-          retention-days: 30
+          retention-days: 2
 
       - name: Upload Linux deb
         uses: actions/upload-artifact@v4
         with:
           name: henry-linux-deb
           path: release2/*.deb
-          retention-days: 30
+          retention-days: 2
 
   # ── Create GitHub Release ─────────────────────────────────────────────────
   release:
